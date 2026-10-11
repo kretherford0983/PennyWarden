@@ -1,4 +1,4 @@
-/** 2.0.0 (#165, #166): cover letter and #10 envelope templates on the Administrator's Check Printing setup screen.
+/** 2.0.0 (#165, #166): cover letter and #10 envelope templates on the Administrator's Payments Setup screen.
  * Text sections use the pattern syntax with autocomplete; test prints use sample data only (BR-003). */
 import { useState } from "react";
 import { api } from "../api";
@@ -8,17 +8,19 @@ import { PatternInput, PdfViewer, usePdf } from "./checkShared";
 const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
 const DOC_FONTS: [string, string][] = [["CARLITO", "Carlito (Calibri-compatible)"], ["SANS", "Liberation Sans (Arial-compatible)"], ["SERIF", "Liberation Serif (Times-compatible)"]];
 
-export function DocumentsSection({ setup, onChanged }: { setup: any; onChanged: () => void }) {
+/** The template lists on the Payments Setup page: cover letters and envelopes, each its own section. Editing a
+ * template opens its editor on a page of its own (DocumentEditor, shown by Payments Setup in place of the page). */
+export function DocumentsSection({ setup, onChanged, onEdit }: { setup: any; onChanged: () => void; onEdit: (doc: any) => void }) {
   const [err, setErr] = useState<unknown>(null);
-  const [editing, setEditing] = useState<any>(null);
   const act = async (fn: () => Promise<any>) => { setErr(null); try { await fn(); onChanged(); } catch (x) { setErr(x); } };
-  const create = (kind: "LETTER" | "ENVELOPE") => act(async () => setEditing(await api.post("/api/checks/documents", { kind })));
+  const create = (kind: "LETTER" | "ENVELOPE") => act(async () => onEdit(await api.post("/api/checks/documents", { kind })));
   const docs = setup.documents || [];
-  const table = (kind: string, label: string) => {
+  const card = (kind: "LETTER" | "ENVELOPE", id: string, label: string, intro: string, newLabel: string) => {
     const list = docs.filter((d: any) => d.kind === kind);
     return (
-      <>
-        <h3>{label}</h3>
+      <section className="card" aria-labelledby={id}>
+        <h2 id={id}>{label}</h2>
+        <p className="hint">{intro}</p>
         {list.length ? (
           <table className="table compact">
             <thead><tr><th>Name</th><th>Default</th><th>Status</th><th /></tr></thead>
@@ -28,7 +30,7 @@ export function DocumentsSection({ setup, onChanged }: { setup: any; onChanged: 
                   <td>{d.name}</td><td>{d.is_default ? "Default" : ""}</td>
                   <td>{d.active ? "Active" : <span className="badge grey">Deactivated</span>}</td>
                   <td className="actions-cell">
-                    <button className="small" onClick={() => setEditing(d)}>Edit</button>{" "}
+                    <button className="small" onClick={() => onEdit(d)}>Edit</button>{" "}
                     {d.active && !d.is_default ? <button className="small" onClick={() => act(() => api.post(`/api/checks/documents/${d.id}/flags`, { is_default: true }))}>Make default</button> : null}{" "}
                     <button className="small" onClick={() => act(() => api.post(`/api/checks/documents/${d.id}/flags`, { active: !d.active }))}>{d.active ? "Deactivate" : "Activate"}</button>
                   </td>
@@ -37,24 +39,23 @@ export function DocumentsSection({ setup, onChanged }: { setup: any; onChanged: 
             </tbody>
           </table>
         ) : <p className="muted">None yet.</p>}
-        <div className="actions left"><button onClick={() => create(kind as any)}>{kind === "LETTER" ? "New cover letter" : "New #10 envelope"}</button></div>
-      </>
+        <div className="actions left"><button onClick={() => create(kind)}>{newLabel}</button></div>
+      </section>
     );
   };
-  if (editing) {
-    const Editor = editing.kind === "LETTER" ? LetterEditor : EnvelopeEditor;
-    return <Editor setup={setup} doc={editing} onClose={() => { setEditing(null); onChanged(); }} onSaved={(d: any) => { setEditing(d); onChanged(); }} />;
-  }
   return (
-    <section className="card" aria-labelledby="docs-h">
-      <h2 id="docs-h">Cover letters and envelopes</h2>
-      <p className="hint">Optional: a cover letter listing the invoices paid, and a #10 envelope addressed to the payee. Register Users choose them when they print
-        a check — or print them alone when the check is written by hand. Printed letters and envelopes are attached to the transaction.</p>
+    <>
       <ErrorBox error={err} />
-      {table("LETTER", "Cover letters")}
-      {table("ENVELOPE", "Envelopes")}
-    </section>
+      {card("LETTER", "letters-h", "Cover letters", "Optional: a letter listing the invoices paid, printed with the check (or on its own for a check written by hand) and attached to the transaction.", "New cover letter")}
+      {card("ENVELOPE", "envelopes-h", "Envelopes", "Optional: a #10 envelope addressed to the payee, printed with the check (or on its own) and attached to the transaction.", "New #10 envelope")}
+    </>
   );
+}
+
+/** A cover letter or envelope template's editor - the whole page, nothing else from Payments Setup above it. */
+export function DocumentEditor({ setup, doc, onClose, onSaved }: { setup: any; doc: any; onClose: () => void; onSaved: (d: any) => void }) {
+  const Editor = doc.kind === "LETTER" ? LetterEditor : EnvelopeEditor;
+  return <Editor key={doc.id} setup={setup} doc={doc} onClose={onClose} onSaved={onSaved} />;
 }
 
 function useEditor(doc: any, onSaved: (d: any) => void) {
