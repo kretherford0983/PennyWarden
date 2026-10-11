@@ -73,13 +73,15 @@ result, a breakdown by offering (tickets, auction, food…), the cash float, a f
   <img src="docs/screenshots/readme/count-sheet-page.png" alt="The printable cash count sheet" width="270">
 </p>
 
-### Check printing <sub>(optional module, 2.0.0)</sub>
+### Payments and check printing <sub>(optional Payments module, 2.0.0)</sub>
 
 Print checks on printable check stock: the payee, the amount in numbers and in words (always calculated from the
 transaction, with a protective fill), the date, a memo built from the transaction, and the signature. Each style is
 set up once with a preview drawn to scale and test prints on plain paper; a single last check can be fed through
 the manual feed. The number on the loaded check is confirmed before every print, spoiled checks are recorded as
-VOID, and a record copy is attached to the transaction (docs/check-printing.md).
+VOID, and a record copy is attached to the transaction. **Payments** enter a bill and print its check in one go,
+with an optional **cover letter** listing the invoices and a **#10 envelope**; **voucher checks** carry vendor and
+office stubs, and styles can have **two signature lines** (docs/check-printing.md).
 
 ### Reminders
 
@@ -99,7 +101,7 @@ return every quarter, renew the insurance every year — so duties survive a cha
 | **Reports** | End of Year Audit PDF with signature page and account start/end pages; Fiscal Year Close report; Entity activity report with CSV export; fundraiser report; cash count sheet |
 | **Dashboard** | Bank balances, budget progress, items needing attention, charts; each user chooses and arranges their own sections; light and dark mode |
 | **Fundraisers** | Budgets, offerings ("buckets"), cash float, exclusions, documents, cancelled events, events spanning two Fiscal Years |
-| **Check printing** | Check styles from presets, field layout with a scale preview, built-in fonts, amounts in words with protective fill, memo patterns, encrypted signatures with an amount limit, sheet and single-check feed, reprint and spoiled checks, record copies, per-user printer adjustment |
+| **Payments module** | Check styles from presets, field layout with a scale preview, built-in fonts, amounts in words with protective fill, memo patterns, encrypted signatures with an amount limit, two signature lines, voucher checks with stubs, sheet and single-check feed, reprint and spoiled checks, record copies, per-user printer adjustment; payments, cover letters, #10 envelopes, handwritten checks |
 | **Reminders** | Personal and organization reminders, show-before days, links to a Fiscal Year, budget or account, repeating organization reminders |
 | **People and vendors** | Entities for organizations and individuals, a person's position (offered as the title when they sign) |
 | **Roles** | Administrator, Budget Manager, Budget User, Register User and read-only Auditor; administration is kept strictly apart from financial work |

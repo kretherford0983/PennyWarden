@@ -1,4 +1,4 @@
-"""2.0.0 (#156, #158, #159, #161, #162): Check Printing module services.
+"""2.0.0 (#156, #158, #159, #161, #162): Payments module services.
 
 Who does what (docs/04 permission matrix):
 - Administrators (checks.setup): switch the module on/off, check styles, signers and signature images, limits, test
@@ -54,7 +54,7 @@ def module_enabled(db: Session, ws_id: int | None) -> bool:
 
 def require_module(db: Session, ctx) -> None:
     if not module_enabled(db, ctx.workspace_id):
-        raise AppError(404, "MODULE_DISABLED", "The Check Printing module is not turned on.")
+        raise AppError(404, "MODULE_DISABLED", "The Payments module is not turned on.")
 
 
 def set_module(db: Session, ctx, enabled: bool) -> bool:
@@ -167,10 +167,11 @@ def update_style(db: Session, ctx, s: CheckStyle, name: str, config: dict) -> Ch
     name = _name(name)
     _unique_name(db, ctx, name, s.id)
     cfg = parse_config(config)
-    if cfg.default_signer_id is not None:
-        signer = db.get(CheckSigner, cfg.default_signer_id)
-        if signer is None or signer.workspace_id != ctx.workspace_id or not signer.active:
-            raise validation("The default signer does not exist or is inactive.", "default_signer_id")
+    for sid, field in ((cfg.default_signer_id, "default_signer_id"), (cfg.default_signer2_id, "default_signer2_id")):
+        if sid is not None:
+            signer = db.get(CheckSigner, sid)
+            if signer is None or signer.workspace_id != ctx.workspace_id or not signer.active:
+                raise validation("The default signer does not exist or is inactive.", field)
     before = _snapshot(s)
     s.name = name
     s.config_json = json.dumps(cfg.model_dump())
@@ -580,17 +581,45 @@ def _signer_choice(db: Session, ctx, cfg: cfgmod.StyleConfig, cents: int, signer
             f"Sign the check by hand.")
     if no_signature or signer_id is None:
         return None, "NO SIGNATURE PRINTED", None
+    s = _usable_signer(db, ctx, signer_id)
+    return s, f"SIGNATURE ON FILE: {s.name.upper()}", None
+
+
+def _usable_signer(db: Session, ctx, signer_id: int) -> CheckSigner:
     s = get_signer(db, ctx, signer_id)
     if not s.active:
         raise conflict("SIGNER_INACTIVE", "That signer is deactivated.")
     if not s.image_ciphertext:
         raise conflict("NO_SIGNATURE_IMAGE", "That signer has no signature image.")
+    return s
+
+
+def _second_choice(db: Session, ctx, cfg: cfgmod.StyleConfig, cents: int, first: CheckSigner | None,
+                   signer2_id: int | None, no_signature: bool) -> tuple[CheckSigner | None, str | None, str | None]:
+    """#167, the second signature line of a two-line style: (signer or None, record-copy text, notice). Two different
+    signers are required; above the second-line limit only the first signature prints; above the no-signature limit
+    neither does (handled by the first line's notice)."""
+    if cfg.stock.signature_lines != 2:
+        return None, None, None
+    if cfg.signature_limit_cents is not None and cents > cfg.signature_limit_cents:
+        return None, "NO SIGNATURE PRINTED (OVER LIMIT)", None
+    if no_signature:
+        return None, "NO SIGNATURE PRINTED", None
+    if cfg.second_line_limit_cents is not None and cents > cfg.second_line_limit_cents:
+        return None, "SECOND SIGNATURE BY HAND (OVER LIMIT)", (
+            f"The amount is over ${fmt(cfg.second_line_limit_cents)}: only the first signature prints. The second "
+            f"line must be signed by hand.")
+    if signer2_id is None:
+        return None, "SECOND SIGNATURE BY HAND", "The second signature line is left blank to be signed by hand."
+    if first is not None and signer2_id == first.id:
+        raise conflict("SAME_SIGNER", "The two signature lines need two different signers.")
+    s = _usable_signer(db, ctx, signer2_id)
     return s, f"SIGNATURE ON FILE: {s.name.upper()}", None
 
 
 def prepare(db: Session, ctx, t: RegisterTransaction, style: CheckStyle, feed_key: str, *, memo_pattern: str | None,
             payee_text: str | None, memo_text: str | None, signer_id: int | None, no_signature: bool,
-            page: str | None = None, guide: str | None = None) -> Job:
+            page: str | None = None, guide: str | None = None, signer2_id: int | None = None) -> Job:
     if not style.active:
         raise conflict("STYLE_INACTIVE", "That check style is deactivated.")
     cfg = style_config(style)
@@ -615,6 +644,7 @@ def prepare(db: Session, ctx, t: RegisterTransaction, style: CheckStyle, feed_ke
     content = render.Content(t.total_cents, format_date(t.transaction_date, cfg.date_format), payee_final, memo_final)
     lay = render.layout(cfg, content)
     signer, sig_text, sig_notice = _signer_choice(db, ctx, cfg, t.total_cents, signer_id, no_signature)
+    signer2, sig2_text, sig2_notice = _second_choice(db, ctx, cfg, t.total_cents, signer, signer2_id, no_signature)
     user = user_adjustment(printer_setting(db, ctx, style.id, feed.key))
     if page in ("LETTER", "CHECK"):
         user["page"] = page
@@ -628,10 +658,60 @@ def prepare(db: Session, ctx, t: RegisterTransaction, style: CheckStyle, feed_ke
                                  variables=memo.empty, memo=memo.text))
     if t.clear_date is not None:
         warnings.append(Warning_("CLEARED", "This check has already cleared the bank. Print it anyway?"))
+    stub_lines = stub_rows(db, t, cfg.date_format) if cfg.stubs else []
+    if cfg.stubs:
+        cap = min(render.stub_capacity(st) for st in cfg.stubs)
+        if len(stub_lines) > cap:
+            shown = cap - 1
+            warnings.append(Warning_(
+                "STUB_OVERFLOW", f"The transaction has {len(stub_lines)} lines; the stubs show {shown} and "
+                f"\"{render.MORE_NOTE.format(n=len(stub_lines) - shown)}\". Print a cover letter with all the lines. "
+                f"Print the check as it is?"))
+    notice = " ".join(n for n in (sig_notice, sig2_notice) if n) or None
     return Job(t=t, style=style, cfg=cfg, feed=feed, placement=pl, layout=lay, values=values, memo=memo,
                memo_pattern=pattern, payee=payee_final, memo_text=memo_final, signer=signer, sig_text=sig_text,
-               sig_notice=sig_notice, warnings=warnings, payee_overridden=payee_final != values["PAYEE"],
+               signer2=signer2, sig2_text=sig2_text, stub_lines=stub_lines,
+               sig_notice=notice, warnings=warnings, payee_overridden=payee_final != values["PAYEE"],
                memo_overridden=memo_text is not None and memo_final != memo.text)
+
+
+def stub_rows(db: Session, t: RegisterTransaction, date_format: str) -> list[dict]:
+    """#167: one row per line of the transaction for the voucher stubs (the same values as the cover letter)."""
+    rows = []
+    for a in t.live_allocations:
+        code, bname = _budget_parts(db, a.budget)
+        rows.append({"INVOICE": a.invoice_number or "",
+                     "INVOICE_DATE": format_date(a.invoice_date, date_format) if a.invoice_date else "",
+                     "DESCRIPTION": a.description or "", "BUDGET": f"{code} {bname}".strip(), "NOTES": a.notes or "",
+                     "AMOUNT": _money(a.amount_cents)})
+    return rows
+
+
+def stub_data(job: Job) -> render.StubData | None:
+    """The stubs' content at print time - after the check number is confirmed, so a reprint after a spoiled check
+    shows the new number."""
+    cfg, t = job.cfg, job.t
+    if not cfg.stubs:
+        return None
+    values = {**job.values, "CHECK_NUMBER": t.check_number or ""}
+    titles = [patterns.resolve(st.title, values, patterns.STUB).text for st in cfg.stubs]
+    return render.StubData(title=titles[0], titles=titles, check_number=t.check_number or "", payee=job.payee,
+                           date=format_date(t.transaction_date, cfg.date_format), amount=_money(t.total_cents),
+                           rows=job.stub_lines, total=_money(t.total_cents), memo=job.memo_text)
+
+
+def sample_stub(cfg: cfgmod.StyleConfig) -> render.StubData | None:
+    """The stubs for the Administrator's test print and calibration page (sample data only)."""
+    if not cfg.stubs:
+        return None
+    values = {**SAMPLE_VALUES["NORMAL"], "TODAY": format_date(dt.date.today(), cfg.date_format),
+              "DATE": format_date(dt.date.today(), cfg.date_format), "INVOICE_DATE": "08/29/2026 and others",
+              "PAYEE_ADDRESS": "", "SIGNER": "", "SIGNER_TITLE": ""}
+    titles = [patterns.resolve(st.title, values, patterns.STUB).text for st in cfg.stubs]
+    base = render.SAMPLE_STUB
+    return render.StubData(title=titles[0], titles=titles, check_number=base.check_number, payee=base.payee,
+                           date=values["DATE"], amount=base.amount, rows=base.rows, total=base.total,
+                           memo=sample_memo(cfg, "NORMAL"))
 
 
 def job_out(db: Session, job: Job) -> dict:
@@ -641,7 +721,8 @@ def job_out(db: Session, job: Job) -> dict:
                         "suggestion": ff.suggestion, "editable": ff.editable}
     return {"fields": fields, "memo_pattern": job.memo_pattern, "memo_resolved": job.memo.text,
             "empty_variables": job.memo.empty, "payee_entity": job.values["PAYEE"],
-            "signature": job.sig_text, "signature_notice": job.sig_notice,
+            "signature": job.sig_text, "signature2": job.sig2_text, "signature_notice": job.sig_notice,
+            "stub_lines": len(job.stub_lines),
             "warnings": [w.as_dict() for w in job.warnings], "can_print": not job.layout.problems,
             "placement": {"feed_key": job.feed.key, "page": job.placement.page, "guide": job.placement.guide,
                           "dx": round(job.placement.dx, 3), "dy": round(job.placement.dy, 3)}}
@@ -662,7 +743,10 @@ def _audit_print(job: Job) -> dict:
             "payee": job.payee, "payee_overridden": job.payee_overridden, "memo": job.memo_text,
             "memo_pattern": job.memo_pattern, "memo_overridden": job.memo_overridden,
             "amount": fmt(job.t.total_cents), "signature": job.sig_text,
-            "signer_id": job.signer.id if job.signer else None}
+            "signer_id": job.signer.id if job.signer else None,
+            **({"signature2": job.sig2_text, "signer2_id": job.signer2.id if job.signer2 else None}
+               if job.cfg.stock.signature_lines == 2 else {}),
+            **({"stub_lines": len(job.stub_lines)} if job.cfg.stubs else {})}
 
 
 def _record_copy(db: Session, job: Job) -> bytes:
@@ -670,7 +754,7 @@ def _record_copy(db: Session, job: Job) -> bytes:
     footer = [f"Record copy of check #{job.t.check_number} - transaction #{job.t.id} - "
               f"bank account {acct.account_name if acct else ''}",
               f"Check style: {job.style.name}. This copy is not a check; the signature is never stored."]
-    return render.record_copy_pdf(job.cfg, job.layout, job.sig_text, footer)
+    return render.record_copy_pdf(job.cfg, job.layout, job.sig_text, footer, job.sig2_text, stub_data(job))
 
 
 def set_check_number(db: Session, ctx, t: RegisterTransaction, number: str) -> None:
@@ -732,7 +816,8 @@ def print_check(db: Session, ctx, settings, km, job: Job, *, check_number: str |
     if len(reason) > 500:
         raise validation("The reason may be at most 500 characters.", "reprint_reason")
     sig_png = signature_png(km, job.signer) if job.signer else None
-    pdf = render.check_pdf(job.cfg, job.placement, job.layout, sig_png)
+    sig2_png = signature_png(km, job.signer2) if job.signer2 else None
+    pdf = render.check_pdf(job.cfg, job.placement, job.layout, sig_png, sig2_png, stub_data(job))
     copy_pdf = _record_copy(db, job)
     copies = record_copies(db, t)
     new_copy = not copies or copies[-1].sha256 != hashlib.sha256(copy_pdf).hexdigest()

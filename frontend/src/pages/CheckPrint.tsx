@@ -48,7 +48,7 @@ function ChooseStyle({ o, onDone }: { o: Opts; onDone: () => void }) {
     e.preventDefault();
     try { await api.put(`/api/checks/accounts/${o.transaction.bank_account_id}`, { check_style_id: Number(style), sheet_remaining: left ? Number(left) : null }); onDone(); } catch (x) { setErr(x); }
   };
-  if (!o.styles.length) return <div className="alert warn">No check styles are set up yet. Ask an Administrator to set up Check Printing.</div>;
+  if (!o.styles.length) return <div className="alert warn">No check styles are set up yet. Ask an Administrator to set up check styles in Payments Setup.</div>;
   return (
     <GuardedForm onSubmit={go}>
       <ErrorBox error={err} />
@@ -75,6 +75,9 @@ function PrintForm({ o, reload, onClose, onChanged }: { o: Opts; reload: () => v
   useEffect(() => { setFeed(o.suggested_feed); }, [o.suggested_feed]);
   const signerDefault = o.signers.some((s: any) => s.id === o.default_signer_id) ? String(o.default_signer_id) : o.signers[0] ? String(o.signers[0].id) : "";
   const [signer, setSigner] = useState(signerDefault);
+  const two = o.signature_lines === 2;    // #167: two signature lines need two different signers
+  const signer2Default = two && o.signers.some((s: any) => s.id === o.default_signer2_id) && String(o.default_signer2_id) !== signerDefault ? String(o.default_signer2_id) : "";
+  const [signer2, setSigner2] = useState(signer2Default);
   const [memoPattern, setMemoPattern] = useState<string>(o.memo_default || "");
   const [overrides, setOverrides] = useState<{ payee_text?: string; memo_text?: string }>({});
   const [editing, setEditing] = useState<string | null>(null);
@@ -98,7 +101,8 @@ function PrintForm({ o, reload, onClose, onChanged }: { o: Opts; reload: () => v
   const body = useMemo(() => ({
     check_style_id: o.check_style_id, feed_key: feed, memo_pattern: memoPattern,
     signer_id: signer ? Number(signer) : null, no_signature: !signer, ...overrides,
-  }), [o.check_style_id, feed, memoPattern, signer, overrides]);
+    ...(two ? { signer2_id: signer && signer2 ? Number(signer2) : null } : {}),
+  }), [o.check_style_id, feed, memoPattern, signer, signer2, two, overrides]);
   useEffect(() => {
     const h = setTimeout(() => {
       // a pattern being typed (e.g. "{B") is refused until it is valid: keep the last preview, block printing
@@ -192,19 +196,28 @@ function PrintForm({ o, reload, onClose, onChanged }: { o: Opts; reload: () => v
             <span>{o.sheet_remaining} of {o.checks_per_sheet} <button type="button" className="link small" onClick={() => setCounter(true)}>Change</button></span>
           </div>
         ) : null}
-        <Field label="Signature" hint={prep?.signature_notice || undefined}>
-          <select value={signer} onChange={(e) => setSigner(e.target.value)}>
+        <Field label={two ? "First signature" : "Signature"} hint={!two ? prep?.signature_notice || undefined : undefined}>
+          <select value={signer} onChange={(e) => { setSigner(e.target.value); if (e.target.value === signer2) setSigner2(""); }}>
             {o.signers.map((s: any) => <option key={s.id} value={s.id}>{s.name}{s.title ? ` (${s.title})` : ""}</option>)}
             <option value="">Print without signature</option>
           </select>
         </Field>
+        {two ? (
+          <Field label="Second signature">
+            <select value={signer2} disabled={!signer} onChange={(e) => setSigner2(e.target.value)}>
+              <option value="">Leave blank – sign by hand</option>
+              {o.signers.filter((s: any) => String(s.id) !== signer).map((s: any) => <option key={s.id} value={s.id}>{s.name}{s.title ? ` (${s.title})` : ""}</option>)}
+            </select>
+          </Field>
+        ) : null}
       </div>
       {feedMode?.kind === "SINGLE" ? <div className="alert info">Feed this check through the manual feed on its own{feedMode.lead === "DATE_END" ? ", date end first" : ", pay-to end first"}. {feedMode.note || ""}</div> : null}
       <PatternInput id="memo" label="Memo" value={memoPattern} variables={o.variables} onChange={(v) => { setMemoPattern(v); setOverride("memo", undefined); }} />
       <ErrorBox error={prepErr} />
       {prep ? (
         <>
-          <CheckPreview cfg={cfg} fonts={o.fonts} texts={texts} showBoxes={false} signature={prep.signature} />
+          <CheckPreview cfg={cfg} fonts={o.fonts} texts={texts} showBoxes={false} signature={prep.signature} signature2={prep.signature2} />
+          {cfg.stubs?.length ? <p className="hint">The stubs below the check list the {prep.stub_lines} line{prep.stub_lines === 1 ? "" : "s"} of this payment{t.check_number ? ` and check #${t.check_number}` : ""} (shown on the plain-paper test).</p> : null}
           {prep.signature_notice ? <div className="alert warn">{prep.signature_notice}</div> : null}
           {problems.map(([name, f]: any) => (
             <div key={name} className="alert warn fit-warning" role="alert" data-testid={`fit-${name}`}>

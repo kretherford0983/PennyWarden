@@ -1,4 +1,4 @@
-/** 2.0.0 (#164): Payments (Check Printing module, Register Users).
+/** 2.0.0 (#164): Payments (Payments module, Register Users).
  *
  * New payment: the register's transaction form in payment mode (one line per invoice, payee search with "New entity",
  * documents per invoice or for the whole payment, the check amount previewed in numbers and words). Saving creates the
@@ -68,7 +68,7 @@ export default function Payments() {
       <h1>Payments</h1>
       <p className="hint">Enter a bill once: PennyWarden records it in the register (one line per invoice) and opens the check to print.</p>
       <ErrorBox error={err} />
-      {opts && !opts.styles_available ? <div className="alert warn">No check styles are set up yet. Ask an Administrator to set up Check Printing first.</div> : null}
+      {opts && !opts.styles_available ? <div className="alert warn">No check styles are set up yet. Ask an Administrator to set up check styles in Payments Setup first.</div> : null}
       {!accounts.length ? <p className="muted">No active register bank accounts.</p> : (
         <div className="page-head">
           <Field label="Pay from">

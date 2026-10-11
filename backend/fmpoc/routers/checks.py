@@ -1,4 +1,4 @@
-"""2.0.0 (#156-#162): Check Printing module API.
+"""2.0.0 (#156-#162): Payments module API.
 
 Setup (Administrators, checks.setup): check styles, signers, test prints with dummy data, calibration pages.
 Printing (Register Users, checks.print): print checks from register transactions, reprint, spoil, alignment tests,
@@ -103,11 +103,13 @@ class SampleIn(In):
 @router.get("/setup")
 def setup(request: Request, db: Session = Depends(get_db), ctx: Ctx = Depends(setup_ctx)):
     return {"styles": [svc.style_out(s) for s in svc.list_styles(db, ctx)], "presets": presets.options(),
+            "signature2_default": presets.SIGNATURE2_DEFAULT,
             "fonts": fonts.options(), "font_sizes": {"min": fonts.MIN_SIZE, "max": fonts.MAX_SIZE},
             "variables": patterns.variable_options(patterns.CHECK),
             "signers": [svc.signer_out(s) for s in svc.list_signers(db, ctx)],
             "documents": [svc.doc_out(d) for d in svc.list_documents(db, ctx)],
             "letter_variables": patterns.variable_options(patterns.LETTER),
+            "stub_variables": patterns.variable_options(patterns.STUB),
             "envelope_variables": patterns.variable_options(patterns.ENVELOPE),
             "letter_columns": [{"key": k, "heading": v} for k, v in documents.COLUMN_KEYS.items()],
             "limits": {"clear_zone": cfgmod.CLEAR_ZONE, "feed_offset_max": cfgmod.FEED_OFFSET_MAX,
@@ -168,7 +170,8 @@ def test_print(style_id: int, body: TestPrintIn, request: Request, db: Session =
         sig = svc.signature_png(request.app.state.key, signer)
         if sig is None:
             raise validation("That signer has no signature image.", "signer_id")
-    pdf = render.test_pdf(cfg, render.placement_for(cfg, feed), svc.sample_layout(cfg, body.sample), sig)
+    pdf = render.test_pdf(cfg, render.placement_for(cfg, feed), svc.sample_layout(cfg, body.sample), sig,
+                          svc.sample_stub(cfg))
     audit.record(db, ctx, "CHECK_TEST_PRINT", "check_style", s.id, None,
                  {"feed_key": feed.key, "sample": body.sample, "signer_id": body.signer_id,
                   "unsaved_settings": body.config is not None})
@@ -187,7 +190,8 @@ def calibration(style_id: int, body: CalibrationIn, db: Session = Depends(get_db
     feed = cfg.feed(body.feed_key)
     if feed is None:
         raise validation("Unknown feed mode.", "feed_key")
-    return _pdf(render.calibration_pdf(cfg, render.placement_for(cfg, feed)), "check-calibration.pdf")
+    return _pdf(render.calibration_pdf(cfg, render.placement_for(cfg, feed), svc.sample_stub(cfg)),
+                "check-calibration.pdf")
 
 
 # ---- signers (#159)
@@ -265,6 +269,7 @@ class JobIn(In):
     payee_text: str | None = Field(default=None, max_length=200)
     memo_text: str | None = Field(default=None, max_length=200)
     signer_id: int | None = None
+    signer2_id: int | None = None            # #167: the second signature line of a two-line style
     no_signature: bool = False
     page: Literal["LETTER", "CHECK"] | None = None
     guide: Literal["CENTER", "LEFT", "RIGHT"] | None = None
@@ -301,7 +306,7 @@ def _job(db, ctx, txn_id: int, body: JobIn):
     style = svc.get_style(db, ctx, body.check_style_id)
     return svc.prepare(db, ctx, t, style, body.feed_key, memo_pattern=body.memo_pattern, payee_text=body.payee_text,
                        memo_text=body.memo_text, signer_id=body.signer_id, no_signature=body.no_signature,
-                       page=body.page, guide=body.guide)
+                       page=body.page, guide=body.guide, signer2_id=body.signer2_id)
 
 
 @router.get("/transactions/{txn_id}/options")
@@ -332,6 +337,9 @@ def print_options(txn_id: int, db: Session = Depends(get_db), ctx: Ctx = Depends
                     "sheet_remaining": left, "checks_per_sheet": len(cfg.stock.check_tops),
                     "suggested_feed": svc.suggested_feed(cfg, left).key, "memo_default": cfg.memo_default,
                     "default_signer_id": cfg.default_signer_id,
+                    "signature_lines": cfg.stock.signature_lines, "default_signer2_id": cfg.default_signer2_id,
+                    "second_line_limit": None if cfg.second_line_limit_cents is None
+                    else f"{cfg.second_line_limit_cents // 100}.{cfg.second_line_limit_cents % 100:02d}",
                     "signature_limit": None if cfg.signature_limit_cents is None
                     else f"{cfg.signature_limit_cents // 100}.{cfg.signature_limit_cents % 100:02d}",
                     "printer": [svc.printer_out(svc.printer_setting(db, ctx, chosen.id, m.key), m)
@@ -358,7 +366,7 @@ def prepare(txn_id: int, body: JobIn, db: Session = Depends(get_db), ctx: Ctx = 
 def alignment_test(txn_id: int, body: JobIn, db: Session = Depends(get_db), ctx: Ctx = Depends(print_ctx)):
     """Test print of the actual check on plain paper. Never the signature, never stored, no check used."""
     job = _job(db, ctx, txn_id, body)
-    pdf = render.alignment_pdf(job.cfg, job.placement, job.layout)
+    pdf = render.alignment_pdf(job.cfg, job.placement, job.layout, svc.stub_data(job))
     audit.record(db, ctx, "CHECK_ALIGNMENT_TEST", "register_transaction", job.t.id, None,
                  {"check_style_id": job.style.id, "feed_key": job.feed.key, "page": job.placement.page,
                   "guide": job.placement.guide})

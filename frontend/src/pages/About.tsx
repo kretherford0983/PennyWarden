@@ -46,9 +46,10 @@ function ModulesPanel() {
           <label className="check"><input type="checkbox" checked={m.fundraisers} onChange={(e) => toggle("fundraisers", e.target.checked)} /> Fundraiser module</label>
           <p className="hint">Adds <b>Fundraisers</b> to the menu of Budget Managers, Budget Users, Register Users and Auditors (it appears at their next sign-in or page reload).
             Turning it off hides the module; fundraisers that were set up are kept.</p>
-          <label className="check"><input type="checkbox" checked={!!m.checks} onChange={(e) => toggle("checks", e.target.checked)} /> Check Printing module</label>
-          <p className="hint">Adds <b>Check Printing</b> to the Administrator's menu (check styles, signatures, test prints) and a <b>Print check</b> action on
-            withdrawals for Register Users. For printable check stock that already carries the bank numbers. Turning it off hides the module; settings are kept.</p>
+          <label className="check"><input type="checkbox" checked={!!m.checks} onChange={(e) => toggle("checks", e.target.checked)} /> Payments module</label>
+          <p className="hint">Check printing, payments, cover letters and envelopes. Adds <b>Payments Setup</b> to the Administrator's menu (check styles,
+            signatures, letter and envelope templates, test prints), and <b>Payments</b> and a <b>Print check</b> action on withdrawals for Register Users. For
+            printable check stock that already carries the bank numbers. Turning it off hides the module; settings are kept.</p>
           {saved ? <p className="hint" role="status">Saved.</p> : null}
         </>
       ) : null}

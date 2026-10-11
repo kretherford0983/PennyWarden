@@ -278,8 +278,20 @@ def _fields(c, cfg: StyleConfig, lay: Layout) -> None:
     _amount_words(c, cfg, lay)
 
 
-def _signature_image(c, cfg: StyleConfig, png: bytes) -> None:
-    box = cfg.fields.signature
+def _sig_boxes(cfg: StyleConfig) -> list:
+    """The signature line boxes: one, or two for a two-line style (#167)."""
+    return [cfg.fields.signature] + ([cfg.fields.signature2] if cfg.stock.signature_lines == 2 and
+                                     cfg.fields.signature2 is not None else [])
+
+
+def _signature_images(c, cfg: StyleConfig, pngs: list[bytes | None]) -> None:
+    for box, png in zip(_sig_boxes(cfg), pngs):
+        if png:
+            _signature_image(c, cfg, png, box)
+
+
+def _signature_image(c, cfg: StyleConfig, png: bytes, box=None) -> None:
+    box = box or cfg.fields.signature
     img = ImageReader(io.BytesIO(png))
     iw, ih = img.getSize()
     bw, bh = box.w * PT, box.h * PT
@@ -290,8 +302,8 @@ def _signature_image(c, cfg: StyleConfig, png: bytes) -> None:
     c.drawImage(img, x, y, w, h, mask="auto")
 
 
-def _signature_text(c, cfg: StyleConfig, text: str) -> None:
-    box = cfg.fields.signature
+def _signature_text(c, cfg: StyleConfig, text: str, box=None) -> None:
+    box = box or cfg.fields.signature
     c.saveState()
     c.setFont(fonts.ps_name("SANS", True), 8)
     w = fonts.width(text, "SANS", 8, True)
@@ -302,14 +314,16 @@ def _signature_text(c, cfg: StyleConfig, text: str) -> None:
 
 
 def _signature_outline(c, cfg: StyleConfig) -> None:
-    box = cfg.fields.signature
-    c.saveState()
-    c.setDash(3, 2)
-    c.setLineWidth(0.6)
-    c.rect(box.x * PT, _y(cfg, box.y + box.h), box.w * PT, box.h * PT, stroke=1, fill=0)
-    c.setFont(fonts.ps_name("SANS"), 7)
-    c.drawCentredString((box.x + box.w / 2) * PT, _y(cfg, box.y + box.h / 2) - 2.5, "SIGNATURE")
-    c.restoreState()
+    boxes = _sig_boxes(cfg)
+    for i, box in enumerate(boxes):
+        c.saveState()
+        c.setDash(3, 2)
+        c.setLineWidth(0.6)
+        c.rect(box.x * PT, _y(cfg, box.y + box.h), box.w * PT, box.h * PT, stroke=1, fill=0)
+        c.setFont(fonts.ps_name("SANS"), 7)
+        label = "SIGNATURE" if len(boxes) == 1 else f"SIGNATURE {i + 1}"
+        c.drawCentredString((box.x + box.w / 2) * PT, _y(cfg, box.y + box.h / 2) - 2.5, label)
+        c.restoreState()
 
 
 def _check_outline(c, cfg: StyleConfig, gray: float = 0.55) -> None:
@@ -356,8 +370,10 @@ def _field_marks(c, cfg: StyleConfig, labels: bool) -> None:
     """Crosshairs at each field's bottom-left (where the writing starts) and a light box outline."""
     c.saveState()
     c.setLineWidth(0.4)
-    for name in (*TEXT_FIELDS, "signature"):
+    for name in (*TEXT_FIELDS, "signature", "signature2"):
         b = getattr(cfg.fields, name)
+        if b is None or (name == "signature2" and cfg.stock.signature_lines != 2):
+            continue
         c.setStrokeGray(0.6)
         c.setDash(1, 2)
         c.rect(b.x * PT, _y(cfg, b.y + b.h), b.w * PT, b.h * PT, stroke=1, fill=0)
@@ -440,32 +456,198 @@ def _new_canvas(buf, title: str):
     return c
 
 
+# ------------------------------------------------------------------ voucher stubs (#167)
+MORE_NOTE = "…and {n} more, see enclosed letter"
+
+
+@dataclass
+class StubData:
+    """What the stubs show, from the transaction (or the sample). Rows: INVOICE, INVOICE_DATE, DESCRIPTION, BUDGET,
+    NOTES, AMOUNT (already formatted)."""
+    title: str
+    check_number: str
+    payee: str
+    date: str
+    amount: str
+    rows: list[dict]
+    total: str
+    memo: str = ""
+    titles: list[str] | None = None        # one per stub (each stub has its own title pattern)
+
+
+def stub_columns(cfg: StyleConfig, copy_kind: str) -> list:
+    """The vendor copy never shows budgets; the office copy always has the budget column (before the amount)."""
+    cols = [c for c in cfg.stub_columns if not (copy_kind == "VENDOR" and c.key == "BUDGET")]
+    if copy_kind == "OFFICE" and not any(c.key == "BUDGET" for c in cols):
+        at = next((i for i, c in enumerate(cols) if c.key == "AMOUNT"), len(cols))
+        cols.insert(at, type(cfg.stub_columns[0])(key="BUDGET", heading="Budget"))
+    if not cols:
+        cols = [type(cfg.stub_columns[0])(key="AMOUNT", heading="Amount")]
+    return cols
+
+
+def _row_h(st) -> float:
+    return st.size * 1.35
+
+
+def stub_capacity(st) -> int:
+    """How many table rows fit on the stub (the total, memo and copy label take the rest)."""
+    head = 0.95 * PT                       # title, payee/date/amount lines and the column headings
+    foot = (0.35 + (0.3 if st.show_memo else 0) + 0.25) * PT
+    return max(1, int((st.height * PT - head - foot) // _row_h(st)))
+
+
+def stub_rows(st, rows: list[dict]) -> tuple[list[dict], int]:
+    """(rows to draw, number left out). When rows are left out, the last line is the 'and N more' note."""
+    cap = stub_capacity(st)
+    if len(rows) <= cap:
+        return rows, 0
+    shown = rows[:cap - 1]
+    return shown, len(rows) - len(shown)
+
+
+def _clip(text: str, key: str, size: float, bold: bool, width_pt: float) -> str:
+    if fonts.width(text, key, size, bold) <= width_pt:
+        return text
+    while text and fonts.width(text + ELLIPSIS, key, size, bold) > width_pt:
+        text = text[:-1]
+    return text.rstrip() + ELLIPSIS
+
+
+def _col_widths(cols, avail: float) -> list[float]:
+    weight = {"INVOICE": 1.1, "INVOICE_DATE": 1.0, "DESCRIPTION": 2.6, "BUDGET": 1.6, "NOTES": 2.0, "AMOUNT": 1.0}
+    tot = sum(weight[c.key] for c in cols)
+    return [avail * weight[c.key] / tot for c in cols]
+
+
+def _draw_stub(c, cfg: StyleConfig, st, data: StubData, outline: bool = False, title: str | None = None) -> None:
+    """One stub, drawn in page coordinates (points, origin bottom-left)."""
+    pw = cfg.stock.paper_width
+    key, size = st.font, st.size
+    top = (cfg.stock.paper_height - st.top) * PT
+    x0, x1 = st.margin * PT, (pw - st.margin) * PT
+    c.saveState()
+    c.setFillGray(0)
+    if outline:
+        c.setStrokeGray(0.55)
+        c.setLineWidth(0.5)
+        c.setDash(4, 3)
+        c.line(0, top, pw * PT, top)
+        c.setDash()
+    y = top - 0.35 * PT
+    c.setFont(fonts.ps_name(key, True), size + 1)
+    right = []
+    if st.show_check_number and data.check_number:
+        right.append(f"CHECK #{data.check_number}")
+    if st.copy_kind == "OFFICE":
+        right.append("OFFICE COPY")
+    rtext = "   ".join(right)
+    rw = fonts.width(rtext, key, size + 1, True)
+    c.drawString(x0, y, _clip(data.title if title is None else title, key, size + 1, True, x1 - x0 - rw - 12))
+    if rtext:
+        c.drawRightString(x1, y, rtext)
+    y -= size * 1.6
+    c.setFont(fonts.ps_name(key), size)
+    amt = f"Amount: {data.amount}"
+    dt_ = f"Date: {data.date}"
+    aw, dw = fonts.width(amt, key, size), fonts.width(dt_, key, size)
+    c.drawRightString(x1, y, amt)
+    c.drawRightString(x1 - aw - 18, y, dt_)
+    c.drawString(x0, y, _clip(f"Pay to: {data.payee}", key, size, False, x1 - x0 - aw - dw - 36))
+    # the line table
+    cols = stub_columns(cfg, st.copy_kind)
+    widths = _col_widths(cols, x1 - x0)
+    y -= size * 2.0
+    c.setFont(fonts.ps_name(key, True), size)
+    xs = [x0]
+    for w in widths[:-1]:
+        xs.append(xs[-1] + w)
+    for col, x, w in zip(cols, xs, widths):
+        h = _clip(col.heading, key, size, True, w - 6)
+        if col.key == "AMOUNT":
+            c.drawRightString(x + w, y, h)
+        else:
+            c.drawString(x, y, h)
+    c.setLineWidth(0.5)
+    c.line(x0, y - 3, x1, y - 3)
+    c.setFont(fonts.ps_name(key), size)
+    rows, more = stub_rows(st, data.rows)
+    for r in rows:
+        y -= _row_h(st)
+        for col, x, w in zip(cols, xs, widths):
+            v = _clip(str(r.get(col.key, "") or ""), key, size, False, w - 6)
+            if col.key == "AMOUNT":
+                c.drawRightString(x + w, y, v)
+            else:
+                c.drawString(x, y, v)
+    if more:
+        y -= _row_h(st)
+        c.setFont(fonts.ps_name(key, False), size)
+        c.drawString(x0, y, MORE_NOTE.format(n=more))
+    y -= size * 0.7
+    c.line(x0, y, x1, y)
+    y -= size * 1.3
+    c.setFont(fonts.ps_name(key, True), size)
+    c.drawRightString(x1, y, f"Total: {data.total}")
+    if st.show_memo and data.memo:
+        y -= size * 1.6
+        c.setFont(fonts.ps_name(key), size)
+        c.drawString(x0, y, _clip(f"Memo: {data.memo}", key, size, False, x1 - x0))
+    c.restoreState()
+
+
+def _stubs(c, cfg: StyleConfig, pl, data: StubData | None, outline: bool = False) -> None:
+    if not cfg.stubs or data is None:
+        return
+    c.saveState()
+    if pl is not None:
+        c.translate(pl.dx * PT, -pl.dy * PT)
+    for i, st in enumerate(cfg.stubs):
+        _draw_stub(c, cfg, st, data, outline, (data.titles or [])[i] if data.titles and i < len(data.titles) else None)
+    c.restoreState()
+
+
+SAMPLE_STUB = StubData(title="SAMPLE ORGANIZATION", check_number="1001", payee="SAMPLE PAYEE COMPANY INC",
+                       date="", amount="$3,199.30",
+                       rows=[{"INVOICE": "158092", "INVOICE_DATE": "08/29/2026", "DESCRIPTION": "Supplies",
+                              "BUDGET": "51 Operations", "NOTES": "", "AMOUNT": "$3,000.00"},
+                             {"INVOICE": "158117", "INVOICE_DATE": "09/05/2026", "DESCRIPTION": "Delivery",
+                              "BUDGET": "51 Operations", "NOTES": "", "AMOUNT": "$199.30"}],
+                       total="$3,199.30", memo="51, INVOICE 158092 AND OTHERS")
+
+
 # ------------------------------------------------------------------ public renderers
-def check_pdf(cfg: StyleConfig, pl: Placement, lay: Layout, signature_png: bytes | None) -> bytes:
-    """The real check: fields and (when allowed) the signature. Never stored."""
+def check_pdf(cfg: StyleConfig, pl: Placement, lay: Layout, signature_png: bytes | None,
+              signature2_png: bytes | None = None, stubs: StubData | None = None) -> bytes:
+    """The real check: fields, the signature(s) when allowed and, on a voucher style, the stubs. Never stored."""
     _assert_fits(lay)
     buf = io.BytesIO()
     c = _new_canvas(buf, "Check")
+    c.saveState()
     _begin_page(c, cfg, pl)
     _fields(c, cfg, lay)
-    if signature_png:
-        _signature_image(c, cfg, signature_png)
+    _signature_images(c, cfg, [signature_png, signature2_png])
+    c.restoreState()
+    _stubs(c, cfg, pl, stubs)
     c.showPage()
     c.save()
     return buf.getvalue()
 
 
-def test_pdf(cfg: StyleConfig, pl: Placement, lay: Layout, signature_png: bytes | None) -> bytes:
+def test_pdf(cfg: StyleConfig, pl: Placement, lay: Layout, signature_png: bytes | None,
+             stubs: StubData | None = None) -> bytes:
     """Administrator test print with dummy data: like the real check plus TEST - NOT A CHECK, the scale check and
-    the field marks. The signature is an outlined box unless a test signature was chosen."""
+    the field marks. The signature is an outlined box unless a test signature was chosen (it is drawn on every
+    signature line)."""
     buf = io.BytesIO()
     c = _new_canvas(buf, "Test print")
+    _stubs(c, cfg, pl, stubs, outline=True)
     _begin_page(c, cfg, pl)
     _check_outline(c, cfg)
     _diagonal(c, cfg, "TEST - NOT A CHECK", gray=0.8)
     _fields_safe(c, cfg, lay)
     if signature_png:
-        _signature_image(c, cfg, signature_png)
+        _signature_images(c, cfg, [signature_png, signature_png])
         _diagonal(c, cfg, "TEST - NOT A CHECK", gray=0.55, size=22)   # crosses the signature too
     else:
         _signature_outline(c, cfg)
@@ -476,11 +658,12 @@ def test_pdf(cfg: StyleConfig, pl: Placement, lay: Layout, signature_png: bytes 
     return buf.getvalue()
 
 
-def alignment_pdf(cfg: StyleConfig, pl: Placement, lay: Layout) -> bytes:
+def alignment_pdf(cfg: StyleConfig, pl: Placement, lay: Layout, stubs: StubData | None = None) -> bytes:
     """A Register User's test print of the actual check on plain paper: real field text, crosshairs, the check
-    outline, the shaded clear zone and the scale check - never the signature image."""
+    outline, the shaded clear zone and the scale check - never the signature image. Voucher stubs are included."""
     buf = io.BytesIO()
     c = _new_canvas(buf, "Alignment test")
+    _stubs(c, cfg, pl, stubs, outline=True)
     _begin_page(c, cfg, pl)
     _check_outline(c, cfg, 0.2)
     _clear_zone(c, cfg)
@@ -494,10 +677,11 @@ def alignment_pdf(cfg: StyleConfig, pl: Placement, lay: Layout) -> bytes:
     return buf.getvalue()
 
 
-def calibration_pdf(cfg: StyleConfig, pl: Placement) -> bytes:
+def calibration_pdf(cfg: StyleConfig, pl: Placement, stubs: StubData | None = None) -> bytes:
     """Rulers, crosshairs and the field boxes with their positions, the clear zone and the scale check."""
     buf = io.BytesIO()
     c = _new_canvas(buf, "Calibration page")
+    _stubs(c, cfg, pl, stubs, outline=True)
     _begin_page(c, cfg, pl)
     _check_outline(c, cfg, 0.2)
     _clear_zone(c, cfg)
@@ -530,25 +714,40 @@ def scale_pdf() -> bytes:
     return buf.getvalue()
 
 
-def record_copy_pdf(cfg: StyleConfig, lay: Layout, signature_text: str, footer: list[str]) -> bytes:
+def record_copy_pdf(cfg: StyleConfig, lay: Layout, signature_text: str, footer: list[str],
+                    signature2_text: str | None = None, stubs: StubData | None = None) -> bytes:
     """The copy attached to the transaction: the check as printed (Letter page, check at the top, the stock outline in
-    light grey), the signature replaced by text, and COPY - NOT NEGOTIABLE. Never contains the signature image."""
+    light grey), the signature replaced by text on each line, and COPY - NOT NEGOTIABLE. A voucher copy is the whole
+    sheet as printed, stubs included. Never contains the signature image."""
     buf = io.BytesIO()
     c = _new_canvas(buf, "Check record copy")
     c.setPageSize((8.5 * PT, 11 * PT))
+    voucher = bool(cfg.stubs and stubs is not None)
+    top = cfg.stock.check_tops[0] if voucher else 0.5
+    if voucher:
+        _stubs(c, cfg, None, stubs, outline=True)
     c.saveState()
-    c.translate((8.5 - cfg.stock.check_width) / 2 * PT, (11 - 0.5 - cfg.stock.check_height) * PT)
+    c.translate((8.5 - cfg.stock.check_width) / 2 * PT, (11 - top - cfg.stock.check_height) * PT)
     _check_outline(c, cfg, 0.4)
     _diagonal(c, cfg, "COPY - NOT NEGOTIABLE", gray=0.86, size=28)   # under the text, so the copy stays readable
     _stock_outline(c, cfg)
     _fields(c, cfg, lay)
-    _signature_text(c, cfg, signature_text)
+    boxes = _sig_boxes(cfg)
+    texts = [signature_text, signature2_text if signature2_text is not None else signature_text]
+    for box, text in zip(boxes, texts):
+        _signature_text(c, cfg, text, box)
     c.restoreState()
-    c.setFont(fonts.ps_name("SANS"), 8)
-    y = (11 - 0.5 - cfg.stock.check_height - 0.35) * PT
-    for line in footer:
-        c.drawString(0.5 * PT, y, line)
-        y -= 11
+    c.setFont(fonts.ps_name("SANS"), 8 if not voucher else 6.5)
+    if voucher:
+        y = 0.12 * PT + 8 * (len(footer) - 1)
+        for line in footer:
+            c.drawString(0.4 * PT, y, line)
+            y -= 8
+    else:
+        y = (11 - 0.5 - cfg.stock.check_height - 0.35) * PT
+        for line in footer:
+            c.drawString(0.5 * PT, y, line)
+            y -= 11
     c.showPage()
     c.save()
     return buf.getvalue()

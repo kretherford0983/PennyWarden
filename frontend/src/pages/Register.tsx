@@ -101,7 +101,7 @@ export default function Register() {
             <button className="primary" onClick={() => setModal({ kind: "txn", txn: null })}>New transaction</button>
             <button onClick={() => setModal({ kind: "transfer" })}>Transfer…</button>
             <button onClick={() => setModal({ kind: "zero" })}>Zero-dollar VOID record</button>
-            {/* 2.0.0 (#164): Check Printing module - enter a bill and print its check */}
+            {/* 2.0.0 (#164): Payments module - enter a bill and print its check */}
             {me.modules?.checks && can("checks.print") ? <button onClick={() => setModal({ kind: "payment" })}>New payment</button> : null}
           </>
         ) : null}
@@ -230,7 +230,7 @@ function TxnDetail({ t, manage, canPrintChecks, onPrintCheck, onEdit, onVoid, on
       </table>
       <div className="actions left">
         {editable ? <button onClick={onEdit}>Edit</button> : null}
-        {/* 2.0.0 (#161): Check Printing module - active withdrawals over zero, not in a Closed Fiscal Year */}
+        {/* 2.0.0 (#161): Payments module - active withdrawals over zero, not in a Closed Fiscal Year */}
         {canPrintChecks && editable && t.transaction_type === "WITHDRAWAL" && !t.transfer && Number(t.total) > 0
           ? <>
               <button onClick={onPrintCheck}>{t.check_printed ? "Print check again…" : "Print check…"}</button>
@@ -270,7 +270,7 @@ function useBudgetOptions(fyIds: string[], type: string) {
   return (fy: string, t: string) => cache[`${fy}:${t}`] || [];
 }
 
-/** The register's transaction form. 2.0.0 (#164): `payment` turns it into the payment form of the Check Printing module -
+/** The register's transaction form. 2.0.0 (#164): `payment` turns it into the payment form of the Payments module -
  * a new withdrawal with one line per invoice, the check amount previewed live in words and numbers, saved straight
  * into printing (onSaved receives the created transaction). Everything is stored by the normal register API. */
 export function TxnForm({ account, txn, initial, fys, onClose, onSaved, payment }: { account: any; txn: any; initial?: { check_number?: string }; fys: any[]; onClose: () => void; onSaved: (saved?: any) => void; payment?: boolean }) {

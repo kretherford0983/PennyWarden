@@ -144,10 +144,10 @@ function navFor(me: Me) {
     ["/reports", "Reports"],
   ];
   if (me.modules?.fundraisers) fin.splice(6, 0, ["/fundraisers", "Fundraisers"]); // v1.6.0 CR-033 (optional module)
-  // 2.0.0 (#164): Payments (Check Printing module) for Register Users, after Register
+  // 2.0.0 (#164): Payments (Payments module) for Register Users, after Register
   if (me.modules?.checks && me.permissions.includes("checks.print")) fin.splice(fin.findIndex((n) => n[0] === "/register") + 1, 0, ["/payments", "Payments"]);
-  // 2.0.0 (#156): Check Printing setup for Administrators when the module is on
-  const checkSetup = me.modules?.checks && me.permissions.includes("checks.setup") ? [["/check-setup", "Check Printing"]] : [];
+  // 2.0.0 (#156): Payments Setup (check printing) for Administrators when the Payments module is on
+  const checkSetup = me.modules?.checks && me.permissions.includes("checks.setup") ? [["/check-setup", "Payments Setup"]] : [];
   if (me.security_domain === "ADMINISTRATOR") return [["/", "Dashboard"], ["/users", "Users"], ["/audit-log", "Audit Log"], ...checkSetup, ["/about", "System/About"]];
   if (me.security_domain === "AUDITOR") return [...fin, ["/users", "Users"], ["/audit-log", "Audit Log"]];
   if (me.security_domain === "COMBINED") { // 1.9.0 (#54): one person, roles of several domains (local installs)

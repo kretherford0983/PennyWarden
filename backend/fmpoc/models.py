@@ -53,7 +53,7 @@ class Workspace(Base):
     next_entity_number: Mapped[int] = mapped_column(Integer, default=1)
     # v1.6.0 CR-033: optional modules, switched on by an Administrator
     fundraisers_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
-    # 2.0.0 (#156): the Check Printing module
+    # 2.0.0 (#156): the Payments module
     checks_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
 
 
@@ -80,7 +80,7 @@ class User(Base):
     nav_collapsed: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)  # v1.3 CR-014
     dashboard_charts: Mapped[str | None] = mapped_column(String(200), nullable=True)  # v1.4.1 CR-020 (comma list)
     dashboard_layout: Mapped[str | None] = mapped_column(String(200), nullable=True)  # v1.5.0 CR-031 (comma list)
-    # 2.0.0 (#164): the bank account of this user's last payment (Check Printing module), preselected next time
+    # 2.0.0 (#164): the bank account of this user's last payment (Payments module), preselected next time
     last_payment_account_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     password_changed_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
@@ -775,7 +775,7 @@ class CheckPrinterSetting(Base):
 
 
 class CheckDocument(Base):
-    """2.0.0 (#165, #166): a cover letter or envelope template of the Check Printing module - a validated JSON settings
+    """2.0.0 (#165, #166): a cover letter or envelope template of the Payments module - a validated JSON settings
     document like a check style. Deactivated, never deleted (BR-001); one default per kind."""
     __tablename__ = "check_document"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)

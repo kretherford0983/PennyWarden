@@ -36,8 +36,8 @@ export default function CheckSetup() {
   }
   return (
     <div className="check-setup">
-      <h1>Check Printing</h1>
-      <p className="hint">Set up how checks print on your check stock. Register Users print checks from the register; they choose the
+      <h1>Payments Setup</h1>
+      <p className="hint">Set up how checks, cover letters and envelopes print for the Payments module. Register Users print checks from the register; they choose the
         check style for each bank account the first time they print from it. Test prints here use sample data only.</p>
       <ErrorBox error={err} />
       <section className="card" aria-labelledby="styles-h">
@@ -94,6 +94,93 @@ function CopyStyle({ style, onClose, onDone }: { style: any; onClose: () => void
         <div className="actions"><button type="button" onClick={onClose}>Cancel</button><button className="primary" type="submit">Copy</button></div>
       </GuardedForm>
     </Modal>
+  );
+}
+
+// ------------------------------------------------------------------ #167: dual signatures and voucher stubs
+function MoneyIn({ value, onChange }: { value: number | null; onChange: (cents: number | null) => void }) {
+  const [text, setText] = useState(value == null ? "" : (value / 100).toFixed(2));
+  return <input inputMode="decimal" value={text} onChange={(e) => { setText(e.target.value); const v = e.target.value.trim(); onChange(v ? Math.round(num(v) * 100) || null : null); }}
+                onBlur={() => setText(value == null ? "" : (value / 100).toFixed(2))} />;
+}
+
+/** One or two signature lines. Two lines: the first moves down above the bank-number zone and the second goes above
+ * it, the same width (the Administrator fine-tunes both under Field positions). */
+function setLines(c: any, n: number, def: any) {
+  c.stock.signature_lines = n;
+  if (n === 2) {
+    const s = c.fields.signature;
+    const h = Math.min(s.h, def?.h ?? 0.42);
+    const bottom = c.stock.check_height - 0.625 - 0.03;
+    c.fields.signature = { ...s, h, y: Math.round((bottom - h) * 1000) / 1000 };
+    c.fields.signature2 = c.fields.signature2 || { x: s.x, w: s.w, h, y: Math.round((bottom - 2 * h - 0.05) * 1000) / 1000 };
+  } else {
+    c.fields.signature2 = null; c.second_line_limit_cents = null; c.default_signer2_id = null;
+  }
+}
+
+const STUB_COLS: [string, string][] = [["INVOICE", "Invoice #"], ["INVOICE_DATE", "Invoice Date"], ["DESCRIPTION", "Description"], ["BUDGET", "Budget"], ["NOTES", "Notes"], ["AMOUNT", "Amount"]];
+
+function StubsSection({ cfg, setup, change }: { cfg: any; setup: any; change: (fn: (c: any) => void) => void }) {
+  const cols: any[] = cfg.stub_columns;
+  const unused = STUB_COLS.filter(([k]) => !cols.some((c) => c.key === k));
+  const move = (i: number, d: number) => change((c) => { const [it] = c.stub_columns.splice(i, 1); c.stub_columns.splice(i + d, 0, it); });
+  return (
+    <Section id="stubs" title="Stubs (voucher check)">
+      <p className="hint">The detail stubs below the check list the transaction's lines. Positions are inches from the top of the sheet. The vendor copy never
+        shows budgets; the office copy adds the budget column and OFFICE COPY. The check number prints on the stubs only (from the register), never on
+        the check. A transaction with more lines than fit shows "…and N more, see enclosed letter", and the user is warned before printing.</p>
+      <div className="table-wrap">
+        <table className="table compact">
+          <thead><tr><th>Stub</th><th>Top</th><th>Height</th><th>Copy</th><th>Title</th><th>Check #</th><th>Memo</th><th>Font</th><th>Size</th><th>Margin</th><th /></tr></thead>
+          <tbody>
+            {cfg.stubs.map((st: any, i: number) => (
+              <tr key={i}>
+                <th scope="row">{i + 1}</th>
+                <td><NumIn label={`Stub ${i + 1} top`} value={st.top} onChange={(v) => change((c) => { c.stubs[i].top = v; })} /></td>
+                <td><NumIn label={`Stub ${i + 1} height`} value={st.height} onChange={(v) => change((c) => { c.stubs[i].height = v; })} /></td>
+                <td><select aria-label={`Stub ${i + 1} copy`} value={st.copy_kind} onChange={(e) => change((c) => { c.stubs[i].copy_kind = e.target.value; })}>
+                  <option value="VENDOR">Vendor copy</option><option value="OFFICE">Office copy</option></select></td>
+                <td><PatternInput id={`stub-title-${i}`} label={`Stub ${i + 1} title`} value={st.title} variables={setup.stub_variables} hint={false} onChange={(v) => change((c) => { c.stubs[i].title = v; })} /></td>
+                <td><input type="checkbox" aria-label={`Stub ${i + 1} prints the check number`} checked={st.show_check_number} onChange={(e) => change((c) => { c.stubs[i].show_check_number = e.target.checked; })} /></td>
+                <td><input type="checkbox" aria-label={`Stub ${i + 1} prints the memo`} checked={st.show_memo} onChange={(e) => change((c) => { c.stubs[i].show_memo = e.target.checked; })} /></td>
+                <td><select aria-label={`Stub ${i + 1} font`} value={st.font} onChange={(e) => change((c) => { c.stubs[i].font = e.target.value; })}>
+                  {setup.fonts.map((x: any) => <option key={x.key} value={x.key}>{x.label.split(" (")[0]}</option>)}</select></td>
+                <td><NumIn label={`Stub ${i + 1} size`} unit="pt" step={0.5} min={6} max={12} value={st.size} onChange={(v) => change((c) => { c.stubs[i].size = v; })} /></td>
+                <td><NumIn label={`Stub ${i + 1} margin`} value={st.margin} onChange={(v) => change((c) => { c.stubs[i].margin = v; })} /></td>
+                <td><button className="small" onClick={() => change((c) => { c.stubs.splice(i, 1); })}>Remove</button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {cfg.stubs.length < 2 ? (
+        <div className="actions left"><button className="small" onClick={() => change((c) => {
+          const last = c.stubs[c.stubs.length - 1];
+          const top = last ? last.top + last.height : c.stock.check_tops[0] + c.stock.check_height;
+          c.stubs.push({ top, height: Math.max(1.5, Math.min(3.5, 11 - top)), copy_kind: "OFFICE", title: "{ORG}", show_check_number: true, font: "SANS", size: 9, margin: 0.4, show_memo: true });
+        })}>Add stub</button></div>
+      ) : null}
+      <h3>Line table</h3>
+      <table className="table compact">
+        <thead><tr><th>Column</th><th>Heading</th><th /></tr></thead>
+        <tbody>
+          {cols.map((col, i) => (
+            <tr key={col.key}>
+              <td>{STUB_COLS.find(([k]) => k === col.key)?.[1]}{col.key === "BUDGET" ? " (office copy only)" : ""}</td>
+              <td><input aria-label={`Stub heading for ${col.key}`} maxLength={40} value={col.heading} onChange={(e) => change((c) => { c.stub_columns[i].heading = e.target.value; })} /></td>
+              <td className="actions-cell">
+                <button className="small" disabled={i === 0} onClick={() => move(i, -1)} aria-label="Move up">↑</button>{" "}
+                <button className="small" disabled={i === cols.length - 1} onClick={() => move(i, 1)} aria-label="Move down">↓</button>{" "}
+                <button className="small" disabled={cols.length === 1} onClick={() => change((c) => { c.stub_columns.splice(i, 1); })}>Remove</button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      {unused.length ? <div className="row form-row">{unused.map(([k, h]) => <button key={k} className="small" onClick={() => change((c) => { c.stub_columns.push({ key: k, heading: h }); })}>+ {h}</button>)}</div> : null}
+      <p className="hint">The stubs are drawn on the test print and the calibration page (sample data); the preview above shows the check only.</p>
+    </Section>
   );
 }
 
@@ -250,9 +337,9 @@ function StyleEditor({ setup, style, onClose, onSaved }: { setup: any; style: an
           <table className="table compact field-table">
             <thead><tr><th>Field</th><th>Left (x)</th><th>Top (y)</th><th>Width</th><th>Height</th><th>Font</th><th>Size</th><th>Bold</th><th>Capitals</th><th>Align</th><th>Shrink to fit (min pt)</th></tr></thead>
             <tbody>
-              {[...TEXT_FIELDS, "signature"].map((n) => {
+              {[...TEXT_FIELDS, "signature", ...(cfg.stock.signature_lines === 2 ? ["signature2"] : [])].map((n) => {
                 const f = cfg.fields[n];
-                const isText = n !== "signature";
+                const isText = !n.startsWith("signature");
                 return (
                   <tr key={n} onFocus={() => setHl(n)} onMouseEnter={() => setHl(n)} onMouseLeave={() => setHl(null)}>
                     <th scope="row">{FIELD_LABELS[n]}</th>
@@ -337,10 +424,30 @@ function StyleEditor({ setup, style, onClose, onSaved }: { setup: any; style: an
             </select>
           </Field>
           <Field label="No signature above this amount ($, optional)" hint="Above it the signature does not print; the check is signed by hand.">
-            <input inputMode="decimal" value={cfg.signature_limit_cents == null ? "" : (cfg.signature_limit_cents / 100).toFixed(2)}
-                   onChange={(e) => { const v = e.target.value.trim(); change((c) => { c.signature_limit_cents = v ? Math.round(num(v) * 100) || null : null; }); }} />
+            <MoneyIn value={cfg.signature_limit_cents} onChange={(v) => change((c) => { c.signature_limit_cents = v; })} />
           </Field>
         </div>
+        <div className="row form-row">
+          <Field label="Signature lines">
+            <select value={cfg.stock.signature_lines} onChange={(e) => change((c) => setLines(c, Number(e.target.value), setup.signature2_default))}>
+              <option value={1}>One signature line</option><option value={2}>Two signature lines (two signers)</option>
+            </select>
+          </Field>
+          {cfg.stock.signature_lines === 2 ? (
+            <>
+              <Field label="Second default signer">
+                <select value={cfg.default_signer2_id ?? ""} onChange={(e) => change((c) => { c.default_signer2_id = e.target.value ? Number(e.target.value) : null; })}>
+                  <option value="">None (signed by hand)</option>
+                  {setup.signers.filter((x: any) => x.active).map((x: any) => <option key={x.id} value={x.id}>{x.name}{x.title ? ` (${x.title})` : ""}</option>)}
+                </select>
+              </Field>
+              <Field label="Only one signature above this amount ($, optional)" hint="Above it the second line is left to be signed by hand. Must be below the no-signature amount.">
+                <MoneyIn value={cfg.second_line_limit_cents} onChange={(v) => change((c) => { c.second_line_limit_cents = v; })} />
+              </Field>
+            </>
+          ) : null}
+        </div>
+        {cfg.stock.signature_lines === 2 ? <p className="hint">The two lines need two different signers. Place the second line under Field positions.</p> : null}
       </Section>
 
       <Section id="feed" title="Feed modes">
@@ -389,6 +496,8 @@ function StyleEditor({ setup, style, onClose, onSaved }: { setup: any; style: an
                   disabled={cfg.feed_modes.length >= 6}>Add single-check feed mode</button>
         </div>
       </Section>
+
+      {cfg.stubs?.length ? <StubsSection cfg={cfg} setup={setup} change={change} /> : null}
 
       <Section id="tp" title="Test print and calibration">
         <p className="hint">Print on plain paper first and hold it over a blank check against a light. The calibration page shows rulers and where each field

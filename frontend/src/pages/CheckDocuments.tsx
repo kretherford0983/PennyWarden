@@ -82,7 +82,7 @@ function EditorFrame({ title, e, onClose, children, singleFeed }: { title: strin
     <div className="check-setup">
       <div className="row space-between">
         <h1>{title}</h1>
-        <button onClick={() => { if (!e.dirty || window.confirm("Leave without saving your changes?")) onClose(); }}>Back to check printing</button>
+        <button onClick={() => { if (!e.dirty || window.confirm("Leave without saving your changes?")) onClose(); }}>Back to Payments Setup</button>
       </div>
       <ErrorBox error={e.err} />
       {children}

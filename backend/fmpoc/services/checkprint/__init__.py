@@ -1,4 +1,4 @@
-"""2.0.0 (#60): the optional Check Printing module.
+"""2.0.0 (#60): the optional Payments module.
 
 config    - the check style settings document and its validation (#156)
 presets   - built-in check style presets (#156)

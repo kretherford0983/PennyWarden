@@ -134,6 +134,32 @@ and `PUT /api/checks/my-printer/envelope` (`checks.print`). Frontend: `pages/Che
 default memo resolved with sample values, collapsible sections, `PdfViewer`, modal stack for Escape. Tests:
 `tests/test_v200_letters.py`, `tests/test_v200_polish.py`, E2E "#165-#166".
 
+**2.0.0 Voucher checks and two signature lines, test build 4 (issue #167; decided in chat 2026-10-10).** No
+migration: everything lives in the check style's settings document. `config.py`: `Stock.signature_lines` 1|2,
+`Fields.signature2` (required with two lines, dropped with one; must not overlap the first or reach the clear zone),
+`second_line_limit_cents` (< `signature_limit_cents`), `default_signer2_id` (≠ the first), `stubs` (≤ 2 `Stub`:
+`top`/`height` in page inches, `copy_kind` VENDOR|OFFICE, `title` pattern in the STUB context, `show_check_number`,
+`show_memo`, font/size/margin) and `stub_columns` (like the letter's). Stubs require one check per sheet and SHEET feed
+modes only, and may not overlap the check or each other. Preset `VOUCHER_TOP` (check 0–3.5", stubs 3.5–7" vendor,
+7–11" office; the face reuses the 3-up field positions). Stub items flow in a fixed order (title + CHECK # / OFFICE
+COPY, payee / date / amount, the line table, total, memo) rather than each being positioned - standard voucher stubs
+are blank, and the margins, font and size are adjustable. `render.py`: `StubData`, `stub_columns` (vendor drops
+BUDGET, office inserts it before AMOUNT), `stub_capacity`/`stub_rows` (overflow keeps capacity−1 rows plus the
+"…and N more" line), stubs drawn in page space after the check (feed offset applied); every signature function takes
+a box. `service.py`: `_second_choice` (SAME_SIGNER 409; over the second-line limit → "SECOND SIGNATURE BY HAND (OVER
+LIMIT)"; none chosen → "SECOND SIGNATURE BY HAND"), `stub_rows`, `stub_data(job)` built at print time after the number
+is confirmed, warning `STUB_OVERFLOW`, `sample_stub` for admin pages; audit adds `signer2_id`, `signature2`,
+`stub_lines`. API: `signer2_id` on prepare/print/alignment; options add `signature_lines`, `default_signer2_id`,
+`second_line_limit`; setup adds `signature2_default`, `stub_variables`. Frontend: `CheckSetup.tsx` (`StubsSection`,
+`setLines`, `MoneyIn`), `CheckPrint.tsx` (second signature select), `CheckPreview` draws the second line. Tests:
+`tests/test_v200_voucher.py`, E2E "#167".
+
+**2.0.0 rename (Kyle, 2026-10-10):** the optional module is shown as the **Payments module**; the Administrator's
+setup screen and menu item are **Payments Setup** (the Register Users' item stays **Payments**, so a combined local
+user sees two distinct entries). Only labels changed: the API (`/api/checks`), permissions (`checks.setup`,
+`checks.print`), `workspace.checks_enabled`, the `modules.checks` key, the route `/check-setup` and the guide's file
+name `docs/check-printing.md` stay as they are.
+
 **1.10.0 Update notification (issue #58; channel decided 2026-10-09).** Migration `0024`: `update_check` (one row).
 `services/updates.py`: `channel(settings)` - setting `update_channel` (`auto` → from `build_info.json`: `main` →
 stable, `test` → test, anything else / no build info → none); `check(app, force)` - due after 24 h (6 h after an error),

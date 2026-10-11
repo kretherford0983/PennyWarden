@@ -23,7 +23,11 @@ PERSONAL_MAX = 0.25           # a user's personal adjustment, inches
 LETTER = (8.5, 11.0)
 TEXT_FIELDS = ("date", "payee", "amount_number", "amount_words", "memo")
 FIELD_LABELS = {"date": "Date", "payee": "Pay to", "amount_number": "Amount (number)",
-                "amount_words": "Amount (words)", "memo": "Memo", "signature": "Signature"}
+                "amount_words": "Amount (words)", "memo": "Memo", "signature": "Signature",
+                "signature2": "Second signature"}
+STUB_COLUMN_KEYS = ("INVOICE", "INVOICE_DATE", "DESCRIPTION", "BUDGET", "NOTES", "AMOUNT")
+MAX_STUBS = 2
+STUB_MIN_HEIGHT = 1.5
 DATE_FORMATS = {"MM/DD/YYYY": "%m/%d/%Y", "MM/DD/YY": "%m/%d/%y", "YYYY-MM-DD": "%Y-%m-%d",
                 "MONTH D, YYYY": "MONTH"}
 
@@ -56,7 +60,7 @@ class Stock(_M):
     check_height: float = Field(ge=1, le=11)
     check_tops: list[float] = Field(min_length=1, max_length=3)    # top of each check on the sheet, from the top edge
     sheet_usage: Literal["TEAR_TOP", "POSITIONS"] = "TEAR_TOP"
-    signature_lines: Literal[1] = 1
+    signature_lines: Literal[1, 2] = 1          # 2.0.0 (#167): one or two signature lines
     stock_note: str | None = Field(default=None, max_length=200)
     outline: list[OutlineItem] = Field(default_factory=list, max_length=80)
 
@@ -121,6 +125,7 @@ class Fields(_M):
     amount_words: TextField
     memo: TextField
     signature: Box
+    signature2: Box | None = None          # 2.0.0 (#167): the second signature line (two-line styles)
 
 
 class AmountWords(_M):
@@ -160,6 +165,45 @@ class FeedMode(_M):
     note: str | None = Field(default=None, max_length=200)           # printer note, e.g. which driver profile
 
 
+class StubColumn(_M):
+    key: Literal["INVOICE", "INVOICE_DATE", "DESCRIPTION", "BUDGET", "NOTES", "AMOUNT"]
+    heading: str = Field(min_length=1, max_length=40)
+
+
+def default_stub_columns() -> list[StubColumn]:
+    return [StubColumn(key="INVOICE", heading="Invoice #"), StubColumn(key="INVOICE_DATE", heading="Invoice Date"),
+            StubColumn(key="DESCRIPTION", heading="Description"), StubColumn(key="AMOUNT", heading="Amount")]
+
+
+class Stub(_M):
+    """2.0.0 (#167): a detail stub of a voucher check, in page inches from the sheet's top edge. Its content flows in
+    a fixed order: title and CHECK #, payee / date / amount, the line table and total, the memo. The vendor copy never
+    shows budgets; the office copy adds the budget column and OFFICE COPY."""
+    top: float = Field(ge=0, le=11)
+    height: float = Field(ge=STUB_MIN_HEIGHT, le=11)
+    copy_kind: Literal["VENDOR", "OFFICE"] = "VENDOR"
+    title: str = Field(default="{ORG}", max_length=200)          # a pattern (patterns.STUB)
+    show_check_number: bool = True
+    font: str = "SANS"
+    size: float = Field(default=9, ge=6, le=12)
+    margin: float = Field(default=0.4, ge=0.1, le=1.5)            # left and right, inches
+    show_memo: bool = True
+
+    @field_validator("font")
+    @classmethod
+    def _font(cls, v):
+        if v not in fonts.FONTS:
+            raise ValueError("Unknown font: choose one of the built-in fonts.")
+        return v
+
+    @field_validator("title")
+    @classmethod
+    def _title(cls, v):
+        from . import patterns
+        patterns.parse(v, patterns.STUB)
+        return v
+
+
 class StyleConfig(_M):
     stock: Stock
     defaults: Defaults = Field(default_factory=Defaults)
@@ -170,13 +214,31 @@ class StyleConfig(_M):
     memo_default: str = Field(default="", max_length=200)
     signature_limit_cents: int | None = Field(default=None, ge=1, le=99_999_999_999)
     default_signer_id: int | None = None
+    # 2.0.0 (#167): two-line styles - above this amount only the first signature prints (the second line is signed
+    # by hand); above signature_limit_cents neither prints
+    second_line_limit_cents: int | None = Field(default=None, ge=1, le=99_999_999_999)
+    default_signer2_id: int | None = None
+    stubs: list[Stub] = Field(default_factory=list, max_length=MAX_STUBS)
+    stub_columns: list[StubColumn] = Field(default_factory=default_stub_columns, min_length=1, max_length=6)
     feed_modes: list[FeedMode] = Field(min_length=1, max_length=6)
 
     @model_validator(mode="after")
     def _check(self):
         cw, ch = self.stock.check_width, self.stock.check_height
         limit = ch - CLEAR_ZONE
-        for name in (*TEXT_FIELDS, "signature"):
+        two = self.stock.signature_lines == 2
+        if two and self.fields.signature2 is None:
+            raise ValueError("Second signature: place the second signature line.")
+        if not two:
+            self.fields.signature2 = None
+            if self.second_line_limit_cents is not None or self.default_signer2_id is not None:
+                raise ValueError("The second-line limit and second default signer need two signature lines.")
+        if (self.second_line_limit_cents is not None and self.signature_limit_cents is not None
+                and self.second_line_limit_cents >= self.signature_limit_cents):
+            raise ValueError("The second-line limit must be below the no-signature limit.")
+        if self.default_signer_id is not None and self.default_signer_id == self.default_signer2_id:
+            raise ValueError("The two default signers must be different people.")
+        for name in (*TEXT_FIELDS, "signature", *(("signature2",) if two else ())):
             b = getattr(self.fields, name)
             label = FIELD_LABELS[name]
             if b.x + b.w > cw + 1e-6:
@@ -186,7 +248,7 @@ class StyleConfig(_M):
                                  f"stay clear for the bank numbers.")
             for k in ("x", "y", "w", "h"):
                 setattr(b, k, _r(getattr(b, k)))
-            if name != "signature" and b.min_size > (b.size or self.defaults.size):
+            if name in TEXT_FIELDS and b.min_size > (b.size or self.defaults.size):
                 raise ValueError(f"{label}: the smallest size is larger than the font size.")
         keys = [m.key for m in self.feed_modes]
         if len(set(keys)) != len(keys):
@@ -199,11 +261,39 @@ class StyleConfig(_M):
             m.dx, m.dy = _r(m.dx), _r(m.dy)
         if not any(m.kind == "SHEET" for m in self.feed_modes):
             raise ValueError("At least one sheet feed mode is required.")
+        if two:
+            a, b = self.fields.signature, self.fields.signature2
+            if a.x < b.x + b.w and b.x < a.x + a.w and a.y < b.y + b.h and b.y < a.y + a.h:
+                raise ValueError("The two signature lines overlap.")
+        if self.stubs:
+            self._check_stubs()
+        keys = [c.key for c in self.stub_columns]
+        if len(set(keys)) != len(keys):
+            raise ValueError("Each stub column can be used once.")
         for o in self.stock.outline:
             for v, lim in ((o.x, cw), (o.x2, cw), (o.y, ch), (o.y2, ch)):
                 if v is not None and v > lim + 1e-6:
                     raise ValueError("A stock outline item lies outside the check.")
         return self
+
+    def _check_stubs(self) -> None:
+        if len(self.stock.check_tops) != 1:
+            raise ValueError("A voucher style has one check per sheet.")
+        if any(m.kind != "SHEET" for m in self.feed_modes):
+            raise ValueError("A voucher style prints whole sheets: single-check feed modes are not available.")
+        top = self.stock.check_tops[0]
+        areas = [(top, top + self.stock.check_height, "the check")]
+        for i, st in enumerate(sorted(self.stubs, key=lambda x: x.top)):
+            st.top, st.height = _r(st.top), _r(st.height)
+            end = st.top + st.height
+            if end > self.stock.paper_height + 1e-6:
+                raise ValueError(f"Stub {i + 1} runs past the bottom of the sheet.")
+            if 2 * st.margin >= self.stock.paper_width - 2:
+                raise ValueError(f"Stub {i + 1}: the margins leave no room for the content.")
+            for a0, a1, what in areas:
+                if st.top < a1 - 1e-6 and a0 < end - 1e-6:
+                    raise ValueError(f"Stub {i + 1} overlaps {what}.")
+            areas.append((st.top, end, f"stub {i + 1}"))
 
     # --------------------------------------------------------------- helpers
     def feed(self, key: str) -> FeedMode | None:

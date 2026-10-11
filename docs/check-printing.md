@@ -1,10 +1,10 @@
-# Check printing (2.0.0)
+# The Payments module: check printing, payments, letters and envelopes (2.0.0)
 
 PennyWarden can print checks on **printable check stock that already carries the bank numbers** (the MICR line and
 the check number are pre-printed). PennyWarden prints the date, the payee, the amount in numbers and in words, the
 memo and, when allowed, a signature. It never prints the check number or the bank numbers.
 
-Check printing is an optional module. An **Administrator** sets it up; **Register Users** print checks. Budget
+Check printing is part of the optional **Payments module**. An **Administrator** sets it up in **Payments Setup**; **Register Users** print checks. Budget
 Managers, Budget Users and Auditors have no access to the module (Auditors see the record copy attached to each
 printed transaction).
 
@@ -18,11 +18,11 @@ printed transaction).
 ## For Administrators: setting up
 
 ### 1. Turn the module on
-**System/About → Optional modules → Check Printing module.** *Check Printing* appears in your menu, and Register
-Users get a **Print check…** button on withdrawals in the register.
+**System/About → Optional modules → Payments module.** *Payments Setup* appears in your menu, and Register Users get
+**Payments** in their menu and a **Print check…** button on withdrawals in the register.
 
 ### 2. Create a check style
-**Check Printing → New check style from preset → Create.** A check style describes your check stock:
+**Payments Setup → New check style from preset → Create.** A check style describes your check stock:
 
 - **the sheet**: how many checks are on a Letter sheet and how you use it — print the top check and tear it off, or
   print each position in turn;
@@ -95,6 +95,13 @@ Every print that uses it is recorded in the audit log. Backups include the signa
 **No signature above this amount** (optional): above it the signature does not print and the check is signed by hand.
 The user is told before printing.
 
+**Two signature lines** (for checks that need two signers): under **Memo and signature** choose **Two signature
+lines**. The second line appears under **Field positions** (it starts above the first; move both to match your
+stock). On the print screen the user picks a **first** and a **second signature**; the same person can't sign both,
+and the second line can be left blank to sign by hand. Optional **Only one signature above this amount**: above it
+only the first signature prints and the second line is signed by hand. It must be below the no-signature amount
+(above that, neither prints). You can also choose a second default signer.
+
 ### 8. Feed modes
 - **Sheet** — the check at the top (or middle, bottom) of a Letter sheet. A sheet with the top check torn off prints
   the same way.
@@ -111,6 +118,22 @@ print (for example which printer profile to choose).
 **Test print** prints the sample check (marked TEST – NOT A CHECK) in the chosen feed mode; **Calibration page**
 prints rulers and where each field starts. Both use your unsaved changes and include a 5-inch line to check the print
 scale.
+
+### 10. Voucher checks (check with stubs)
+The preset **Voucher – check on top, two stubs** is for one check per Letter sheet with two detail stubs below it
+(perforated at 3.5 and 7 inches — the common layout of laser voucher checks). Under **Stubs (voucher check)**:
+
+- each stub's **top** and **height** (inches from the top of the sheet), **vendor copy** or **office copy**, a
+  **title** (a pattern, `{ORG}` by default), whether it prints **CHECK #** and the **memo**, its font, size and
+  margin;
+- the **line table** — choose, order and rename the columns (invoice number, invoice date, description, budget,
+  notes, amount); the total prints under it.
+
+The **vendor copy never shows budgets**; the **office copy** adds the budget column and *OFFICE COPY*. The stubs print
+the **check number from the register** (the confirmed number — after a spoiled check, the reprint shows the new one);
+the check itself never gets a printed number. When a payment has more lines than fit, the stub shows as many as fit
+and *…and N more, see enclosed letter*, and the user confirms before printing (print the cover letter, which lists
+every line). The stubs are on the test print and the calibration page; the preview on the screen shows the check only.
 
 ## For Register Users: printing a check
 
@@ -136,7 +159,8 @@ scale.
      spoiled check (write VOID on it).
 
 A **record copy** of the check is attached to the transaction: the check as printed, with *SIGNATURE ON FILE:
-name* in place of the signature and *COPY – NOT NEGOTIABLE* across it. The transaction shows **Check printed**.
+name* in place of each signature and *COPY – NOT NEGOTIABLE* across it (for a voucher check, the whole sheet with its
+stubs). The transaction shows **Check printed**.
 
 ### Your printer settings
 If the printing is shifted on your printer, run the **Printer setup assistant** from the print screen:
@@ -170,7 +194,7 @@ are shown but locked — to change them, edit the transaction in the register �
 ## Cover letters and envelopes
 
 ### Setting them up (Administrators)
-Under **Cover letters and envelopes** in Check Printing, **New cover letter** and **New #10 envelope** create a
+Under **Cover letters and envelopes** in Payments Setup, **New cover letter** and **New #10 envelope** create a
 template and open its editor. The first template of each kind becomes the **default**; **Make default** and
 **Deactivate** change that. **Test print (sample data)** shows the template with a sample payee and invoices.
 

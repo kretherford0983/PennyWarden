@@ -1,4 +1,4 @@
-"""2.0.0 build 1 (#156-#162): Check Printing module - switch and access, check styles, amounts, patterns, PDF
+"""2.0.0 build 1 (#156-#162): Payments module - switch and access, check styles, amounts, patterns, PDF
 positions, signers, printing, reprint, spoiled checks, record copies and personal printer settings."""
 from __future__ import annotations
 

@@ -61,12 +61,39 @@ STANDARD_3UP = {
     ],
 }
 
+# 2.0.0 (#167): voucher check, check on top - one 3.5" check per Letter sheet, then two detail stubs, perforated at
+# 3.5" and 7" (the common layout of laser voucher checks from the major check suppliers). The check face uses the
+# same field positions as the 3-up preset; the Administrator fine-tunes them with the calibration page.
+VOUCHER_TOP = copy.deepcopy(STANDARD_3UP)
+VOUCHER_TOP["stock"].update({
+    "check_tops": [0.0], "sheet_usage": "TEAR_TOP",
+    "stock_note": "Voucher check, check on top: check 0-3.5 in, stubs 3.5-7 in and 7-11 in (published layout).",
+})
+VOUCHER_TOP["feed_modes"] = [
+    {"key": "voucher", "label": "Voucher sheet", "kind": "SHEET", "position": 0,
+     "note": "One voucher sheet per check, check at the top."},
+]
+VOUCHER_TOP["stubs"] = [
+    {"top": 3.5, "height": 3.5, "copy_kind": "VENDOR", "title": "{ORG}", "show_check_number": True},
+    {"top": 7.0, "height": 4.0, "copy_kind": "OFFICE", "title": "{ORG}", "show_check_number": True},
+]
+
+# Two signature lines (any style can switch them on; the voucher preset keeps one): the second line sits above the
+# first, the same width.
+SIGNATURE2_DEFAULT = {"x": 5.605, "y": 1.95, "w": 2.25, "h": 0.42}
+
 PRESETS = {
     "STANDARD_3UP": {
         "name": "3 per page - standard laser (top check first)",
         "description": "Letter sheet with three 3.5-inch checks. Print the top check and tear it off; the last check "
                        "is fed through the manual feed like an envelope.",
         "config": STANDARD_3UP,
+    },
+    "VOUCHER_TOP": {
+        "name": "Voucher - check on top, two stubs",
+        "description": "Letter sheet with one 3.5-inch check at the top and two detail stubs below (vendor copy and "
+                       "office copy) listing the invoices paid.",
+        "config": VOUCHER_TOP,
     },
 }
 

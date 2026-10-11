@@ -8,6 +8,7 @@ export type FontInfo = { key: string; label: string; descent: number; descent_bo
 export type Variable = { name: string; description: string };
 export const FIELD_LABELS: Record<string, string> = {
   date: "Date", payee: "Pay to", amount_number: "Amount (number)", amount_words: "Amount (words)", memo: "Memo", signature: "Signature",
+  signature2: "Second signature",
 };
 export const TEXT_FIELDS = ["date", "payee", "amount_number", "amount_words", "memo"];
 const CLEAR_ZONE = 0.625;
@@ -43,9 +44,9 @@ export type FieldText = { text: string; size: number; fits: boolean; shrunk?: bo
 
 /** The check drawn to scale (inches): the stock outline (pre-printed lines, labels), the clear zone, field boxes and the
  * text as it will print. `highlight` outlines one field. */
-export function CheckPreview({ cfg, fonts, texts, highlight, showBoxes = true, signature }: {
+export function CheckPreview({ cfg, fonts, texts, highlight, showBoxes = true, signature, signature2 }: {
   cfg: any; fonts: FontInfo[]; texts: Record<string, FieldText> | null; highlight?: string | null; showBoxes?: boolean;
-  signature?: string | null;
+  signature?: string | null; signature2?: string | null;
 }) {
   const cw = cfg.stock.check_width, ch = cfg.stock.check_height;
   const fi = (k: string) => fonts.find((f) => f.key === k) || fonts[0];
@@ -97,7 +98,9 @@ export function CheckPreview({ cfg, fonts, texts, highlight, showBoxes = true, s
       </g>
     );
   };
-  const sig = cfg.fields.signature;
+  const sigs: [any, string][] = [[cfg.fields.signature, signature ?? (cfg.stock.signature_lines === 2 ? "SIGNATURE 1" : "SIGNATURE")]];
+  if (cfg.stock.signature_lines === 2 && cfg.fields.signature2) sigs.push([cfg.fields.signature2, signature2 ?? "SIGNATURE 2"]);
+  const boxes = [...TEXT_FIELDS, "signature", ...(cfg.stock.signature_lines === 2 && cfg.fields.signature2 ? ["signature2"] : [])];
   return (
     <svg className="check-preview" viewBox={`-0.05 -0.05 ${cw + 0.1} ${ch + 0.1}`} role="img" aria-label="Check preview drawn to scale"
          style={{ width: "100%", maxWidth: 900, display: "block", background: "var(--surface-2, #f7f5ee)" }}>
@@ -111,7 +114,7 @@ export function CheckPreview({ cfg, fonts, texts, highlight, showBoxes = true, s
       ) : (
         <text key={i} x={o.x} y={o.y} fontSize={(o.size || 8) / 72} fontFamily="PW-SANS" opacity={0.45}>{o.text}</text>
       ))}
-      {showBoxes ? [...TEXT_FIELDS, "signature"].map((n) => {
+      {showBoxes ? boxes.map((n) => {
         const f = cfg.fields[n];
         const bad = texts?.[n] && !texts[n].fits;
         return <rect key={n} x={f.x} y={f.y} width={f.w} height={f.h} fill={n === highlight ? "rgba(60,120,220,0.12)" : "none"}
@@ -120,9 +123,11 @@ export function CheckPreview({ cfg, fonts, texts, highlight, showBoxes = true, s
       }) : null}
       {TEXT_FIELDS.map(textEl)}
       {words()}
-      <text x={sig.x + sig.w / 2} y={sig.y + sig.h / 2 + 0.04} textAnchor="middle" fontSize={0.1} fontFamily="PW-SANS" fontWeight={700} opacity={0.7}>
-        {signature ?? "SIGNATURE"}
-      </text>
+      {sigs.map(([b, label], i) => (
+        <text key={i} x={b.x + b.w / 2} y={b.y + b.h / 2 + 0.04} textAnchor="middle" fontSize={0.1} fontFamily="PW-SANS" fontWeight={700} opacity={0.7}>
+          {label}
+        </text>
+      ))}
     </svg>
   );
 }
