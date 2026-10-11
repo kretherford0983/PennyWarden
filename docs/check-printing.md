@@ -194,8 +194,8 @@ are shown but locked â€” to change them, edit the transaction in the register â€
 ## Cover letters and envelopes
 
 ### Setting them up (Administrators)
-Under **Cover letters and envelopes** in Payments Setup, **New cover letter** and **New #10 envelope** create a
-template and open its editor. The first template of each kind becomes the **default**; **Make default** and
+Payments Setup has a **Cover letters** and an **Envelopes** section. **New cover letter** and **New #10 envelope**
+create a template and open its editor on a page of its own. The first template of each kind becomes the **default**; **Make default** and
 **Deactivate** change that. **Test print (sample data)** shows the template with a sample payee and invoices.
 
 A **cover letter** has:

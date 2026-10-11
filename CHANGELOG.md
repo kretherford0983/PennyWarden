@@ -86,6 +86,10 @@ several test builds; the notes below grow with each one.
 - **Two signature lines.** Any check style can have two; the user picks two different signers (or leaves the second
   for a hand signature). Optional amount above which only the first signature prints, below the no-signature amount.
   The record copy shows *SIGNATURE ON FILE* for each line.
+- **Payments module.** The optional module is now called the *Payments module*; the Administrator's setup is
+  *Payments Setup*.
+- Fix: a cover letter or envelope template opens on a page of its own (the check styles and signers were shown above
+  it); Payments Setup lists cover letters and envelopes in separate sections.
 
 ## 1.10.0 — 2026-10-09
 Database migration `0024` (one table added; no existing data changes). Rolling back to 1.9.0 needs the data snapshot

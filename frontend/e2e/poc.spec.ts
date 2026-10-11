@@ -2194,6 +2194,9 @@ test("#165-#166: Administrator sets up a cover letter and an envelope; a Registe
   await page.getByRole("link", { name: "Payments Setup" }).click();
   await page.getByRole("button", { name: "New cover letter" }).click();
   await expect(page.getByRole("heading", { name: "Cover letter: Invoice payment letter" })).toBeVisible();
+  // the editor has the page to itself: no check styles or signers above it
+  await expect(page.getByRole("heading", { name: "Check styles" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Signers and signatures" })).toHaveCount(0);
   await page.getByRole("button", { name: "+ Add line" }).click();
   await page.getByLabel("Letterhead line 2", { exact: true }).fill("100 Example Street, Sampletown");
   await page.getByLabel("Name when there is no signer").fill("Pat Example");
@@ -2206,12 +2209,14 @@ test("#165-#166: Administrator sets up a cover letter and an envelope; a Registe
   await page.getByRole("button", { name: "Back to Payments Setup" }).click();
   await page.getByRole("button", { name: "New #10 envelope" }).click();
   await expect(page.getByRole("heading", { name: "Envelope: #10 envelope" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Cover letters" })).toHaveCount(0);
   // the return address starts as the default letter's letterhead
   await expect(page.getByLabel("Return address line 2", { exact: true })).toHaveValue("100 Example Street, Sampletown");
   await page.getByRole("button", { name: "Back to Payments Setup" }).click();
-  const docs = page.locator("section", { has: page.getByRole("heading", { name: "Cover letters and envelopes" }) });
-  await expect(docs.getByRole("row", { name: /Invoice payment letter/ })).toContainText("Default");
-  await expect(docs.getByRole("row", { name: /#10 envelope/ })).toContainText("Default");
+  const letters = page.getByRole("region", { name: "Cover letters" });
+  const envelopes = page.getByRole("region", { name: "Envelopes" });
+  await expect(letters.getByRole("row", { name: /Invoice payment letter/ })).toContainText("Default");
+  await expect(envelopes.getByRole("row", { name: /#10 envelope/ })).toContainText("Default");
   await page.screenshot({ path: "e2e-screenshots/light-check-letters.png", fullPage: true });
   await logout(page);
 
