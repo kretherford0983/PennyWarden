@@ -47,3 +47,8 @@ then choose two different signers when printing; above an optional amount only t
 - The **cover letter** and **envelope** editors show a live **preview** with sample data as you type, and their
   sections can be collapsed. The **check style** preview draws a voucher check's **stubs** under the check.
 - **My account** and **System/About** show when your version was built in **local time** (hover for UTC).
+
+## Letter logo, window envelopes and administration (test build 6)
+- A **cover letter** can carry your **logo** (top left or centered), be printed on **pre-printed letterhead paper**
+  (the top of the page stays blank), and carry the addresses for a **#10 double-window envelope** — at the top of the
+  letter or on a separate address page. Details: [Check printing](check-printing.md#cover-letters-and-envelopes).

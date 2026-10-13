@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 
 from .. import audit
 from ..deps import Ctx, auth_ctx, get_db, require
-from ..errors import AppError, forbidden, validation
+from ..errors import AppError, forbidden, not_found, validation
 from ..models import BankAccount
 from ..services.checkprint import config as cfgmod
 from ..services.checkprint import documents, fonts, patterns, presets, render
@@ -537,11 +537,42 @@ def document_flags(doc_id: int, body: DocFlagsIn, db: Session = Depends(get_db),
     return svc.doc_out(d)
 
 
+@router.post("/documents/{doc_id}/logo")
+async def document_logo(doc_id: int, file: UploadFile = File(...), db: Session = Depends(get_db),
+                        ctx: Ctx = Depends(setup_ctx)):
+    """#176: upload a cover letter's logo (PNG or JPEG, at most 1 MB; re-encoded as PNG)."""
+    d = svc.get_document(db, ctx, doc_id, "LETTER")
+    data = await file.read(svc.MAX_LOGO_BYTES + 1)
+    if len(data) > svc.MAX_LOGO_BYTES:
+        raise AppError(413, "FILE_TOO_LARGE", "A logo may not exceed 1 MB.")
+    svc.set_logo(db, ctx, d, data)
+    db.commit()
+    return svc.doc_out(d)
+
+
+@router.post("/documents/{doc_id}/logo/remove")
+def document_logo_remove(doc_id: int, db: Session = Depends(get_db), ctx: Ctx = Depends(setup_ctx)):
+    d = svc.set_logo(db, ctx, svc.get_document(db, ctx, doc_id, "LETTER"), None)
+    db.commit()
+    return svc.doc_out(d)
+
+
+@router.get("/documents/{doc_id}/logo")
+def document_logo_image(doc_id: int, db: Session = Depends(get_db), ctx: Ctx = Depends(setup_ctx)):
+    """The stored (re-encoded) logo, for the editor."""
+    d = svc.get_document(db, ctx, doc_id, "LETTER")
+    if not d.logo_png:
+        raise not_found("Logo")
+    return Response(d.logo_png, media_type="image/png",
+                    headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+                             "Content-Disposition": 'inline; filename="logo.png"'})
+
+
 @router.post("/documents/{doc_id}/test-print")
 def document_test(doc_id: int, body: DocTestIn, db: Session = Depends(get_db), ctx: Ctx = Depends(setup_ctx)):
     d = svc.get_document(db, ctx, doc_id)
     cfg = svc._doc_config_or_422(d.kind, body.config) if body.config is not None else svc.doc_config(d)
-    pdf = svc.sample_letter_pdf(cfg) if d.kind == "LETTER" else svc.sample_envelope_pdf(cfg)
+    pdf = svc.sample_letter_pdf(cfg, d.logo_png) if d.kind == "LETTER" else svc.sample_envelope_pdf(cfg)
     audit.record(db, ctx, "CHECK_DOCUMENT_TEST_PRINT", "check_document", d.id, None,
                  {"unsaved_settings": body.config is not None})
     db.commit()
@@ -554,7 +585,7 @@ def document_preview(doc_id: int, body: DocTestIn, db: Session = Depends(get_db)
     is printed or stored, so it is not audited (the test print is)."""
     d = svc.get_document(db, ctx, doc_id)
     cfg = svc._doc_config_or_422(d.kind, body.config) if body.config is not None else svc.doc_config(d)
-    pdf = svc.sample_letter_pdf(cfg) if d.kind == "LETTER" else svc.sample_envelope_pdf(cfg, preview=True)
+    pdf = svc.sample_letter_pdf(cfg, d.logo_png) if d.kind == "LETTER" else svc.sample_envelope_pdf(cfg, preview=True)
     return _pdf(pdf, f"{d.kind.lower()}-preview.pdf")
 
 

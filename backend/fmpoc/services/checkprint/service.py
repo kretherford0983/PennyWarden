@@ -1001,6 +1001,9 @@ def doc_out(d: CheckDocument, full: bool = True) -> dict:
     out = {"id": d.id, "kind": d.kind, "name": d.name, "active": d.active, "is_default": d.is_default}
     if full:
         out["config"] = doc_config(d).model_dump()
+        if d.kind == "LETTER":
+            out["logo"] = ({"width": d.logo_width, "height": d.logo_height, "version": (d.logo_sha256 or "")[:12]}
+                           if d.logo_png else None)
     else:
         cfg = doc_config(d)
         out["include_by_default"] = getattr(cfg, "include_by_default", None)
@@ -1037,6 +1040,62 @@ def _doc_config_or_422(kind: str, data: dict):
 def _doc_snapshot(d: CheckDocument) -> dict:
     return {"kind": d.kind, "name": d.name, "active": d.active, "is_default": d.is_default,
             "config": json.loads(d.config_json)}
+
+
+# ------------------------------------------------------------------ letter logo (#176)
+MAX_LOGO_BYTES = 1024 * 1024
+LOGO_MAX_PIXELS = (1500, 600)      # re-encoded no larger than this (2.5" x 1" at 600 dpi)
+
+
+def normalize_logo(data: bytes) -> tuple[bytes, int, int]:
+    """Validates an uploaded logo server-side (PNG or JPEG by content, not by name or browser type; at most 1 MB) and
+    re-encodes it as PNG without metadata, scaled down to at most 1500 x 600 pixels (BR-073, BR-074, BR-101)."""
+    if not data:
+        raise validation("The file is empty.", "file")
+    if len(data) > MAX_LOGO_BYTES:
+        raise AppError(413, "FILE_TOO_LARGE", "A logo may not exceed 1 MB.")
+    if not (data.startswith(b"\x89PNG\r\n\x1a\n") or data.startswith(b"\xff\xd8\xff")):
+        raise AppError(415, "UNSUPPORTED_TYPE", "The logo must be a PNG or JPEG image.")
+    try:
+        with Image.open(io.BytesIO(data)) as probe:
+            probe.verify()
+        with Image.open(io.BytesIO(data)) as im:
+            if im.format not in ("PNG", "JPEG"):
+                raise AppError(415, "UNSUPPORTED_TYPE", "The logo must be a PNG or JPEG image.")
+            w, h = im.size
+            if w < 16 or h < 16 or w > 6000 or h > 6000:
+                raise validation("The logo must be between 16 x 16 and 6000 x 6000 pixels.", "file")
+            im = im.convert("RGBA")
+            im.thumbnail(LOGO_MAX_PIXELS)
+            out = io.BytesIO()
+            im.save(out, "PNG", optimize=True)
+            w, h = im.size
+    except AppError:
+        raise
+    except (UnidentifiedImageError, OSError, SyntaxError, ValueError, Image.DecompressionBombError):
+        raise AppError(415, "UNSUPPORTED_TYPE", "The file is not a valid PNG or JPEG image.") from None
+    return out.getvalue(), w, h
+
+
+def set_logo(db: Session, ctx, d: CheckDocument, data: bytes | None) -> CheckDocument:
+    """Sets (data) or removes (None) a cover letter's logo. Audited with the image's fingerprint, never the image."""
+    if d.kind != "LETTER":
+        raise validation("Only cover letters have a logo.", "file")
+    before = {"logo_sha256": d.logo_sha256}
+    if data is None:
+        if not d.logo_png:
+            return d
+        d.logo_png = d.logo_sha256 = d.logo_width = d.logo_height = None
+        action = "CHECK_DOCUMENT_LOGO_REMOVED"
+    else:
+        png, w, h = normalize_logo(data)
+        d.logo_png, d.logo_sha256, d.logo_width, d.logo_height = png, hashlib.sha256(png).hexdigest(), w, h
+        action = "CHECK_DOCUMENT_LOGO_SET"
+    d.updated_by_user_id, d.updated_at = ctx.user.id, utcnow()
+    db.flush()
+    audit.record(db, ctx, action, "check_document", d.id, before,
+                 {"logo_sha256": d.logo_sha256, "width": d.logo_width, "height": d.logo_height})
+    return d
 
 
 def create_document(db: Session, ctx, kind: str, name: str | None) -> CheckDocument:
@@ -1164,7 +1223,7 @@ def print_letter(db: Session, ctx, settings, t: RegisterTransaction, d: CheckDoc
         warnings.append(Warning_("NO_PAYEE_ADDRESS", "The payee has no address in the register. Print the letter "
                                  "without it?"))
     require_confirmations(warnings, confirmations)
-    pdf = documents.letter_pdf(cfg, data)
+    pdf = documents.letter_pdf(cfg, data, logo=d.logo_png)
     added, path = _store_doc_copy(db, ctx, settings, t, LETTER_COPY,
                                   f"letter-{t.check_number or t.id}.pdf", pdf)
     audit.record(db, ctx, "CHECK_LETTER_PRINTED", "register_transaction", t.id, None,
@@ -1276,14 +1335,14 @@ def handwritten_check(db: Session, ctx, t: RegisterTransaction, number: str) -> 
                  {"check_number": t.check_number})
 
 
-def sample_letter_pdf(cfg) -> bytes:
+def sample_letter_pdf(cfg, logo: bytes | None = None) -> bytes:
     values = {**SAMPLE_VALUES["NORMAL"], "PAYEE": documents.SAMPLE_PAYEE[0],
               "TODAY": format_date(dt.date.today(), "MM/DD/YYYY"), "INVOICE_DATE": "08/29/2026 and others",
               "PAYEE_ADDRESS": "\n".join(documents.SAMPLE_PAYEE[1:]), "DATE": format_date(dt.date.today(), "MM/DD/YYYY")}
     data = documents.LetterData(values=values, rows=documents.SAMPLE_ROWS, total="$200.00",
                                 payee_lines=documents.SAMPLE_PAYEE, signer_name="SAMPLE SIGNER",
                                 signer_title="Treasurer")
-    return documents.letter_pdf(cfg, data, title="Letter test print")
+    return documents.letter_pdf(cfg, data, title="Letter test print", logo=logo, test=True)
 
 
 def sample_envelope_pdf(cfg, preview: bool = False) -> bytes:
