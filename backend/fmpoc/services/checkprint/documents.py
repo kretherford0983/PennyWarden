@@ -20,7 +20,8 @@ from xml.sax.saxutils import escape
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import inch
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.lib.utils import ImageReader
+from reportlab.platypus import Image, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from . import fonts, patterns
 from .config import FEED_OFFSET_MAX
@@ -45,6 +46,17 @@ class Column(_M):
     heading: str = Field(min_length=1, max_length=40)
 
 
+# #177: a standard #10 double-window envelope with a Letter page folded in three (address panel on top). Positions are
+# where the text starts, in inches from the page's top-left corner; the windows are drawn on the test print only.
+WINDOW_PRESET = {
+    "return": {"x": 0.55, "y": 0.55, "window": (0.45, 0.45, 3.25, 0.875)},     # upper window (left, top, w, h)
+    "payee": {"x": 0.85, "y": 2.1, "window": (0.75, 1.95, 4.0, 1.125)},        # lower window
+}
+FOLD_LINES = (11 / 3, 22 / 3)
+WINDOW_OFFSET_MAX = 0.75
+LOGO_MAX_W, LOGO_MAX_H = 2.5, 1.0        # inches (#176)
+
+
 class LetterConfig(_M):
     font: Literal["SANS", "SERIF", "CARLITO"] = "CARLITO"
     size: float = Field(default=11, ge=8, le=14)
@@ -65,6 +77,17 @@ class LetterConfig(_M):
     fallback_name: str = Field(default="", max_length=120)
     fallback_role: str = Field(default="", max_length=120)
     include_by_default: bool = True
+    # #176: logo position (the logo itself is stored with the template) and pre-printed letterhead paper
+    logo_position: Literal["LEFT", "CENTER"] = "LEFT"
+    preprinted: bool = False
+    preprinted_margin: float = Field(default=2.0, ge=1.0, le=4.0)      # inches kept blank at the top
+    # #177: #10 double-window envelope - the address on the letter itself, or on a separate address page
+    window: Literal["NONE", "LETTER", "ADDRESS_PAGE"] = "NONE"
+    window_return: bool = True                                          # return address in the upper window
+    return_dx: float = Field(default=0, ge=-WINDOW_OFFSET_MAX, le=WINDOW_OFFSET_MAX)
+    return_dy: float = Field(default=0, ge=-WINDOW_OFFSET_MAX, le=WINDOW_OFFSET_MAX)
+    payee_dx: float = Field(default=0, ge=-WINDOW_OFFSET_MAX, le=WINDOW_OFFSET_MAX)
+    payee_dy: float = Field(default=0, ge=-WINDOW_OFFSET_MAX, le=WINDOW_OFFSET_MAX)
 
     @field_validator("letterhead")
     @classmethod
@@ -181,24 +204,98 @@ def _para_text(text: str) -> str:
     return "<br/>".join(escape(line) for line in text.split("\n"))
 
 
-def letter_pdf(cfg: LetterConfig, data: LetterData, title: str = "Cover letter") -> bytes:
+def window_blocks(cfg: LetterConfig, texts: dict, payee_lines: list[str]) -> list[tuple[str, float, float, list[str]]]:
+    """#177: (which, x, y, lines) of the address blocks shown through the windows: the return address (the letterhead
+    lines) in the upper window when chosen, the payee's name and address in the lower one."""
+    out = []
+    if cfg.window_return:
+        lines = [x for x in texts["letterhead"] if x.strip()]
+        if lines:
+            p = WINDOW_PRESET["return"]
+            out.append(("return", p["x"] + cfg.return_dx, p["y"] + cfg.return_dy, lines[:4]))
+    if payee_lines:
+        p = WINDOW_PRESET["payee"]
+        out.append(("payee", p["x"] + cfg.payee_dx, p["y"] + cfg.payee_dy, list(payee_lines)[:5]))
+    return out
+
+
+def _logo_size(png: bytes) -> tuple[float, float]:
+    iw, ih = ImageReader(io.BytesIO(png)).getSize()
+    scale = min(LOGO_MAX_W * PT / iw, LOGO_MAX_H * PT / ih)
+    return iw * scale, ih * scale
+
+
+def letter_pdf(cfg: LetterConfig, data: LetterData, title: str = "Cover letter", logo: bytes | None = None,
+               test: bool = False) -> bytes:
+    """`logo` (#176): the template's PNG logo; `test` (#177): the window outlines and fold marks are drawn (test print
+    and preview only, never on a real letter)."""
     texts, _empty = letter_texts(cfg, data)
     reg, bold = fonts.ps_name(cfg.font), fonts.ps_name(cfg.font, True)
     size = cfg.size
     base = ParagraphStyle("base", fontName=reg, fontSize=size, leading=size * 1.25)
     strong = ParagraphStyle("strong", parent=base, fontName=bold)
+    centred = cfg.logo_position == "CENTER" and logo is not None
+    head = ParagraphStyle("head", parent=base, alignment=1 if centred else 0)
+    head_b = ParagraphStyle("head_b", parent=strong, alignment=1 if centred else 0)
+    windowed = cfg.window != "NONE"
+    blocks = window_blocks(cfg, texts, data.payee_lines) if windowed else []
+
+    def first_page(c, _doc):
+        if not windowed and not test:
+            return
+        c.saveState()
+        if blocks:
+            for which, x, y, lines in blocks:
+                yy = (11 - y) * PT - size
+                for i, line in enumerate(lines):
+                    c.setFont(bold if (which == "return" and i == 0) else reg, size)
+                    c.drawString(x * PT, yy, line)
+                    yy -= size * 1.2
+        if windowed and logo is not None and cfg.window == "LETTER" and not cfg.preprinted:
+            w, h = _logo_size(logo)                              # top right, clear of the windows
+            c.drawImage(ImageReader(io.BytesIO(logo)), (8.5 - 0.5) * PT - w, (11 - 0.5) * PT - h, w, h, mask="auto")
+        if test and windowed:
+            c.setStrokeGray(0.45)
+            c.setLineWidth(0.6)
+            c.setDash(3, 2)
+            for key in ("return", "payee"):
+                if key == "return" and not cfg.window_return:
+                    continue
+                left, top, w, h = WINDOW_PRESET[key]["window"]
+                c.rect(left * PT, (11 - top - h) * PT, w * PT, h * PT, stroke=1, fill=0)
+            c.setDash()
+            c.setFont(fonts.ps_name("SANS"), 6.5)
+            for f in FOLD_LINES:
+                y = (11 - f) * PT
+                c.line(0.25 * PT, y, 0.6 * PT, y)
+                c.line(7.9 * PT, y, 8.25 * PT, y)
+                c.drawString(0.65 * PT, y - 2, "fold")
+            c.drawRightString(8.0 * PT, (11 - 3.55) * PT, "WINDOW ALIGNMENT - dashed boxes: #10 double-window envelope")
+        c.restoreState()
+
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=(8.5 * inch, 11 * inch), leftMargin=inch, rightMargin=inch,
                             topMargin=inch, bottomMargin=inch, title=title, creator="PennyWarden",
                             author="", subject="", invariant=1)
     story = []
-    for i, line in enumerate(texts["letterhead"]):
-        if line.strip():
-            story.append(Paragraph(escape(line), strong if i == 0 else base))
+    if cfg.window == "ADDRESS_PAGE":
+        story += [Spacer(1, 1), PageBreak()]           # page 1: only the addresses, for the windows
+    if cfg.window == "LETTER":
+        story.append(Spacer(1, (FOLD_LINES[0] + 0.15 - 1) * inch))   # the body starts below the address panel
+    elif cfg.preprinted:
+        story.append(Spacer(1, (cfg.preprinted_margin - 1) * inch))  # the paper's own letterhead is above
+    else:
+        if logo is not None:
+            w, h = _logo_size(logo)
+            story.append(Image(io.BytesIO(logo), width=w, height=h, hAlign="CENTER" if centred else "LEFT"))
+            story.append(Spacer(1, size * 0.6))
+        for i, line in enumerate(texts["letterhead"]):
+            if line.strip():
+                story.append(Paragraph(escape(line), head_b if i == 0 else head))
     if cfg.show_date:
         story.append(Paragraph(escape(data.values.get("TODAY", "")), base))
     story.append(Spacer(1, size * 1.4))
-    if data.payee_lines:
+    if data.payee_lines and cfg.window != "LETTER":
         story.append(Paragraph(f"<font name='{bold}'>To:</font><br/>{'<br/>'.join(escape(x) for x in data.payee_lines)}",
                                base))
         story.append(Spacer(1, size))
@@ -238,7 +335,7 @@ def letter_pdf(cfg: LetterConfig, data: LetterData, title: str = "Cover letter")
         lines.append(escape(texts["signer_role"]))
     if lines:
         story.append(Paragraph("<br/>".join(lines), base))
-    doc.build(story)
+    doc.build(story, onFirstPage=first_page)
     return buf.getvalue()
 
 

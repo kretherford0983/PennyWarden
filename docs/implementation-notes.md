@@ -179,6 +179,20 @@ and follows the return-address setting. The preview iframe reloads 600 ms after 
 runs and lines in page inches, so `CheckPreview` draws the stubs exactly as `_draw_stub` prints them (offset from the
 check by the sheet's first check top and the centring).
 
+**2.0.0 test build 6 — letters (#176, #177).** Migration `0028`: `check_document.logo_png` (re-encoded PNG bytes; not
+encrypted - a logo isn't secret), `logo_sha256`, `logo_width`, `logo_height`. `service.normalize_logo` accepts PNG or
+JPEG by magic bytes and Pillow (`verify()`, then decode; 16-6000 px; decompression bombs refused), converts to RGBA and
+scales down to 1500 x 600 px; `set_logo` audits `CHECK_DOCUMENT_LOGO_SET` / `_REMOVED` with the fingerprint and size
+only. Routes: `POST /documents/{id}/logo` (multipart, 1 MB read limit), `POST /documents/{id}/logo/remove`,
+`GET /documents/{id}/logo` (setup only, `no-store`). `LetterConfig` adds `logo_position` (LEFT|CENTER),
+`preprinted` + `preprinted_margin` (1-4 in), `window` (NONE|LETTER|ADDRESS_PAGE), `window_return` and
+`return_dx/dy`, `payee_dx/dy` (±0.75 in) over `documents.WINDOW_PRESET` (text start and window box per window, page
+inches) with `FOLD_LINES` at 11/3 and 22/3 in. `letter_pdf(cfg, data, logo=, test=)`: the window addresses (return
+address = the letterhead lines, first in bold, up to 4; payee up to 5 lines) are drawn on the first page by an
+`onFirstPage` callback; in LETTER mode the flow starts with a spacer to just below the first fold, has no "To:" block
+and the logo moves to the top right; ADDRESS_PAGE starts with an empty first page (`Spacer` + `PageBreak`). Dashed
+window boxes and fold marks only with `test=True` (test print and live preview).
+
 **1.10.0 Update notification (issue #58; channel decided 2026-10-09).** Migration `0024`: `update_check` (one row).
 `services/updates.py`: `channel(settings)` - setting `update_channel` (`auto` → from `build_info.json`: `main` →
 stable, `test` → test, anything else / no build info → none); `check(app, force)` - due after 24 h (6 h after an error),
