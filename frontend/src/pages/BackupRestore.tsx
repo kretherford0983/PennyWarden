@@ -7,7 +7,7 @@ import ScheduledBackups from "./ScheduledBackups";
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const mb = (n: number) => (n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1024 / 1024).toFixed(n < 10 * 1024 * 1024 ? 1 : 0)} MB`);
 
-async function poll(url: string, onUpdate: (j: any) => void): Promise<any> {
+export async function poll(url: string, onUpdate: (j: any) => void): Promise<any> {
   for (;;) {
     let j: any;
     try {
@@ -22,7 +22,7 @@ async function poll(url: string, onUpdate: (j: any) => void): Promise<any> {
   }
 }
 
-function Steps({ job }: { job: any }) {
+export function Steps({ job }: { job: any }) {
   if (!job) return null;
   return (
     <ol className="job-steps" aria-label="Progress">

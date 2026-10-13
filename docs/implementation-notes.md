@@ -235,6 +235,13 @@ writes the report before `swap_in` and adds `report` to `SYSTEM_RESTORED` and `r
 Routes: `GET /api/system/server-backups`, `POST /api/system/server-backups/{id}/remove-recovery` (Administrator),
 `GET /api/system/restore-reports` (summary for Administrators, `can_download` for `financial.view`),
 `GET /api/system/restore-reports/{name}` (`financial.view`).
+#125: `services/reinitialize.py` (`WIPE` list children first, scoped deletes through the parents' ids; system entity
+kept; organization reminders deleted, personal ones kept with their links cleared; `app_user.last_payment_account_id`
+cleared; migration `0032` adds `workspace.reinitialized_at/_by`, `reinitialize_backup`, `reinitialize_ack_at/_by`).
+Web: `GET/POST /api/system/reinitialize` (job `reinitialize`, polled at `/api/system/reinitialize/jobs/{id}`, open during
+the pause), `GET /api/system/reinitialized` (banner), `POST /api/system/reinitialized/acknowledge`. CLI:
+`pennywarden reinitialize` in `cli_restore.py`. `test_ac_sec_023` allows `subprocess` only in `cli_restore.py` (fixed
+argument lists to `systemctl` / `sc.exe`, BR-102).
 
 **1.10.0 Update notification (issue #58; channel decided 2026-10-09).** Migration `0024`: `update_check` (one row).
 `services/updates.py`: `channel(settings)` - setting `update_channel` (`auto` → from `build_info.json`: `main` →

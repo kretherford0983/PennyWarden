@@ -156,3 +156,27 @@ running the wizard). The new server keeps its own `config.toml`.
 The files can also be copied by hand while the service is stopped: `database/`, `attachments/` and `secrets/` from
 the data directory (`/var/lib/pennywarden` on a Linux server). The installer's automatic snapshots before each upgrade
 (`/var/backups/pennywarden/<timestamp>/`) are such copies.
+
+## Reinitialize (keeping the users, since 2.0.0)
+
+System/About → **Advanced** → **Reinitialize** removes all financial data and keeps the users — for example after
+testing. It removes Fiscal Years, budgets, entities (not the system entity *Multiple*), bank accounts, the register,
+attachments (records and files), fundraisers, the Payments module's data and organization reminders. It keeps users,
+roles, passwords, two-step verification, security questions, the organization name, the encryption key, module
+switches, personal preferences and reminders, backup settings and the **audit log** (with a `REINITIALIZE` event).
+Entity numbers continue from the last one, so a new entity never reuses a number from an older backup or report.
+
+1. Type `reinitialize`, your password and, if two-step verification is on, a code. Optionally choose your own
+   passphrase for the safety backup (then it can also be restored from the web page); otherwise a random one is
+   used, which only the server's owner can use.
+2. The application pauses, makes the **safety backup** and checks it. If that fails, nothing is removed.
+3. The backup goes to `pre-reinitialize/` in the data folder — never downloadable or removable from the web, and every
+   one is kept. It is always recoverable by the server: the page shows the file and the command to undo it:
+   `pennywarden restore <data folder>/pre-reinitialize/<file>.fmbak --use-server-key`.
+4. The removal happens in one database transaction (all or nothing); the attachment files are removed after it.
+   Everyone else is signed out. Everyone who signs in sees a notice (who, when) until an Administrator acknowledges it.
+
+From the web it can be done once in 24 hours. On the server, `pennywarden reinitialize [--data-dir DIR]
+[--passphrase-file PATH] [--stop-service] [--yes]` does the same with no time limit (a limit would only push people to
+delete the data folder, which leaves no backup); it asks for the word `reinitialize` unless `--yes` is given, handles
+the service like `pennywarden restore`, and is audited via `host_cli`.

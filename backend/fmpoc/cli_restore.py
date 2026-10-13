@@ -351,3 +351,105 @@ def main(argv: list[str]) -> int:
     except KeyboardInterrupt:
         print("Stopped. Nothing was changed unless the output said otherwise.", file=sys.stderr)
         return 130
+
+
+# ------------------------------------------------------------------ 2.0.0 (#125) pennywarden reinitialize
+def reinitialize(args) -> int:
+    """Offline reinitialize with the same safety backup as the web; no cooldown (a limit would only push owners to
+    delete the data folder, which leaves no backup)."""
+    from sqlalchemy import update
+
+    from .config import load_settings
+    from .db import make_engine, make_session_factory, upgrade_database
+    from .models import AuthSession, TrustedDevice, utcnow
+    from .services import bootstrap
+    from .services import reinitialize as reinit
+
+    settings = load_settings({"data_dir": args.data_dir})
+    if needs_elevation(settings.data_dir):
+        raise CliError("This needs administrator rights: run it again with sudo (Linux) or from a terminal opened "
+                       "as Administrator (Windows). Nothing was changed.", 3)
+    if not settings.database_path.is_file():
+        raise CliError("No PennyWarden data was found in that folder.", 2)
+    if not args.yes:
+        if not sys.stdin.isatty():
+            raise CliError("Confirm with --yes or run it in a terminal.", 2)
+        say("This removes ALL financial data (Fiscal Years, budgets, entities, bank accounts, the register, "
+            "attachments, fundraisers, Payments data) and keeps the users. A safety backup is made first.")
+        if input(f'Type "{reinit.CONFIRM_WORD}" to continue: ').strip() != reinit.CONFIRM_WORD:
+            raise CliError("Not confirmed. Nothing was changed.", 4)
+    own = bool(args.passphrase_file or os.environ.get(PASSPHRASE_ENV))
+    if own:
+        args.use_server_key = False
+        passphrase = read_passphrase(args, settings, Path(os.devnull))
+        if len(passphrase) < 12:
+            raise CliError("The backup passphrase must be at least 12 characters.", 2)
+    else:
+        passphrase = reinit.new_passphrase()
+    stopped = False
+    if in_container():
+        say("Running in a container: stop the PennyWarden container first and run this in a one-off container on the "
+            "same data volume (docs/backup-restore.md).")
+    elif service_running():
+        if not (args.stop_service or ask("The PennyWarden service is running. Stop it now? All signed-in users will "
+                                         "be signed out.", args.yes)):
+            raise CliError(f"Nothing was changed. {stop_instructions()}", 4)
+        say("Stopping the service ...")
+        stop_service()
+        stopped = True
+    elif app_answering(settings):
+        raise CliError("PennyWarden is running on this data folder. Quit it first. Nothing was changed.", 4)
+    upgrade_database(settings.database_url)
+    say("Creating and checking the safety backup ...")
+    try:
+        safety = reinit.safety_backup(settings, passphrase, f"host:{os_user()}")
+    except reinit.ReinitError as e:
+        raise CliError(str(e), 6) from None
+    say("Removing the financial data ...")
+    engine = make_engine(settings.database_url)
+    try:
+        with make_session_factory(engine)() as s:
+            ws = bootstrap.current_workspace(s)
+            if ws is None:
+                raise CliError("The data folder has no initialized organization.", 2)
+            from types import SimpleNamespace
+            ctx = SimpleNamespace(workspace_id=ws.id, correlation_id="host-cli", ip=None, user=None)
+            try:
+                before = reinit.counts(s, ws.id)
+                reinit.wipe(s, ws.id, ctx, f"host:{os_user()}", safety["filename"], "host_cli", before)
+                now = utcnow()
+                s.execute(update(AuthSession).where(AuthSession.revoked_at.is_(None)).values(revoked_at=now))
+                s.execute(update(TrustedDevice).where(TrustedDevice.revoked_at.is_(None)).values(revoked_at=now))
+                s.commit()
+            except Exception:
+                s.rollback()
+                raise CliError("The removal failed and was rolled back; the data is unchanged.", 6) from None
+    finally:
+        engine.dispose()
+    reinit.remove_attachment_files(settings)
+    match_ownership(settings.data_dir, ["database", "attachments", reinit.PRE_DIR, "backup-recovery", "server-key"])
+    say("Reinitialized. The users are kept; everyone must sign in again.")
+    say(f"Safety backup: {safety['path']}")
+    say(f"To undo: stop the service and run  pennywarden restore \"{safety['path']}\" --use-server-key"
+        + (f" --data-dir \"{settings.data_dir}\"" if args.data_dir else ""))
+    if stopped:
+        if ask("Start the PennyWarden service again?", args.yes):
+            say("Service started." if start_service() else "The service could not be started: start it yourself.")
+    return 0
+
+
+def reinit_main(argv: list[str]) -> int:
+    p = argparse.ArgumentParser(prog="pennywarden reinitialize",
+                                description="Remove all financial data, keep the users (a safety backup is made first)")
+    p.add_argument("--data-dir")
+    p.add_argument("--passphrase-file", help=f"your own passphrase for the safety backup (or set {PASSPHRASE_ENV}); "
+                                             "otherwise a random one, recoverable by this server")
+    p.add_argument("--stop-service", action="store_true")
+    p.add_argument("--yes", action="store_true", help='skip typing "reinitialize" and answer yes to the questions')
+    a = p.parse_args(argv)
+    a.use_server_key = False
+    try:
+        return reinitialize(a)
+    except CliError as e:
+        print(str(e), file=sys.stderr)
+        return e.code
