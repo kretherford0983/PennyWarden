@@ -210,6 +210,10 @@ and `stale_message` for the banner. Frontend `pages/AdminSettings.tsx`; Auditors
 with `last_seen_at`. `services/sessions.py`: active = not revoked, not expired, idle timeout not passed, user of the
 workspace; `end_one` (not your own current session: `OWN_SESSION`), `end_user`, `end_everyone` (keeps the caller's).
 Routes `GET /api/system/sessions`, `POST /api/system/sessions/{ref}/end`, `/sessions/end-user`, `/sessions/end-all`.
+#128: `services/diagnostics.py` - `build()` returns the JSON file (`POST /api/system/diagnostics`, Administrators);
+`storage()` (database incl. WAL/SHM, attachments folder size and count, `shutil.disk_usage` of the data folder, Alembic
+current vs head) is shared with the health check; `recent_log_lines()` reads the rotated `fmpoc.log.N` files oldest
+first into a 1,000-line deque and `scrub()`s each line.
 
 **1.10.0 Update notification (issue #58; channel decided 2026-10-09).** Migration `0024`: `update_check` (one row).
 `services/updates.py`: `channel(settings)` - setting `update_channel` (`auto` → from `build_info.json`: `main` →

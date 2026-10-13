@@ -187,3 +187,38 @@ export function SessionsPanel() {
     </section>
   );
 }
+
+/** 2.0.0 (#128): a sanitized diagnostics file for troubleshooting (Administrators). */
+export function DiagnosticsPanel() {
+  const [err, setErr] = useState<unknown>(null);
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(false);
+  const download = async () => {
+    setErr(null); setBusy(true); setDone(false);
+    try {
+      const blob = await api.postBlob("/api/system/diagnostics", {});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `pennywarden-diagnostics-${new Date().toISOString().slice(0, 19).replace(/[-:T]/g, "")}.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      setDone(true);
+    } catch (x) { setErr(x); } finally { setBusy(false); }
+  };
+  return (
+    <section className="card" aria-labelledby="diag-h">
+      <h2 id="diag-h">Diagnostics</h2>
+      <p className="hint">A file to help with troubleshooting: version and build, operating system, settings, database and attachment sizes, free disk
+        space, the database version and the last 1,000 log lines. Passwords, keys, session identifiers, amounts, account numbers and email
+        addresses are left out or replaced. Nothing is sent anywhere: you decide whom to give the file to. Each download is recorded in the audit log.</p>
+      <ErrorBox error={err} />
+      <div className="actions left">
+        <button onClick={download} disabled={busy}>{busy ? "Preparing…" : "Download diagnostics"}</button>
+        {done ? <span className="hint" role="status">Downloaded.</span> : null}
+      </div>
+    </section>
+  );
+}

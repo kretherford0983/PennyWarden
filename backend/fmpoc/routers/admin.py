@@ -1,14 +1,15 @@
-"""2.0.0 administration on System/About: settings and organization name (#126), sessions (#127)."""
+"""2.0.0 administration on System/About: settings and organization name (#126), sessions (#127), diagnostics (#128)."""
 from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, Request, Response
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from ..deps import Ctx, get_db, require
 from ..services import admin_settings as adm
+from ..services import diagnostics as diag
 from ..services import sessions as sess_svc
 from .backup import _check_password
 
@@ -97,3 +98,14 @@ def session_end_all(request: Request, db: Session = Depends(get_db), ctx: Ctx = 
     n = sess_svc.end_everyone(db, request.app.state.settings, ctx)
     db.commit()
     return {"ended": n}
+
+
+# ------------------------------------------------------------------ diagnostics (#128)
+@router.post("/diagnostics")
+def diagnostics(request: Request, db: Session = Depends(get_db), ctx: Ctx = Depends(require("system.manage"))):
+    """A sanitized diagnostics file, generated on demand (Administrators only) and audited."""
+    body, name = diag.build(db, request.app.state.settings, ctx)
+    db.commit()
+    return Response(body, media_type="application/json",
+                    headers={"Content-Disposition": f'attachment; filename="{name}"', "Cache-Control": "no-store",
+                             "X-Content-Type-Options": "nosniff"})
