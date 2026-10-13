@@ -136,3 +136,54 @@ export function BackupWarningSetting() {
     </div>
   );
 }
+
+/** 2.0.0 (#127): who is signed in (Administrators; Auditors view only) and ending sessions. */
+export function SessionsPanel() {
+  const [d, setD] = useState<any>(null);
+  const [err, setErr] = useState<unknown>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const load = () => api.get("/api/system/sessions").then(setD, setErr);
+  useEffect(() => { load(); }, []);
+  const act = async (fn: () => Promise<any>, done: (n: number) => string) => {
+    setErr(null); setMsg(null);
+    try { const r = await fn(); setMsg(done(r.ended)); await load(); } catch (x) { setErr(x); }
+  };
+  const when = (iso: string) => new Date(iso).toLocaleString();
+  return (
+    <section className="card" aria-labelledby="sessions-h">
+      <h2 id="sessions-h">Signed-in sessions</h2>
+      <p className="hint">Everyone signed in now, with when they signed in, their last activity and the address their last request came from.
+        {d?.can_end ? " Ending a session signs that person out at their next click; they can sign in again (reset the password or disable the account in Users if it may be misused)." : ""}</p>
+      <ErrorBox error={err} />
+      {msg ? <p className="hint" role="status">{msg}</p> : null}
+      {d ? (
+        <>
+          <table className="table compact">
+            <thead><tr><th>User</th><th>Signed in</th><th>Last activity</th><th>Address</th>{d.can_end ? <th /> : null}</tr></thead>
+            <tbody>
+              {d.sessions.map((s: any) => (
+                <tr key={s.ref}>
+                  <td>{s.display_name || s.username} <span className="muted">{s.username}</span>{s.current ? <span className="badge"> you, this session</span> : null}{s.signing_in ? <span className="badge grey"> signing in</span> : null}</td>
+                  <td>{when(s.signed_in_at)}</td><td>{when(s.last_activity_at)}</td><td>{s.client_ip || "—"}</td>
+                  {d.can_end ? (
+                    <td className="actions-cell">
+                      {!s.current ? <button className="small" onClick={() => act(() => api.post(`/api/system/sessions/${s.ref}/end`, {}), () => `Session of ${s.username} ended.`)}>End session</button> : null}{" "}
+                      {d.sessions.filter((x: any) => x.user_id === s.user_id && !x.current).length > 1 ?
+                        <button className="small" onClick={() => act(() => api.post("/api/system/sessions/end-user", { user_id: s.user_id }), (n) => `${n} session(s) of ${s.username} ended.`)}>End all of {s.username}</button> : null}
+                    </td>
+                  ) : null}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {d.can_end && d.sessions.some((s: any) => !s.current) ? (
+            <div className="actions left">
+              <button onClick={() => window.confirm("End every session except yours? Everyone else must sign in again.") && act(() => api.post("/api/system/sessions/end-all", {}), (n) => `${n} session(s) ended. Everyone else must sign in again.`)}>End all other sessions</button>
+              <button onClick={load}>Refresh</button>
+            </div>
+          ) : <div className="actions left"><button onClick={load}>Refresh</button></div>}
+        </>
+      ) : null}
+    </section>
+  );
+}

@@ -49,7 +49,8 @@ class LoginRateLimiter:
                 self._fails.pop(k, None)
 
 
-def create_session(db: Session, settings, user: User, mfa_pending: str | None = None) -> tuple[str, AuthSession]:
+def create_session(db: Session, settings, user: User, mfa_pending: str | None = None,
+                   ip: str | None = None) -> tuple[str, AuthSession]:
     token = secrets.token_urlsafe(32)
     now = utcnow()
     if mfa_pending in ("PASSWORD", "QUESTIONS"):   # 1.8.0 (#113): setup steps take a little longer than a code
@@ -61,6 +62,7 @@ def create_session(db: Session, settings, user: User, mfa_pending: str | None = 
     sess = AuthSession(
         token_hash=hash_token(token), user_id=user.id, csrf_token=secrets.token_urlsafe(32),
         created_at=now, last_seen_at=now, expires_at=now + life, mfa_pending=mfa_pending,
+        client_ip=(ip or None) and str(ip)[:64],
     )
     db.add(sess)
     db.flush()
@@ -121,7 +123,7 @@ def login(db: Session, settings, limiter: LoginRateLimiter, ctx, username: str, 
     pending, how = mfa_state(db, settings, user, trusted_token)
     if not pending:
         pending = recovery.gate_for(db, user)
-    token, sess = create_session(db, settings, user, pending)
+    token, sess = create_session(db, settings, user, pending, ctx.ip)
     ctx.user, ctx.workspace_id = user, user.workspace_id
     audit.record(db, ctx, "LOGIN" if not pending else "LOGIN_PASSWORD_ACCEPTED", "user", user.id, None,
                  {"session_ref": sess.id, "mfa": how if not pending else pending.lower()}, category="SECURITY")
@@ -198,7 +200,7 @@ def complete_mfa(db: Session, settings, ctx, how: str) -> tuple[str, AuthSession
     old = ctx.session
     old.revoked_at = utcnow()
     gate = recovery.gate_for(db, ctx.user)
-    token, sess = create_session(db, settings, ctx.user, gate)
+    token, sess = create_session(db, settings, ctx.user, gate, ctx.ip)
     if gate is None:
         audit.record(db, ctx, "LOGIN", "user", ctx.user.id, None, {"session_ref": sess.id, "mfa": how},
                      category="SECURITY")

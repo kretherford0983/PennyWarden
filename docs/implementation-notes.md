@@ -206,6 +206,10 @@ else `SYSTEM_RESTORED`, else the initialization) and `set_backup_warning_days()`
 `workspace.backup_warning_days` (default 7). Routes in `routers/admin.py`: `GET/PUT /api/system/settings`,
 `PUT /api/system/organization`, `GET/PUT /api/system/backup-age`; `GET /api/system/backup-schedule/alert` adds `stale`
 and `stale_message` for the banner. Frontend `pages/AdminSettings.tsx`; Auditors get System/About in the menu.
+#127: migration `0030` adds `auth_session.client_ip`, set by `create_session(..., ip)` and refreshed by `deps._load`
+with `last_seen_at`. `services/sessions.py`: active = not revoked, not expired, idle timeout not passed, user of the
+workspace; `end_one` (not your own current session: `OWN_SESSION`), `end_user`, `end_everyone` (keeps the caller's).
+Routes `GET /api/system/sessions`, `POST /api/system/sessions/{ref}/end`, `/sessions/end-user`, `/sessions/end-all`.
 
 **1.10.0 Update notification (issue #58; channel decided 2026-10-09).** Migration `0024`: `update_check` (one row).
 `services/updates.py`: `channel(settings)` - setting `update_channel` (`auto` → from `build_info.json`: `main` →

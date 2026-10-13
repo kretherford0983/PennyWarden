@@ -1,4 +1,4 @@
-"""2.0.0 administration on System/About: settings and organization name (#126)."""
+"""2.0.0 administration on System/About: settings and organization name (#126), sessions (#127)."""
 from __future__ import annotations
 
 from typing import Any
@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from ..deps import Ctx, get_db, require
 from ..services import admin_settings as adm
+from ..services import sessions as sess_svc
 from .backup import _check_password
 
 router = APIRouter(prefix="/api/system", tags=["administration"])
@@ -64,3 +65,35 @@ def backup_age_set(body: BackupWarningIn, db: Session = Depends(get_db), ctx: Ct
     adm.set_backup_warning_days(db, ctx, body.days)
     db.commit()
     return adm.backup_age(db, ctx.workspace_id)
+
+
+# ------------------------------------------------------------------ sessions (#127)
+class EndUserIn(In):
+    user_id: int
+
+
+@router.get("/sessions")
+def sessions_list(request: Request, db: Session = Depends(get_db), ctx: Ctx = Depends(require("system.view"))):
+    return {"sessions": sess_svc.active(db, request.app.state.settings, ctx), "can_end": ctx.has("system.manage")}
+
+
+@router.post("/sessions/{ref}/end")
+def session_end(ref: int, request: Request, db: Session = Depends(get_db), ctx: Ctx = Depends(require("system.manage"))):
+    sess_svc.end_one(db, request.app.state.settings, ctx, ref)
+    db.commit()
+    return {"ended": 1}
+
+
+@router.post("/sessions/end-user")
+def session_end_user(body: EndUserIn, request: Request, db: Session = Depends(get_db),
+                     ctx: Ctx = Depends(require("system.manage"))):
+    n = sess_svc.end_user(db, request.app.state.settings, ctx, body.user_id)
+    db.commit()
+    return {"ended": n}
+
+
+@router.post("/sessions/end-all")
+def session_end_all(request: Request, db: Session = Depends(get_db), ctx: Ctx = Depends(require("system.manage"))):
+    n = sess_svc.end_everyone(db, request.app.state.settings, ctx)
+    db.commit()
+    return {"ended": n}

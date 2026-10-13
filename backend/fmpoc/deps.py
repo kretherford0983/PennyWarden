@@ -82,8 +82,10 @@ def _load(request: Request, db: Session) -> Ctx:
             else:
                 user = db.get(User, sess.user_id)
                 if user and user.active:
-                    if (now - sess.last_seen_at).total_seconds() > 30:
+                    ip = (ctx.ip or "")[:64] or None
+                    if (now - sess.last_seen_at).total_seconds() > 30 or (ip and sess.client_ip != ip):
                         sess.last_seen_at = now
+                        sess.client_ip = ip or sess.client_ip   # 2.0.0 (#127): shown in the sessions list
                         db.commit()
                     ctx.user, ctx.session, ctx.workspace_id = user, sess, user.workspace_id
                     ctx.mfa_pending = sess.mfa_pending
