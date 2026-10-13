@@ -219,6 +219,13 @@ first into a 1,000-line deque and `scrub()`s each line.
 plain message. Routes `GET /api/system/health-check`, `POST /api/system/health-check/integrity`; the Administrators'
 banner endpoint (`/api/system/backup-schedule/alert`) adds `low_disk`.
 
+**2.0.0 test build 7 — maintenance mode (#130).** Migration `0031`: `workspace.maintenance_message`, `_starts_at`
+(UTC), `_set_by`, `_set_at`; on = a message is set, active once `starts_at` (if any) has passed.
+`services/maintenance.py` (`state`, `turn_on`, `turn_off`, `enforce`); global dependency `deps.enforce_maintenance`
+after `enforce_csrf`; `GET/PUT /api/system/maintenance`; `/api/system/status` adds `maintenance_mode` (sign-in page
+and the `MaintenanceBanner` for every signed-in user). The restore's existing `app.state.maintenance` is unchanged and
+covers restore (and reinitialize, #125).
+
 **1.10.0 Update notification (issue #58; channel decided 2026-10-09).** Migration `0024`: `update_check` (one row).
 `services/updates.py`: `channel(settings)` - setting `update_channel` (`auto` → from `build_info.json`: `main` →
 stable, `test` → test, anything else / no build info → none); `check(app, force)` - due after 24 h (6 h after an error),

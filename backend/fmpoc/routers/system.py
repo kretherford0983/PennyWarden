@@ -37,7 +37,9 @@ def status(request: Request, response: Response, db: Session = Depends(get_db)):
     initialized = bootstrap.is_initialized(db)
     ws = bootstrap.current_workspace(db) if initialized else None
     s = request.app.state.settings
+    from ..services.maintenance import state as maintenance_state   # 2.0.0 (#130): shown on the sign-in page too
     return {"initialized": initialized, "workspace_name": ws.name if ws else None, "version": VERSION,
+            "maintenance_mode": maintenance_state(ws),
             "maintenance": request.app.state.maintenance,
             "mode": s.mode, "insecure_transport_warning": request.app.state.insecure_transport_warning,
             **legal_payload()}

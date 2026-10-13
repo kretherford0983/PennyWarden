@@ -3,7 +3,7 @@
 Versions are `Breaking.Major.Minor` from 1.6.0 (docs/branching.md).
 
 ## 2.0.0 — unreleased
-Database migrations `0025` to `0030` (nine columns and five tables added; no existing data changes). Rolling back to 1.10.0
+Database migrations `0025` to `0031` (thirteen columns and five tables added; no existing data changes). Rolling back to 1.10.0
 needs the data snapshot the installer takes before the upgrade (docs/upgrade.md). 2.0.0 is built and tested in
 several test builds; the notes below grow with each one.
 
@@ -133,6 +133,12 @@ Database migrations `0028` to `0030` (empty columns: the letter logo, the backup
 - **Health (#129).** System/About shows the database and attachment sizes, free disk space and the database version,
   and runs an integrity check of the database (safe while people work; audited). Administrators see a warning on every
   page when less than 1 GB or 10 % of the disk is free.
+
+**Test build 7 — maintenance mode, command-line restore, reinitialize, Windows server guide (#130, #124, #125, #136)**
+- **Maintenance mode (#130).** An Administrator turns it on in System/About with a message, now or at a set time.
+  While it is on, everyone can sign in and look things up but only Administrators can change anything (enforced by
+  the server). Everyone sees the message - on the sign-in page and at the top of every page - from the moment it is
+  scheduled. It stays on through a restart; turning it on or off is audited. Database migration `0031`.
 
 ## 1.10.0 — 2026-10-09
 Database migration `0024` (one table added; no existing data changes). Rolling back to 1.9.0 needs the data snapshot

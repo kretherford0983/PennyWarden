@@ -124,6 +124,15 @@ def enforce_csrf(request: Request, db: Session = Depends(get_db)) -> None:
     raise AppError(401, "UNAUTHENTICATED", "Authentication required.")
 
 
+def enforce_maintenance(request: Request, db: Session = Depends(get_db)) -> None:
+    """2.0.0 (#130): global dependency after the CSRF check - while maintenance mode is on, only Administrators may
+    change anything (enforced on the backend for every state-changing request)."""
+    if request.method in SAFE_METHODS or not request.url.path.startswith("/api/"):
+        return
+    from .services import maintenance
+    maintenance.enforce(request, db, _load(request, db))
+
+
 def get_ctx(request: Request, db: Session = Depends(get_db)) -> Ctx:
     return _load(request, db)
 

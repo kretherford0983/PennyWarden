@@ -1,6 +1,8 @@
-"""2.0.0 administration on System/About: settings and organization name (#126), sessions (#127), diagnostics (#128), health check (#129)."""
+"""2.0.0 administration on System/About: settings and organization name (#126), sessions (#127), diagnostics
+(#128), health check (#129), maintenance mode (#130)."""
 from __future__ import annotations
 
+import datetime as dt
 from typing import Any
 
 from fastapi import APIRouter, Depends, Request, Response
@@ -10,6 +12,7 @@ from sqlalchemy.orm import Session
 from ..deps import Ctx, get_db, require
 from ..services import admin_settings as adm
 from ..services import diagnostics as diag
+from ..services import maintenance as maint
 from ..services import sessions as sess_svc
 from .backup import _check_password
 
@@ -121,5 +124,24 @@ def health_check(request: Request, db: Session = Depends(get_db), ctx: Ctx = Dep
 @router.post("/health-check/integrity")
 def health_integrity(db: Session = Depends(get_db), ctx: Ctx = Depends(require("system.manage"))):
     out = diag.integrity_check(db, ctx)
+    db.commit()
+    return out
+
+
+# ------------------------------------------------------------------ maintenance mode (#130)
+class MaintenanceIn(In):
+    on: bool
+    message: str | None = Field(default=None, max_length=2000)
+    starts_at: dt.datetime | None = None
+
+
+@router.get("/maintenance")
+def maintenance_get(db: Session = Depends(get_db), ctx: Ctx = Depends(require("system.manage"))):
+    return maint.current(db)
+
+
+@router.put("/maintenance")
+def maintenance_set(body: MaintenanceIn, db: Session = Depends(get_db), ctx: Ctx = Depends(require("system.manage"))):
+    out = maint.turn_on(db, ctx, body.message or "", body.starts_at) if body.on else maint.turn_off(db, ctx)
     db.commit()
     return out

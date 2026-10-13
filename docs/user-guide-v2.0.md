@@ -62,3 +62,8 @@ then choose two different signers when printing; above an optional amount only t
   financial data, passwords or keys.
 - **Health** on System/About: database and attachment sizes, free disk space and an integrity check; a warning
   appears for Administrators when the disk is nearly full.
+
+## Maintenance mode (test build 7)
+- An Administrator can switch on **maintenance mode** on System/About with a message for everyone, now or at a set
+  time (for example during the year-end close or before an upgrade). Everyone can still sign in and look things up;
+  only Administrators can change anything until it is turned off.
