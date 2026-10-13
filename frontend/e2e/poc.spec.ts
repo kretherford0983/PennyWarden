@@ -2197,6 +2197,11 @@ test("#165-#166: Administrator sets up a cover letter and an envelope; a Registe
   // the editor has the page to itself: no check styles or signers above it
   await expect(page.getByRole("heading", { name: "Check styles" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Signers and signatures" })).toHaveCount(0);
+  // #186: a live preview with sample data, and collapsible sections
+  await expect(page.getByTitle("Cover letter preview")).toBeVisible();
+  await page.getByRole("button", { name: "Signed by" }).click();
+  await expect(page.getByLabel("Name when there is no signer")).toBeHidden();
+  await page.getByRole("button", { name: "Signed by" }).click();
   await page.getByRole("button", { name: "+ Add line" }).click();
   await page.getByLabel("Letterhead line 2", { exact: true }).fill("100 Example Street, Sampletown");
   await page.getByLabel("Name when there is no signer").fill("Pat Example");
@@ -2212,6 +2217,7 @@ test("#165-#166: Administrator sets up a cover letter and an envelope; a Registe
   await expect(page.getByRole("heading", { name: "Cover letters" })).toHaveCount(0);
   // the return address starts as the default letter's letterhead
   await expect(page.getByLabel("Return address line 2", { exact: true })).toHaveValue("100 Example Street, Sampletown");
+  await expect(page.getByTitle("Envelope preview")).toBeVisible();
   await page.getByRole("button", { name: "Back to Payments Setup" }).click();
   const letters = page.getByRole("region", { name: "Cover letters" });
   const envelopes = page.getByRole("region", { name: "Envelopes" });
@@ -2279,6 +2285,8 @@ test("#167: Administrator sets up a voucher check with two signature lines; a Re
   await page.getByLabel("Signature lines").selectOption("2");
   await expect(page.getByLabel("Second signature x")).toBeVisible();
   await expect(page.getByRole("img", { name: "Check preview drawn to scale" })).toContainText("SIGNATURE 2");
+  // #186: the stubs are drawn under the check in the preview
+  await expect(page.getByTestId("stub-preview")).toContainText("OFFICE COPY");
   await page.getByRole("button", { name: "Save check style" }).click();
   await expect(page.getByRole("status").filter({ hasText: "Saved." })).toBeVisible();
   await page.getByRole("button", { name: "Test print", exact: true }).click();

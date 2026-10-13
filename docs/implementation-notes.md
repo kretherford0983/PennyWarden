@@ -170,6 +170,14 @@ none (the diagonal says it). Tests: `tests/test_v200_build5.py` (scans the conte
 argument, so the OS time zone of the machine running PennyWarden; no tzdata needed in the PyInstaller builds; Windows'
 full zone names are shortened to their initials). `BuildDetails` shows it with the UTC value as the tooltip and falls
 back to UTC.
+#186: `Section`, `viewState` (in-memory only, AC-SEC-006) and `LivePdfPreview` moved to / added in `checkShared.tsx`;
+the letter and envelope editors use them (scopes `pw-letter`, `pw-envelope`). `POST /api/checks/documents/{id}/preview`
+returns the sample-data PDF for unsaved settings (not audited: nothing is printed or stored; the test print stays
+audited); the envelope preview is drawn upright on an envelope-sized page with its edge (`envelope_pdf(preview=True)`)
+and follows the return-address setting. The preview iframe reloads 600 ms after the last change. `POST
+/api/checks/sample-stubs` returns `render.stub_drawing()`: `_draw_stub` run against `_StubRecorder`, which records text
+runs and lines in page inches, so `CheckPreview` draws the stubs exactly as `_draw_stub` prints them (offset from the
+check by the sheet's first check top and the centring).
 
 **1.10.0 Update notification (issue #58; channel decided 2026-10-09).** Migration `0024`: `update_check` (one row).
 `services/updates.py`: `channel(settings)` - setting `update_channel` (`auto` → from `build_info.json`: `main` →

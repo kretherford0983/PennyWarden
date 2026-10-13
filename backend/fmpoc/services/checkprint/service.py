@@ -1286,6 +1286,8 @@ def sample_letter_pdf(cfg) -> bytes:
     return documents.letter_pdf(cfg, data, title="Letter test print")
 
 
-def sample_envelope_pdf(cfg) -> bytes:
-    ret, to, _e = documents.envelope_lines(cfg, {**SAMPLE_VALUES["NORMAL"]}, documents.SAMPLE_PAYEE, True)
-    return documents.envelope_pdf(cfg, ret, to, test=True)
+def sample_envelope_pdf(cfg, preview: bool = False) -> bytes:
+    # the live preview follows the template's return-address setting; the test print always shows it
+    ret, to, _e = documents.envelope_lines(cfg, {**SAMPLE_VALUES["NORMAL"]}, documents.SAMPLE_PAYEE,
+                                           cfg.return_address if preview else True)
+    return documents.envelope_pdf(cfg, ret, to, test=not preview, preview=preview)

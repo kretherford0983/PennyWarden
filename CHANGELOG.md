@@ -98,6 +98,10 @@ several test builds; the notes below grow with each one.
   twice on the same spot with a test signature). Page notes sit 1/4 inch inside the check, so they are never cut off.
 - **Build time in local time (#185).** The build details (My account, System/About) show when the build was made in
   local time — your computer's time zone in local mode, the server's in server mode; hover for UTC.
+- **Letter and envelope editors (#186).** A live preview at the top, drawn with sample data from your unsaved changes
+  as you type (it can be kept at the top while you scroll), and sections that collapse like the check style editor's.
+- **Voucher stubs in the check preview (#186).** The check style preview draws the stubs under the check with sample
+  data, exactly where they print.
 
 ## 1.10.0 — 2026-10-09
 Database migration `0024` (one table added; no existing data changes). Rolling back to 1.9.0 needs the data snapshot

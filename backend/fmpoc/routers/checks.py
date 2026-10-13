@@ -157,6 +157,14 @@ def sample_layout(body: SampleIn, db: Session = Depends(get_db), ctx: Ctx = Depe
     return svc.sample_out(svc.parse_config(body.config), body.sample)
 
 
+@router.post("/sample-stubs")
+def sample_stubs(body: SampleIn, db: Session = Depends(get_db), ctx: Ctx = Depends(setup_ctx)):
+    """#186: the voucher stubs with sample data, as text runs and lines in page inches, for the setup preview.
+    Null when the style has no stubs."""
+    cfg = svc.parse_config(body.config)
+    return {"stubs": render.stub_drawing(cfg, svc.sample_stub(cfg))}
+
+
 @router.post("/styles/{style_id}/test-print")
 def test_print(style_id: int, body: TestPrintIn, request: Request, db: Session = Depends(get_db),
                ctx: Ctx = Depends(setup_ctx)):
@@ -538,6 +546,16 @@ def document_test(doc_id: int, body: DocTestIn, db: Session = Depends(get_db), c
                  {"unsaved_settings": body.config is not None})
     db.commit()
     return _pdf(pdf, f"{d.kind.lower()}-test-print.pdf")
+
+
+@router.post("/documents/{doc_id}/preview")
+def document_preview(doc_id: int, body: DocTestIn, db: Session = Depends(get_db), ctx: Ctx = Depends(setup_ctx)):
+    """#186: the live on-screen preview of a letter or envelope template with sample data (unsaved settings). Nothing
+    is printed or stored, so it is not audited (the test print is)."""
+    d = svc.get_document(db, ctx, doc_id)
+    cfg = svc._doc_config_or_422(d.kind, body.config) if body.config is not None else svc.doc_config(d)
+    pdf = svc.sample_letter_pdf(cfg) if d.kind == "LETTER" else svc.sample_envelope_pdf(cfg, preview=True)
+    return _pdf(pdf, f"{d.kind.lower()}-preview.pdf")
 
 
 @router.get("/transactions/{txn_id}/documents")
