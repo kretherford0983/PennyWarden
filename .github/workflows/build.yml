@@ -136,13 +136,25 @@ jobs:
         # NSSM 2.24 (public domain) is attached to the release so install-windows-server.ps1 can check it against
         # SHA256SUMS.txt. nssm.cc publishes no SHA-256; this is the SHA-1 published in the Chocolatey package.
         run: |
+          # nssm.cc is often slow or down: the same file from the Internet Archive is the fallback. The SHA-1 decides,
+          # whichever source answered.
           $zip = "$env:RUNNER_TEMP/nssm-2.24.zip"
-          for ($i = 1; $i -le 5; $i++) {
-            try { Invoke-WebRequest https://nssm.cc/release/nssm-2.24.zip -OutFile $zip -UseBasicParsing; break }
-            catch { if ($i -eq 5) { throw }; Start-Sleep -Seconds (10 * $i) }
+          $sources = @("https://nssm.cc/release/nssm-2.24.zip",
+                       "https://web.archive.org/web/2023id_/https://nssm.cc/release/nssm-2.24.zip",
+                       "https://nssm.cc/release/nssm-2.24.zip")
+          $ok = $false
+          foreach ($u in $sources) {
+            for ($i = 1; $i -le 3 -and -not $ok; $i++) {
+              try {
+                Invoke-WebRequest $u -OutFile $zip -UseBasicParsing -TimeoutSec 60
+                $sha1 = (Get-FileHash $zip -Algorithm SHA1).Hash.ToLowerInvariant()
+                if ($sha1 -eq "be7b3577c6e3a280e5106a9e9db5b3775931cefc") { $ok = $true; Write-Host "nssm-2.24.zip from $u" }
+                else { Write-Host "::warning::nssm-2.24.zip from $u has SHA-1 $sha1 - ignored" }
+              } catch { Write-Host "::warning::$u : $($_.Exception.Message)"; Start-Sleep -Seconds (10 * $i) }
+            }
+            if ($ok) { break }
           }
-          $sha1 = (Get-FileHash $zip -Algorithm SHA1).Hash.ToLowerInvariant()
-          if ($sha1 -ne "be7b3577c6e3a280e5106a9e9db5b3775931cefc") { throw "nssm-2.24.zip SHA-1 $sha1 does not match" }
+          if (-not $ok) { throw "could not get nssm-2.24.zip with the expected SHA-1 from any source" }
           Expand-Archive $zip -DestinationPath "$env:RUNNER_TEMP/nssm"
           Copy-Item "$env:RUNNER_TEMP/nssm/nssm-2.24/win64/nssm.exe" dist/nssm.exe
           (Get-FileHash dist/nssm.exe).Hash
