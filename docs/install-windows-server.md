@@ -9,9 +9,52 @@ In server mode PennyWarden requires **two-step verification** for every user, an
 **HTTPS**. The steps below set up both: PennyWarden itself listens only on the server (`127.0.0.1`), runs as a
 Windows service under its own account, and an HTTPS front end (Caddy) passes the browsers' requests to it.
 
-> **Status (2.0.0):** this guide was written against the 2.0.0 code (paths, commands and settings checked against
-> the application) but has **not yet been run end to end on a Windows machine**. Please report anything that
-> doesn't match. A one-command Windows server installer is planned separately (#187).
+## The installer script (recommended)
+
+`install-windows-server.ps1`, attached to every release since 2.0.0, does everything in the rest of this guide for
+you. In **PowerShell started as Administrator**:
+
+```powershell
+Invoke-WebRequest https://github.com/kretherford0983/PennyWarden/releases/latest/download/install-windows-server.ps1 -OutFile install-windows-server.ps1
+powershell -ExecutionPolicy Bypass -File .\install-windows-server.ps1 -Domain books.example.org
+```
+
+- **`-Domain books.example.org`** — the web address people will use; it must already point at this server, and ports
+  80 and 443 must reach it. The script installs **Caddy** as a second service in front of PennyWarden; Caddy gets and
+  renews the HTTPS certificate from Let's Encrypt (add `-Email you@example.org` for its expiry notices).
+- **Without `-Domain`** — for a Cloudflare Tunnel or another HTTPS front end you manage: PennyWarden listens on
+  `http://127.0.0.1:8765` only, and you point the tunnel at that address.
+
+What it does: downloads the Windows package and NSSM from the release and checks both against the release's
+`SHA256SUMS.txt` (Caddy against the SHA-256 written in the script); installs the program into
+`C:\PennyWarden\<version>` with `C:\PennyWarden\current` pointing at it; creates `C:\ProgramData\PennyWarden`
+readable only by SYSTEM, Administrators and the service, with a `config.toml` for server mode; and runs PennyWarden as
+the service **PennyWarden** under the virtual account `NT SERVICE\PennyWarden` (no password to manage), started at
+boot and restarted if it stops. Then it checks that PennyWarden answers and tells you where to go next.
+
+- **Upgrade:** run the same command again (the newest release; `-Version v2.1.0` for a particular one). The service
+  is stopped, the data folder is copied to `C:\ProgramData\PennyWarden-upgrade-backups\<date-time>`, the new
+  version is installed next to the old one and started. If it doesn't answer, the previous version is put back. An
+  existing `config.toml` is never changed.
+- **Test builds:** `-Version v2.0.0-test.130` (the release notes of each test build show the exact command).
+- **Offline servers:** `-ZipPath`, `-NssmPath` and `-CaddyPath` use files you copied to the server
+  (`-ZipPath` needs `-Version`).
+- **Other folders or port:** `-InstallDir`, `-DataDir`, `-Port`.
+- **Uninstall:** `-Uninstall` removes the services and the program folder and keeps the data folder and the upgrade
+  backups.
+- `Get-Help .\install-windows-server.ps1 -Detailed` lists every option.
+
+NSSM (public domain) is downloaded from nssm.cc by the release build, checked against the published SHA-1 and attached
+to the release. The script is tested on every build on GitHub's Windows Server runner (install, upgrade keeping the
+data, uninstall keeping the data); the Caddy certificate step needs a real domain and is not part of that test.
+
+The rest of this guide is the same set-up **by hand**, for those who want to see or change each step.
+
+## Setting it up by hand
+
+> **Status (2.0.0):** these steps were written against the 2.0.0 code (paths, commands and settings checked against
+> the application) but have **not yet been run end to end on a Windows machine**. Please report anything that
+> doesn't match. The installer script above uses a virtual service account instead of the `pennywarden` user below.
 
 What you need: an Administrator account on the server, a domain name that points at it (for HTTPS), and about half
 an hour. Commands below are for **PowerShell started as Administrator** unless they say otherwise.
