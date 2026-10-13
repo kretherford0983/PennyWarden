@@ -264,6 +264,21 @@ attention|ok|info, `note`) from the users, `UserMfa.enabled_at`, `recovery.is_lo
 the running settings and the request's scheme; `GET /api/system/security-overview` (`system.view`). Frontend
 `SecurityOverviewPanel` in `pages/AdminSettings.tsx`.
 
+**2.0.0 test build 10 — Windows server installer (#187).** `packaging/windows/install-windows-server.ps1` (Windows
+PowerShell 5.1+, also pwsh): resolves the release like `install.sh` (`-Channel auto|production|test`, `-Version`;
+only releases that have the script), downloads `PennyWarden-windows-x64.zip`, `nssm.exe` and `SHA256SUMS.txt` and
+checks them, Caddy `$CaddyVersion` against `$CaddySha256`; stops the service; on an upgrade copies the data folder to
+`<DataDir>-upgrade-backups\<stamp>` (ACL: SYSTEM and Administrators only, set before the copy); moves the package
+into `<InstallDir>\<version>` and re-points the `current` junction; writes `config.toml` only if absent; creates or
+updates the NSSM service (python.exe `-I app\launch.py --mode server --no-browser --data-dir`, auto start, restart,
+stdout/stderr to `logs\service.log`, rotated), sets `obj= "NT SERVICE\PennyWarden"` with `sc.exe`, and re-sets the data
+folder ACL (`icacls /inheritance:r`, SYSTEM and Administrators full, the service modify); with `-Domain` installs Caddy
+into `<InstallDir>\caddy` (Caddyfile with `reverse_proxy 127.0.0.1:<port>`, `XDG_DATA_HOME` there so the certificates
+stay with it) as the NSSM service `Caddy` under LocalSystem and opens 80/443; waits for `/api/health` and on failure
+puts the previous junction target back; keeps one previous version. `build.yml`: the release includes the script; the
+Windows job downloads `nssm-2.24.zip` (SHA-1 check), attaches `nssm.exe` and runs
+`packaging/windows/test_server_installer.ps1` (install, upgrade, uninstall under Windows PowerShell 5.1).
+
 **1.10.0 Update notification (issue #58; channel decided 2026-10-09).** Migration `0024`: `update_check` (one row).
 `services/updates.py`: `channel(settings)` - setting `update_channel` (`auto` → from `build_info.json`: `main` →
 stable, `test` → test, anything else / no build info → none); `check(app, force)` - due after 24 h (6 h after an error),

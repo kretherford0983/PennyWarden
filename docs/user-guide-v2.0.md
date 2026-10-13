@@ -86,3 +86,8 @@ then choose two different signers when printing; above an optional amount only t
   (with readable names and amounts), and the raw data is still there under *Show technical details*.
 - **Security overview** on System/About (Administrators and Auditors): HTTPS, two-step verification, the last backup,
   locked accounts and the security settings at a glance, with what needs attention marked and what to do about it.
+
+## Windows server installer (test build 10)
+On a Windows server, `install-windows-server.ps1` from the release installs or upgrades PennyWarden as a service in
+one step, with HTTPS through Caddy (`-Domain`) or behind your Cloudflare Tunnel. Details:
+[Windows server guide](install-windows-server.md#the-installer-script-recommended).
