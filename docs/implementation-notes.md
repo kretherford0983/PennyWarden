@@ -259,6 +259,10 @@ times), `labels_for` (written by `audit.record` into `audit_event.labels`, migra
 `ID_KINDS`), `readable()` (summary "who: what — target", kind create/update/remove/event/withheld, `changes()` with
 only changed fields for updates and sub-tables for lists of rows). `GET /api/audit-events` adds `readable` to every
 item; `GET /api/audit-events/meta` lists the codes present with readable names for the filters.
+#131: `services/security_overview.py` - `overview()` builds the items (`key`, `title`, `value`, `status`
+attention|ok|info, `note`) from the users, `UserMfa.enabled_at`, `recovery.is_locked`, `admin_settings.backup_age`,
+the running settings and the request's scheme; `GET /api/system/security-overview` (`system.view`). Frontend
+`SecurityOverviewPanel` in `pages/AdminSettings.tsx`.
 
 **1.10.0 Update notification (issue #58; channel decided 2026-10-09).** Migration `0024`: `update_check` (one row).
 `services/updates.py`: `channel(settings)` - setting `update_channel` (`auto` → from `build_info.json`: `main` →
