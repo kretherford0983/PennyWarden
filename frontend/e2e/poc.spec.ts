@@ -2410,13 +2410,14 @@ test("#130: maintenance mode - Administrators keep working, the others see the m
 
 test("#134: real names - search the Users list, sort by last name, names in the audit log", async ({ page }) => {
   await login(page, "admin");
-  await page.getByRole("link", { name: "Users" }).click();
+  const nav = page.getByRole("navigation", { name: "Main navigation" });
+  await nav.getByRole("link", { name: "Users", exact: true }).click();
   await page.getByLabel("Search users").fill("manager");
   await expect(page.getByRole("row", { name: /bm1/ })).toBeVisible();
   await expect(page.getByRole("row", { name: /ru1/ })).toHaveCount(0);
   await page.getByLabel("Search users").fill("");
   await page.getByLabel("Sort by last name").check();
-  await page.getByRole("link", { name: "Audit Log" }).click();
+  await nav.getByRole("link", { name: "Audit Log", exact: true }).click();
   await expect(page.getByRole("cell", { name: "Pat Example - admin" }).first()).toBeVisible();
 });
 
