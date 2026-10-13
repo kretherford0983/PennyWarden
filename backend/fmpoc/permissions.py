@@ -63,6 +63,10 @@ PERMISSIONS: dict[str, set[str]] = {
     # Budget Managers and Auditors have no access to the module.
     "checks.setup": {ADMINISTRATOR},
     "checks.print": {REGISTER_USER},
+    # 2.0.0 (#126-#129): System/About administration. Auditors may view the effective settings and the sessions
+    # (read-only, BR-004); everything else is the Administrator's.
+    "system.view": {ADMINISTRATOR, AUDITOR},
+    "system.manage": {ADMINISTRATOR},
 }
 
 

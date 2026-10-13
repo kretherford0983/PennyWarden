@@ -78,6 +78,41 @@ trusted_proxies = "127.0.0.1"
 Command line: `pennywarden --mode server --host 0.0.0.0 --port 8765 --data-dir /srv/pennywarden --no-browser`
 (`python -m fmpoc` from source, `pennywarden` / `PennyWarden.exe` or `PennyWarden.cmd` when packaged).
 
+## Changing settings in the application (2.0.0, #126)
+
+**System/About → Settings** lists every setting in effect with its source (default, `config.toml`, environment or
+command line). Administrators and Auditors can see it; it never contains secrets (the encryption key, passwords and
+backup keys are not settings).
+
+On a **server** install an Administrator can change these settings there: `trusted_proxies`, `secure_cookies`, `hsts`,
+`session_idle_minutes` (5–480), `session_absolute_hours` (1–72), `login_max_failures` (3–50),
+`login_lockout_seconds` (60–86400), `lockout_1/2/3_failures` and `lockout_disable_failures` (each larger than the one
+before), `lockout_1/2/3_minutes` (1–10080) and `log_level` (DEBUG, INFO, WARNING, ERROR).
+
+- `mode`, `host`, `port` and the data folder are **never** changed from the application (a wrong value would lock
+  everyone out); neither is anything else not on the list above.
+- A setting that an `FM_*` environment variable or a command-line option sets is shown **locked** with its source:
+  change it where it is set.
+- Saving rewrites `config.toml` in the data folder: the changed keys are set in `[server]`, every other line —
+  comments, other keys, other tables — stays as it is. The new file is checked before it replaces the old one, which
+  is kept as `config.toml.bak`. If the file can't be read safely, nothing is changed.
+- Changes take effect when the service is **restarted**; until then the page shows *Restart required*. There is no
+  restart button.
+- Changing `trusted_proxies` needs the Administrator's password. A change that makes the server less strict (secure
+  cookies off, HSTS off, longer sessions, more sign-in attempts, shorter locks, debug logging, trusting a proxy) needs
+  an explicit confirmation. Every change is in the audit log with the values before and after
+  (`SERVER_SETTINGS_CHANGED`).
+
+On a **local** install the page shows the settings; change them in `config.toml`.
+
+**Organization name.** An Administrator can rename the organization on System/About (1–120 characters; audited as
+`ORGANIZATION_RENAMED`). New reports, letters and backup file names use the new name; documents already made keep the
+old one.
+
+**Backup reminder.** Administrators see a warning at the top of every page when no backup (made in System/About or
+scheduled) has been made for 7 days; System/About → *Backup reminder* changes the number of days (0 turns it off). On a
+new or restored installation the days count from the installation or the restore.
+
 Debug mode, interactive API docs (`/docs`, `/openapi.json`) and verbose exception pages are never enabled.
 
 ## On a Mac

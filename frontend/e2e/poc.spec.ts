@@ -816,7 +816,7 @@ test("CR-022 / CR-021: version in My Account for every user; bank balance total 
   await logout(page);
   await login(page, "admin");
   await page.getByRole("link", { name: "System/About" }).click();
-  await expect(page.getByText("Bind address")).toBeVisible();
+  await expect(page.getByRole("term").filter({ hasText: "Bind address" })).toBeVisible();   // 2.0.0: the settings table lists it too
 });
 
 // ---------------------------------------------------------------- v1.4.1
@@ -2343,4 +2343,21 @@ test("#167: Administrator sets up a voucher check with two signature lines; a Re
   await expect(dlg.getByText("Check #8401 is ready.")).toBeVisible();
   await dlg.getByRole("button", { name: "Yes – done" }).click();
   await expect(row.getByText("Check printed")).toBeVisible();
+});
+
+test("#126: an Administrator renames the organization, sees the effective settings and sets the backup reminder", async ({ page }) => {
+  await login(page, "admin");
+  await page.getByRole("link", { name: "System/About" }).click();
+  await page.getByLabel("Organization name").fill("E2E Org Renamed");
+  await page.getByRole("button", { name: "Rename" }).click();
+  await expect(page.locator(".brand")).toContainText("E2E Org Renamed");
+  await page.getByLabel("Organization name").fill("E2E Org");
+  await page.getByRole("button", { name: "Rename" }).click();
+  await expect(page.locator(".brand")).toContainText("E2E Org");
+  const settings = page.getByRole("region", { name: "Settings" });
+  await expect(settings.getByRole("row", { name: /Session idle timeout \(minutes\) 30 default/ })).toBeVisible();
+  await expect(settings.getByRole("button", { name: "Save settings" })).toHaveCount(0);   // local install: view only
+  await page.getByLabel("Warn when there is no backup for (days, 0 = never)").fill("3");
+  await page.getByRole("region", { name: "Backup reminder" }).getByRole("button", { name: "Save" }).click();
+  await expect(page.getByRole("region", { name: "Backup reminder" }).getByRole("status")).toHaveText("Saved.");
 });
