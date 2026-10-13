@@ -176,7 +176,7 @@ def test_failure_retries_with_doubling_waits_and_banner(env, folder):
     assert r.trigger == "SCHEDULED" and r.result == "SUCCESS"
     s = _sched(env.app)
     assert s.retry_at is None and s.retry_wait_minutes is None
-    assert env.admin.get("/api/system/backup-schedule/alert").json() == {"failed": False}
+    assert env.admin.get("/api/system/backup-schedule/alert").json()["failed"] is False   # 2.0.0 adds other banners
     acts = {e["action"] for e in env.admin.get("/api/audit-events?page_size=200").json()["items"]}
     assert {"SCHEDULED_BACKUP_FAILED", "SCHEDULED_BACKUP_CREATED"} <= acts
 
