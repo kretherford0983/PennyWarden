@@ -455,6 +455,10 @@ export function EntityPicker({ label, entities, value, onChange, placeholder = "
   );
 }
 
+function utcText(iso: string): string {
+  return iso.replace("T", " ").replace("Z", " UTC");
+}
+
 /** v1.4 CR-022: version + build details (no network details). */
 export function BuildDetails({ info }: { info: { version: string; mode?: string; build?: Record<string, string> | null; license?: string; source_url?: string } }) {
   const b = info.build;
@@ -465,7 +469,13 @@ export function BuildDetails({ info }: { info: { version: string; mode?: string;
         <>
           <dt>Build</dt>
           <dd>{[b.branch ? `${b.branch} build` : "Build", b.run ? `#${b.run}` : null].filter(Boolean).join(" ")}{b.commit ? ` (${b.commit})` : ""}</dd>
-          {b.built_at ? <><dt>Built</dt><dd>{b.built_at.replace("T", " ").replace("Z", " UTC")}</dd></> : null}
+          {b.built_at ? (
+            <>
+              <dt>Built</dt>
+              {/* #185: the machine's local time (the computer in local mode, the server in server mode); UTC on hover */}
+              <dd data-testid="built-at" title={`${utcText(b.built_at)}`}>{b.built_at_local || utcText(b.built_at)}</dd>
+            </>
+          ) : null}
         </>
       ) : (
         <><dt>Build</dt><dd>Development build</dd></>

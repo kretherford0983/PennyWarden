@@ -32,6 +32,7 @@ def test_cr022_build_info_from_package(env, monkeypatch, tmp_path):
     f.write_text(json.dumps({"version": "1.4.0", "branch": "test", "commit": "abc1234", "run": 42,
                              "built_at": "2026-10-01T12:00:00Z", "secret": "ignored"}))
     b = env.bu.get("/api/system/version").json()["build"]
+    assert b.pop("built_at_local")  # 2.0.0 #185 (tested in test_v200_build5.py)
     assert b == {"version": "1.4.0", "branch": "test", "commit": "abc1234", "run": "42", "built_at": "2026-10-01T12:00:00Z"}
     f.write_text("not json")
     assert config.build_info() is None

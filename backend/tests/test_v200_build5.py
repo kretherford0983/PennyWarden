@@ -79,3 +79,38 @@ def test_page_notes_sit_a_quarter_inch_inside():
         right = x + fonts.width(note, "SANS", 7, True) / 72
         assert right == pytest.approx(cfg.stock.check_width - render.NOTE_INSET, abs=0.01)
         assert y >= render.NOTE_INSET
+
+
+# ------------------------------------------------------------------ #185 build time in local time
+@pytest.fixture
+def local_zone(monkeypatch):
+    import os
+    import time
+
+    def use(tz: str):
+        monkeypatch.setenv("TZ", tz)
+        time.tzset()
+    yield use
+    monkeypatch.undo()
+    time.tzset()
+
+
+def test_built_at_local_in_the_machines_zone(local_zone):
+    from fmpoc import config as app_config
+    local_zone("America/Chicago")
+    assert app_config.local_time_text("2026-10-10T21:15:03Z") == "2026-10-10 4:15 PM CDT"
+    assert app_config.local_time_text("2026-12-01T06:05:00Z") == "2026-12-01 12:05 AM CST"
+    local_zone("UTC")
+    assert app_config.local_time_text("2026-10-10T21:15:03Z") == "2026-10-10 9:15 PM UTC"
+    assert app_config.local_time_text("not a time") is None and app_config.local_time_text(None) is None
+
+
+def test_version_api_serves_built_at_local(env, monkeypatch, tmp_path, local_zone):
+    import json
+    from fmpoc import config as app_config
+    local_zone("America/Chicago")
+    f = tmp_path / "build_info.json"
+    monkeypatch.setattr(app_config, "BUILD_INFO_FILE", f)
+    f.write_text(json.dumps({"version": "2.0.0", "branch": "test", "run": 7, "built_at": "2026-10-10T21:15:03Z"}))
+    b = env.bu.get("/api/system/version").json()["build"]
+    assert b["built_at"] == "2026-10-10T21:15:03Z" and b["built_at_local"] == "2026-10-10 4:15 PM CDT"
