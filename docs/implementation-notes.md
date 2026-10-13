@@ -252,6 +252,13 @@ stored by `audit.record`. `InitializeIn.admin_first_name/admin_last_name`; `/api
 `pages/NamesGate.tsx` (shown by `App` before the shell while `names_needed > 0`), Users list columns, search and sort,
 "First Last - username" in the edit dialog title and the audit log. The backup list, the reinitialize banner and the
 restore report's "entered by" use the same label.
+#133: `services/audit_readable.py` - `action_label` (explicit `ACTION_LABELS`, else the code in words, so a new action
+never breaks the screen; a test scans the code for action codes), `object_label`, `field_label` (`FIELD_LABELS`, else
+words; `_cents` stripped), `fmt` (cents and `MONEY_KEYS` decimal strings as currency, Yes/No, codes in words, ISO
+times), `labels_for` (written by `audit.record` into `audit_event.labels`, migration `0034`, "kind:id" -> name for
+`ID_KINDS`), `readable()` (summary "who: what — target", kind create/update/remove/event/withheld, `changes()` with
+only changed fields for updates and sub-tables for lists of rows). `GET /api/audit-events` adds `readable` to every
+item; `GET /api/audit-events/meta` lists the codes present with readable names for the filters.
 
 **1.10.0 Update notification (issue #58; channel decided 2026-10-09).** Migration `0024`: `update_check` (one row).
 `services/updates.py`: `channel(settings)` - setting `update_channel` (`auto` → from `build_info.json`: `main` →

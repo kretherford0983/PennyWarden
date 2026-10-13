@@ -456,6 +456,8 @@ class AuditEvent(Base):
     actor_username: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # 2.0.0 (#134): the actor's real name when the event was written (later name changes don't rewrite history)
     actor_name: Mapped[str | None] = mapped_column(String(130), nullable=True)
+    # 2.0.0 (#133): names of the related records when the event was written ("kind:id" -> name)
+    labels: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     timestamp: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, index=True)
     action: Mapped[str] = mapped_column(String(60), index=True)
     object_type: Mapped[str] = mapped_column(String(40))

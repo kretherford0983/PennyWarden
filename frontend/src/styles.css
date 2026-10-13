@@ -460,3 +460,11 @@ fieldset.lines .pi-wrap { flex: 1; }
 
 /* #130: a maintenance message keeps its line breaks */
 .pre-line { white-space: pre-line; }
+
+/* #133: readable audit log */
+.audit-readable .audit-summary { margin: 4px 0 8px; }
+.audit-readable .what-changed caption { text-align: left; font-weight: 600; padding: 4px 0; }
+.audit-readable .what-changed tr.is-changed th, .audit-readable .what-changed tr.is-changed td { background: var(--surface-2, rgba(127,127,127,.08)); }
+.audit-readable .sub-table { margin: 0; font-size: .9em; }
+.audit-readable details.technical { margin-top: 8px; }
+.audit-table .audit-action { font-weight: 600; }

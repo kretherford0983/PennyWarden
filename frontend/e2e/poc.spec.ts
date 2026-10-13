@@ -109,7 +109,7 @@ test("AC-INIT-001..007: fresh install wizard bootstraps a working Administrator"
   await expect(nav.getByRole("link")).toHaveText(["Dashboard", "Users", "Audit Log", "System/About"]);
   await expect(page.getByRole("row", { name: /admin/ })).toContainText("ADMINISTRATOR");
   await nav.getByRole("link", { name: "Audit Log" }).click();
-  await expect(page.getByText("SYSTEM_INITIALIZED")).toBeVisible();
+  await expect(page.locator(".audit-action", { hasText: "Application initialized" })).toBeVisible();   // 2.0.0 (#133)
   await page.goto("/fiscal-years");
   await expect(page.getByText("You are not authorized to view this module.")).toBeVisible();
   await createUser(page, "bm1", "Budget Manager");
@@ -1019,7 +1019,7 @@ test("CR-023 / CR-025: Administrator creates an encrypted backup and restores it
   await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible({ timeout: 15_000 });
   await login(page, "admin");
   await page.getByRole("link", { name: "Audit Log", exact: true }).click();
-  await expect(page.getByText("SYSTEM_RESTORED").first()).toBeVisible();
+  await expect(page.locator(".audit-action", { hasText: "Data restored from a backup" }).first()).toBeVisible();
 });
 
 test("CR-024: a new installation is set up from the backup in the initialization wizard", async ({ page }) => {
@@ -2419,6 +2419,20 @@ test("#134: real names - search the Users list, sort by last name, names in the 
   await page.getByLabel("Sort by last name").check();
   await nav.getByRole("link", { name: "Audit Log", exact: true }).click();
   await expect(page.getByRole("cell", { name: "Pat Example - admin" }).first()).toBeVisible();
+});
+
+test("#133: readable audit log - summary, what changed, technical details", async ({ page }) => {
+  await login(page, "admin");
+  await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Audit Log", exact: true }).click();
+  await page.getByLabel("Action").selectOption({ label: "User created" });
+  const row = page.getByRole("row", { name: /User created/ }).first();
+  await row.getByRole("button", { name: "Details" }).click();
+  const detail = page.locator(".audit-readable").first();
+  await expect(detail.getByRole("table", { name: "What changed" })).toBeVisible();
+  await expect(detail.getByRole("rowheader", { name: "Username" })).toBeVisible();
+  await expect(detail.locator("details.technical pre").first()).toBeHidden();
+  await detail.getByText("Show technical details").click();
+  await expect(detail.locator("details.technical pre").first()).toBeVisible();
 });
 
 // Keep this test LAST: it removes the financial data the other tests use.

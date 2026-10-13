@@ -32,6 +32,15 @@ def actor_name(user) -> str | None:
     return f"{first} {last}"[:130] if first and last else None
 
 
+def _labels(db, before, after):
+    """2.0.0 (#133): the names of related records as they are now, kept with the event (never breaks writing it)."""
+    try:
+        from .services.audit_readable import labels_for
+        return labels_for(db, before, after)
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def record(
     db: Session,
     ctx,
@@ -47,6 +56,7 @@ def record(
         actor_user_id=getattr(getattr(ctx, "user", None), "id", None),
         actor_username=getattr(getattr(ctx, "user", None), "username", None),
         actor_name=actor_name(getattr(ctx, "user", None)),
+        labels=_labels(db, before, after),
         action=action,
         object_type=object_type,
         object_id=None if object_id is None else str(object_id),
