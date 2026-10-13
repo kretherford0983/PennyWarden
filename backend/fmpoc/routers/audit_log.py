@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from ..deps import Ctx, get_db, require
 from ..models import AuditEvent
+from ..services import audit_readable as readable
 
 router = APIRouter(prefix="/api/audit-events", tags=["audit"])
 
@@ -19,13 +20,17 @@ SORTS = {"timestamp": AuditEvent.timestamp, "action": AuditEvent.action, "object
          "id": AuditEvent.id}
 
 
-def _out(e: AuditEvent, ctx: Ctx) -> dict:
+def _out(e: AuditEvent, ctx: Ctx, db: Session | None = None) -> dict:
     withheld = e.object_type in FINANCIAL_OBJECTS and not ctx.has("audit.view_financial_snapshots")
-    return {"id": e.id, "timestamp": e.timestamp.isoformat() + "Z", "actor_user_id": e.actor_user_id,
+    can_financial = ctx.has("audit.view_financial_snapshots")
+    out = {"id": e.id, "timestamp": e.timestamp.isoformat() + "Z", "actor_user_id": e.actor_user_id,
             "actor_username": e.actor_username, "actor_name": e.actor_name, "action": e.action, "object_type": e.object_type,
             "object_id": e.object_id, "category": e.category,
             "before": None if withheld else e.before_snapshot, "after": None if withheld else e.after_snapshot,
             "snapshots_withheld": withheld, "correlation_id": e.correlation_id}
+    if db is not None:   # 2.0.0 (#133): the readable view, withheld the same way as the snapshots
+        out["readable"] = readable.readable(db, e, withheld, can_financial)
+    return out
 
 
 @router.get("")
@@ -62,4 +67,14 @@ def list_events(
     total = db.scalar(select(func.count()).select_from(q.subquery()))
     col = SORTS[sort]  # explicit allowlist (BR-095)
     q = q.order_by(col.desc() if direction == "desc" else col.asc(), AuditEvent.id.desc()).limit(limit).offset(offset)
-    return {"total": total, "items": [_out(e, ctx) for e in db.scalars(q)]}
+    return {"total": total, "items": [_out(e, ctx, db) for e in db.scalars(q)]}
+
+
+@router.get("/meta")
+def meta(db: Session = Depends(get_db), ctx: Ctx = Depends(require("audit.view"))):
+    """2.0.0 (#133): readable names for the action and object-type filters (the codes present in this log)."""
+    base = (AuditEvent.workspace_id == ctx.workspace_id) | AuditEvent.workspace_id.is_(None)
+    actions = sorted(db.scalars(select(AuditEvent.action).where(base).distinct()))
+    types = sorted(db.scalars(select(AuditEvent.object_type).where(base).distinct()))
+    return {"actions": [{"code": a, "label": readable.action_label(a)} for a in actions],
+            "object_types": [{"code": t, "label": readable.object_label(t)} for t in types]}

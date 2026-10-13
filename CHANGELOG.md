@@ -3,7 +3,7 @@
 Versions are `Breaking.Major.Minor` from 1.6.0 (docs/branching.md).
 
 ## 2.0.0 — unreleased
-Database migrations `0025` to `0033` (twenty-one columns and five tables added; no existing data changes). Rolling back to 1.10.0
+Database migrations `0025` to `0034` (twenty-two columns and five tables added; no existing data changes). Rolling back to 1.10.0
 needs the data snapshot the installer takes before the upgrade (docs/upgrade.md). 2.0.0 is built and tested in
 several test builds; the notes below grow with each one.
 
@@ -171,6 +171,12 @@ Database migrations `0028` to `0030` (empty columns: the letter logo, the backup
   (name, username, display name, email) and *Sort by last name*. The audit log shows who did something as
   **First Last - username**, with the name as it was at the time; older events keep the username. Database migration
   `0033`.
+- **Readable audit log (#133).** Each entry reads as a sentence (who, what, which record) with the time in your own
+  time zone; *Details* shows a **What changed** table with readable field names and values (amounts as currency, Yes/No,
+  words instead of codes; only the changed fields of an update, each marked *changed*; transaction lines as a small
+  table) and the raw data under *Show technical details*. Filters offer readable action and record names. Related
+  records are named as they were when the event was written. Administrators still see no financial content: for
+  those entries only who, the kind of action and when. Database migration `0034`.
 
 ## 1.10.0 — 2026-10-09
 Database migration `0024` (one table added; no existing data changes). Rolling back to 1.9.0 needs the data snapshot

@@ -82,3 +82,5 @@ then choose two different signers when printing; above an optional amount only t
 - Every user has a **first and last name** (Administrators set them under Users). The Users list can be searched and
   sorted by last name, and the audit log shows people as *First Last - username*. After the upgrade, the first
   Administrator to sign in is asked for the names of the existing accounts.
+- The **Audit Log** reads in plain words: each entry says who did what to which record, *Details* shows what changed
+  (with readable names and amounts), and the raw data is still there under *Show technical details*.
