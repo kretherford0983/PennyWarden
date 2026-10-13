@@ -34,7 +34,8 @@ def test_ac_init_008_partial_workspace_row_does_not_suppress_wizard(settings, tm
 
 def test_ac_init_002_required_fields(anon):
     anon.pre_csrf()
-    for missing in ["workspace_name", "admin_username", "admin_email", "password", "password_confirmation"]:
+    for missing in ["workspace_name", "admin_username", "admin_email", "password", "password_confirmation",
+                    "admin_first_name", "admin_last_name"]:
         body = {k: v for k, v in ADMIN.items() if k != missing}
         r = anon.post("/api/system/initialize", body)
         assert r.status_code == 422, missing
@@ -84,11 +85,11 @@ def test_ac_sec_002_domain_separation(env):
            ("ADMINISTRATOR", ["ADMINISTRATOR", "AUDITOR"]), ("FINANCIAL", ["BUDGET_MANAGER", "AUDITOR"]),
            ("FINANCIAL", ["ADMINISTRATOR"]), ("AUDITOR", ["BUDGET_USER"])]
     for i, (dom, roles) in enumerate(bad):
-        r = env.admin.post("/api/users", {"username": f"bad{i}", "email": f"b{i}@x.org", "password": PASSWORD,
+        r = env.admin.post("/api/users", {"first_name": "Test", "last_name": "Person", "username": f"bad{i}", "email": f"b{i}@x.org", "password": PASSWORD,
                                           "display_name": f"Bad Roles {i}",
                                           "security_domain": dom, "roles": roles})
         assert r.status_code == 422 and r.json()["error"]["errors"][0]["field"] == "roles", (dom, roles, r.text)
-    r = env.admin.post("/api/users", {"username": "multi", "email": "m@x.org", "password": PASSWORD,
+    r = env.admin.post("/api/users", {"first_name": "Test", "last_name": "Person", "username": "multi", "email": "m@x.org", "password": PASSWORD,
                                       "display_name": "Multi Role",
                                       "security_domain": "FINANCIAL",
                                       "roles": ["BUDGET_MANAGER", "BUDGET_USER", "REGISTER_USER"]})

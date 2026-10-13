@@ -243,6 +243,16 @@ the pause), `GET /api/system/reinitialized` (banner), `POST /api/system/reinitia
 `pennywarden reinitialize` in `cli_restore.py`. `test_ac_sec_023` allows `subprocess` only in `cli_restore.py` (fixed
 argument lists to `systemctl` / `sc.exe`, BR-102).
 
+**2.0.0 test build 8 — real names (#134).** Migration `0033`: `app_user.first_name`, `last_name`,
+`audit_event.actor_name` (plain `ADD COLUMN`: both tables carry the 0017 triggers). `services/users.py`:
+`clean_person_name`, `full_name`, `label` ("First Last - username"), `names_needed`, `complete_names` (all rows
+validated before any is saved); `update()` requires names when the account has none. `audit.actor_name(user)` is
+stored by `audit.record`. `InitializeIn.admin_first_name/admin_last_name`; `/api/auth/me` adds `first_name`,
+`last_name` and `names_needed` (Administrators only); `GET /api/users/names-needed`, `PUT /api/users/names`. Frontend:
+`pages/NamesGate.tsx` (shown by `App` before the shell while `names_needed > 0`), Users list columns, search and sort,
+"First Last - username" in the edit dialog title and the audit log. The backup list, the reinitialize banner and the
+restore report's "entered by" use the same label.
+
 **1.10.0 Update notification (issue #58; channel decided 2026-10-09).** Migration `0024`: `update_check` (one row).
 `services/updates.py`: `channel(settings)` - setting `update_channel` (`auto` → from `build_info.json`: `main` →
 stable, `test` → test, anything else / no build info → none); `check(app, force)` - due after 24 h (6 h after an error),

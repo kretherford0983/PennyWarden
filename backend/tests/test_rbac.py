@@ -60,7 +60,7 @@ def test_ac_sec_004_auditor_read_only(env, base):
         ("post", f"/api/bank-accounts/{base['acct']['id']}/reveal", None),
         ("post", "/api/transactions", {"bank_account_id": base["acct"]["id"], "transaction_type": "DEPOSIT",
                                        "allocations": [{"budget_id": base["inc_leaf"], "amount": "1"}]}),
-        ("post", "/api/users", {"username": "zzz", "email": "z@z.org", "password": "Abcdefgh1234",
+        ("post", "/api/users", {"first_name": "Test", "last_name": "Person", "username": "zzz", "email": "z@z.org", "password": "Abcdefgh1234",
                                 "security_domain": "AUDITOR", "roles": ["AUDITOR"]}),
         ("put", "/api/me/preferences", {"theme": "dark"}),
     ]
@@ -91,7 +91,7 @@ def test_ac_sec_005_permission_matrix_direct_api(env, base):
     assert env.ru.patch(f"/api/bank-accounts/{base['acct']['id']}", {"account_name": "x"}).status_code == 403
     assert env.ru.get("/api/users").status_code == 403
     # Financial users cannot administer users
-    assert env.bm.post("/api/users", {"username": "zzz", "email": "z@z.org", "password": "Abcdefgh1234",
+    assert env.bm.post("/api/users", {"first_name": "Test", "last_name": "Person", "username": "zzz", "email": "z@z.org", "password": "Abcdefgh1234",
                                       "security_domain": "FINANCIAL", "roles": ["BUDGET_MANAGER"]}).status_code == 403
     # unauthenticated
     from conftest import Api

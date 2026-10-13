@@ -22,7 +22,7 @@ SORTS = {"timestamp": AuditEvent.timestamp, "action": AuditEvent.action, "object
 def _out(e: AuditEvent, ctx: Ctx) -> dict:
     withheld = e.object_type in FINANCIAL_OBJECTS and not ctx.has("audit.view_financial_snapshots")
     return {"id": e.id, "timestamp": e.timestamp.isoformat() + "Z", "actor_user_id": e.actor_user_id,
-            "actor_username": e.actor_username, "action": e.action, "object_type": e.object_type,
+            "actor_username": e.actor_username, "actor_name": e.actor_name, "action": e.action, "object_type": e.object_type,
             "object_id": e.object_id, "category": e.category,
             "before": None if withheld else e.before_snapshot, "after": None if withheld else e.after_snapshot,
             "snapshots_withheld": withheld, "correlation_id": e.correlation_id}

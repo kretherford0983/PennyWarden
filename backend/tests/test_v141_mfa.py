@@ -49,7 +49,7 @@ def test_initialize_in_server_mode_requires_enrollment(server_app):
     assert me["mfa_pending"] == "ENROLL" and me["permissions"] == []
     r = a.get("/api/users")
     assert r.status_code == 401 and r.json()["error"]["code"] == "MFA_REQUIRED"
-    assert a.post("/api/users", {"username": "x"}).status_code == 401
+    assert a.post("/api/users", {"first_name": "Test", "last_name": "Person", "username": "x"}).status_code == 401
     # a wrong code does not complete enrollment
     assert a.post("/api/auth/mfa/enroll/start", {}).status_code == 200
     r = a.post("/api/auth/mfa/enroll/confirm", {"code": "000000"})
@@ -140,7 +140,7 @@ def test_password_change_revokes_trusted_browsers(server_app):
 def test_admin_reset_and_user_enrollment(server_app):
     admin = _init(server_app)
     atotp, _ = _enroll(admin)
-    r = admin.post("/api/users", {"username": "clerk", "email": "c@example.com", "password": PASSWORD,
+    r = admin.post("/api/users", {"first_name": "Test", "last_name": "Person", "username": "clerk", "email": "c@example.com", "password": PASSWORD,
                                   "display_name": "Clerk Person",
                                   "security_domain": "FINANCIAL", "roles": ["REGISTER_USER"]})
     assert r.status_code == 201

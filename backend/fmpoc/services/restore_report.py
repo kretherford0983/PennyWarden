@@ -87,7 +87,8 @@ def build(db: Session, ws_id: int, backup_db: Path, backup_created_at: str | Non
     except sqlite3.Error:
         backup_rows, backup_key = {}, None
     by_time_only = bool(ws and backup_key != ws.key_check)       # a backup from another system: ids mean nothing
-    users = {u.id: u.username for u in db.scalars(select(User))}
+    users = {u.id: (f"{u.first_name} {u.last_name} - {u.username}" if getattr(u, "first_name", None) and
+                    getattr(u, "last_name", None) else u.username) for u in db.scalars(select(User))}
     changed: list[tuple[str, RegisterTransaction]] = []
     for t in db.scalars(select(RegisterTransaction).where(RegisterTransaction.workspace_id == ws_id)
                         .order_by(RegisterTransaction.transaction_date, RegisterTransaction.id)):

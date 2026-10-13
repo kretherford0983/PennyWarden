@@ -3,7 +3,7 @@
 Versions are `Breaking.Major.Minor` from 1.6.0 (docs/branching.md).
 
 ## 2.0.0 — unreleased
-Database migrations `0025` to `0032` (eighteen columns and five tables added; no existing data changes). Rolling back to 1.10.0
+Database migrations `0025` to `0033` (twenty-one columns and five tables added; no existing data changes). Rolling back to 1.10.0
 needs the data snapshot the installer takes before the upgrade (docs/upgrade.md). 2.0.0 is built and tested in
 several test builds; the notes below grow with each one.
 
@@ -161,6 +161,16 @@ Database migrations `0028` to `0030` (empty columns: the letter logo, the backup
   version folder and a `current` pointer, a dedicated service account and data-folder permissions, `config.toml`,
   HTTPS with Caddy, PennyWarden and Caddy as Windows services with NSSM (start, stop, logs), backups, restore,
   upgrades with rollback, host commands and troubleshooting. Written against the code; not yet run on Windows.
+
+**Test build 8 — real names, readable audit log, security overview (#134, #133, #131)**
+- **First and last names (#134).** Every account now has a first and last name (required, up to 60 characters
+  each, any language), set by an Administrator when creating or editing a
+  user and for the first Administrator in the Initialization Wizard. After the upgrade, the first Administrator to sign
+  in enters the names of every account that has none (a stand-in such as the display name is fine and can be
+  corrected later); until then the Users list marks them *name needed*. The Users list gets name columns, a search box
+  (name, username, display name, email) and *Sort by last name*. The audit log shows who did something as
+  **First Last - username**, with the name as it was at the time; older events keep the username. Database migration
+  `0033`.
 
 ## 1.10.0 — 2026-10-09
 Database migration `0024` (one table added; no existing data changes). Rolling back to 1.9.0 needs the data snapshot

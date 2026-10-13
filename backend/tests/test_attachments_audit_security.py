@@ -280,7 +280,7 @@ def test_ac_sec_013_mass_assignment(env, base):
         (env.bm, "patch", f"/api/bank-accounts/{acct['id']}", {"current_balance": "0.00"}),
         (env.bm, "patch", f"/api/bank-accounts/{acct['id']}", {"status": "CLOSED"}),
         (env.bm, "patch", f"/api/bank-accounts/{acct['id']}", {"is_primary": False}),
-        (env.admin, "post", "/api/users", {"username": "zz1", "email": "z@z.org", "password": "Abcdefgh12345",
+        (env.admin, "post", "/api/users", {"first_name": "Test", "last_name": "Person", "username": "zz1", "email": "z@z.org", "password": "Abcdefgh12345",
                                            "security_domain": "FINANCIAL", "roles": ["BUDGET_USER"], "is_admin": True}),
         (env.ru, "put", "/api/me/preferences", {"theme": "dark", "roles": ["ADMINISTRATOR"]}),
         (env.ru, "post", "/api/auth/change-password", {"current_password": PASSWORD, "new_password": "Xyzxyzxyz12345",

@@ -47,17 +47,17 @@ def test_local_first_user_has_every_role(local):
 
 def test_local_any_roles_for_new_users_and_own_roles(local):
     app, admin = local
-    r = admin.post("/api/users", {"username": "pat", "email": "pat@example.com", "display_name": "Pat Person",
+    r = admin.post("/api/users", {"first_name": "Test", "last_name": "Person", "username": "pat", "email": "pat@example.com", "display_name": "Pat Person",
                                   "password": PASSWORD, "security_domain": "COMBINED",
                                   "roles": ["REGISTER_USER", "AUDITOR"]})
     assert r.status_code == 201, r.text
     assert r.json()["security_domain"] == "COMBINED"
     # the domain must match the roles
-    bad = admin.post("/api/users", {"username": "kim", "email": "kim@example.com", "display_name": "Kim Person",
+    bad = admin.post("/api/users", {"first_name": "Test", "last_name": "Person", "username": "kim", "email": "kim@example.com", "display_name": "Kim Person",
                                     "password": PASSWORD, "security_domain": "FINANCIAL", "roles": ["REGISTER_USER", "AUDITOR"]})
     assert bad.status_code == 422
     # extra roles still need their base role
-    bad = admin.post("/api/users", {"username": "kim", "email": "kim@example.com", "display_name": "Kim Person",
+    bad = admin.post("/api/users", {"first_name": "Test", "last_name": "Person", "username": "kim", "email": "kim@example.com", "display_name": "Kim Person",
                                     "password": PASSWORD, "security_domain": "COMBINED", "roles": ["BUDGET_ADMIN", "AUDITOR"]})
     assert bad.status_code == 422
     # an Administrator edits their own roles on a local install (e.g. an upgraded one)
@@ -100,7 +100,7 @@ def test_server_refuses_combined_roles(tmp_path):
 
 def test_combined_user_moved_to_a_server_can_still_be_edited(local, tmp_path):
     app, admin = local
-    r = admin.post("/api/users", {"username": "pat", "email": "pat@example.com", "display_name": "Pat Person",
+    r = admin.post("/api/users", {"first_name": "Test", "last_name": "Person", "username": "pat", "email": "pat@example.com", "display_name": "Pat Person",
                                   "password": PASSWORD, "security_domain": "COMBINED", "roles": ["REGISTER_USER", "AUDITOR"]})
     pat_id = r.json()["id"]
     # the same data run in server mode (the server owner switched the mode)

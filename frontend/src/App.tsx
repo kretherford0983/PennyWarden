@@ -27,6 +27,7 @@ import { BackupFailedBanner } from "./pages/ScheduledBackups";
 import { UpdateBanner, UpdateIndicator, useUpdates } from "./pages/Updates";
 import { MaintenanceBanner } from "./pages/Maintenance";
 import { ReinitializedBanner } from "./pages/Reinitialize";
+import NamesGate from "./pages/NamesGate";
 
 export const ROLE_NAMES: Record<string, string> = {
   ADMINISTRATOR: "Administrator", BUDGET_MANAGER: "Budget Manager", BUDGET_USER: "Budget User",
@@ -121,6 +122,10 @@ export default function App() {
   if (!me) return <Login workspace={status.workspace_name} onLogin={loadMe} legal={status} />;
   if (me.mfa_pending) return <MfaGate me={me} workspace={status.workspace_name} onDone={loadMe} onLogout={() => { setCsrf(null); setMe(null); }} />;
 
+  // 2.0.0 (#134): an Administrator completes the missing real names first
+  if ((me as any).names_needed > 0) {
+    return <NamesGate onDone={loadMe} onLogout={async () => { try { await api.post("/api/auth/logout"); } finally { setCsrf(null); setMe(null); } }} />;
+  }
   const ctx = {
     me,
     can: (p: string) => me.permissions.includes(p),

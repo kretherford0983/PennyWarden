@@ -54,11 +54,15 @@ def initialize(body: InitializeIn, request: Request, response: Response, db: Ses
     errs = policy_errors(body.password, body.admin_username)
     if errs:
         raise AppError(422, "PASSWORD_POLICY", " ".join(errs), errors=[{"field": "password", "message": e} for e in errs])
+    from ..services.users import clean_person_name   # 2.0.0 (#134): the first Administrator's names are required
+    first = clean_person_name(body.admin_first_name, "admin_first_name")
+    last = clean_person_name(body.admin_last_name, "admin_last_name")
     settings = request.app.state.settings
     with _init_lock:
         try:
             admin = bootstrap.initialize(db, settings, ctx, workspace_name=body.workspace_name,
-                                         username=body.admin_username, email=body.admin_email, password=body.password)
+                                         username=body.admin_username, email=body.admin_email, password=body.password,
+                                         first_name=first, last_name=last)
             # v1.4.1 CR-018: in server mode the first Administrator sets up MFA before using the application
             # 1.8.0 (#113): ... and chooses the security questions (after MFA when it is required)
             token, sess = auth_svc.create_session(db, settings, admin, "ENROLL" if mfa_required(settings) else "QUESTIONS",
