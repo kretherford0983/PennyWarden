@@ -62,3 +62,18 @@ then choose two different signers when printing; above an optional amount only t
   financial data, passwords or keys.
 - **Health** on System/About: database and attachment sizes, free disk space and an integrity check; a warning
   appears for Administrators when the disk is nearly full.
+
+## Maintenance mode (test build 7)
+- An Administrator can switch on **maintenance mode** on System/About with a message for everyone, now or at a set
+  time (for example during the year-end close or before an upgrade). Everyone can still sign in and look things up;
+  only Administrators can change anything until it is turned off.
+- **Backups the server can recover:** a backup made with *Let this server recover the passphrase* (the default) can
+  be restored by the server's owner even if its passphrase is forgotten — from the server's command line, on that
+  server only. **`pennywarden restore`** restores a backup from the command line ([Backup and
+  restore](backup-restore.md)).
+- After a restore, **Reports → Restore re-entry reports** lists what was entered or changed after the backup, so it
+  can be entered again.
+- **Reinitialize** (System/About → Advanced): start again with no financial data but the same users, after a safety
+  backup the server can always restore ([Backup and restore](backup-restore.md#reinitialize-keeping-the-users-since-200)).
+- **Windows server:** the [Windows server guide](install-windows-server.md) now covers everything from the download
+  to HTTPS, a Windows service, backups, upgrades and troubleshooting.

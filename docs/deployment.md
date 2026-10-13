@@ -42,8 +42,8 @@ default browser when a desktop session is available. Plain HTTP is acceptable be
 ## Server installation (multiple users)
 
 On **Windows** (Windows 10/11 or Windows Server): step by step in [install-windows-server.md](install-windows-server.md)
-— the portable zip, a fixed data folder, HTTPS through Cloudflare Tunnel or Caddy, and Task Scheduler to start it
-with Windows.
+— the portable zip, a fixed data folder with its permissions, HTTPS through Caddy (or a Cloudflare Tunnel), and a
+Windows service (NSSM) that starts it with Windows.
 
 ### Linux: one command (since 1.5.0)
 
@@ -118,8 +118,8 @@ server {
 ```
 
 Run as a service: systemd unit (`ExecStart=/opt/pennywarden/current/pennywarden --mode server --no-browser`,
-`Environment=FM_DATA_DIR=/var/lib/pennywarden`, dedicated user) or on Windows with Task Scheduler/NSSM running
-`PennyWarden-Server.cmd`. Run a single application process per data directory (SQLite + in-process
+`Environment=FM_DATA_DIR=/var/lib/pennywarden`, dedicated user) or on Windows as the service **PennyWarden** with
+NSSM ([install-windows-server.md](install-windows-server.md#5-run-it-as-a-service-with-nssm)). Run a single application process per data directory (SQLite + in-process
 login rate limiter; the per-account count of failed attempts is in the database).
 
 Host commands for a locked-out user, run on the server as the account that owns the data directory:
@@ -150,8 +150,9 @@ migrations run automatically; databases are never dropped or recreated.
 3. Install a compatible or newer version on the target (Windows or Linux) and point `FM_DATA_DIR`/`--data-dir` at the copy.
 4. Start: migrations run; encrypted account numbers decrypt with the portable key (plain JSON key file, no OS keystore).
 
-On Windows, keep the data directory under the user profile (default `%LOCALAPPDATA%`) or restrict its ACL to the
-service account, because POSIX `chmod 600` is not meaningful there.
+On Windows, keep the data directory under the user profile (default `%LOCALAPPDATA%`) or, on a server, restrict its
+ACL to Administrators, SYSTEM and the service account (`icacls`, [install-windows-server.md](install-windows-server.md#2-the-program-folder-and-the-data-folder)),
+because POSIX `chmod 600` is not meaningful there.
 
 ## License
 

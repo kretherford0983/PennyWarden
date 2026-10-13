@@ -3,7 +3,7 @@
 Versions are `Breaking.Major.Minor` from 1.6.0 (docs/branching.md).
 
 ## 2.0.0 — unreleased
-Database migrations `0025` to `0030` (nine columns and five tables added; no existing data changes). Rolling back to 1.10.0
+Database migrations `0025` to `0032` (eighteen columns and five tables added; no existing data changes). Rolling back to 1.10.0
 needs the data snapshot the installer takes before the upgrade (docs/upgrade.md). 2.0.0 is built and tested in
 several test builds; the notes below grow with each one.
 
@@ -133,6 +133,34 @@ Database migrations `0028` to `0030` (empty columns: the letter logo, the backup
 - **Health (#129).** System/About shows the database and attachment sizes, free disk space and the database version,
   and runs an integrity check of the database (safe while people work; audited). Administrators see a warning on every
   page when less than 1 GB or 10 % of the disk is free.
+
+**Test build 7 — maintenance mode, command-line restore, reinitialize, Windows server guide (#130, #124, #125, #136)**
+- **Maintenance mode (#130).** An Administrator turns it on in System/About with a message, now or at a set time.
+  While it is on, everyone can sign in and look things up but only Administrators can change anything (enforced by
+  the server). Everyone sees the message - on the sign-in page and at the top of every page - from the moment it is
+  scheduled. It stays on through a restart; turning it on or off is audited. Database migration `0031`.
+- **Server-recoverable backups (#124).** *Let this server recover the passphrase* (on by default) keeps the backup's
+  passphrase locked with a key that never leaves this server, so its owner can restore that exact file even if the
+  passphrase is forgotten — only from the server's command line; the web restore always asks for the passphrase.
+  System/About lists the backups this server can recover; *Remove recovery* makes one passphrase-only.
+- **`pennywarden restore` (#124).** Restore from the server's command line: hidden prompt, passphrase file
+  (`PENNYWARDEN_PASSPHRASE_FILE`) or `--use-server-key`; asks before stopping the service, restores file ownership,
+  works on a new installation, never stops anything inside Docker; `--list` (docs/backup-restore.md).
+- **Restore re-entry report (#124).** Every restore first lists what was entered or changed after the backup in a CSV
+  report, which Budget Managers, Budget Users, Register Users and Auditors download under Reports; Administrators see
+  only a summary.
+- **Reinitialize, keeping the users (#125).** System/About → Advanced (collapsed): removes all financial data — Fiscal
+  Years, budgets, entities, bank accounts, the register, attachments, fundraisers, Payments data and organization
+  reminders — and keeps users, roles, passwords, two-step verification, the organization name, the encryption key,
+  module switches, personal preferences and the audit log. Confirmed by typing *reinitialize*, your password and (if
+  on) a two-step code; a safety backup is made and checked first (nothing is removed if that fails), kept in
+  `pre-reinitialize/` and always restorable by the server's owner with `pennywarden restore … --use-server-key`.
+  Everyone else is signed out and sees a notice until an Administrator acknowledges it. Once in 24 hours from the web;
+  `pennywarden reinitialize` on the server has no limit. Entity numbers continue. Database migration `0032`.
+- **Windows server guide (#136).** docs/install-windows-server.md rewritten end to end: the portable zip with a
+  version folder and a `current` pointer, a dedicated service account and data-folder permissions, `config.toml`,
+  HTTPS with Caddy, PennyWarden and Caddy as Windows services with NSSM (start, stop, logs), backups, restore,
+  upgrades with rollback, host commands and troubleshooting. Written against the code; not yet run on Windows.
 
 ## 1.10.0 — 2026-10-09
 Database migration `0024` (one table added; no existing data changes). Rolling back to 1.9.0 needs the data snapshot

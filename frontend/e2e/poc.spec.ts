@@ -2378,3 +2378,45 @@ test("#127-#129: an Administrator sees the signed-in sessions, downloads diagnos
   await h.getByRole("button", { name: "Run integrity check" }).click();
   await expect(h.getByRole("status")).toContainText("The database passed the integrity check.");
 });
+
+test("#130: maintenance mode - Administrators keep working, the others see the message and can't change anything", async ({ page }) => {
+  await login(page, "admin");
+  await page.getByRole("link", { name: "System/About" }).click();
+  const p = page.getByRole("region", { name: "Maintenance mode" });
+  await p.getByLabel("Message for the users").fill("Year-end close until Monday.");
+  await p.getByRole("button", { name: "Turn on maintenance mode" }).click();
+  await expect(page.getByTestId("maintenance-notice").first()).toContainText("Year-end close until Monday.");
+  await logout(page);
+  await expect(page.getByTestId("maintenance-notice")).toContainText("Year-end close until Monday.");   // sign-in page
+  await login(page, "bm1");
+  await expect(page.getByTestId("maintenance-notice")).toContainText("changes are paused");
+  const csrf = (await (await page.request.get("/api/auth/me")).json()).csrf_token;
+  const r = await page.request.post("/api/entities", { data: { entity_type: "ORGANIZATION", organization_name: "Blocked Org", confirmations: ["DUPLICATE_ENTITY"] }, headers: { "X-CSRF-Token": csrf } });
+  expect(r.status()).toBe(503);
+  await logout(page);
+  await login(page, "admin");
+  await page.getByRole("link", { name: "System/About" }).click();
+  await page.getByRole("region", { name: "Maintenance mode" }).getByRole("button", { name: "Turn off" }).click();
+  await expect(page.getByTestId("maintenance-notice")).toHaveCount(0);
+});
+
+// Keep this test LAST: it removes the financial data the other tests use.
+test("#125: an Administrator reinitializes (keeping the users); everyone sees the notice until it is acknowledged", async ({ page }) => {
+  await login(page, "admin");
+  await page.getByRole("link", { name: "System/About" }).click();
+  await page.getByTestId("advanced").locator("summary").click();
+  await page.getByLabel('Type "reinitialize" to confirm').fill("reinitialize");
+  await page.getByLabel("Your password").last().fill(PW);
+  await page.getByRole("button", { name: "Reinitialize" }).click();
+  await expect(page.getByTestId("reinit-done")).toContainText("--use-server-key", { timeout: 30_000 });
+  await page.goto("/");
+  await expect(page.getByTestId("reinitialized-banner")).toContainText("reinitialized by admin");
+  await logout(page);
+  await login(page, "bm1");
+  await expect(page.getByTestId("reinitialized-banner")).toBeVisible();
+  await expect(page.getByTestId("reinitialized-banner").getByRole("button")).toHaveCount(0);
+  await logout(page);
+  await login(page, "admin");
+  await page.getByTestId("reinitialized-banner").getByRole("button", { name: "Acknowledge for everyone" }).click();
+  await expect(page.getByTestId("reinitialized-banner")).toHaveCount(0);
+});

@@ -4,6 +4,8 @@ import { BuildDetails, ErrorBox, Loading } from "../components";
 import { BackupRestore } from "./BackupRestore";
 import { UpdateSettings } from "./Updates";
 import { useMe } from "../App";
+import { MaintenancePanel } from "./Maintenance";
+import { AdvancedPanel } from "./Reinitialize";
 import { BackupWarningSetting, DiagnosticsPanel, HealthPanel, OrganizationPanel, SessionsPanel, SettingsPanel } from "./AdminSettings";
 
 export default function About() {
@@ -30,8 +32,10 @@ export default function About() {
       {admin ? <section className="card" aria-labelledby="backup-age-h"><h2 id="backup-age-h">Backup reminder</h2><BackupWarningSetting /></section> : null}
       {can("system.view") ? <SessionsPanel /> : null}
       {can("system.view") ? <SettingsPanel /> : null}
+      {admin ? <MaintenancePanel /> : null}
       {admin ? <HealthPanel /> : null}
       {admin ? <DiagnosticsPanel /> : null}
+      {a.restore_max_mb != null ? <AdvancedPanel /> : null}
     </div>
   );
 }

@@ -1,5 +1,5 @@
 // v1.4.1 CR-023 / CR-024 / CR-025: Backup / Restore (System/About) and restore from the initialization wizard.
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api, getCsrf } from "../api";
 import { ErrorBox, Field, GuardedForm } from "../components";
 import ScheduledBackups from "./ScheduledBackups";
@@ -7,7 +7,7 @@ import ScheduledBackups from "./ScheduledBackups";
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const mb = (n: number) => (n < 1024 * 1024 ? `${Math.max(1, Math.round(n / 1024))} KB` : `${(n / 1024 / 1024).toFixed(n < 10 * 1024 * 1024 ? 1 : 0)} MB`);
 
-async function poll(url: string, onUpdate: (j: any) => void): Promise<any> {
+export async function poll(url: string, onUpdate: (j: any) => void): Promise<any> {
   for (;;) {
     let j: any;
     try {
@@ -22,7 +22,7 @@ async function poll(url: string, onUpdate: (j: any) => void): Promise<any> {
   }
 }
 
-function Steps({ job }: { job: any }) {
+export function Steps({ job }: { job: any }) {
   if (!job) return null;
   return (
     <ol className="job-steps" aria-label="Progress">
@@ -34,9 +34,10 @@ function Steps({ job }: { job: any }) {
 
 // ------------------------------------------------------------------ backup
 export function BackupPanel() {
-  const [f, setF] = useState({ passphrase: "", passphrase_confirmation: "", password: "" });
+  const [f, setF] = useState({ passphrase: "", passphrase_confirmation: "", password: "", recoverable: true });
   const [err, setErr] = useState<unknown>(null);
   const [job, setJob] = useState<any>(null);
+  const [listed, setListed] = useState(0);
   const dl = useRef<HTMLAnchorElement>(null);
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -45,9 +46,9 @@ export function BackupPanel() {
     try {
       const j = await api.post("/api/system/backups", f);
       setJob(j);
-      setF({ passphrase: "", passphrase_confirmation: "", password: "" });
+      setF({ passphrase: "", passphrase_confirmation: "", password: "", recoverable: f.recoverable });
       const done = await poll(`/api/system/backups/${j.id}`, setJob);
-      if (done.state === "done") setTimeout(() => dl.current?.click(), 50);
+      if (done.state === "done") { setTimeout(() => dl.current?.click(), 50); setListed((n) => n + 1); }
     } catch (x) { setErr(x); }
   };
   const running = job?.state === "running";
@@ -55,7 +56,7 @@ export function BackupPanel() {
     <section className="card" aria-labelledby="backup-h">
       <h2 id="backup-h">Create a backup</h2>
       <p>The backup file contains <b>everything needed to recover</b>: the database (all users, settings and financial records), every attachment and the encryption key. It is encrypted with the passphrase you choose. <code>config.toml</code> (server settings) is not included.</p>
-      <div className="alert warn" role="note"><b>Keep the passphrase safe.</b> Without it the backup cannot be restored — nobody can recover a lost passphrase. Store the backup file away from this computer.</div>
+      <div className="alert warn" role="note"><b>Keep the passphrase safe.</b> Without it the backup cannot be restored from this page. Store the backup file away from this computer.</div>
       <ErrorBox error={err} />
       {!running ? (
         <GuardedForm onSubmit={submit}>
@@ -63,6 +64,11 @@ export function BackupPanel() {
             <Field label="Backup passphrase" hint="At least 12 characters. A long sentence works well."><input type="password" required minLength={12} autoComplete="new-password" value={f.passphrase} onChange={(e) => setF({ ...f, passphrase: e.target.value })} /></Field>
             <Field label="Repeat the passphrase"><input type="password" required minLength={12} autoComplete="new-password" value={f.passphrase_confirmation} onChange={(e) => setF({ ...f, passphrase_confirmation: e.target.value })} /></Field>
           </div>
+          {/* 2.0.0 (#124) */}
+          <label className="check"><input type="checkbox" checked={f.recoverable} onChange={(e) => setF({ ...f, recoverable: e.target.checked })} /> Let this server recover the passphrase</label>
+          <p className="hint">If the passphrase is ever forgotten, the owner of this server can still restore this backup from the server's command line
+            (<code>pennywarden restore FILE --use-server-key</code>). It works only on this server, with this exact file: a copy taken to another
+            computer still needs the passphrase, and restoring from this page always does. Turn it off and nobody can recover a lost passphrase.</p>
           <Field label="Your password" hint="Confirms that it is you."><input type="password" required autoComplete="current-password" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} /></Field>
           <div className="actions left"><button className="primary" type="submit">Create backup</button></div>
         </GuardedForm>
@@ -73,10 +79,45 @@ export function BackupPanel() {
         <div className="alert ok" role="status">
           Backup ready: <b>{job.result.filename}</b> ({mb(job.result.size)} · {job.result.counts.transactions} transactions, {job.result.files - 2} attachment files).{" "}
           <a ref={dl} href={`/api/system/backups/${job.id}/download`} download={job.result.filename}>Download again</a>
-          <div className="hint">The file stays available for download here for one hour.</div>
+          <div className="hint">The file stays available for download here for one hour.{job.result.recoverable ? " This server can recover its passphrase." : ""}</div>
         </div>
       ) : null}
+      <ServerBackups key={listed} />
     </section>
+  );
+}
+
+/** 2.0.0 (#124): backups made on this server that its owner can restore without the passphrase. */
+function ServerBackups() {
+  const [rows, setRows] = useState<any[] | null>(null);
+  const [err, setErr] = useState<unknown>(null);
+  const load = () => api.get("/api/system/server-backups").then((r) => setRows(r.backups), setErr);
+  useEffect(() => { load(); }, []);
+  const remove = async (r: any) => {
+    if (!window.confirm(`Make ${r.filename} passphrase-only? After this nobody can restore it without its passphrase.`)) return;
+    setErr(null);
+    try { await api.post(`/api/system/server-backups/${r.id}/remove-recovery`, {}); await load(); } catch (x) { setErr(x); }
+  };
+  if (!rows?.length) return <ErrorBox error={err} />;
+  return (
+    <details className="server-backups">
+      <summary>Backups this server can recover ({rows.length})</summary>
+      <ErrorBox error={err} />
+      <table className="table compact">
+        <thead><tr><th>Created</th><th>File</th><th>Made by</th><th>Size</th><th /></tr></thead>
+        <tbody>
+          {rows.map((r) => (
+            <tr key={r.id}>
+              <td>{new Date(r.created_at).toLocaleString()}</td><td>{r.filename}{r.kind === "PRE_REINITIALIZE" ? <span className="badge grey"> before reinitialize</span> : null}</td>
+              <td>{r.created_by || "—"}</td><td>{mb(r.size)}</td>
+              <td>{r.kind === "PRE_REINITIALIZE" ? null : <button className="small" onClick={() => remove(r)}>Remove recovery</button>}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="hint">The server owner restores one with <code>pennywarden restore FILE --use-server-key</code> (the service is stopped first; see the
+        backup and restore guide). <code>pennywarden restore --list</code> shows the same list on the server.</p>
+    </details>
   );
 }
 
@@ -132,7 +173,7 @@ export function RestorePanel({ wizard = false, maxMb }: { wizard?: boolean; maxM
       const j = await api.post(`/api/system/restore/uploads/${id}/start`, body);
       setJob(j);
       const done = await poll(`/api/system/restore/jobs/${j.id}`, setJob);
-      if (done.state === "done") setTimeout(() => window.location.assign("/"), 4000);
+      if (done.state === "done") setTimeout(() => window.location.assign("/"), done.result?.report_summary ? 12000 : 4000);
       else setSent(null);
     } catch (x) {
       setErr(x);
@@ -172,7 +213,9 @@ export function RestorePanel({ wizard = false, maxMb }: { wizard?: boolean; maxM
       {job?.state === "failed" ? <div className="alert error" role="alert">{job.error}</div> : null}
       {job?.state === "done" ? (
         <div className="alert ok" role="status">
-          Restore complete — {job.result.workspace}, backup from {new Date(job.result.backup_created_at).toLocaleString()}. The application restarted with the restored data. Taking you to the sign-in page… <a href="/">Sign in now</a>
+          Restore complete — {job.result.workspace}, backup from {new Date(job.result.backup_created_at).toLocaleString()}. The application restarted with the restored data.
+          {job.result.report_summary ? <div className="hint" data-testid="restore-report-summary">{job.result.report_summary}</div> : null}
+          Taking you to the sign-in page… <a href="/">Sign in now</a>
         </div>
       ) : null}
     </section>

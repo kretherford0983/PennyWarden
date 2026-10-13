@@ -20,8 +20,22 @@ A backup is a single file `pennywarden-backup-<organization>-<date>-<time>.fmbak
 The file is encrypted with a **passphrase you choose** (at least 12 characters): AES-256-GCM in 1 MiB authenticated
 records, key derived with scrypt (N = 2^15, r = 8, p = 1). Record order, the end of the file and the header are
 authenticated, so a changed, reordered or shortened file is refused. **Without the passphrase the backup cannot be
-restored** — nobody (including the application) can recover a lost passphrase. Keep the passphrase in a password
-manager and the backup file away from the server.
+restored from the web page.** Keep the passphrase in a password manager and the backup file away from the server.
+
+### Let this server recover the passphrase (since 2.0.0)
+
+When **Let this server recover the passphrase** is ticked (the default), the server also keeps a *recovery file*: the
+passphrase, encrypted with a random **server key** that never leaves this server. The backup file itself is unchanged.
+
+- Only the server's owner can use it, from the server's command line: `pennywarden restore FILE --use-server-key`.
+  The web page **always** asks for the passphrase — a stolen Administrator sign-in can't restore without it.
+- It works only **on this server** and only **for this exact file** (the recovery file is bound to the file's
+  fingerprint). A copy taken to another computer still needs the passphrase.
+- The server key (`server-key/server.key`) and the recovery files (`backup-recovery/`) live in the data folder,
+  readable only by the service account. They are never inside a backup. If the server itself is lost, so is the
+  key: keep the passphrase too.
+- Untick the option, or later choose **Remove recovery** in *Backups this server can recover*, and nobody can recover
+  a lost passphrase for that backup. Removing it is audited (`BACKUP_RECOVERY_REMOVED`).
 
 ## Creating a backup
 
@@ -51,6 +65,56 @@ log as `SYSTEM_RESTORED`.
 
 If any step fails the current data stays in place (or is put back from the safety copy) and the page says which step
 failed. The largest accepted file is set by `restore_max_mb` in `config.toml` (default 20480).
+
+### Restore re-entry report (since 2.0.0)
+
+Before the data is replaced, every restore (web or command line) compares it with the backup. Transactions that
+exist only in the data being replaced — entered, edited, voided or deleted after the backup was made — are written to
+a CSV file in `restore-reports/` in the data folder (one row per line of the transaction: change, dates, who entered
+it, bank account with a masked number, payee, budget, amount, invoice number, description, status, attachments).
+Fiscal Years, budgets, entities and bank accounts created after the backup are listed by count and name.
+
+Budget Managers, Budget Users, Register Users and Auditors download it under **Reports → Restore re-entry reports**.
+The Administrator who restored, and the command line, see only a summary (for example "3 transaction(s) entered or
+changed after the backup"): the report holds financial data. A backup from another system is compared by time only
+(the report says so). Reports are kept until the server owner removes them.
+
+## Restoring from the server's command line (since 2.0.0)
+
+```
+pennywarden restore FILE.fmbak [--use-server-key | --passphrase-file PATH] [--data-dir DIR] [--stop-service] [--yes]
+pennywarden restore --list [--data-dir DIR]
+```
+
+- **Rights.** On a server install (the systemd service or the Windows service `PennyWarden`, see
+  [install-windows-server.md](install-windows-server.md#9-host-commands)) run it with `sudo` / from a terminal
+  opened as Administrator; it says so and stops before changing anything if it needs them. A per-user local install
+  needs no extra rights. On Linux the restored files get the data folder's owner again and `secrets/` stays
+  owner-only.
+- **Passphrase.** Typed at a hidden prompt; or `--passphrase-file PATH` (one trailing newline is ignored), also as the
+  environment variable `PENNYWARDEN_PASSPHRASE_FILE` for scripts; or `--use-server-key` for a backup made on this
+  server with recovery on. The passphrase is never a command-line value and is never printed or logged.
+- **The service.** If PennyWarden is running, the command asks *Stop it now? All signed-in users will be signed out*
+  (`--stop-service` or `--yes` answer yes). Answer no and nothing changes. Afterwards it offers to start it again. A
+  local install that is running must be quit first.
+- **Steps.** The same as the web restore: decrypt and check, versions and key, re-entry report, safety copy in
+  `pre-restore/`, swap, update the database, end every session — and put the old data back if anything fails. Audited
+  as `SYSTEM_RESTORED` via `host_cli` with the operating-system user.
+- **A new server.** It also restores onto a new, empty installation (`--data-dir` of the new data folder): the way to
+  move to a new server from the command line. Without the old server's key the passphrase is needed.
+- **Docker.** Nothing is stopped inside a container. Stop the app container, run the restore in a one-off container
+  on the same data volume, then start it again (with the example `packaging/docker/docker-compose.yml`, service
+  `app`):
+
+  ```
+  docker compose -f packaging/docker/docker-compose.yml stop app
+  docker compose -f packaging/docker/docker-compose.yml run --rm -v /path/to/backups:/backups app restore /backups/FILE.fmbak --yes
+  docker compose -f packaging/docker/docker-compose.yml start app
+  ```
+
+  Add `--use-server-key` for a backup made by this container (the key is on the data volume), or
+  `--passphrase-file /backups/passphrase.txt`. Without either, add `-it` to `run` to type the passphrase.
+- `--list` shows the backups this server can recover (date, size, who made it).
 
 ## Scheduled backups (since 1.9.0)
 
@@ -93,3 +157,27 @@ running the wizard). The new server keeps its own `config.toml`.
 The files can also be copied by hand while the service is stopped: `database/`, `attachments/` and `secrets/` from
 the data directory (`/var/lib/pennywarden` on a Linux server). The installer's automatic snapshots before each upgrade
 (`/var/backups/pennywarden/<timestamp>/`) are such copies.
+
+## Reinitialize (keeping the users, since 2.0.0)
+
+System/About → **Advanced** → **Reinitialize** removes all financial data and keeps the users — for example after
+testing. It removes Fiscal Years, budgets, entities (not the system entity *Multiple*), bank accounts, the register,
+attachments (records and files), fundraisers, the Payments module's data and organization reminders. It keeps users,
+roles, passwords, two-step verification, security questions, the organization name, the encryption key, module
+switches, personal preferences and reminders, backup settings and the **audit log** (with a `REINITIALIZE` event).
+Entity numbers continue from the last one, so a new entity never reuses a number from an older backup or report.
+
+1. Type `reinitialize`, your password and, if two-step verification is on, a code. Optionally choose your own
+   passphrase for the safety backup (then it can also be restored from the web page); otherwise a random one is
+   used, which only the server's owner can use.
+2. The application pauses, makes the **safety backup** and checks it. If that fails, nothing is removed.
+3. The backup goes to `pre-reinitialize/` in the data folder — never downloadable or removable from the web, and every
+   one is kept. It is always recoverable by the server: the page shows the file and the command to undo it:
+   `pennywarden restore <data folder>/pre-reinitialize/<file>.fmbak --use-server-key`.
+4. The removal happens in one database transaction (all or nothing); the attachment files are removed after it.
+   Everyone else is signed out. Everyone who signs in sees a notice (who, when) until an Administrator acknowledges it.
+
+From the web it can be done once in 24 hours. On the server, `pennywarden reinitialize [--data-dir DIR]
+[--passphrase-file PATH] [--stop-service] [--yes]` does the same with no time limit (a limit would only push people to
+delete the data folder, which leaves no backup); it asks for the word `reinitialize` unless `--yes` is given, handles
+the service like `pennywarden restore`, and is audited via `host_cli`.

@@ -133,6 +133,13 @@ For 1.1.1 → 1.1.0 (no schema change) switching the symlink alone is enough.
   drop-in (`sudo systemctl edit pennywarden`), which is preserved.
 - Old backups in `/var/backups/pennywarden/` are not pruned automatically; remove ones you no longer need.
 
+## Windows server
+
+Step by step in [install-windows-server.md](install-windows-server.md#8-upgrading): back up, unzip the new version into
+its own folder, `Stop-Service PennyWarden`, point the `C:\PennyWarden\current` junction at the new folder,
+`Start-Service PennyWarden` (the database is updated at the start), check System/About. To roll back, point the
+junction back and restore the backup if the database changed (see the database changes per version below).
+
 ## Windows (local install)
 
 Data lives in `%LOCALAPPDATA%\PennyWarden` and is separate from the program folder.
