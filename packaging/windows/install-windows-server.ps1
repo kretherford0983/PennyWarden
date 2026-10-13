@@ -172,15 +172,24 @@ function Stop-Svc([string]$Name) {
   if ($s -and $s.Status -ne "Stopped") { Say "Stopping the $Name service"; Stop-Service -Name $Name -Force; (Get-Svc $Name).WaitForStatus("Stopped", [TimeSpan]::FromSeconds(60)) }
 }
 
+function Invoke-Native([string]$Exe, [string[]]$ExeArgs) {
+  # Windows PowerShell 5.1 turns anything a program writes to stderr into an error that "Stop" would throw: run
+  # native programs with "Continue" and judge them by their exit code only.
+  $eap = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  try { $out = (& $Exe @ExeArgs 2>&1 | ForEach-Object { "$_" }) -join " "; return @{ Code = $LASTEXITCODE; Out = $out } }
+  finally { $ErrorActionPreference = $eap }
+}
+
 function Invoke-Nssm([string]$Nssm, [string[]]$NssmArgs) {
-  $out = & $Nssm @NssmArgs 2>&1
-  if ($LASTEXITCODE -ne 0) { Fail "nssm $($NssmArgs -join ' ') failed: $out" }
+  $r = Invoke-Native $Nssm $NssmArgs
+  if ($r.Code -ne 0) { Fail "nssm $($NssmArgs -join ' ') failed: $($r.Out)" }
 }
 
 function Set-Link([string]$Link, [string]$Target) {
-  if (Test-Path -LiteralPath $Link) { cmd /c rmdir "$Link" | Out-Null }
-  cmd /c mklink /J "$Link" "$Target" | Out-Null
-  if ($LASTEXITCODE -ne 0) { Fail "could not create the link $Link -> $Target" }
+  if (Test-Path -LiteralPath $Link) { Invoke-Native "cmd.exe" @("/c", "rmdir", "$Link") | Out-Null }
+  $r = Invoke-Native "cmd.exe" @("/c", "mklink", "/J", "$Link", "$Target")
+  if ($r.Code -ne 0) { Fail "could not create the link $Link -> ${Target}: $($r.Out)" }
 }
 
 function Get-LinkTarget([string]$Link) {
@@ -195,8 +204,8 @@ function Protect-Folder([string]$Dir, [switch]$AdminsOnly) {
   # from ProgramData (which lets every user read).
   $grants = @("*S-1-5-18:(OI)(CI)F", "*S-1-5-32-544:(OI)(CI)F")
   if (-not $AdminsOnly) { $grants += "${ServiceAccount}:(OI)(CI)M" }
-  $out = icacls "$Dir" /inheritance:r /grant:r @grants 2>&1
-  if ($LASTEXITCODE -ne 0) { Fail "could not set the permissions of ${Dir}: $out" }
+  $r = Invoke-Native "icacls.exe" (@("$Dir", "/inheritance:r", "/grant:r") + $grants)
+  if ($r.Code -ne 0) { Fail "could not set the permissions of ${Dir}: $($r.Out)" }
 }
 
 function Read-ConfigPort([string]$Cfg) {
@@ -234,13 +243,13 @@ function Invoke-Uninstall {
       if ($path -notlike "*$InstallDir*") { Note "The Caddy service was not installed by this script - left alone."; continue }
     }
     Stop-Svc $name
-    if (Test-Path -LiteralPath $nssm) { Invoke-Nssm $nssm @("remove", $name, "confirm") } else { sc.exe delete $name | Out-Null }
+    if (Test-Path -LiteralPath $nssm) { Invoke-Nssm $nssm @("remove", $name, "confirm") } else { Invoke-Native "sc.exe" @("delete", $name) | Out-Null }
     Note "service $name removed"
   }
   Get-NetFirewallRule -DisplayName "PennyWarden HTTPS (Caddy)" -ErrorAction SilentlyContinue | Remove-NetFirewallRule
   if (Test-Path -LiteralPath $InstallDir) {
     $link = Join-Path $InstallDir "current"
-    if (Test-Path -LiteralPath $link) { cmd /c rmdir "$link" | Out-Null }
+    if (Test-Path -LiteralPath $link) { Invoke-Native "cmd.exe" @("/c", "rmdir", "$link") | Out-Null }
     Remove-Item -LiteralPath $InstallDir -Recurse -Force
     Note "program folder $InstallDir removed"
   }
@@ -371,8 +380,8 @@ try {
   Invoke-Nssm $nssm @("set", $Service, "AppStderr", $log)
   Invoke-Nssm $nssm @("set", $Service, "AppRotateFiles", "1")
   Invoke-Nssm $nssm @("set", $Service, "AppRotateBytes", "5000000")
-  $out = sc.exe config $Service obj= "$ServiceAccount" 2>&1
-  if ($LASTEXITCODE -ne 0) { Fail "could not set the service account: $out" }
+  $r = Invoke-Native "sc.exe" @("config", $Service, "obj=", $ServiceAccount)
+  if ($r.Code -ne 0) { Fail "could not set the service account: $($r.Out)" }
   Protect-Folder $DataDir
 
   # ---- 6. HTTPS with Caddy

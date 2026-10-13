@@ -14,16 +14,26 @@ $data = "C:\ProgramData\PennyWarden-ci"
 $zipFull = (Resolve-Path $Zip).Path
 $nssmFull = (Resolve-Path $Nssm).Path
 
+$script:lastOutput = @()
+
+function Annotate([string]$title, [string[]]$lines) {
+  # the job log is not always at hand: put the evidence into the annotation itself (newlines as %0A)
+  $body = ($lines | Select-Object -Last 25) -join "%0A"
+  Write-Host "::error title=$title::$body"
+}
+
 function Check([bool]$ok, [string]$what) {
-  if (-not $ok) { Write-Host "::error::server installer test failed: $what"; throw $what }
+  if (-not $ok) { Annotate "server installer test failed: $what" $script:lastOutput; throw $what }
   Write-Host "ok - $what"
 }
 
 function Run-Installer([string[]]$more) {
-  # Windows PowerShell 5.1, as an Administrator would run it on a server
+  # Windows PowerShell 5.1, as an Administrator would run it on a server. Its output is kept (not returned).
   $a = @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $installer, "-Yes", "-InstallDir", $inst, "-DataDir", $data) + $more
-  & powershell.exe @a
-  return $LASTEXITCODE
+  $script:lastOutput = @(& powershell.exe @a 2>&1 | ForEach-Object { "$_" })
+  $code = $LASTEXITCODE
+  $script:lastOutput | ForEach-Object { Write-Host "  | $_" }
+  return [int]$code
 }
 
 function Get-Acct { (Get-CimInstance Win32_Service -Filter "Name='PennyWarden'").StartName }
@@ -72,7 +82,8 @@ try {
   Check (Test-Path "$data\marker.txt") "the data folder is kept"
   Write-Host "SERVER INSTALLER TEST PASSED"
 } catch {
-  if (Test-Path "$data\logs\service.log") { Write-Host "--- service.log"; Get-Content "$data\logs\service.log" -Tail 40 }
+  $log = if (Test-Path "$data\logs\service.log") { @(Get-Content "$data\logs\service.log" -Tail 25) } else { @("(no service.log)") }
+  Annotate "server installer test: $($_.Exception.Message)" (@("--- installer output:") + $script:lastOutput + @("--- service.log:") + $log)
   exit 1
 } finally {
   if (Get-Service PennyWarden -ErrorAction SilentlyContinue) { & "$inst\nssm.exe" stop PennyWarden 2>$null; & "$inst\nssm.exe" remove PennyWarden confirm 2>$null }
