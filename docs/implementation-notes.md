@@ -287,7 +287,7 @@ runs once; the latest `onClose` is kept in a ref for Escape. E2E "#106" types th
 `site/` (static HTML/CSS/JS, CSP `default-src 'self'`, no third-party resources; `site.js` fills the download
 buttons from `releases.json` with `textContent`/attributes only and accepts only `https://github.com/` URLs),
 `scripts/release_data.py` (GitHub releases → `releases.json` / `releases-test.json`: tags `vX.Y.Z` non-prerelease =
-stable, `vX.Y.Z-test.N` prerelease = test; numeric version order; notes cut at the install footer the build adds;
+stable, `vX.Y.Z-test.N` prerelease = test; numeric version order; notes cut at the install footer the build adds (2.0.0 #207: test builds put that block first, before a rule - `HEADER` strips it);
 downloads classified by file name with SHA-256 from each release's `SHA256SUMS.txt`), `scripts/build_site.sh`,
 `.github/workflows/pages.yml` (always checks out `main`; `upload-pages-artifact` + `deploy-pages`). `build.yml` gains
 a `site` job after `publish` that runs `gh workflow run pages.yml --ref main` (a release created with the workflow

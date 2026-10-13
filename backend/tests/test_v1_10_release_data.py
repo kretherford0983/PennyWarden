@@ -68,3 +68,19 @@ def test_site_assembles(tmp_path):
     assert "Content-Security-Policy" in html and "releases/latest" in html
     js = (out / "site.js").read_text()
     assert ".innerHTML" not in js and "insertAdjacentHTML" not in js                                        # release data never becomes markup
+
+
+def test_install_block_first_or_last_is_left_out_of_the_notes():
+    """2.0.0 (#207): test builds put the install block first; production releases (and older test builds) last."""
+    m = _mod()
+    head = ("Test build from branch `test` (commit abc). Install or upgrade on the **test** server:\n```\n"
+            "curl -fsSL https://github.com/o/r/releases/download/v2.0.0-test.130/install.sh | sudo bash -s -- "
+            "--version v2.0.0-test.130\n```\nWindows: download it.\nMac (Apple Silicon): download it.\n\n---\n\n")
+    notes = "## 2.0.0 — unreleased\n**Test build 9**\n- Change one.\n\n---\n\n- Not a footer: a rule in the notes."
+    assert m.notes_of(head + notes) == notes
+    assert m.notes_of(head.replace("\n", "\r\n") + notes) == notes
+    old = notes + "\n\n---\nTest build from branch `test` (commit abc). Install or upgrade on the **test** server:\n```"
+    assert m.notes_of(old) == notes
+    prod = "**New** stuff\n\n---\nProduction release (commit abc). Install or upgrade:\n```\ncurl ...\n```"
+    assert m.notes_of(prod) == "**New** stuff"
+    assert m.notes_of("Plain notes.") == "Plain notes." and m.notes_of(None) == ""

@@ -184,6 +184,11 @@ Database migrations `0028` to `0030` (empty columns: the letter logo, the backup
   verification, a backup older than the backup reminder, locked accounts — are marked, each with a short note on what
   to do. The overview only reports; it changes nothing.
 
+**Test build 9 — release notes (#207)**
+- **Install command first.** A test build's release notes now start with the install block — the `curl` command to
+  install or upgrade the test server (with a copy button on GitHub) and the Windows and Mac downloads — followed by the
+  notes. Production releases keep it at the end. pennywarden.org and the update notification still show only the notes.
+
 ## 1.10.0 — 2026-10-09
 Database migration `0024` (one table added; no existing data changes). Rolling back to 1.9.0 needs the data snapshot
 the installer takes before the upgrade (docs/upgrade.md).
