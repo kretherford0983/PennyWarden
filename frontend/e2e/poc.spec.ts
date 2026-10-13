@@ -2362,10 +2362,14 @@ test("#126: an Administrator renames the organization, sees the effective settin
   await expect(page.getByRole("region", { name: "Backup reminder" }).getByRole("status")).toHaveText("Saved.");
 });
 
-test("#127: an Administrator sees the signed-in sessions", async ({ page }) => {
+test("#127, #128: an Administrator sees the signed-in sessions and downloads diagnostics", async ({ page }) => {
   await login(page, "admin");
   await page.getByRole("link", { name: "System/About" }).click();
   const s = page.getByRole("region", { name: "Signed-in sessions" });
   await expect(s.getByRole("row", { name: /admin.*you, this session/ })).toBeVisible();
   await expect(s.getByRole("row", { name: /you, this session/ }).getByRole("button", { name: "End session" })).toHaveCount(0);
+  // #128: the diagnostics download
+  const dl = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download diagnostics" }).click();
+  expect((await dl).suggestedFilename()).toMatch(/^pennywarden-diagnostics-\d{14}\.json$/);
 });

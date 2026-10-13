@@ -58,3 +58,5 @@ then choose two different signers when printing; above an optional amount only t
   can see the settings too. Details: [Configuration](configuration.md#changing-settings-in-the-application-200-126).
 - **Signed-in sessions** on System/About: who is signed in, since when and from which address. An Administrator can
   end a session (for example a forgotten sign-in on a shared computer) or end all other sessions.
+- **Download diagnostics** on System/About gives an Administrator a file to share when asking for help. It holds no
+  financial data, passwords or keys.

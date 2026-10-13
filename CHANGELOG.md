@@ -126,6 +126,10 @@ Database migrations `0028` to `0030` (empty columns: the letter logo, the backup
 - **Signed-in sessions (#127).** System/About lists who is signed in (sign-in time, last activity, address). An
   Administrator can end one session, all sessions of a user, or end everyone else's sessions; Auditors can view the list.
   Ending a session signs the person out at their next click. Database migration `0030`.
+- **Diagnostics (#128).** *Download diagnostics* on System/About (Administrators): version, operating system, settings,
+  database and attachment sizes, free disk space, the database version and the last 1,000 log lines, with passwords,
+  keys, session identifiers, amounts, account numbers and email addresses left out or replaced. Nothing is sent
+  anywhere; each download is audited.
 
 ## 1.10.0 — 2026-10-09
 Database migration `0024` (one table added; no existing data changes). Rolling back to 1.9.0 needs the data snapshot
