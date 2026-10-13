@@ -91,6 +91,12 @@ several test builds; the notes below grow with each one.
 - Fix: a cover letter or envelope template opens on a page of its own (the check styles and signers were shown above
   it); Payments Setup lists cover letters and envelopes in separate sections.
 
+**Test build 5 — Payments polish from testing (#183, #185, #186)**
+- Fix: test prints have no page markings (#183). The admin test print and the plain-paper alignment test no longer
+  draw the check's outline (a small feed shift printed it on the edge of a single check); only the calibration page
+  does. One TEST – NOT A CHECK watermark under the fields and a small one across each signature line (it was drawn
+  twice on the same spot with a test signature). Page notes sit 1/4 inch inside the check, so they are never cut off.
+
 ## 1.10.0 — 2026-10-09
 Database migration `0024` (one table added; no existing data changes). Rolling back to 1.9.0 needs the data snapshot
 the installer takes before the upgrade (docs/upgrade.md).

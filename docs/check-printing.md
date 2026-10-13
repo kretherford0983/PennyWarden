@@ -119,6 +119,11 @@ print (for example which printer profile to choose).
 prints rulers and where each field starts. Both use your unsaved changes and include a 5-inch line to check the print
 scale.
 
+The test print has **no page markings** — no outline, corner marks or borders — just like a real check, so it can go
+on real check stock or a strip of paper cut to size. It carries one large TEST – NOT A CHECK watermark under the
+fields; with a test signature, a small TEST – NOT A CHECK also crosses each signature line. Only the **calibration
+page** draws the check's outline and rulers; print it on plain paper and hold it over a blank check to compare.
+
 ### 10. Voucher checks (check with stubs)
 The preset **Voucher – check on top, two stubs** is for one check per Letter sheet with two detail stubs below it
 (perforated at 3.5 and 7 inches — the common layout of laser voucher checks). Under **Stubs (voucher check)**:
@@ -238,6 +243,7 @@ the bank, and no check is printed or counted. Then print the cover letter and en
 | Problem | What to do |
 |---|---|
 | Everything is a little smaller | The browser is scaling: set **Scale** to **Actual size** / **100%**. Every test page has a 5-inch line to check. |
+| A line prints along the edge of the check | Only the calibration page draws the check's outline. If a line prints on a test print, the browser is printing headers and footers or a page border: turn them off in the print dialog. |
 | Everything is shifted | Run the Printer setup assistant (your printer) or ask an Administrator to set the feed mode's offset (everyone). |
 | Single check: printed off the paper | In the assistant choose "printed on the wrong part of the paper" to try the other guide positions. |
 | Printer asks for Letter paper / paper-size error | In the assistant choose "paper-size error" to switch between the Letter page and the check-sized page. |
