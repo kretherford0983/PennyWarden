@@ -4,7 +4,7 @@ import { BuildDetails, ErrorBox, Loading } from "../components";
 import { BackupRestore } from "./BackupRestore";
 import { UpdateSettings } from "./Updates";
 import { useMe } from "../App";
-import { BackupWarningSetting, DiagnosticsPanel, OrganizationPanel, SessionsPanel, SettingsPanel } from "./AdminSettings";
+import { BackupWarningSetting, DiagnosticsPanel, HealthPanel, OrganizationPanel, SessionsPanel, SettingsPanel } from "./AdminSettings";
 
 export default function About() {
   const { can } = useMe();
@@ -30,6 +30,7 @@ export default function About() {
       {admin ? <section className="card" aria-labelledby="backup-age-h"><h2 id="backup-age-h">Backup reminder</h2><BackupWarningSetting /></section> : null}
       {can("system.view") ? <SessionsPanel /> : null}
       {can("system.view") ? <SettingsPanel /> : null}
+      {admin ? <HealthPanel /> : null}
       {admin ? <DiagnosticsPanel /> : null}
     </div>
   );

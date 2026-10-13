@@ -60,3 +60,5 @@ then choose two different signers when printing; above an optional amount only t
   end a session (for example a forgotten sign-in on a shared computer) or end all other sessions.
 - **Download diagnostics** on System/About gives an Administrator a file to share when asking for help. It holds no
   financial data, passwords or keys.
+- **Health** on System/About: database and attachment sizes, free disk space and an integrity check; a warning
+  appears for Administrators when the disk is nearly full.

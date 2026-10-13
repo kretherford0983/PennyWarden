@@ -130,6 +130,9 @@ Database migrations `0028` to `0030` (empty columns: the letter logo, the backup
   database and attachment sizes, free disk space, the database version and the last 1,000 log lines, with passwords,
   keys, session identifiers, amounts, account numbers and email addresses left out or replaced. Nothing is sent
   anywhere; each download is audited.
+- **Health (#129).** System/About shows the database and attachment sizes, free disk space and the database version,
+  and runs an integrity check of the database (safe while people work; audited). Administrators see a warning on every
+  page when less than 1 GB or 10 % of the disk is free.
 
 ## 1.10.0 — 2026-10-09
 Database migration `0024` (one table added; no existing data changes). Rolling back to 1.9.0 needs the data snapshot

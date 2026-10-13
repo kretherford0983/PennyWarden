@@ -157,3 +157,50 @@ def build(db: Session, settings, ctx) -> tuple[bytes, str]:
     audit.record(db, ctx, "DIAGNOSTICS_DOWNLOADED", "workspace", ctx.workspace_id, None,
                  {"bytes": len(body), "log_lines": len(data["log"]["lines"])}, category="SECURITY")
     return body, name
+
+
+# ------------------------------------------------------------------ health check (#129)
+LOW_DISK_BYTES = 1024 ** 3          # 1 GB
+LOW_DISK_PERCENT = 10.0
+
+
+def low_disk(d: dict) -> bool:
+    """Free space on the data folder's volume below 1 GB or 10 %, whichever comes first (decided 2026-10-12)."""
+    if d.get("free") is None:
+        return False
+    return d["free"] < LOW_DISK_BYTES or (d.get("free_percent") is not None and d["free_percent"] < LOW_DISK_PERCENT)
+
+
+def health(db: Session, settings) -> dict:
+    st = storage(db, settings)
+    out = {**st, "low_disk": low_disk(st["disk"]),
+           "thresholds": {"free_bytes": LOW_DISK_BYTES, "free_percent": LOW_DISK_PERCENT}}
+    if out["low_disk"]:
+        out["low_disk_message"] = (f"Low disk space: {st['disk']['free'] / 1024 ** 3:.1f} GB "
+                                   f"({st['disk']['free_percent']} %) free where PennyWarden keeps its data. "
+                                   "Free some space or move the data to a larger disk.")
+    return out
+
+
+def integrity_check(db: Session, ctx) -> dict:
+    """SQLite's integrity check through the application (BR-084). It reads the whole database inside one read
+    transaction, so it is safe while people are working (it does not block them in WAL mode). The result is OK or a
+    plain failure message: no SQL, paths or page numbers are returned (BR-104); the details go to the log."""
+    import logging
+    started = utcnow()
+    try:
+        rows = [r[0] for r in db.connection().exec_driver_sql("PRAGMA integrity_check(20)").fetchall()]
+        ok = rows == ["ok"]
+        if not ok:
+            logging.getLogger("fmpoc").error("integrity check found %d problem(s): %s", len(rows), "; ".join(rows)[:2000])
+    except Exception as e:  # noqa: BLE001 - a damaged file can fail in many ways
+        logging.getLogger("fmpoc").error("integrity check could not run: %s", type(e).__name__)
+        db.rollback()
+        ok, rows = False, ["error"]
+    seconds = round((utcnow() - started).total_seconds(), 2)
+    audit.record(db, ctx, "HEALTH_CHECK_RUN", "workspace", ctx.workspace_id, None,
+                 {"result": "OK" if ok else "FAILED", "seconds": seconds}, category="SECURITY")
+    return {"ok": ok, "checked_at": started.replace(microsecond=0).isoformat() + "Z", "seconds": seconds,
+            "message": "The database passed the integrity check." if ok else
+            "The database integrity check found a problem. Do not restore over your backups: make a copy of the data "
+            "folder, then restore the most recent good backup or ask for help (the details are in the log)."}

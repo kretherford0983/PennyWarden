@@ -1,4 +1,4 @@
-"""2.0.0 administration on System/About: settings and organization name (#126), sessions (#127), diagnostics (#128)."""
+"""2.0.0 administration on System/About: settings and organization name (#126), sessions (#127), diagnostics (#128), health check (#129)."""
 from __future__ import annotations
 
 from typing import Any
@@ -109,3 +109,17 @@ def diagnostics(request: Request, db: Session = Depends(get_db), ctx: Ctx = Depe
     return Response(body, media_type="application/json",
                     headers={"Content-Disposition": f'attachment; filename="{name}"', "Cache-Control": "no-store",
                              "X-Content-Type-Options": "nosniff"})
+
+
+# ------------------------------------------------------------------ health check (#129)
+@router.get("/health-check")
+def health_check(request: Request, db: Session = Depends(get_db), ctx: Ctx = Depends(require("system.manage"))):
+    """Sizes, free disk space and the migration state (no financial content)."""
+    return diag.health(db, request.app.state.settings)
+
+
+@router.post("/health-check/integrity")
+def health_integrity(db: Session = Depends(get_db), ctx: Ctx = Depends(require("system.manage"))):
+    out = diag.integrity_check(db, ctx)
+    db.commit()
+    return out
