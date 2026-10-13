@@ -10,6 +10,7 @@ from types import SimpleNamespace
 
 from alembic.script import ScriptDirectory
 from fastapi import APIRouter, Depends, Query, Request
+from pydantic import BaseModel, ConfigDict, Field
 from fastapi.responses import FileResponse
 from sqlalchemy import update
 from sqlalchemy.orm import Session
@@ -415,3 +416,130 @@ def restore_report_download(name: str, request: Request, db: Session = Depends(g
     audit.record(db, ctx, "RESTORE_REPORT_DOWNLOADED", "workspace", ctx.workspace_id, None, {"report": name})
     db.commit()
     return FileResponse(p, media_type="text/csv", filename=name, headers={"Cache-Control": "private, no-store"})
+
+
+# ------------------------------------------------------------------ 2.0.0 (#125) reinitialize (keeping users)
+class ReinitIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    confirm: str = Field(max_length=40)
+    password: str = Field(max_length=200)
+    code: str | None = Field(default=None, max_length=40)
+    passphrase: str | None = Field(default=None, max_length=500)
+    passphrase_confirmation: str | None = Field(default=None, max_length=500)
+
+
+@router.get("/reinitialize")
+def reinitialize_info(request: Request, db: Session = Depends(get_db), ctx: Ctx = Depends(require("users.manage"))):
+    from ..services import mfa
+    from ..services import reinitialize as reinit
+    until = reinit.cooldown_until(db, ctx.workspace_id)
+    return {"counts": reinit.counts(db, ctx.workspace_id), "cooldown_until": until.isoformat() + "Z" if until else None,
+            "code_required": mfa.enabled(db, ctx.user), "confirm_word": reinit.CONFIRM_WORD,
+            "kept": ["users and their roles", "passwords, two-step verification and security questions",
+                     "the organization name", "the encryption key", "module switches", "personal preferences and "
+                     "reminders", "backup settings", "the audit log"],
+            "removed": ["Fiscal Years and budgets", "entities", "bank accounts", "the register (transactions)",
+                        "attachments", "fundraisers", "Payments module data (check styles, signers, letters, "
+                        "envelopes)", "organization reminders"]}
+
+
+@router.post("/reinitialize", status_code=202)
+def reinitialize_start(body: ReinitIn, request: Request, db: Session = Depends(get_db),
+                       ctx: Ctx = Depends(require("users.manage"))):
+    from ..services import mfa
+    from ..services import reinitialize as reinit
+    if (body.confirm or "").strip() != reinit.CONFIRM_WORD:
+        raise validation(f'Type "{reinit.CONFIRM_WORD}" to confirm.', "confirm")
+    until = reinit.cooldown_until(db, ctx.workspace_id)
+    if until:
+        raise AppError(409, "COOLDOWN", "The data was reinitialized less than 24 hours ago. Try again after "
+                                        f"{until:%Y-%m-%d %H:%M} UTC, or use the server's command line.")
+    if body.passphrase or body.passphrase_confirmation:
+        _passphrase_ok(body.passphrase or "", body.passphrase_confirmation or "")
+    _check_password(request, db, ctx, body.password or "", "REINITIALIZE")
+    if mfa.enabled(db, ctx.user):
+        if not body.code or mfa.verify(db, request.app.state.key, ctx.user, body.code) is None:
+            audit.record(db, ctx, "REINITIALIZE_DENIED", "workspace", ctx.workspace_id, None,
+                         {"reason": "incorrect_code"}, category="SECURITY")
+            db.commit()
+            raise AppError(400, "INCORRECT_CODE", "The two-step verification code is not correct.")
+    app = request.app
+    if app.state.jobs.running():
+        raise AppError(409, "JOB_RUNNING", "A backup, restore or reinitialize is already running.")
+    job = app.state.jobs.new("reinitialize")
+    audit.record(db, ctx, "REINITIALIZE_STARTED", "workspace", ctx.workspace_id, None,
+                 {"own_passphrase": bool(body.passphrase)}, category="SECURITY")
+    db.commit()
+    actor = {"user_id": ctx.user.id, "username": ctx.user.username, "workspace_id": ctx.workspace_id, "ip": ctx.ip,
+             "cid": ctx.correlation_id, "session_id": ctx.session.id if ctx.session else None}
+    passphrase = body.passphrase or reinit.new_passphrase()
+    threading.Thread(target=run_reinitialize, args=(app, job, passphrase, bool(body.passphrase), actor),
+                     name="fmpoc-reinitialize", daemon=True).start()
+    return job.out()
+
+
+@router.get("/reinitialize/jobs/{job_id}")
+def reinitialize_status(job_id: str, request: Request):
+    """Polled while the application is paused (the random job id is the capability, like the restore's)."""
+    job = request.app.state.jobs.get(job_id)
+    if job is None or job.kind != "reinitialize":
+        raise AppError(404, "NOT_FOUND", "Not found.")
+    return job.out()
+
+
+def run_reinitialize(app, job, passphrase: str, own_passphrase: bool, actor: dict) -> None:
+    from ..services import reinitialize as reinit
+    settings = app.state.settings
+    try:
+        job.advance("Pausing the application")
+        app.state.maintenance = "reinitialize"   # nothing can change between the safety backup and the removal
+        time.sleep(0.5)  # let requests in flight finish
+        job.advance("Creating the safety backup")
+        safety = reinit.safety_backup(settings, passphrase, actor["username"], job)
+        job.advance("Removing the financial data")
+        with app.state.session_factory() as s:
+            try:
+                ctx = _Actor(actor)
+                before = reinit.counts(s, actor["workspace_id"])
+                reinit.wipe(s, actor["workspace_id"], ctx, actor["username"], safety["filename"], "system_about", before)
+                q = update(AuthSession).where(AuthSession.revoked_at.is_(None))
+                if actor.get("session_id"):
+                    q = q.where(AuthSession.id != actor["session_id"])
+                s.execute(q.values(revoked_at=utcnow()))
+                s.commit()
+            except Exception:
+                s.rollback()
+                raise
+        job.advance("Removing the attachment files")
+        reinit.remove_attachment_files(settings)
+        restore_cmd = (f"pennywarden restore \"{safety['path']}\" --use-server-key --data-dir \"{settings.data_dir}\"")
+        job.result = {"filename": safety["filename"], "folder": safety["folder"], "restore_command": restore_cmd,
+                      "own_passphrase": own_passphrase}
+        job.advance("")
+        job.state = "done"
+        log.info("reinitialize completed")
+    except reinit.ReinitError as e:
+        job.state, job.error = "failed", str(e)
+    except Exception as e:  # pragma: no cover - reported to the admin
+        log.exception("reinitialize failed")
+        job.state, job.error = "failed", f"The reinitialize failed ({type(e).__name__}); the data was not changed."
+    finally:
+        app.state.maintenance = None
+
+
+@router.get("/reinitialized")
+def reinitialized(db: Session = Depends(get_db), ctx: Ctx = Depends(get_ctx)):
+    """The banner every signed-in user sees after a reinitialize, until an Administrator acknowledges it."""
+    if ctx.user is None or ctx.mfa_pending:
+        raise AppError(401, "UNAUTHENTICATED", "Authentication required.")
+    from ..models import Workspace
+    from ..services import reinitialize as reinit
+    return {**reinit.banner(db.get(Workspace, ctx.workspace_id)), "can_acknowledge": ctx.has("users.manage")}
+
+
+@router.post("/reinitialized/acknowledge")
+def reinitialized_ack(db: Session = Depends(get_db), ctx: Ctx = Depends(require("users.manage"))):
+    from ..services import reinitialize as reinit
+    out = reinit.acknowledge(db, ctx)
+    db.commit()
+    return out

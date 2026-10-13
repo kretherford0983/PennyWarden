@@ -2399,3 +2399,24 @@ test("#130: maintenance mode - Administrators keep working, the others see the m
   await page.getByRole("region", { name: "Maintenance mode" }).getByRole("button", { name: "Turn off" }).click();
   await expect(page.getByTestId("maintenance-notice")).toHaveCount(0);
 });
+
+// Keep this test LAST: it removes the financial data the other tests use.
+test("#125: an Administrator reinitializes (keeping the users); everyone sees the notice until it is acknowledged", async ({ page }) => {
+  await login(page, "admin");
+  await page.getByRole("link", { name: "System/About" }).click();
+  await page.getByTestId("advanced").locator("summary").click();
+  await page.getByLabel('Type "reinitialize" to confirm').fill("reinitialize");
+  await page.getByLabel("Your password").last().fill(PW);
+  await page.getByRole("button", { name: "Reinitialize" }).click();
+  await expect(page.getByTestId("reinit-done")).toContainText("--use-server-key", { timeout: 30_000 });
+  await page.goto("/");
+  await expect(page.getByTestId("reinitialized-banner")).toContainText("reinitialized by admin");
+  await logout(page);
+  await login(page, "bm1");
+  await expect(page.getByTestId("reinitialized-banner")).toBeVisible();
+  await expect(page.getByTestId("reinitialized-banner").getByRole("button")).toHaveCount(0);
+  await logout(page);
+  await login(page, "admin");
+  await page.getByTestId("reinitialized-banner").getByRole("button", { name: "Acknowledge for everyone" }).click();
+  await expect(page.getByTestId("reinitialized-banner")).toHaveCount(0);
+});

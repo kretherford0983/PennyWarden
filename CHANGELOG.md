@@ -3,7 +3,7 @@
 Versions are `Breaking.Major.Minor` from 1.6.0 (docs/branching.md).
 
 ## 2.0.0 — unreleased
-Database migrations `0025` to `0031` (thirteen columns and five tables added; no existing data changes). Rolling back to 1.10.0
+Database migrations `0025` to `0032` (eighteen columns and five tables added; no existing data changes). Rolling back to 1.10.0
 needs the data snapshot the installer takes before the upgrade (docs/upgrade.md). 2.0.0 is built and tested in
 several test builds; the notes below grow with each one.
 
@@ -149,6 +149,14 @@ Database migrations `0028` to `0030` (empty columns: the letter logo, the backup
 - **Restore re-entry report (#124).** Every restore first lists what was entered or changed after the backup in a CSV
   report, which Budget Managers, Budget Users, Register Users and Auditors download under Reports; Administrators see
   only a summary.
+- **Reinitialize, keeping the users (#125).** System/About → Advanced (collapsed): removes all financial data — Fiscal
+  Years, budgets, entities, bank accounts, the register, attachments, fundraisers, Payments data and organization
+  reminders — and keeps users, roles, passwords, two-step verification, the organization name, the encryption key,
+  module switches, personal preferences and the audit log. Confirmed by typing *reinitialize*, your password and (if
+  on) a two-step code; a safety backup is made and checked first (nothing is removed if that fails), kept in
+  `pre-reinitialize/` and always restorable by the server's owner with `pennywarden restore … --use-server-key`.
+  Everyone else is signed out and sees a notice until an Administrator acknowledges it. Once in 24 hours from the web;
+  `pennywarden reinitialize` on the server has no limit. Entity numbers continue. Database migration `0032`.
 
 ## 1.10.0 — 2026-10-09
 Database migration `0024` (one table added; no existing data changes). Rolling back to 1.9.0 needs the data snapshot

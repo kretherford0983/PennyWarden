@@ -5,6 +5,7 @@ import { BackupRestore } from "./BackupRestore";
 import { UpdateSettings } from "./Updates";
 import { useMe } from "../App";
 import { MaintenancePanel } from "./Maintenance";
+import { AdvancedPanel } from "./Reinitialize";
 import { BackupWarningSetting, DiagnosticsPanel, HealthPanel, OrganizationPanel, SessionsPanel, SettingsPanel } from "./AdminSettings";
 
 export default function About() {
@@ -34,6 +35,7 @@ export default function About() {
       {admin ? <MaintenancePanel /> : null}
       {admin ? <HealthPanel /> : null}
       {admin ? <DiagnosticsPanel /> : null}
+      {a.restore_max_mb != null ? <AdvancedPanel /> : null}
     </div>
   );
 }

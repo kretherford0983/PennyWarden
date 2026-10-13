@@ -179,9 +179,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         start = time.perf_counter()
         path = request.url.path
         if (app.state.maintenance and path.startswith("/api/") and path not in MAINTENANCE_OPEN
-                and not path.startswith("/api/system/restore/jobs/")):
-            response = JSONResponse({"error": {"code": "MAINTENANCE", "message": "A restore is in progress. Try again "
-                                                                                  "in a moment."}}, status_code=503)
+                and not path.startswith(("/api/system/restore/jobs/", "/api/system/reinitialize/jobs/"))):
+            what = "reinitialize" if app.state.maintenance == "reinitialize" else "restore"   # 2.0.0 (#125)
+            response = JSONResponse({"error": {"code": "MAINTENANCE", "message": f"A {what} is in progress. Try "
+                                                                                  "again in a moment."}}, status_code=503)
         else:
             response = await call_next(request)
         h = response.headers

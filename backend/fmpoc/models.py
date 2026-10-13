@@ -64,6 +64,12 @@ class Workspace(Base):
     maintenance_starts_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)   # UTC
     maintenance_set_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
     maintenance_set_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    # 2.0.0 (#125): the last reinitialize, for the banner every user sees until an Administrator acknowledges it
+    reinitialized_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    reinitialized_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    reinitialize_backup: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    reinitialize_ack_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    reinitialize_ack_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class Role(Base):
