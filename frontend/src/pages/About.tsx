@@ -6,7 +6,7 @@ import { UpdateSettings } from "./Updates";
 import { useMe } from "../App";
 import { MaintenancePanel } from "./Maintenance";
 import { AdvancedPanel } from "./Reinitialize";
-import { BackupWarningSetting, DiagnosticsPanel, HealthPanel, OrganizationPanel, SessionsPanel, SettingsPanel } from "./AdminSettings";
+import { BackupWarningSetting, DiagnosticsPanel, HealthPanel, OrganizationPanel, SecurityOverviewPanel, SessionsPanel, SettingsPanel } from "./AdminSettings";
 
 export default function About() {
   const { can } = useMe();
@@ -30,6 +30,7 @@ export default function About() {
       {a.restore_max_mb != null ? <ModulesPanel /> : null}
       {a.restore_max_mb != null ? <BackupRestore maxMb={a.restore_max_mb} /> : null}
       {admin ? <section className="card" aria-labelledby="backup-age-h"><h2 id="backup-age-h">Backup reminder</h2><BackupWarningSetting /></section> : null}
+      {can("system.view") ? <SecurityOverviewPanel /> : null}
       {can("system.view") ? <SessionsPanel /> : null}
       {can("system.view") ? <SettingsPanel /> : null}
       {admin ? <MaintenancePanel /> : null}

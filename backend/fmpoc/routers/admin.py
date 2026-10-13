@@ -145,3 +145,10 @@ def maintenance_set(body: MaintenanceIn, db: Session = Depends(get_db), ctx: Ctx
     out = maint.turn_on(db, ctx, body.message or "", body.starts_at) if body.on else maint.turn_off(db, ctx)
     db.commit()
     return out
+
+
+# ------------------------------------------------------------------ security overview (#131)
+@router.get("/security-overview")
+def security_overview(request: Request, db: Session = Depends(get_db), ctx: Ctx = Depends(require("system.view"))):
+    from ..services import security_overview as so
+    return so.overview(db, request.app.state.settings, ctx.workspace_id, request.url.scheme == "https")

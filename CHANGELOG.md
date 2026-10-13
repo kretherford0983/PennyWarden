@@ -177,6 +177,12 @@ Database migrations `0028` to `0030` (empty columns: the letter logo, the backup
   table) and the raw data under *Show technical details*. Filters offer readable action and record names. Related
   records are named as they were when the event was written. Administrators still see no financial content: for
   those entries only who, the kind of action and when. Database migration `0034`.
+- **Security overview (#131).** System/About shows how the installation is secured, for Administrators and (read-only)
+  Auditors: whether it is reached over HTTPS, how many active users have two-step verification (and which roles
+  don't), the last backup, locked accounts, the number of Administrators, secure cookies, HSTS, trusted proxies and
+  disabled accounts. Items that need attention — plain HTTP on a network install, users without two-step
+  verification, a backup older than the backup reminder, locked accounts — are marked, each with a short note on what
+  to do. The overview only reports; it changes nothing.
 
 ## 1.10.0 — 2026-10-09
 Database migration `0024` (one table added; no existing data changes). Rolling back to 1.9.0 needs the data snapshot
