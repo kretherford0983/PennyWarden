@@ -436,12 +436,29 @@ def _diagonal(c, cfg: StyleConfig, text: str, gray: float = 0.75, size: float = 
     c.restoreState()
 
 
+NOTE_INSET = 0.25   # inches: page notes sit well inside the check, so a small feed shift cannot cut them off (#183)
+
+
 def _border_note(c, cfg: StyleConfig, text: str) -> None:
     c.saveState()
     c.setFont(fonts.ps_name("SANS", True), 7)
     c.setFillGray(0.2)
-    c.drawRightString(cfg.stock.check_width * PT - 6, cfg.stock.check_height * PT - 8, text)
+    c.drawRightString((cfg.stock.check_width - NOTE_INSET) * PT, (cfg.stock.check_height - NOTE_INSET) * PT - 7, text)
     c.restoreState()
+
+
+def _signature_watermarks(c, cfg: StyleConfig, text: str) -> None:
+    """A small watermark centred across each signature box (drawn over a test signature, #183)."""
+    for box in _sig_boxes(cfg):
+        size = 9.0
+        w = fonts.width(text, "SANS", size, True)
+        if w > box.w * PT:
+            size = max(5.0, size * box.w * PT / w)
+        c.saveState()
+        c.setFillGray(0.45)
+        c.setFont(fonts.ps_name("SANS", True), size)
+        c.drawCentredString((box.x + box.w / 2) * PT, _y(cfg, box.y + box.h / 2) - size / 3, text)
+        c.restoreState()
 
 
 def _new_canvas(buf, title: str):
@@ -607,6 +624,54 @@ def _stubs(c, cfg: StyleConfig, pl, data: StubData | None, outline: bool = False
     c.restoreState()
 
 
+class _StubRecorder:
+    """#186: records what `_draw_stub` draws (text runs and lines) so the setup screen's preview can draw the stubs
+    exactly as they print. Coordinates: page inches from the sheet's top-left corner."""
+
+    def __init__(self, paper_height: float):
+        self.h = paper_height
+        self.font = ("SANS", False, 9.0)
+        self.dash = False
+        self.texts: list[dict] = []
+        self.lines: list[dict] = []
+
+    def saveState(self): pass
+    def restoreState(self): pass
+    def setFillGray(self, _g): pass
+    def setStrokeGray(self, _g): pass
+    def setLineWidth(self, _w): pass
+
+    def setDash(self, *a):
+        self.dash = bool(a)
+
+    def setFont(self, name: str, size: float):
+        key = name[3:].removesuffix("-B")
+        self.font = (key, name.endswith("-B"), size)
+
+    def _text(self, x, y, text, anchor):
+        key, bold, size = self.font
+        self.texts.append({"x": round(x / PT, 4), "y": round(self.h - y / PT, 4), "text": text, "font": key,
+                           "bold": bold, "size": size, "anchor": anchor})
+
+    def drawString(self, x, y, text): self._text(x, y, text, "start")
+    def drawRightString(self, x, y, text): self._text(x, y, text, "end")
+
+    def line(self, x1, y1, x2, y2):
+        self.lines.append({"x1": round(x1 / PT, 4), "y1": round(self.h - y1 / PT, 4), "x2": round(x2 / PT, 4),
+                           "y2": round(self.h - y2 / PT, 4), "dash": self.dash})
+
+
+def stub_drawing(cfg: StyleConfig, data: StubData | None) -> dict | None:
+    """#186: the stubs as the setup preview draws them (sample data), with the perforation line of each stub."""
+    if not cfg.stubs or data is None:
+        return None
+    rec = _StubRecorder(cfg.stock.paper_height)
+    for i, st in enumerate(cfg.stubs):
+        _draw_stub(rec, cfg, st, data, True, (data.titles or [])[i] if data.titles and i < len(data.titles) else None)
+    return {"texts": rec.texts, "lines": rec.lines,
+            "bottom": max(st.top + st.height for st in cfg.stubs)}
+
+
 SAMPLE_STUB = StubData(title="SAMPLE ORGANIZATION", check_number="1001", payee="SAMPLE PAYEE COMPANY INC",
                        date="", amount="$3,199.30",
                        rows=[{"INVOICE": "158092", "INVOICE_DATE": "08/29/2026", "DESCRIPTION": "Supplies",
@@ -636,36 +701,35 @@ def check_pdf(cfg: StyleConfig, pl: Placement, lay: Layout, signature_png: bytes
 
 def test_pdf(cfg: StyleConfig, pl: Placement, lay: Layout, signature_png: bytes | None,
              stubs: StubData | None = None) -> bytes:
-    """Administrator test print with dummy data: like the real check plus TEST - NOT A CHECK, the scale check and
-    the field marks. The signature is an outlined box unless a test signature was chosen (it is drawn on every
-    signature line)."""
+    """Administrator test print with dummy data: like the real check plus one TEST - NOT A CHECK watermark under the
+    fields and the scale check. No page markings (no outline, corner marks or borders, #183): a small feed shift
+    would print them on the paper's edge. The signature is an outlined box unless a test signature was chosen; then
+    it is drawn on every signature line with a small watermark across each."""
     buf = io.BytesIO()
     c = _new_canvas(buf, "Test print")
-    _stubs(c, cfg, pl, stubs, outline=True)
+    _stubs(c, cfg, pl, stubs)
     _begin_page(c, cfg, pl)
-    _check_outline(c, cfg)
     _diagonal(c, cfg, "TEST - NOT A CHECK", gray=0.8)
     _fields_safe(c, cfg, lay)
     if signature_png:
         _signature_images(c, cfg, [signature_png, signature_png])
-        _diagonal(c, cfg, "TEST - NOT A CHECK", gray=0.55, size=22)   # crosses the signature too
+        _signature_watermarks(c, cfg, "TEST - NOT A CHECK")
     else:
         _signature_outline(c, cfg)
     _scale_check(c, 0.5, cfg.stock.check_height - 0.42)
-    _border_note(c, cfg, "TEST - NOT A CHECK")
     c.showPage()
     c.save()
     return buf.getvalue()
 
 
 def alignment_pdf(cfg: StyleConfig, pl: Placement, lay: Layout, stubs: StubData | None = None) -> bytes:
-    """A Register User's test print of the actual check on plain paper: real field text, crosshairs, the check
-    outline, the shaded clear zone and the scale check - never the signature image. Voucher stubs are included."""
+    """A Register User's test print of the actual check on plain paper: real field text, crosshairs, the shaded
+    clear zone and the scale check - never the signature image, and no check outline (#183). Voucher stubs are
+    included."""
     buf = io.BytesIO()
     c = _new_canvas(buf, "Alignment test")
-    _stubs(c, cfg, pl, stubs, outline=True)
+    _stubs(c, cfg, pl, stubs)
     _begin_page(c, cfg, pl)
-    _check_outline(c, cfg, 0.2)
     _clear_zone(c, cfg)
     _field_marks(c, cfg, labels=False)
     _fields_safe(c, cfg, lay)

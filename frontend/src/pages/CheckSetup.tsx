@@ -6,7 +6,7 @@ import { DocumentEditor, DocumentsSection } from "./CheckDocuments";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "../api";
 import { ErrorBox, Field, GuardedForm, Loading, Modal } from "../components";
-import { BrowserTips, CheckPreview, FIELD_LABELS, PatternInput, PdfViewer, TEXT_FIELDS, useCheckFonts, usePdf, type FieldText } from "./checkShared";
+import { BrowserTips, CheckPreview, FIELD_LABELS, PatternInput, PdfViewer, Section, TEXT_FIELDS, useCheckFonts, usePdf, viewState, type FieldText, type StubDrawing } from "./checkShared";
 
 const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
 
@@ -183,40 +183,12 @@ function StubsSection({ cfg, setup, change }: { cfg: any; setup: any; change: (f
         </tbody>
       </table>
       {unused.length ? <div className="row form-row">{unused.map(([k, h]) => <button key={k} className="small" onClick={() => change((c) => { c.stub_columns.push({ key: k, heading: h }); })}>+ {h}</button>)}</div> : null}
-      <p className="hint">The stubs are drawn on the test print and the calibration page (sample data); the preview above shows the check only.</p>
+      <p className="hint">The preview above, the test print and the calibration page show the stubs with sample data.</p>
     </Section>
   );
 }
 
 // ------------------------------------------------------------------ editor
-/** #174: which editor sections are collapsed and whether the preview is pinned - kept in memory while the app is open
- * (AC-SEC-006: the app keeps nothing in browser storage). */
-const viewState = new Map<string, boolean>();
-
-/** #174: a section of the editor that can be collapsed. */
-function Section({ id, title, children, extra, className = "" }: { id: string; title: string; children: React.ReactNode; extra?: React.ReactNode; className?: string }) {
-  const key = `pw-check-setup-${id}`;
-  const [open, setOpen] = useState(() => viewState.get(key) ?? true);
-  const toggle = () => {
-    const next = !open;
-    setOpen(next);
-    viewState.set(key, next);
-  };
-  return (
-    <section className={`card collapsible ${open ? "open" : "closed"} ${className}`} aria-labelledby={`${id}-h`}>
-      <div className="collapsible-head">
-        <h2 id={`${id}-h`}>
-          <button type="button" className="collapse-btn" aria-expanded={open} aria-controls={`${id}-body`} onClick={toggle}>
-            <span aria-hidden="true" className="chev">{open ? "▾" : "▸"}</span> {title}
-          </button>
-        </h2>
-        {extra}
-      </div>
-      <div id={`${id}-body`} hidden={!open}>{children}</div>
-    </section>
-  );
-}
-
 function num(v: string) { const n = parseFloat(v); return Number.isFinite(n) ? n : 0; }
 
 function NumIn({ label, value, onChange, step = 0.005, min, max, unit = "in" }: {
@@ -262,6 +234,16 @@ function StyleEditor({ setup, style, onClose, onSaved }: { setup: any; style: an
     }, 250);
     return () => clearTimeout(t);
   }, [cfg, sample]);
+  // #186: the voucher stubs drawn under the check in the preview (sample data, debounced)
+  const [stubs, setStubs] = useState<StubDrawing | null>(null);
+  const hasStubs = !!cfg.stubs?.length;
+  useEffect(() => {
+    if (!hasStubs) { setStubs(null); return; }
+    const t = setTimeout(() => {
+      api.post("/api/checks/sample-stubs", { config: cfg }).then((x) => setStubs(x.stubs), () => undefined);
+    }, 300);
+    return () => clearTimeout(t);
+  }, [cfg, hasStubs]);
   const save = async () => {
     setErr(null);
     try { const st = await api.put(`/api/checks/styles/${style.id}`, { name, config: cfg }); setDirty(false); setSaved(true); onSaved(st); } catch (x) { setErr(x); }
@@ -292,7 +274,7 @@ function StyleEditor({ setup, style, onClose, onSaved }: { setup: any; style: an
           <label className="check"><input type="checkbox" checked={pin} onChange={(e) => setPin(e.target.checked)} /> Keep at the top</label>
         </div>
       }>
-        <CheckPreview cfg={cfg} fonts={fonts} texts={texts} highlight={hl} />
+        <CheckPreview cfg={cfg} fonts={fonts} texts={texts} highlight={hl} stubs={hasStubs ? stubs : null} />
         <ErrorBox error={fitErr} />
         {problems.length ? (
           <div className="alert warn" role="status">

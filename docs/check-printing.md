@@ -119,6 +119,11 @@ print (for example which printer profile to choose).
 prints rulers and where each field starts. Both use your unsaved changes and include a 5-inch line to check the print
 scale.
 
+The test print has **no page markings** — no outline, corner marks or borders — just like a real check, so it can go
+on real check stock or a strip of paper cut to size. It carries one large TEST – NOT A CHECK watermark under the
+fields; with a test signature, a small TEST – NOT A CHECK also crosses each signature line. Only the **calibration
+page** draws the check's outline and rulers; print it on plain paper and hold it over a blank check to compare.
+
 ### 10. Voucher checks (check with stubs)
 The preset **Voucher – check on top, two stubs** is for one check per Letter sheet with two detail stubs below it
 (perforated at 3.5 and 7 inches — the common layout of laser voucher checks). Under **Stubs (voucher check)**:
@@ -133,7 +138,8 @@ The **vendor copy never shows budgets**; the **office copy** adds the budget col
 the **check number from the register** (the confirmed number — after a spoiled check, the reprint shows the new one);
 the check itself never gets a printed number. When a payment has more lines than fit, the stub shows as many as fit
 and *…and N more, see enclosed letter*, and the user confirms before printing (print the cover letter, which lists
-every line). The stubs are on the test print and the calibration page; the preview on the screen shows the check only.
+every line). The stubs are drawn under the check in the preview (sample data), and print on the test print and the
+calibration page.
 
 ## For Register Users: printing a check
 
@@ -196,7 +202,10 @@ are shown but locked — to change them, edit the transaction in the register �
 ### Setting them up (Administrators)
 Payments Setup has a **Cover letters** and an **Envelopes** section. **New cover letter** and **New #10 envelope**
 create a template and open its editor on a page of its own. The first template of each kind becomes the **default**; **Make default** and
-**Deactivate** change that. **Test print (sample data)** shows the template with a sample payee and invoices.
+**Deactivate** change that. A **preview** at the top of the editor shows the letter or envelope with a sample payee
+and invoices as you type (tick **Keep at the top** to keep it in view while you scroll); each section can be
+collapsed. **Test print (sample data)** prints it — an envelope test print is laid out on the page the way the printer
+is fed.
 
 A **cover letter** has:
 
@@ -238,6 +247,7 @@ the bank, and no check is printed or counted. Then print the cover letter and en
 | Problem | What to do |
 |---|---|
 | Everything is a little smaller | The browser is scaling: set **Scale** to **Actual size** / **100%**. Every test page has a 5-inch line to check. |
+| A line prints along the edge of the check | Only the calibration page draws the check's outline. If a line prints on a test print, the browser is printing headers and footers or a page border: turn them off in the print dialog. |
 | Everything is shifted | Run the Printer setup assistant (your printer) or ask an Administrator to set the feed mode's offset (everyone). |
 | Single check: printed off the paper | In the assistant choose "printed on the wrong part of the paper" to try the other guide positions. |
 | Printer asks for Letter paper / paper-size error | In the assistant choose "paper-size error" to switch between the Letter page and the check-sized page. |

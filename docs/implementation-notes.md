@@ -160,6 +160,25 @@ user sees two distinct entries). Only labels changed: the API (`/api/checks`), p
 `checks.print`), `workspace.checks_enabled`, the `modules.checks` key, the route `/check-setup` and the guide's file
 name `docs/check-printing.md` stay as they are.
 
+**2.0.0 test build 5 (#183, #185, #186).** #183: `render.test_pdf` and `render.alignment_pdf` draw no
+`_check_outline` and their stubs have no perforation line (`outline=False`); only `calibration_pdf` (and the record
+copy, which is never fed through the printer) keep page markings. `test_pdf` draws one diagonal watermark under the
+fields and, with a test signature, `_signature_watermarks` (a small centred note per `_sig_boxes` box) instead of a
+second diagonal. `_border_note` sits `NOTE_INSET` (1/4") inside the check's top-right corner; the test print has
+none (the diagonal says it). Tests: `tests/test_v200_build5.py` (scans the content streams for a check-sized `re`).
+#185: `config.build_info()` adds `built_at_local` from `config.local_time_text()` (`datetime.astimezone()` with no
+argument, so the OS time zone of the machine running PennyWarden; no tzdata needed in the PyInstaller builds; Windows'
+full zone names are shortened to their initials). `BuildDetails` shows it with the UTC value as the tooltip and falls
+back to UTC.
+#186: `Section`, `viewState` (in-memory only, AC-SEC-006) and `LivePdfPreview` moved to / added in `checkShared.tsx`;
+the letter and envelope editors use them (scopes `pw-letter`, `pw-envelope`). `POST /api/checks/documents/{id}/preview`
+returns the sample-data PDF for unsaved settings (not audited: nothing is printed or stored; the test print stays
+audited); the envelope preview is drawn upright on an envelope-sized page with its edge (`envelope_pdf(preview=True)`)
+and follows the return-address setting. The preview iframe reloads 600 ms after the last change. `POST
+/api/checks/sample-stubs` returns `render.stub_drawing()`: `_draw_stub` run against `_StubRecorder`, which records text
+runs and lines in page inches, so `CheckPreview` draws the stubs exactly as `_draw_stub` prints them (offset from the
+check by the sheet's first check top and the centring).
+
 **1.10.0 Update notification (issue #58; channel decided 2026-10-09).** Migration `0024`: `update_check` (one row).
 `services/updates.py`: `channel(settings)` - setting `update_channel` (`auto` → from `build_info.json`: `main` →
 stable, `test` → test, anything else / no build info → none); `check(app, force)` - due after 24 h (6 h after an error),

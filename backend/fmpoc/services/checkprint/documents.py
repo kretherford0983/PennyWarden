@@ -275,7 +275,10 @@ def _envelope_page(c, cfg: EnvelopeConfig, page: str, guide: str, dx: float, dy:
 
 
 def envelope_pdf(cfg: EnvelopeConfig, ret: list[str], to: list[str], *, page: str | None = None,
-                 guide: str | None = None, dx: float = 0.0, dy: float = 0.0, test: bool = False) -> bytes:
+                 guide: str | None = None, dx: float = 0.0, dy: float = 0.0, test: bool = False,
+                 preview: bool = False) -> bytes:
+    """`preview` (#186): the envelope itself, upright on an envelope-sized page with its edge drawn - for the setup
+    screen's live preview, never printed."""
     from reportlab.pdfgen import canvas as rl_canvas
     buf = io.BytesIO()
     c = rl_canvas.Canvas(buf, pageCompression=1, invariant=1)
@@ -285,8 +288,16 @@ def envelope_pdf(cfg: EnvelopeConfig, ret: list[str], to: list[str], *, page: st
         c.setViewerPreference("PrintScaling", "None")
     except Exception:  # pragma: no cover
         pass
-    _envelope_page(c, cfg, page or cfg.page, guide or cfg.guide, cfg.dx + dx, cfg.dy + dy)
     h = cfg.height
+    if preview:
+        c.setPageSize((cfg.width * PT, h * PT))
+        c.saveState()
+        c.setLineWidth(0.8)
+        c.setStrokeGray(0.55)
+        c.rect(0, 0, cfg.width * PT, h * PT, stroke=1, fill=0)
+        c.restoreState()
+    else:
+        _envelope_page(c, cfg, page or cfg.page, guide or cfg.guide, cfg.dx + dx, cfg.dy + dy)
     if test:
         c.saveState()
         c.setLineWidth(0.6)
