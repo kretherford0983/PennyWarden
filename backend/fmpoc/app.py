@@ -18,7 +18,7 @@ from starlette.types import ASGIApp, Receive, Scope, Send
 from . import VERSION
 from .config import Settings, is_loopback, load_settings
 from .db import make_engine, make_session_factory, upgrade_database
-from .deps import enforce_csrf
+from .deps import enforce_csrf, enforce_maintenance
 from .errors import install_handlers
 from .routers import (admin, attachments, audit_log, auth, backup, bank_accounts, budgets, checks, dashboard, entities,
                       fiscal_years, fundraisers, register, reminders, reports, system, updates, users)
@@ -143,7 +143,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app = FastAPI(title="PennyWarden", version=VERSION, debug=False,
                   docs_url=None, redoc_url=None, openapi_url=None,  # no dev consoles in production (BR-107)
-                  dependencies=[Depends(enforce_csrf)], lifespan=lifespan)
+                  dependencies=[Depends(enforce_csrf), Depends(enforce_maintenance)], lifespan=lifespan)
     app.state.settings = settings
     app.state.engine = engine
     app.state.session_factory = session_factory
