@@ -102,7 +102,7 @@ def test_banner_until_an_administrator_acknowledges(env, data):
     ru = Api(env.app)
     ru.login("reguser")
     b = ru.get("/api/system/reinitialized").json()
-    assert b["show"] and b["by"] == "admin" and b["can_acknowledge"] is False
+    assert b["show"] and b["by"] == "Pat Example - admin" and b["can_acknowledge"] is False
     assert ru.post("/api/system/reinitialized/acknowledge", {}).status_code == 403
     aud = Api(env.app)
     aud.login("auditor")

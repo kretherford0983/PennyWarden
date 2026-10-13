@@ -88,6 +88,9 @@ class User(Base):
     username_normalized: Mapped[str] = mapped_column(String(64))
     email: Mapped[str] = mapped_column(String(254))
     display_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    # 2.0.0 (#134): real names - required for every account (users from before 2.0.0 get them from an Administrator)
+    first_name: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    last_name: Mapped[str | None] = mapped_column(String(60), nullable=True)
     password_hash: Mapped[str] = mapped_column(String(255))
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     security_domain: Mapped[str] = mapped_column(String(20))  # ADMINISTRATOR | FINANCIAL | AUDITOR
@@ -451,6 +454,8 @@ class AuditEvent(Base):
     workspace_id: Mapped[int | None] = mapped_column(ForeignKey("workspace.id"), nullable=True, index=True)
     actor_user_id: Mapped[int | None] = mapped_column(ForeignKey("app_user.id"), nullable=True, index=True)
     actor_username: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # 2.0.0 (#134): the actor's real name when the event was written (later name changes don't rewrite history)
+    actor_name: Mapped[str | None] = mapped_column(String(130), nullable=True)
     timestamp: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, index=True)
     action: Mapped[str] = mapped_column(String(60), index=True)
     object_type: Mapped[str] = mapped_column(String(40))

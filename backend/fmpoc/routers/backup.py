@@ -69,7 +69,9 @@ def start_backup(body: BackupCreateIn, request: Request, db: Session = Depends(g
     audit.record(db, ctx, "BACKUP_STARTED", "workspace", ctx.workspace_id, None, {"job": job.id[:8]},
                  category="SECURITY")
     db.commit()
-    actor = {"user_id": ctx.user.id, "username": ctx.user.username, "workspace_id": ctx.workspace_id,
+    from ..services.users import label as user_label   # 2.0.0 (#134): "First Last - username"
+    actor = {"user_id": ctx.user.id, "username": ctx.user.username, "label": user_label(ctx.user),
+             "workspace_id": ctx.workspace_id,
              "ip": ctx.ip, "cid": ctx.correlation_id}
 
     def run():
@@ -78,7 +80,8 @@ def start_backup(body: BackupCreateIn, request: Request, db: Session = Depends(g
             rec = None
             if body.recoverable:   # 2.0.0 (#124): the passphrase locked with the server key, bound to this file
                 job.advance("Saving the server's recovery file")
-                rec = server_recovery.write_recovery(settings, path, name, body.passphrase, actor["username"])
+                rec = server_recovery.write_recovery(settings, path, name, body.passphrase,
+                                                     actor.get("label") or actor["username"])
             job.result = {"filename": name, "size": path.stat().st_size, "created_at": manifest["created_at"],
                           "counts": manifest["counts"], "files": len(manifest["files"]), "_path": str(path),
                           "recoverable": rec is not None}
@@ -470,7 +473,9 @@ def reinitialize_start(body: ReinitIn, request: Request, db: Session = Depends(g
     audit.record(db, ctx, "REINITIALIZE_STARTED", "workspace", ctx.workspace_id, None,
                  {"own_passphrase": bool(body.passphrase)}, category="SECURITY")
     db.commit()
-    actor = {"user_id": ctx.user.id, "username": ctx.user.username, "workspace_id": ctx.workspace_id, "ip": ctx.ip,
+    from ..services.users import label as user_label   # 2.0.0 (#134): "First Last - username"
+    actor = {"user_id": ctx.user.id, "username": ctx.user.username, "label": user_label(ctx.user),
+             "workspace_id": ctx.workspace_id, "ip": ctx.ip,
              "cid": ctx.correlation_id, "session_id": ctx.session.id if ctx.session else None}
     passphrase = body.passphrase or reinit.new_passphrase()
     threading.Thread(target=run_reinitialize, args=(app, job, passphrase, bool(body.passphrase), actor),
@@ -495,13 +500,14 @@ def run_reinitialize(app, job, passphrase: str, own_passphrase: bool, actor: dic
         app.state.maintenance = "reinitialize"   # nothing can change between the safety backup and the removal
         time.sleep(0.5)  # let requests in flight finish
         job.advance("Creating the safety backup")
-        safety = reinit.safety_backup(settings, passphrase, actor["username"], job)
+        safety = reinit.safety_backup(settings, passphrase, actor.get("label") or actor["username"], job)
         job.advance("Removing the financial data")
         with app.state.session_factory() as s:
             try:
                 ctx = _Actor(actor)
                 before = reinit.counts(s, actor["workspace_id"])
-                reinit.wipe(s, actor["workspace_id"], ctx, actor["username"], safety["filename"], "system_about", before)
+                reinit.wipe(s, actor["workspace_id"], ctx, actor.get("label") or actor["username"], safety["filename"],
+                            "system_about", before)
                 q = update(AuthSession).where(AuthSession.revoked_at.is_(None))
                 if actor.get("session_id"):
                     q = q.where(AuthSession.id != actor["session_id"])

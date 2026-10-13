@@ -77,3 +77,8 @@ then choose two different signers when printing; above an optional amount only t
   backup the server can always restore ([Backup and restore](backup-restore.md#reinitialize-keeping-the-users-since-200)).
 - **Windows server:** the [Windows server guide](install-windows-server.md) now covers everything from the download
   to HTTPS, a Windows service, backups, upgrades and troubleshooting.
+
+## Real names, readable audit log, security overview (test build 8)
+- Every user has a **first and last name** (Administrators set them under Users). The Users list can be searched and
+  sorted by last name, and the audit log shows people as *First Last - username*. After the upgrade, the first
+  Administrator to sign in is asked for the names of the existing accounts.

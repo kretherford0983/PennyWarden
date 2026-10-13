@@ -157,7 +157,7 @@ def wipe(db: Session, ws_id: int, ctx, by: str, backup_name: str, via: str, befo
                .execution_options(synchronize_session=False))
     ws = db.get(Workspace, ws_id)
     now = utcnow()
-    ws.reinitialized_at, ws.reinitialized_by, ws.reinitialize_backup = now, by[:64], backup_name[:255]
+    ws.reinitialized_at, ws.reinitialized_by, ws.reinitialize_backup = now, by[:64], backup_name[:255]   # 64: label
     ws.reinitialize_ack_at = ws.reinitialize_ack_by = None
     db.flush()
     if not db.scalar(select(Entity).where(Entity.workspace_id == ws_id, Entity.is_system.is_(True))):

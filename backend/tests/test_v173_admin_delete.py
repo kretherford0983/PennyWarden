@@ -15,7 +15,7 @@ def admins(env):
 
 
 def _new_user(env, username, roles):
-    return env.admin.post("/api/users", {"username": username, "email": f"{username}@example.com", "password": PASSWORD,
+    return env.admin.post("/api/users", {"first_name": "Test", "last_name": "Person", "username": username, "email": f"{username}@example.com", "password": PASSWORD,
                                          "display_name": "Some Person", "security_domain": "FINANCIAL", "roles": roles})
 
 

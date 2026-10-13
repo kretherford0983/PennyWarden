@@ -56,6 +56,8 @@ async function createUser(page: Page, username: string, roleLabel: string) {
   await page.getByRole("button", { name: "New user" }).click();
   const dlg = page.getByRole("dialog");
   await dlg.getByLabel("Username").fill(username);
+  await dlg.getByLabel("First name").fill((SHOWN[username] || `${username} person`).split(" ")[0]);   // 2.0.0 (#134)
+  await dlg.getByLabel("Last name").fill((SHOWN[username] || `${username} person`).split(" ")[1] || "Person");
   await dlg.getByLabel("Email").fill(`${username}@example.org`);
   await dlg.getByLabel("Display name").fill(SHOWN[username] || `${username} person`);
   await dlg.getByLabel("Initial password").fill(PW);
@@ -69,6 +71,8 @@ test("AC-INIT-001..007: fresh install wizard bootstraps a working Administrator"
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Initialization Wizard" })).toBeVisible();
   await page.getByLabel("Organization / Workspace Name").fill("E2E Org");
+  await page.getByLabel("Administrator First Name").fill("Pat");
+  await page.getByLabel("Administrator Last Name").fill("Example");
   await page.getByLabel("Administrator Username").fill("admin");
   await page.getByLabel("Administrator Email Address").fill("admin@example.org");
   await page.getByLabel("Password", { exact: true }).fill(PW);
@@ -89,7 +93,7 @@ test("AC-INIT-001..007: fresh install wizard bootstraps a working Administrator"
   // the rest of this suite exercises separate security domains: the Administrator keeps only the Administrator role
   // (on a local install an Administrator may change their own roles)
   await row.getByRole("button", { name: "Edit" }).click();
-  const ed = page.getByRole("dialog", { name: "Edit admin" });
+  const ed = page.getByRole("dialog", { name: "Edit Pat Example - admin" });
   await expect(ed.getByText("On a local install one person can hold roles of every security domain.")).toBeVisible();
   for (const label of ["Budget Manager", "Register User", "Auditor"]) {
     if (label !== "Auditor") {   // the extra roles go first: each needs its base role
@@ -140,6 +144,8 @@ test("#47 / #46 / #50: display name is required; the top bar shows it without th
   await page.getByRole("button", { name: "New user" }).click();
   const dlg = page.getByRole("dialog");
   await dlg.getByLabel("Username").fill("dana");
+  await dlg.getByLabel("First name").fill("Dana");
+  await dlg.getByLabel("Last name").fill("Sample");
   await dlg.getByLabel("Email").fill("dana@example.org");
   await dlg.getByLabel("Initial password").fill(PW);
   await dlg.getByLabel("Budget User", { exact: true }).check();   // 1.9.0 (#54): local - roles only, the domain follows
@@ -1152,14 +1158,14 @@ test("#74: a Budget Manager sets the bank account order with the keyboard; Dashb
 test("1.7.2: an Administrator cannot disable their own account", async ({ page }) => {
   await login(page, "admin");
   await page.getByRole("link", { name: "Users", exact: true }).click();
-  await page.getByRole("row", { name: /^admin\b/ }).getByRole("button", { name: "Edit" }).click();
-  const dlg = page.getByRole("dialog", { name: "Edit admin" });
+  await page.getByRole("row", { name: /admin@example\.org/ }).getByRole("button", { name: "Edit" }).click();
+  const dlg = page.getByRole("dialog", { name: "Edit Pat Example - admin" });
   await expect(dlg.getByLabel("Active")).toBeDisabled();
   await expect(dlg).toContainText("You cannot disable your own account.");
   await dlg.getByRole("button", { name: "Cancel" }).click();
   // another user's Active box stays available
-  await page.getByRole("row", { name: /^bm1\b/ }).getByRole("button", { name: "Edit" }).click();
-  await expect(page.getByRole("dialog", { name: "Edit bm1" }).getByLabel("Active")).toBeEnabled();
+  await page.getByRole("row", { name: /bm1@example\.org/ }).getByRole("button", { name: "Edit" }).click();
+  await expect(page.getByRole("dialog", { name: "Edit Bea Manager - bm1" }).getByLabel("Active")).toBeEnabled();
 });
 
 // ---------------------------------------------------------------- 1.7.2 #56/#57: Current and Available balances
@@ -1248,12 +1254,12 @@ test("#52 / #53: a Budget Admin deletes a draft budget and a Register Admin dele
   await login(page, "admin");
   const adm = await apiAs(page);
   for (const [u, roles] of [["ba1", ["BUDGET_MANAGER", "BUDGET_ADMIN"]], ["ra1", ["REGISTER_USER", "REGISTER_ADMIN"]]] as const) {
-    const r = await adm("/api/users", { username: u, email: `${u}@example.org`, display_name: `${u} person`, password: PW,
+    const r = await adm("/api/users", { first_name: "Test", last_name: "Person", username: u, email: `${u}@example.org`, display_name: `${u} person`, password: PW,
       security_domain: "FINANCIAL", roles });
     expect(r.status(), await r.text()).toBe(201);
   }
   // the extra role needs its base role
-  const bad = await adm("/api/users", { username: "ba2", email: "ba2@example.org", display_name: "ba2 person", password: PW,
+  const bad = await adm("/api/users", { first_name: "Test", last_name: "Person", username: "ba2", email: "ba2@example.org", display_name: "ba2 person", password: PW,
     security_domain: "FINANCIAL", roles: ["BUDGET_ADMIN"] });
   expect(bad.status()).toBe(422);
   await logout(page);
@@ -1752,6 +1758,8 @@ test("v1.5.0: a bookmarked page leads to the dashboard address, two-step setup/v
     }
     await page.goto(base + "/about");
     await page.getByLabel("Organization / Workspace Name").fill("Server Org");
+    await page.getByLabel("Administrator First Name").fill("Pat");
+    await page.getByLabel("Administrator Last Name").fill("Example");
     await page.getByLabel("Administrator Username").fill("admin");
     await page.getByLabel("Administrator Email Address").fill("admin@example.org");
     await page.getByLabel("Password", { exact: true }).fill(PW);
@@ -1879,7 +1887,7 @@ test("#106: Financial Flow Report - review, exclude a line with a reason, note a
 test("#113: security questions at the first sign-in, Forgot password, notices for the user and the Administrators", async ({ page }) => {
   await login(page, "admin");
   const adm = await apiAs(page);
-  const r = await adm("/api/users", { username: "fp1", email: "fp1@example.org", display_name: "Frankie Pass", password: PW,
+  const r = await adm("/api/users", { first_name: "Frankie", last_name: "Pass", username: "fp1", email: "fp1@example.org", display_name: "Frankie Pass", password: PW,
     security_domain: "FINANCIAL", roles: ["BUDGET_USER"] });
   expect(r.status(), await r.text()).toBe(201);
   await logout(page);
@@ -2400,6 +2408,18 @@ test("#130: maintenance mode - Administrators keep working, the others see the m
   await expect(page.getByTestId("maintenance-notice")).toHaveCount(0);
 });
 
+test("#134: real names - search the Users list, sort by last name, names in the audit log", async ({ page }) => {
+  await login(page, "admin");
+  await page.getByRole("link", { name: "Users" }).click();
+  await page.getByLabel("Search users").fill("manager");
+  await expect(page.getByRole("row", { name: /bm1/ })).toBeVisible();
+  await expect(page.getByRole("row", { name: /ru1/ })).toHaveCount(0);
+  await page.getByLabel("Search users").fill("");
+  await page.getByLabel("Sort by last name").check();
+  await page.getByRole("link", { name: "Audit Log" }).click();
+  await expect(page.getByRole("cell", { name: "Pat Example - admin" }).first()).toBeVisible();
+});
+
 // Keep this test LAST: it removes the financial data the other tests use.
 test("#125: an Administrator reinitializes (keeping the users); everyone sees the notice until it is acknowledged", async ({ page }) => {
   await login(page, "admin");
@@ -2410,7 +2430,7 @@ test("#125: an Administrator reinitializes (keeping the users); everyone sees th
   await page.getByRole("button", { name: "Reinitialize" }).click();
   await expect(page.getByTestId("reinit-done")).toContainText("--use-server-key", { timeout: 30_000 });
   await page.goto("/");
-  await expect(page.getByTestId("reinitialized-banner")).toContainText("reinitialized by admin");
+  await expect(page.getByTestId("reinitialized-banner")).toContainText("reinitialized by Pat Example - admin");
   await logout(page);
   await login(page, "bm1");
   await expect(page.getByTestId("reinitialized-banner")).toBeVisible();

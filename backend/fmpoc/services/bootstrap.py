@@ -44,7 +44,8 @@ def seed_roles(db: Session) -> dict[str, Role]:
     return existing
 
 
-def initialize(db: Session, settings, ctx, *, workspace_name: str, username: str, email: str, password: str) -> User:
+def initialize(db: Session, settings, ctx, *, workspace_name: str, username: str, email: str, password: str,
+               first_name: str | None = None, last_name: str | None = None) -> User:
     if is_initialized(db):
         raise AppError(409, "ALREADY_INITIALIZED", "The application has already been initialized.")
     km = crypto.load_or_create_key(settings.secrets_dir)
@@ -66,6 +67,7 @@ def initialize(db: Session, settings, ctx, *, workspace_name: str, username: str
         username_normalized=username.lower(),
         email=email,
         display_name=username,   # 1.7.1 (#47): required; the Administrator changes it under Users
+        first_name=first_name, last_name=last_name,   # 2.0.0 (#134)
         password_hash=hash_password(password),
         active=True,
         security_domain=COMBINED if len(first_roles) > 1 else "ADMINISTRATOR",

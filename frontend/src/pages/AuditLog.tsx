@@ -41,7 +41,7 @@ export default function AuditLog() {
               {data.items.map((e: any) => (
                 <Fragment key={e.id}>
                   <tr>
-                    <td>{e.timestamp.replace("T", " ").slice(0, 19)}</td><td>{e.actor_username || "—"}</td><td><code>{e.action}</code></td>
+                    <td>{e.timestamp.replace("T", " ").slice(0, 19)}</td><td>{e.actor_name && e.actor_username ? `${e.actor_name} - ${e.actor_username}` : e.actor_username || "—"}</td><td><code>{e.action}</code></td>
                     <td>{e.object_type} {e.object_id ? `#${e.object_id}` : ""}</td><td>{e.category}</td>
                     <td><button className="small" onClick={() => setOpen(open === e.id ? null : e.id)} aria-expanded={open === e.id}>{open === e.id ? "Hide" : "Details"}</button></td>
                   </tr>
