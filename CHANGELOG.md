@@ -139,6 +139,16 @@ Database migrations `0028` to `0030` (empty columns: the letter logo, the backup
   While it is on, everyone can sign in and look things up but only Administrators can change anything (enforced by
   the server). Everyone sees the message - on the sign-in page and at the top of every page - from the moment it is
   scheduled. It stays on through a restart; turning it on or off is audited. Database migration `0031`.
+- **Server-recoverable backups (#124).** *Let this server recover the passphrase* (on by default) keeps the backup's
+  passphrase locked with a key that never leaves this server, so its owner can restore that exact file even if the
+  passphrase is forgotten — only from the server's command line; the web restore always asks for the passphrase.
+  System/About lists the backups this server can recover; *Remove recovery* makes one passphrase-only.
+- **`pennywarden restore` (#124).** Restore from the server's command line: hidden prompt, passphrase file
+  (`PENNYWARDEN_PASSPHRASE_FILE`) or `--use-server-key`; asks before stopping the service, restores file ownership,
+  works on a new installation, never stops anything inside Docker; `--list` (docs/backup-restore.md).
+- **Restore re-entry report (#124).** Every restore first lists what was entered or changed after the backup in a CSV
+  report, which Budget Managers, Budget Users, Register Users and Auditors download under Reports; Administrators see
+  only a summary.
 
 ## 1.10.0 — 2026-10-09
 Database migration `0024` (one table added; no existing data changes). Rolling back to 1.9.0 needs the data snapshot

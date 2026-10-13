@@ -67,3 +67,9 @@ then choose two different signers when printing; above an optional amount only t
 - An Administrator can switch on **maintenance mode** on System/About with a message for everyone, now or at a set
   time (for example during the year-end close or before an upgrade). Everyone can still sign in and look things up;
   only Administrators can change anything until it is turned off.
+- **Backups the server can recover:** a backup made with *Let this server recover the passphrase* (the default) can
+  be restored by the server's owner even if its passphrase is forgotten — from the server's command line, on that
+  server only. **`pennywarden restore`** restores a backup from the command line ([Backup and
+  restore](backup-restore.md)).
+- After a restore, **Reports → Restore re-entry reports** lists what was entered or changed after the backup, so it
+  can be entered again.
