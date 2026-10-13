@@ -13,7 +13,8 @@ TOO_SHORT = "Display name must be at least 3 characters."
 
 
 def _new(env, username, **extra):
-    body = {"username": username, "email": f"{username}@example.com", "password": PASSWORD,
+    body = {"first_name": "Test", "last_name": "Person", "username": username, "email": f"{username}@example.com",
+            "password": PASSWORD,
             "security_domain": "FINANCIAL", "roles": ["BUDGET_USER"]}
     body.update(extra)
     return env.admin.post("/api/users", body)
@@ -67,7 +68,7 @@ def test_edit_accepts_a_valid_display_name_and_leaves_it_alone_when_not_sent(env
 
 
 def test_only_an_administrator_can_set_it(env):
-    assert env.bm.post("/api/users", {"username": "zzz", "email": "z@z.org", "password": PASSWORD, "display_name": "Zed",
+    assert env.bm.post("/api/users", {"first_name": "Test", "last_name": "Person", "username": "zzz", "email": "z@z.org", "password": PASSWORD, "display_name": "Zed",
                                       "security_domain": "FINANCIAL", "roles": ["BUDGET_USER"]}).status_code == 403
     assert env.auditor.patch("/api/users/1", {"display_name": "Changed"}).status_code == 403
 

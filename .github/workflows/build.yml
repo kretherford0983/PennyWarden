@@ -226,14 +226,16 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           VERSION: ${{ needs.package.outputs.version }}
         run: |
-          bash scripts/release_notes.sh "$VERSION" > notes.md
+          bash scripts/release_notes.sh "$VERSION" > changes.md
           if [ "$GITHUB_REF_NAME" = "test" ]; then
             if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
               echo "::notice::v$VERSION is already released - no test pre-release created (bump the version on develop)."
               exit 0
             fi
             TAG="v$VERSION-test.$GITHUB_RUN_NUMBER"
-            printf '\n---\nTest build from branch `test` (commit %s). Install or upgrade on the **test** server:\n```\ncurl -fsSL https://github.com/%s/releases/download/%s/install.sh | sudo bash -s -- --version %s\n```\nWindows: download `PennyWarden-%s-windows-x64.exe` and double-click it.\nMac (Apple Silicon): download `PennyWarden-%s-macos-arm64.dmg`, drag PennyWarden to Applications and see *Read me first* in the disk image for the first start.\n' "$GITHUB_SHA" "$GITHUB_REPOSITORY" "$TAG" "$TAG" "$VERSION" "$VERSION" >> notes.md
+            # 2.0.0 (#207): the install block first - the notes of a test build carry the whole unreleased section
+            { printf 'Test build from branch `test` (commit %s). Install or upgrade on the **test** server:\n```\ncurl -fsSL https://github.com/%s/releases/download/%s/install.sh | sudo bash -s -- --version %s\n```\nWindows: download `PennyWarden-%s-windows-x64.exe` and double-click it.\nMac (Apple Silicon): download `PennyWarden-%s-macos-arm64.dmg`, drag PennyWarden to Applications and see *Read me first* in the disk image for the first start.\n\n---\n\n' "$GITHUB_SHA" "$GITHUB_REPOSITORY" "$TAG" "$TAG" "$VERSION" "$VERSION"
+              cat changes.md; } > notes.md
             gh release create "$TAG" release/* --target "$GITHUB_SHA" --prerelease \
               --title "PennyWarden $VERSION (test build $GITHUB_RUN_NUMBER)" --notes-file notes.md
           else
@@ -242,6 +244,7 @@ jobs:
               echo "::notice::$TAG already released - packages are attached to this workflow run only."
               exit 0
             fi
+            cp changes.md notes.md
             printf '\n---\nProduction release (commit %s). Install or upgrade (see docs/upgrade.md):\n```\ncurl -fsSL https://github.com/%s/releases/latest/download/install.sh | sudo bash\n```\nWindows: download `PennyWarden-%s-windows-x64.exe` and double-click it.\nMac (Apple Silicon): download `PennyWarden-%s-macos-arm64.dmg`, drag PennyWarden to Applications and see *Read me first* in the disk image for the first start.\n' "$GITHUB_SHA" "$GITHUB_REPOSITORY" "$VERSION" "$VERSION" >> notes.md
             gh release create "$TAG" release/* --target "$GITHUB_SHA" --latest \
               --title "PennyWarden $VERSION" --notes-file notes.md

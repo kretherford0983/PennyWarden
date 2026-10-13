@@ -47,6 +47,8 @@ class In(BaseModel):
 class InitializeIn(In):
     workspace_name: Str(120)
     admin_username: Str(64)
+    admin_first_name: OptStr(200) = None   # 2.0.0 (#134): required - checked like any user's names
+    admin_last_name: OptStr(200) = None
     admin_email: Email
     password: Annotated[str, StringConstraints(min_length=1, max_length=256)]
     password_confirmation: Annotated[str, StringConstraints(min_length=1, max_length=256)]
@@ -102,6 +104,8 @@ class UserCreateIn(In):
     username: Str(64)
     email: Email
     display_name: OptStr(120) = None
+    first_name: OptStr(200) = None   # 2.0.0 (#134): required (checked by the service with a clear message)
+    last_name: OptStr(200) = None
     password: Annotated[str, StringConstraints(max_length=256)]
     security_domain: Domain
     roles: Annotated[list[RoleCode], Field(min_length=1, max_length=7)]
@@ -124,9 +128,22 @@ class UserCreateIn(In):
 class UserUpdateIn(In):
     email: OptEmail = None
     display_name: OptStr(120) = None
+    first_name: OptStr(200) = None
+    last_name: OptStr(200) = None
     active: bool | None = None
     security_domain: Domain | None = None
     roles: Annotated[list[RoleCode] | None, Field(max_length=7)] = None
+
+
+class NameRowIn(In):
+    id: int
+    first_name: OptStr(200) = None
+    last_name: OptStr(200) = None
+
+
+class NamesIn(In):
+    """2.0.0 (#134): completing the names of accounts from before 2.0.0."""
+    users: Annotated[list[NameRowIn], Field(min_length=1, max_length=500)]
 
 
 class PasswordResetIn(In):

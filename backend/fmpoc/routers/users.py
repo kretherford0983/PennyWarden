@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session, object_session
 
 from ..deps import Ctx, get_db, require
 from ..models import User, UserMfa
-from ..schemas import MfaResetIn, PasswordResetIn, UserCreateIn, UserUpdateIn
+from ..schemas import MfaResetIn, NamesIn, PasswordResetIn, UserCreateIn, UserUpdateIn
 from ..services import mfa as mfa_svc
 from ..services import recovery
 from ..services import users as svc
@@ -31,6 +31,21 @@ def _out(u: User, on: set[int]) -> dict:
 def list_users(db: Session = Depends(get_db), ctx: Ctx = Depends(require("users.view"))):
     on = _mfa_on(db)
     return [_out(u, on) for u in db.scalars(select(User).where(User.workspace_id == ctx.workspace_id).order_by(User.username))]
+
+
+@router.get("/names-needed")
+def names_needed(db: Session = Depends(get_db), ctx: Ctx = Depends(require("users.manage"))):
+    """2.0.0 (#134): accounts from before 2.0.0 without first and last name (inactive ones too)."""
+    return [{"id": u.id, "username": u.username, "display_name": u.display_name, "email": u.email,
+             "active": u.active, "first_name": u.first_name, "last_name": u.last_name}
+            for u in svc.names_needed(db, ctx.workspace_id)]
+
+
+@router.put("/names")
+def complete_names(body: NamesIn, db: Session = Depends(get_db), ctx: Ctx = Depends(require("users.manage"))):
+    n = svc.complete_names(db, ctx, body.users)
+    db.commit()
+    return {"updated": n, "remaining": len(svc.names_needed(db, ctx.workspace_id))}
 
 
 @router.get("/{user_id}")

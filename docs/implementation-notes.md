@@ -243,6 +243,27 @@ the pause), `GET /api/system/reinitialized` (banner), `POST /api/system/reinitia
 `pennywarden reinitialize` in `cli_restore.py`. `test_ac_sec_023` allows `subprocess` only in `cli_restore.py` (fixed
 argument lists to `systemctl` / `sc.exe`, BR-102).
 
+**2.0.0 test build 8 — real names (#134).** Migration `0033`: `app_user.first_name`, `last_name`,
+`audit_event.actor_name` (plain `ADD COLUMN`: both tables carry the 0017 triggers). `services/users.py`:
+`clean_person_name`, `full_name`, `label` ("First Last - username"), `names_needed`, `complete_names` (all rows
+validated before any is saved); `update()` requires names when the account has none. `audit.actor_name(user)` is
+stored by `audit.record`. `InitializeIn.admin_first_name/admin_last_name`; `/api/auth/me` adds `first_name`,
+`last_name` and `names_needed` (Administrators only); `GET /api/users/names-needed`, `PUT /api/users/names`. Frontend:
+`pages/NamesGate.tsx` (shown by `App` before the shell while `names_needed > 0`), Users list columns, search and sort,
+"First Last - username" in the edit dialog title and the audit log. The backup list, the reinitialize banner and the
+restore report's "entered by" use the same label.
+#133: `services/audit_readable.py` - `action_label` (explicit `ACTION_LABELS`, else the code in words, so a new action
+never breaks the screen; a test scans the code for action codes), `object_label`, `field_label` (`FIELD_LABELS`, else
+words; `_cents` stripped), `fmt` (cents and `MONEY_KEYS` decimal strings as currency, Yes/No, codes in words, ISO
+times), `labels_for` (written by `audit.record` into `audit_event.labels`, migration `0034`, "kind:id" -> name for
+`ID_KINDS`), `readable()` (summary "who: what — target", kind create/update/remove/event/withheld, `changes()` with
+only changed fields for updates and sub-tables for lists of rows). `GET /api/audit-events` adds `readable` to every
+item; `GET /api/audit-events/meta` lists the codes present with readable names for the filters.
+#131: `services/security_overview.py` - `overview()` builds the items (`key`, `title`, `value`, `status`
+attention|ok|info, `note`) from the users, `UserMfa.enabled_at`, `recovery.is_locked`, `admin_settings.backup_age`,
+the running settings and the request's scheme; `GET /api/system/security-overview` (`system.view`). Frontend
+`SecurityOverviewPanel` in `pages/AdminSettings.tsx`.
+
 **1.10.0 Update notification (issue #58; channel decided 2026-10-09).** Migration `0024`: `update_check` (one row).
 `services/updates.py`: `channel(settings)` - setting `update_channel` (`auto` → from `build_info.json`: `main` →
 stable, `test` → test, anything else / no build info → none); `check(app, force)` - due after 24 h (6 h after an error),
@@ -266,7 +287,7 @@ runs once; the latest `onClose` is kept in a ref for Escape. E2E "#106" types th
 `site/` (static HTML/CSS/JS, CSP `default-src 'self'`, no third-party resources; `site.js` fills the download
 buttons from `releases.json` with `textContent`/attributes only and accepts only `https://github.com/` URLs),
 `scripts/release_data.py` (GitHub releases → `releases.json` / `releases-test.json`: tags `vX.Y.Z` non-prerelease =
-stable, `vX.Y.Z-test.N` prerelease = test; numeric version order; notes cut at the install footer the build adds;
+stable, `vX.Y.Z-test.N` prerelease = test; numeric version order; notes cut at the install footer the build adds (2.0.0 #207: test builds put that block first, before a rule - `HEADER` strips it);
 downloads classified by file name with SHA-256 from each release's `SHA256SUMS.txt`), `scripts/build_site.sh`,
 `.github/workflows/pages.yml` (always checks out `main`; `upload-pages-artifact` + `deploy-pages`). `build.yml` gains
 a `site` job after `publish` that runs `gh workflow run pages.yml --ref main` (a release created with the workflow

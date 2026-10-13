@@ -27,7 +27,7 @@ def server(tmp_path):
     assert a.post("/api/system/initialize", ADMIN).status_code == 200
     a.csrf = a.get("/api/auth/me").json()["csrf_token"]
     _enroll(a)
-    r = a.post("/api/users", {"username": "admin2", "email": "a2@example.com", "display_name": "Second Admin",
+    r = a.post("/api/users", {"first_name": "Test", "last_name": "Person", "username": "admin2", "email": "a2@example.com", "display_name": "Second Admin",
                               "password": PASSWORD, "security_domain": "ADMINISTRATOR", "roles": ["ADMINISTRATOR"]})
     assert r.status_code == 201, r.text
     b = Api(app)
@@ -80,7 +80,7 @@ def test_local_mode_admin_may_change_own_roles(env):
     me = env.admin.get("/api/auth/me").json()["id"]
     r = env.admin.patch(f"/api/users/{me}", {"security_domain": "AUDITOR", "roles": ["AUDITOR"]})
     assert r.status_code == 409 and r.json()["error"]["code"] == "LAST_ADMINISTRATOR"
-    r = env.admin.post("/api/users", {"username": "admin2", "email": "a2@example.com", "display_name": "Second Admin",
+    r = env.admin.post("/api/users", {"first_name": "Test", "last_name": "Person", "username": "admin2", "email": "a2@example.com", "display_name": "Second Admin",
                                       "password": PASSWORD, "security_domain": "ADMINISTRATOR", "roles": ["ADMINISTRATOR"]})
     assert r.status_code == 201
     r = env.admin.patch(f"/api/users/{me}", {"security_domain": "AUDITOR", "roles": ["AUDITOR"]})
@@ -103,7 +103,7 @@ def test_server_admin_cannot_disable_own_account_but_can_disable_another(server)
 
 def test_local_admin_cannot_disable_own_account_either(env):
     me = env.admin.get("/api/auth/me").json()["id"]
-    env.admin.post("/api/users", {"username": "admin2", "email": "a2@example.com", "display_name": "Second Admin",
+    env.admin.post("/api/users", {"first_name": "Test", "last_name": "Person", "username": "admin2", "email": "a2@example.com", "display_name": "Second Admin",
                                   "password": PASSWORD, "security_domain": "ADMINISTRATOR", "roles": ["ADMINISTRATOR"]})
     r = env.admin.patch(f"/api/users/{me}", {"active": False})
     assert r.status_code == 403 and r.json()["error"]["code"] == "OWN_ACCOUNT_DISABLE"

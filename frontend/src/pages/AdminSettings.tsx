@@ -263,3 +263,35 @@ export function HealthPanel() {
     </section>
   );
 }
+
+/** 2.0.0 (#131): how the installation is secured - read-only (Administrators and Auditors). "Needs attention" is said
+ * in words, not by colour alone. */
+export function SecurityOverviewPanel() {
+  const [d, setD] = useState<any>(null);
+  const [err, setErr] = useState<unknown>(null);
+  useEffect(() => { api.get("/api/system/security-overview").then(setD, setErr); }, []);
+  return (
+    <section className="card" aria-labelledby="secov-h">
+      <h2 id="secov-h">Security overview</h2>
+      <ErrorBox error={err} />
+      {d ? (
+        <>
+          <p className="hint">{d.attention ? `${d.attention} item(s) need attention.` : "Nothing needs attention."} This overview only reports; change settings in the sections above.</p>
+          <table className="table compact security-overview">
+            <thead><tr><th scope="col">Item</th><th scope="col">Now</th><th scope="col">Status</th><th scope="col">What it means</th></tr></thead>
+            <tbody>
+              {d.items.map((i: any) => (
+                <tr key={i.key} data-testid={`secov-${i.key}`}>
+                  <th scope="row">{i.title}</th>
+                  <td>{i.key === "backup" && i.value && i.value !== "None yet" ? new Date(i.value).toLocaleString() : i.value}</td>
+                  <td>{i.status === "attention" ? <span className="badge red">Needs attention</span> : i.status === "ok" ? <span className="badge green">OK</span> : <span className="badge grey">Info</span>}</td>
+                  <td>{i.note}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      ) : null}
+    </section>
+  );
+}

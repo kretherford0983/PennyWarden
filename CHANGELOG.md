@@ -3,7 +3,7 @@
 Versions are `Breaking.Major.Minor` from 1.6.0 (docs/branching.md).
 
 ## 2.0.0 — unreleased
-Database migrations `0025` to `0032` (eighteen columns and five tables added; no existing data changes). Rolling back to 1.10.0
+Database migrations `0025` to `0034` (twenty-two columns and five tables added; no existing data changes). Rolling back to 1.10.0
 needs the data snapshot the installer takes before the upgrade (docs/upgrade.md). 2.0.0 is built and tested in
 several test builds; the notes below grow with each one.
 
@@ -161,6 +161,33 @@ Database migrations `0028` to `0030` (empty columns: the letter logo, the backup
   version folder and a `current` pointer, a dedicated service account and data-folder permissions, `config.toml`,
   HTTPS with Caddy, PennyWarden and Caddy as Windows services with NSSM (start, stop, logs), backups, restore,
   upgrades with rollback, host commands and troubleshooting. Written against the code; not yet run on Windows.
+
+**Test build 8 — real names, readable audit log, security overview (#134, #133, #131)**
+- **First and last names (#134).** Every account now has a first and last name (required, up to 60 characters
+  each, any language), set by an Administrator when creating or editing a
+  user and for the first Administrator in the Initialization Wizard. After the upgrade, the first Administrator to sign
+  in enters the names of every account that has none (a stand-in such as the display name is fine and can be
+  corrected later); until then the Users list marks them *name needed*. The Users list gets name columns, a search box
+  (name, username, display name, email) and *Sort by last name*. The audit log shows who did something as
+  **First Last - username**, with the name as it was at the time; older events keep the username. Database migration
+  `0033`.
+- **Readable audit log (#133).** Each entry reads as a sentence (who, what, which record) with the time in your own
+  time zone; *Details* shows a **What changed** table with readable field names and values (amounts as currency, Yes/No,
+  words instead of codes; only the changed fields of an update, each marked *changed*; transaction lines as a small
+  table) and the raw data under *Show technical details*. Filters offer readable action and record names. Related
+  records are named as they were when the event was written. Administrators still see no financial content: for
+  those entries only who, the kind of action and when. Database migration `0034`.
+- **Security overview (#131).** System/About shows how the installation is secured, for Administrators and (read-only)
+  Auditors: whether it is reached over HTTPS, how many active users have two-step verification (and which roles
+  don't), the last backup, locked accounts, the number of Administrators, secure cookies, HSTS, trusted proxies and
+  disabled accounts. Items that need attention — plain HTTP on a network install, users without two-step
+  verification, a backup older than the backup reminder, locked accounts — are marked, each with a short note on what
+  to do. The overview only reports; it changes nothing.
+
+**Test build 9 — release notes (#207)**
+- **Install command first.** A test build's release notes now start with the install block — the `curl` command to
+  install or upgrade the test server (with a copy button on GitHub) and the Windows and Mac downloads — followed by the
+  notes. Production releases keep it at the end. pennywarden.org and the update notification still show only the notes.
 
 ## 1.10.0 — 2026-10-09
 Database migration `0024` (one table added; no existing data changes). Rolling back to 1.9.0 needs the data snapshot

@@ -28,6 +28,8 @@ STABLE = re.compile(r"^v(\d+)\.(\d+)\.(\d+)$")
 TEST = re.compile(r"^v(\d+)\.(\d+)\.(\d+)-test\.(\d+)$")
 MAX_NOTES = 20_000
 FOOTER = re.compile(r"\n-{3,}\s*\n(Test build from branch|Production release \(commit)", re.S)
+# 2.0.0 (#207): test builds put the install block first, before a rule
+HEADER = re.compile(r"^\s*Test build from branch.*?\n-{3,}[ \t]*\n", re.S)
 
 
 def kind_of(name: str) -> tuple[str, str] | None:
@@ -50,6 +52,9 @@ def kind_of(name: str) -> tuple[str, str] | None:
 
 def notes_of(body: str | None) -> str:
     text = (body or "").replace("\r\n", "\n")
+    h = HEADER.match(text)
+    if h:
+        text = text[h.end():]
     m = FOOTER.search(text)
     if m:
         text = text[:m.start()]

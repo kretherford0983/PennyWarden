@@ -14,12 +14,41 @@ from .common import get_scoped
 
 
 def snapshot(u: User) -> dict:
-    return {"id": u.id, "username": u.username, "email": u.email, "display_name": u.display_name, "active": u.active,
+    return {"id": u.id, "username": u.username, "email": u.email, "display_name": u.display_name,
+            "first_name": u.first_name, "last_name": u.last_name, "active": u.active,
             "security_domain": u.security_domain, "roles": sorted(u.role_codes)}
 
 
+NAME_MAX = 60
+
+
+def clean_person_name(value: str | None, field: str) -> str:
+    """2.0.0 (#134): first and last name - required, trimmed, at most 60 characters, at least one letter (any
+    language), no control characters. Stored and shown as plain text."""
+    label = "First name" if field == "first_name" else "Last name"
+    name = " ".join((value or "").split())
+    if not name:
+        raise validation(f"{label} is required.", field)
+    if len(name) > NAME_MAX:
+        raise validation(f"{label} can have at most {NAME_MAX} characters.", field)
+    if not any(c.isalpha() for c in name) or any(ord(c) < 32 or 0x7f <= ord(c) < 0xa0 for c in name):
+        raise validation(f"{label} must contain letters.", field)
+    return name
+
+
+def full_name(u: User) -> str | None:
+    return f"{u.first_name} {u.last_name}" if u.first_name and u.last_name else None
+
+
+def label(u: User) -> str:
+    """"First Last - username" (#134), or the username alone while the names are missing."""
+    n = full_name(u)
+    return f"{n} - {u.username}" if n else u.username
+
+
 def out(u: User) -> dict:
-    return {**snapshot(u), "created_at": u.created_at.isoformat() + "Z",
+    return {**snapshot(u), "label": label(u), "name_needed": full_name(u) is None,
+            "created_at": u.created_at.isoformat() + "Z",
             "password_changed_at": u.password_changed_at.isoformat() + "Z" if u.password_changed_at else None}
 
 
@@ -62,6 +91,7 @@ def clean_display_name(value: str | None) -> str:
 
 def create(db: Session, ctx, data, mode: str = "server") -> User:
     display_name = clean_display_name(data.display_name)
+    first, last = clean_person_name(data.first_name, "first_name"), clean_person_name(data.last_name, "last_name")
     err = validate_role_set(data.security_domain, set(data.roles), mode)
     if err:
         raise validation(err, "roles")
@@ -70,7 +100,8 @@ def create(db: Session, ctx, data, mode: str = "server") -> User:
         raise conflict("DUPLICATE_USERNAME", "That username is already in use.")
     _pw_check(data.password, data.username)
     u = User(workspace_id=ctx.workspace_id, username=data.username, username_normalized=data.username.lower(),
-             email=data.email, display_name=display_name, password_hash=hash_password(data.password),
+             email=data.email, display_name=display_name, first_name=first, last_name=last,
+             password_hash=hash_password(data.password),
              active=True, security_domain=data.security_domain, theme="light", password_changed_at=utcnow(),
              created_by_user_id=ctx.user.id, updated_by_user_id=ctx.user.id)
     db.add(u)
@@ -91,6 +122,11 @@ def update(db: Session, ctx, u: User, data, mode: str = "local") -> User:
         u.email = data.email
     if "display_name" in f:   # sent empty = an attempt to remove it
         u.display_name = clean_display_name(data.display_name)
+    # 2.0.0 (#134): names can be corrected but never removed; an account without names must get them with any edit
+    if "first_name" in f or not u.first_name:
+        u.first_name = clean_person_name(data.first_name if "first_name" in f else None, "first_name")
+    if "last_name" in f or not u.last_name:
+        u.last_name = clean_person_name(data.last_name if "last_name" in f else None, "last_name")
     domain = data.security_domain if "security_domain" in f and data.security_domain else u.security_domain
     roles_changed = False
     if "roles" in f or domain != u.security_domain:
@@ -145,3 +181,27 @@ def reset_password(db: Session, ctx, u: User, new_password: str) -> None:
 
 def get(db: Session, ctx, uid: int) -> User:
     return get_scoped(db, User, uid, ctx, "User")
+
+
+# ------------------------------------------------------------------ 2.0.0 (#134) completing names after the upgrade
+def names_needed(db: Session, ws_id: int) -> list[User]:
+    return list(db.scalars(select(User).where(User.workspace_id == ws_id,
+                                              (User.first_name.is_(None)) | (User.last_name.is_(None)))
+                           .order_by(User.username_normalized)))
+
+
+def complete_names(db: Session, ctx, rows: list) -> int:
+    """Sets first and last name for accounts that lack them (all rows validated before any is saved)."""
+    wanted = {u.id: u for u in names_needed(db, ctx.workspace_id)}
+    clean = []
+    for r in rows:
+        u = wanted.get(r.id)
+        if u is None:
+            raise validation("That account does not need names (or does not exist).", "users")
+        clean.append((u, clean_person_name(r.first_name, "first_name"), clean_person_name(r.last_name, "last_name")))
+    for u, first, last in clean:
+        before = snapshot(u)
+        u.first_name, u.last_name, u.updated_by_user_id = first, last, ctx.user.id
+        db.flush()
+        audit.record(db, ctx, "USER_UPDATED", "user", u.id, before, snapshot(u), category="SECURITY")
+    return len(clean)
