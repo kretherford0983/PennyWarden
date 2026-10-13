@@ -225,6 +225,16 @@ banner endpoint (`/api/system/backup-schedule/alert`) adds `low_disk`.
 after `enforce_csrf`; `GET/PUT /api/system/maintenance`; `/api/system/status` adds `maintenance_mode` (sign-in page
 and the `MaintenanceBanner` for every signed-in user). The restore's existing `app.state.maintenance` is unchanged and
 covers restore (and reinitialize, #125).
+#124: `services/server_recovery.py` (server key, `write_recovery`, `passphrase_for` by file SHA-256, `list_backups`,
+`remove_recovery`), `services/restore_report.py` (`build`: the current database through the ORM against the backup's
+database by raw SQL on long-standing columns - `register_transaction.id/status/updated_at` and the allocations'
+`updated_at` - so older backups compare too; NEW / EDITED / VOIDED / DELETED; a backup whose `workspace.key_check`
+differs is compared by time only; the CSV plus a JSON summary in `restore-reports/`), `fmpoc/cli_restore.py`
+(`pennywarden restore`; `__main__` dispatches it). `BackupCreateIn.recoverable` (default true). The web restore
+writes the report before `swap_in` and adds `report` to `SYSTEM_RESTORED` and `report_summary` to the job result.
+Routes: `GET /api/system/server-backups`, `POST /api/system/server-backups/{id}/remove-recovery` (Administrator),
+`GET /api/system/restore-reports` (summary for Administrators, `can_download` for `financial.view`),
+`GET /api/system/restore-reports/{name}` (`financial.view`).
 
 **1.10.0 Update notification (issue #58; channel decided 2026-10-09).** Migration `0024`: `update_check` (one row).
 `services/updates.py`: `channel(settings)` - setting `update_channel` (`auto` → from `build_info.json`: `main` →

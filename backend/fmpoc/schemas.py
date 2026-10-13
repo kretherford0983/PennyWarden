@@ -404,6 +404,8 @@ class BackupCreateIn(In):
     password: str = Field(min_length=1, max_length=200)
     passphrase: str = Field(min_length=1, max_length=500)
     passphrase_confirmation: str = Field(min_length=1, max_length=500)
+    # 2.0.0 (#124): also write a recovery file so this server's owner can restore it without the passphrase
+    recoverable: bool = True
 
 
 class RestoreUploadIn(In):

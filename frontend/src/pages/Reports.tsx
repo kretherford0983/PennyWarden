@@ -33,7 +33,36 @@ export default function Reports() {
       {tab === "close" ? <CloseReport fys={fys} /> : null}
       {tab === "entity" ? <EntityReport fys={fys} accounts={accounts} /> : null}
       {tab === "flow" ? <FlowReport accounts={accounts} /> : null}
+      <RestoreReports />
     </div>
+  );
+}
+
+/** 2.0.0 (#124): after a restore, the transactions entered or changed after the backup - to enter them again. Shown
+ * only when there are reports. */
+function RestoreReports() {
+  const [d, setD] = useState<any>(null);
+  useEffect(() => { api.get("/api/system/restore-reports").then(setD, () => setD(null)); }, []);
+  if (!d?.reports?.length || !d.can_download) return null;
+  return (
+    <section className="card no-print" aria-labelledby="rr-h">
+      <h2 id="rr-h">Restore re-entry reports</h2>
+      <p className="hint">When data is restored from a backup, everything entered or changed after the backup was made is listed here (CSV), so it can be
+        entered again.</p>
+      <table className="table compact">
+        <thead><tr><th>Restored</th><th>Backup from</th><th>Transactions</th><th /></tr></thead>
+        <tbody>
+          {d.reports.map((r: any) => (
+            <tr key={r.name}>
+              <td>{r.created_at ? new Date(r.created_at).toLocaleString() : "—"}</td>
+              <td>{r.backup_created_at ? new Date(r.backup_created_at).toLocaleString() : "—"}{r.by_time_only ? " (another system: by time only)" : ""}</td>
+              <td>{r.transactions ?? "—"}</td>
+              <td><a href={`/api/system/restore-reports/${encodeURIComponent(r.name)}`} download={r.name}>Download CSV</a></td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </section>
   );
 }
 
