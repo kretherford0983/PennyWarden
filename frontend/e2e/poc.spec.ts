@@ -2435,6 +2435,14 @@ test("#133: readable audit log - summary, what changed, technical details", asyn
   await expect(detail.locator("details.technical pre").first()).toBeVisible();
 });
 
+test("#131: the security overview lists what needs attention", async ({ page }) => {
+  await login(page, "admin");
+  await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "System/About", exact: true }).click();
+  const ov = page.getByRole("region", { name: "Security overview" });
+  await expect(ov.getByTestId("secov-two_step")).toContainText("Needs attention");
+  await expect(ov.getByTestId("secov-admins")).toContainText("Info");
+});
+
 // Keep this test LAST: it removes the financial data the other tests use.
 test("#125: an Administrator reinitializes (keeping the users); everyone sees the notice until it is acknowledged", async ({ page }) => {
   await login(page, "admin");
