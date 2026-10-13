@@ -2361,3 +2361,11 @@ test("#126: an Administrator renames the organization, sees the effective settin
   await page.getByRole("region", { name: "Backup reminder" }).getByRole("button", { name: "Save" }).click();
   await expect(page.getByRole("region", { name: "Backup reminder" }).getByRole("status")).toHaveText("Saved.");
 });
+
+test("#127: an Administrator sees the signed-in sessions", async ({ page }) => {
+  await login(page, "admin");
+  await page.getByRole("link", { name: "System/About" }).click();
+  const s = page.getByRole("region", { name: "Signed-in sessions" });
+  await expect(s.getByRole("row", { name: /admin.*you, this session/ })).toBeVisible();
+  await expect(s.getByRole("row", { name: /you, this session/ }).getByRole("button", { name: "End session" })).toHaveCount(0);
+});

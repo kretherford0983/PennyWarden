@@ -130,6 +130,8 @@ class AuthSession(Base):
     revoked_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     # v1.4.1 CR-018: NULL = fully signed in; VERIFY / ENROLL = password accepted, MFA step outstanding
     mfa_pending: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    # 2.0.0 (#127): the client address of the latest request (shown to Administrators in the sessions list)
+    client_ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 # ---------------------------------------------------------------- fiscal years / budgets

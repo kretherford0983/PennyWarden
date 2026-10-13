@@ -59,7 +59,8 @@ def initialize(body: InitializeIn, request: Request, response: Response, db: Ses
                                          username=body.admin_username, email=body.admin_email, password=body.password)
             # v1.4.1 CR-018: in server mode the first Administrator sets up MFA before using the application
             # 1.8.0 (#113): ... and chooses the security questions (after MFA when it is required)
-            token, sess = auth_svc.create_session(db, settings, admin, "ENROLL" if mfa_required(settings) else "QUESTIONS")
+            token, sess = auth_svc.create_session(db, settings, admin, "ENROLL" if mfa_required(settings) else "QUESTIONS",
+                                                  ctx.ip)
             db.commit()
         except Exception:
             db.rollback()

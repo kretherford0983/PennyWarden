@@ -3,7 +3,7 @@
 Versions are `Breaking.Major.Minor` from 1.6.0 (docs/branching.md).
 
 ## 2.0.0 — unreleased
-Database migrations `0025` to `0029` (eight columns and five tables added; no existing data changes). Rolling back to 1.10.0
+Database migrations `0025` to `0030` (nine columns and five tables added; no existing data changes). Rolling back to 1.10.0
 needs the data snapshot the installer takes before the upgrade (docs/upgrade.md). 2.0.0 is built and tested in
 several test builds; the notes below grow with each one.
 
@@ -104,7 +104,7 @@ several test builds; the notes below grow with each one.
   data, exactly where they print.
 
 **Test build 6 — letter logo, window envelopes, administration (#176, #177, #126–#129)**
-Database migrations `0028` and `0029` (empty columns: the letter logo, the backup reminder).
+Database migrations `0028` to `0030` (empty columns: the letter logo, the backup reminder, session addresses).
 - **Cover letter logo (#176).** An optional PNG or JPEG logo (at most 1 MB; checked and re-encoded as PNG) prints
   above the letterhead lines, top left or top center (the lines are then centered too), scaled to fit 2.5 × 1 inch.
 - **Pre-printed letterhead paper (#176).** Prints no letterhead or logo and keeps the top of the page blank (2 inches
@@ -123,6 +123,9 @@ Database migrations `0028` and `0029` (empty columns: the letter logo, the backu
 - **Rename the organization (#126)** on System/About. New reports, letters and backup names use the new name.
 - **Backup reminder (#126).** Administrators see a warning when no backup has been made for 7 days (adjustable on
   System/About; 0 turns it off).
+- **Signed-in sessions (#127).** System/About lists who is signed in (sign-in time, last activity, address). An
+  Administrator can end one session, all sessions of a user, or end everyone else's sessions; Auditors can view the list.
+  Ending a session signs the person out at their next click. Database migration `0030`.
 
 ## 1.10.0 — 2026-10-09
 Database migration `0024` (one table added; no existing data changes). Rolling back to 1.9.0 needs the data snapshot
