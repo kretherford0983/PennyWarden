@@ -105,6 +105,10 @@ def safety_backup(settings, passphrase: str, created_by: str, job=None) -> dict:
     except OSError:  # pragma: no cover
         pass
     final = d / f"pre-reinitialize-{dt.datetime.utcnow():%Y%m%d-%H%M%S}-{name}"
+    i = 1
+    while final.exists():   # every safety backup is kept: never overwrite one made in the same second
+        i += 1
+        final = d / f"pre-reinitialize-{dt.datetime.utcnow():%Y%m%d-%H%M%S}-{i}-{name}"
     shutil.move(str(path), final)
     try:
         os.chmod(final, 0o600)
