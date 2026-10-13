@@ -822,7 +822,7 @@ test("CR-022 / CR-021: version in My Account for every user; bank balance total 
   await logout(page);
   await login(page, "admin");
   await page.getByRole("link", { name: "System/About" }).click();
-  await expect(page.getByText("Bind address")).toBeVisible();
+  await expect(page.getByRole("term").filter({ hasText: "Bind address" })).toBeVisible();   // 2.0.0: the settings table lists it too
 });
 
 // ---------------------------------------------------------------- v1.4.1
