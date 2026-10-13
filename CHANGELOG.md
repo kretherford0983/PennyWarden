@@ -96,6 +96,8 @@ several test builds; the notes below grow with each one.
   draw the check's outline (a small feed shift printed it on the edge of a single check); only the calibration page
   does. One TEST – NOT A CHECK watermark under the fields and a small one across each signature line (it was drawn
   twice on the same spot with a test signature). Page notes sit 1/4 inch inside the check, so they are never cut off.
+- **Build time in local time (#185).** The build details (My account, System/About) show when the build was made in
+  local time — your computer's time zone in local mode, the server's in server mode; hover for UTC.
 
 ## 1.10.0 — 2026-10-09
 Database migration `0024` (one table added; no existing data changes). Rolling back to 1.9.0 needs the data snapshot

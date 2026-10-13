@@ -33,7 +33,31 @@ def build_info() -> dict | None:
     if not isinstance(data, dict):
         return None
     keep = ("version", "branch", "commit", "run", "built_at")
-    return {k: str(data[k])[:64] for k in keep if data.get(k) not in (None, "")}
+    out = {k: str(data[k])[:64] for k in keep if data.get(k) not in (None, "")}
+    local = local_time_text(out.get("built_at"))
+    if local:
+        out["built_at_local"] = local
+    return out
+
+
+def local_time_text(utc_text: str | None) -> str | None:
+    """#185: an ISO UTC time in the time zone of the machine running PennyWarden (the user's computer in local mode,
+    the server in server mode), e.g. "2026-10-10 4:15 PM CDT". None when it can't be read."""
+    from datetime import datetime, timezone
+    if not utc_text:
+        return None
+    try:
+        t = datetime.fromisoformat(utc_text.strip().replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    if t.tzinfo is None:
+        t = t.replace(tzinfo=timezone.utc)
+    local = t.astimezone()
+    zone = local.tzname() or ""
+    if " " in zone:   # Windows names the zone in full ("Central Daylight Time"): use its initials
+        zone = "".join(w[0] for w in zone.split() if w[:1].isalpha()).upper()
+    hour = local.strftime("%I").lstrip("0") or "12"
+    return f"{local:%Y-%m-%d} {hour}:{local:%M} {local:%p} {zone}".strip()
 
 
 def _default_data_dir(name: str, unix_name: str) -> Path:

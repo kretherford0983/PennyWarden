@@ -166,6 +166,10 @@ copy, which is never fed through the printer) keep page markings. `test_pdf` dra
 fields and, with a test signature, `_signature_watermarks` (a small centred note per `_sig_boxes` box) instead of a
 second diagonal. `_border_note` sits `NOTE_INSET` (1/4") inside the check's top-right corner; the test print has
 none (the diagonal says it). Tests: `tests/test_v200_build5.py` (scans the content streams for a check-sized `re`).
+#185: `config.build_info()` adds `built_at_local` from `config.local_time_text()` (`datetime.astimezone()` with no
+argument, so the OS time zone of the machine running PennyWarden; no tzdata needed in the PyInstaller builds; Windows'
+full zone names are shortened to their initials). `BuildDetails` shows it with the UTC value as the tooltip and falls
+back to UTC.
 
 **1.10.0 Update notification (issue #58; channel decided 2026-10-09).** Migration `0024`: `update_check` (one row).
 `services/updates.py`: `channel(settings)` - setting `update_channel` (`auto` → from `build_info.json`: `main` →
