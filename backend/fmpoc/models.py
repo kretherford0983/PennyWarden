@@ -56,6 +56,8 @@ class Workspace(Base):
     fundraisers_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
     # 2.0.0 (#156): the Payments module
     checks_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
+    # 2.0.0 (#126): Administrators are warned after this many days without a backup (0 = off)
+    backup_warning_days: Mapped[int] = mapped_column(Integer, default=7, server_default="7", nullable=False)
 
 
 class Role(Base):

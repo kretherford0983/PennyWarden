@@ -3,13 +3,19 @@ import { api } from "../api";
 import { BuildDetails, ErrorBox, Loading } from "../components";
 import { BackupRestore } from "./BackupRestore";
 import { UpdateSettings } from "./Updates";
+import { useMe } from "../App";
+import { BackupWarningSetting, OrganizationPanel, SettingsPanel } from "./AdminSettings";
 
 export default function About() {
+  const { can } = useMe();
   const [a, setA] = useState<any>(null);
+  const [org, setOrg] = useState<string | null>(null);
   useEffect(() => {
     api.get("/api/system/about").then(setA);
+    api.get("/api/system/status").then((s) => setOrg(s.workspace_name));
   }, []);
   if (!a) return <Loading />;
+  const admin = can("system.manage");
   return (
     <div>
       <h1>System / About</h1>
@@ -17,9 +23,12 @@ export default function About() {
       {a.bind_host ? <dl className="dl"><dt>Bind address</dt><dd>{a.bind_host}:{a.port}</dd></dl> : null}
       {a.insecure_transport_warning ? <div className="alert warn">Network deployment without HTTPS configuration is not secure.</div> : null}
       <div className="alert warn" role="note"><strong>Data protection:</strong> {a.backup_notice}</div>
+      {admin && org != null ? <OrganizationPanel name={org} onRenamed={(n) => { setOrg(n); window.dispatchEvent(new CustomEvent("pw:workspace-renamed", { detail: n })); }} /> : null}
       {a.restore_max_mb != null ? <UpdateSettings /> : null}
       {a.restore_max_mb != null ? <ModulesPanel /> : null}
       {a.restore_max_mb != null ? <BackupRestore maxMb={a.restore_max_mb} /> : null}
+      {admin ? <section className="card" aria-labelledby="backup-age-h"><h2 id="backup-age-h">Backup reminder</h2><BackupWarningSetting /></section> : null}
+      {can("system.view") ? <SettingsPanel /> : null}
     </div>
   );
 }

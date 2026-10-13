@@ -52,3 +52,7 @@ then choose two different signers when printing; above an optional amount only t
 - A **cover letter** can carry your **logo** (top left or centered), be printed on **pre-printed letterhead paper**
   (the top of the page stays blank), and carry the addresses for a **#10 double-window envelope** — at the top of the
   letter or on a separate address page. Details: [Check printing](check-printing.md#cover-letters-and-envelopes).
+- **System/About** has new sections for Administrators: rename the **organization**, a **backup reminder** (a warning
+  after a set number of days without a backup), and **Settings** — every setting in effect and where it comes from;
+  on a server, the security and session settings can be changed there (they take effect after a restart). Auditors
+  can see the settings too. Details: [Configuration](configuration.md#changing-settings-in-the-application-200-126).

@@ -193,6 +193,20 @@ address = the letterhead lines, first in bold, up to 4; payee up to 5 lines) are
 and the logo moves to the top right; ADDRESS_PAGE starts with an empty first page (`Spacer` + `PageBreak`). Dashed
 window boxes and fold marks only with `test=True` (test print and live preview).
 
+**2.0.0 test build 6 — administration (#126).** Permissions `system.view` (Administrator, Auditor) and
+`system.manage` (Administrator). `config.setting_sources()` returns raw values and their source with the same
+precedence as `load_settings`, which now remembers its command-line overrides in `config.CLI_OVERRIDES`.
+`services/admin_settings.py`: `effective()` (the running value, the source, editable/locked, and `restart_required`
+when what the service would start with now differs from the running value), `save()` (allow-list `EDITABLE`, `RANGES`,
+`CHOICES`, combination checks, `SETTING_LOCKED`, password callback for `trusted_proxies`, one `SECURITY_WEAKENING`
+confirmation, `write_config()` then `SERVER_SETTINGS_CHANGED`), `rewrite_toml()` (line-based: replaces `key = …` lines
+inside `[server]`, adds missing keys at the end of the table, creates it if needed; an inline comment on a replaced line
+is dropped), `rename_organization()`, `backup_age()` (from the latest `BACKUP_CREATED` / `SCHEDULED_BACKUP_CREATED`,
+else `SYSTEM_RESTORED`, else the initialization) and `set_backup_warning_days()`. Migration `0029`:
+`workspace.backup_warning_days` (default 7). Routes in `routers/admin.py`: `GET/PUT /api/system/settings`,
+`PUT /api/system/organization`, `GET/PUT /api/system/backup-age`; `GET /api/system/backup-schedule/alert` adds `stale`
+and `stale_message` for the banner. Frontend `pages/AdminSettings.tsx`; Auditors get System/About in the menu.
+
 **1.10.0 Update notification (issue #58; channel decided 2026-10-09).** Migration `0024`: `update_check` (one row).
 `services/updates.py`: `channel(settings)` - setting `update_channel` (`auto` → from `build_info.json`: `main` →
 stable, `test` → test, anything else / no build info → none); `check(app, force)` - due after 24 h (6 h after an error),

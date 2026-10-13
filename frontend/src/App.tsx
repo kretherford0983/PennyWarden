@@ -101,7 +101,10 @@ export default function App() {
       setMe(null);
     };
     window.addEventListener("fm:unauthenticated", on);
-    return () => window.removeEventListener("fm:unauthenticated", on);
+    // 2.0.0 (#126): the organization was renamed on System/About - the top bar follows at once
+    const renamed = (e: Event) => setStatus((s: any) => (s ? { ...s, workspace_name: (e as CustomEvent).detail } : s));
+    window.addEventListener("pw:workspace-renamed", renamed);
+    return () => { window.removeEventListener("fm:unauthenticated", on); window.removeEventListener("pw:workspace-renamed", renamed); };
   }, []);
 
   // v1.5.0: while signing in (login / two-step screens) the address is the dashboard, so a bookmarked page such as
@@ -149,11 +152,12 @@ function navFor(me: Me) {
   // 2.0.0 (#156): Payments Setup (check printing) for Administrators when the Payments module is on
   const checkSetup = me.modules?.checks && me.permissions.includes("checks.setup") ? [["/check-setup", "Payments Setup"]] : [];
   if (me.security_domain === "ADMINISTRATOR") return [["/", "Dashboard"], ["/users", "Users"], ["/audit-log", "Audit Log"], ...checkSetup, ["/about", "System/About"]];
-  if (me.security_domain === "AUDITOR") return [...fin, ["/users", "Users"], ["/audit-log", "Audit Log"]];
+  // 2.0.0 (#126, #127): Auditors see System/About read-only (effective settings, sessions)
+  if (me.security_domain === "AUDITOR") return [...fin, ["/users", "Users"], ["/audit-log", "Audit Log"], ...(me.permissions.includes("system.view") ? [["/about", "System/About"]] : [])];
   if (me.security_domain === "COMBINED") { // 1.9.0 (#54): one person, roles of several domains (local installs)
     const has = (p: string) => me.permissions.includes(p);
     return [...(has("financial.view") ? fin : [["/", "Dashboard"]]), ...(has("users.view") ? [["/users", "Users"]] : []),
-      ...(has("audit.view") ? [["/audit-log", "Audit Log"]] : []), ...checkSetup, ...(has("users.manage") ? [["/about", "System/About"]] : [])];
+      ...(has("audit.view") ? [["/audit-log", "Audit Log"]] : []), ...checkSetup, ...(has("users.manage") || has("system.view") ? [["/about", "System/About"]] : [])];
   }
   return fin;
 }

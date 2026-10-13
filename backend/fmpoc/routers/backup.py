@@ -146,8 +146,11 @@ def schedule_run_now(request: Request, db: Session = Depends(get_db), ctx: Ctx =
 
 @router.get("/backup-schedule/alert")
 def schedule_alert(db: Session = Depends(get_db), ctx: Ctx = Depends(require("users.manage"))):
-    """The banner shown to Administrators while the last scheduled backup has failed."""
-    return sched.alert(db, ctx.workspace_id)
+    """The banner shown to Administrators while the last scheduled backup has failed, and (2.0.0 #126) when no
+    backup has been made for the set number of days."""
+    from ..services.admin_settings import backup_age
+    age = backup_age(db, ctx.workspace_id)
+    return {**sched.alert(db, ctx.workspace_id), "stale": age["stale"], "stale_message": age.get("message")}
 
 
 # ------------------------------------------------------------------ restore (CR-024 wizard / CR-025 System/About)

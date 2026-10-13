@@ -155,6 +155,12 @@ export default function ScheduledBackups() {
 export function BackupFailedBanner({ path }: { path: string }) {
   const [a, setA] = useState<any>(null);
   useEffect(() => { api.get("/api/system/backup-schedule/alert").then(setA, () => setA(null)); }, [path]);
-  if (!a?.failed) return null;
-  return <div className="alert error banner" role="alert" data-testid="backup-failed-banner">{a.message} <Link to="/about">Backup settings</Link></div>;
+  if (!a?.failed && !a?.stale) return null;
+  return (
+    <>
+      {a.failed ? <div className="alert error banner" role="alert" data-testid="backup-failed-banner">{a.message} <Link to="/about">Backup settings</Link></div> : null}
+      {/* 2.0.0 (#126): no backup for the set number of days */}
+      {a.stale && !a.failed ? <div className="alert warn banner" role="alert" data-testid="backup-age-banner">{a.stale_message} <Link to="/about">Backup / Restore</Link></div> : null}
+    </>
+  );
 }
