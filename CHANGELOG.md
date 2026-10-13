@@ -157,6 +157,10 @@ Database migrations `0028` to `0030` (empty columns: the letter logo, the backup
   `pre-reinitialize/` and always restorable by the server's owner with `pennywarden restore … --use-server-key`.
   Everyone else is signed out and sees a notice until an Administrator acknowledges it. Once in 24 hours from the web;
   `pennywarden reinitialize` on the server has no limit. Entity numbers continue. Database migration `0032`.
+- **Windows server guide (#136).** docs/install-windows-server.md rewritten end to end: the portable zip with a
+  version folder and a `current` pointer, a dedicated service account and data-folder permissions, `config.toml`,
+  HTTPS with Caddy, PennyWarden and Caddy as Windows services with NSSM (start, stop, logs), backups, restore,
+  upgrades with rollback, host commands and troubleshooting. Written against the code; not yet run on Windows.
 
 ## 1.10.0 — 2026-10-09
 Database migration `0024` (one table added; no existing data changes). Rolling back to 1.9.0 needs the data snapshot

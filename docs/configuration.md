@@ -115,6 +115,15 @@ new or restored installation the days count from the installation or the restore
 
 Debug mode, interactive API docs (`/docs`, `/openapi.json`) and verbose exception pages are never enabled.
 
+## On a Windows server
+
+The data folder is the one given with `--data-dir` (for example `C:\ProgramData\PennyWarden`), so `config.toml`
+goes there. In TOML, write Windows paths in single quotes (`backup_folders = ['D:\PennyWarden-backups']`) so the
+backslashes stay as they are. Environment variables for the service are set on the service
+(`nssm set PennyWarden AppEnvironmentExtra FM_LOG_LEVEL=INFO`), not in a terminal; they override `config.toml` and
+show as *environment* (locked) on System/About. Restart the service after changing either:
+`Restart-Service PennyWarden`. Step by step: [install-windows-server.md](install-windows-server.md).
+
 ## On a Mac
 
 PennyWarden.app (Apple Silicon, since 1.6.7; installation: [install-macos.md](install-macos.md)) uses the same

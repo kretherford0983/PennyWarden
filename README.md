@@ -118,7 +118,7 @@ return every quarter, renew the insurance every year — so duties survive a cha
 | **Mac with Apple Silicon (single user)** | Download `PennyWarden-<version>-macos-arm64.dmg` from the [latest release](https://github.com/kretherford0983/PennyWarden/releases/latest), drag PennyWarden to Applications and open it. First start: *System Settings → Privacy & Security → Open Anyway* — [step by step with pictures](docs/install-macos.md). |
 | **Windows (single user)** | Download `PennyWarden-<version>-windows-x64.exe` from the [latest release](https://github.com/kretherford0983/PennyWarden/releases/latest) and double-click it. |
 | **Linux server (multiple users)** | `curl -fsSL https://github.com/kretherford0983/PennyWarden/releases/latest/download/install.sh \| sudo bash` — installs or upgrades a systemd service; put an HTTPS reverse proxy in front of it. |
-| **Windows server (multiple users)** | `PennyWarden-windows-x64.zip` in server mode behind HTTPS, started with Windows by Task Scheduler — [step by step](docs/install-windows-server.md). |
+| **Windows server (multiple users)** | `PennyWarden-windows-x64.zip` in server mode as a Windows service (NSSM) behind HTTPS (Caddy) — [step by step](docs/install-windows-server.md). |
 
 The first start shows the **Initialization Wizard** (organization name, administrator account). There are no
 default credentials. Details, HTTPS, Docker and moving data between machines: [docs/deployment.md](docs/deployment.md).

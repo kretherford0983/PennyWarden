@@ -86,7 +86,8 @@ pennywarden restore FILE.fmbak [--use-server-key | --passphrase-file PATH] [--da
 pennywarden restore --list [--data-dir DIR]
 ```
 
-- **Rights.** On a server install (the systemd service or the Windows service) run it with `sudo` / from a terminal
+- **Rights.** On a server install (the systemd service or the Windows service `PennyWarden`, see
+  [install-windows-server.md](install-windows-server.md#9-host-commands)) run it with `sudo` / from a terminal
   opened as Administrator; it says so and stops before changing anything if it needs them. A per-user local install
   needs no extra rights. On Linux the restored files get the data folder's owner again and `secrets/` stays
   owner-only.
