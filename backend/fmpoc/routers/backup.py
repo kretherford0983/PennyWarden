@@ -145,9 +145,17 @@ def schedule_run_now(request: Request, db: Session = Depends(get_db), ctx: Ctx =
 
 
 @router.get("/backup-schedule/alert")
-def schedule_alert(db: Session = Depends(get_db), ctx: Ctx = Depends(require("users.manage"))):
-    """The banner shown to Administrators while the last scheduled backup has failed."""
-    return sched.alert(db, ctx.workspace_id)
+def schedule_alert(request: Request, db: Session = Depends(get_db), ctx: Ctx = Depends(require("users.manage"))):
+    """The banner shown to Administrators while the last scheduled backup has failed, and (2.0.0 #126) when no
+    backup has been made for the set number of days."""
+    from ..services.admin_settings import backup_age
+    age = backup_age(db, ctx.workspace_id)
+    from ..services.diagnostics import disk, low_disk   # 2.0.0 (#129): low disk space, in the same banner
+    d = disk(request.app.state.settings)
+    low = low_disk(d)
+    return {**sched.alert(db, ctx.workspace_id), "stale": age["stale"], "stale_message": age.get("message"),
+            "low_disk": low, "low_disk_message": "Low disk space where PennyWarden keeps its data: "
+            f"{d['free'] / 1024 ** 3:.1f} GB free. See System/About → Health." if low else None}
 
 
 # ------------------------------------------------------------------ restore (CR-024 wizard / CR-025 System/About)

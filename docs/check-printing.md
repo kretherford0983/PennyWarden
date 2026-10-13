@@ -220,6 +220,20 @@ A **cover letter** has:
   organization. When the check prints without a signer, or the check is written by hand without one, the **name and
   role** set here are used.
 - Whether **Include cover letter** starts ticked on the print screen.
+- An optional **logo** (PNG or JPEG, at most 1 MB) above the letterhead lines, **top left** or **top center** (the
+  letterhead lines are then centered too). It is scaled to fit 2.5 × 1 inch. Adding, replacing or removing it takes
+  effect at once (it is not part of *Save*) and is recorded in the audit log.
+- **Pre-printed letterhead paper** — prints no letterhead or logo and keeps the top of the page blank (2 inches by
+  default; set it to where your paper's letterhead ends).
+- **Window envelope (#10 double-window)** — for mailing in a double-window envelope instead of printing an envelope:
+  - **On the letter:** the return address (the letterhead lines, optional) and the payee's name and address print at
+    the top of the letter where the windows show them; the letter itself starts below the first fold.
+  - **On a separate address page** in front of the letter: page 1 has only the addresses; the letter follows as usual.
+
+  Fold the page in three with the addresses on the top panel facing the windows. The positions follow a standard #10
+  double-window envelope. To check yours, print **Test print** on plain paper: the windows are drawn as dashed boxes
+  and the folds are marked. Fold it, slide it into the envelope and see whether the addresses show; if not, move each
+  address (right/down, up to 3/4 inch) and test again. The real letter never shows the boxes.
 
 The payee's name and address under "To:" come from the payee's entity — keep the vendor's address in **Entities**.
 

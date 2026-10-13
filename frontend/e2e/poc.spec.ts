@@ -816,7 +816,7 @@ test("CR-022 / CR-021: version in My Account for every user; bank balance total 
   await logout(page);
   await login(page, "admin");
   await page.getByRole("link", { name: "System/About" }).click();
-  await expect(page.getByText("Bind address")).toBeVisible();
+  await expect(page.getByRole("term").filter({ hasText: "Bind address" })).toBeVisible();   // 2.0.0: the settings table lists it too
 });
 
 // ---------------------------------------------------------------- v1.4.1
@@ -2202,6 +2202,13 @@ test("#165-#166: Administrator sets up a cover letter and an envelope; a Registe
   await page.getByRole("button", { name: "Signed by" }).click();
   await expect(page.getByLabel("Name when there is no signer")).toBeHidden();
   await page.getByRole("button", { name: "Signed by" }).click();
+  // #176: a logo (a tiny PNG made here: synthetic) and #177: the address for a window envelope
+  const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAADAAAAAYCAIAAAAzn+mLAAAAN0lEQVR4nO3OMQHAIADAMEDINCERqfv39GRHoiDz2Wf8ybod+BIqQkWoCBWhIlSEilARKkJFqLyoawE+y3CGBgAAAABJRU5ErkJggg==", "base64");
+  await page.getByLabel("Logo image").setInputFiles({ name: "logo.png", mimeType: "image/png", buffer: png });
+  await expect(page.getByRole("img", { name: "The letter's logo" })).toBeVisible();
+  await page.getByLabel("Address for a window envelope").selectOption("LETTER");
+  await expect(page.getByLabel("Payee address – right (in)")).toBeVisible();
+  await page.getByLabel("Address for a window envelope").selectOption("NONE");
   await page.getByRole("button", { name: "+ Add line" }).click();
   await page.getByLabel("Letterhead line 2", { exact: true }).fill("100 Example Street, Sampletown");
   await page.getByLabel("Name when there is no signer").fill("Pat Example");
@@ -2336,4 +2343,38 @@ test("#167: Administrator sets up a voucher check with two signature lines; a Re
   await expect(dlg.getByText("Check #8401 is ready.")).toBeVisible();
   await dlg.getByRole("button", { name: "Yes – done" }).click();
   await expect(row.getByText("Check printed")).toBeVisible();
+});
+
+test("#126: an Administrator renames the organization, sees the effective settings and sets the backup reminder", async ({ page }) => {
+  await login(page, "admin");
+  await page.getByRole("link", { name: "System/About" }).click();
+  await page.getByLabel("Organization name").fill("E2E Org Renamed");
+  await page.getByRole("button", { name: "Rename" }).click();
+  await expect(page.locator(".brand")).toContainText("E2E Org Renamed");
+  await page.getByLabel("Organization name").fill("E2E Org");
+  await page.getByRole("button", { name: "Rename" }).click();
+  await expect(page.locator(".brand")).toContainText("E2E Org");
+  const settings = page.getByRole("region", { name: "Settings" });
+  await expect(settings.getByRole("row", { name: /Session idle timeout \(minutes\) 30 default/ })).toBeVisible();
+  await expect(settings.getByRole("button", { name: "Save settings" })).toHaveCount(0);   // local install: view only
+  await page.getByLabel("Warn when there is no backup for (days, 0 = never)").fill("3");
+  await page.getByRole("region", { name: "Backup reminder" }).getByRole("button", { name: "Save" }).click();
+  await expect(page.getByRole("region", { name: "Backup reminder" }).getByRole("status")).toHaveText("Saved.");
+});
+
+test("#127-#129: an Administrator sees the signed-in sessions, downloads diagnostics and checks the health", async ({ page }) => {
+  await login(page, "admin");
+  await page.getByRole("link", { name: "System/About" }).click();
+  const s = page.getByRole("region", { name: "Signed-in sessions" });
+  await expect(s.getByRole("row", { name: /admin.*you, this session/ })).toBeVisible();
+  await expect(s.getByRole("row", { name: /you, this session/ }).getByRole("button", { name: "End session" })).toHaveCount(0);
+  // #128: the diagnostics download
+  const dl = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download diagnostics" }).click();
+  expect((await dl).suggestedFilename()).toMatch(/^pennywarden-diagnostics-\d{14}\.json$/);
+  // #129: health and the integrity check
+  const h = page.getByRole("region", { name: "Health" });
+  await expect(h.getByText("up to date")).toBeVisible();
+  await h.getByRole("button", { name: "Run integrity check" }).click();
+  await expect(h.getByRole("status")).toContainText("The database passed the integrity check.");
 });

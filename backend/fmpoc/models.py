@@ -13,6 +13,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     MetaData,
     String,
     Text,
@@ -55,6 +56,8 @@ class Workspace(Base):
     fundraisers_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
     # 2.0.0 (#156): the Payments module
     checks_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
+    # 2.0.0 (#126): Administrators are warned after this many days without a backup (0 = off)
+    backup_warning_days: Mapped[int] = mapped_column(Integer, default=7, server_default="7", nullable=False)
 
 
 class Role(Base):
@@ -127,6 +130,8 @@ class AuthSession(Base):
     revoked_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     # v1.4.1 CR-018: NULL = fully signed in; VERIFY / ENROLL = password accepted, MFA step outstanding
     mfa_pending: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    # 2.0.0 (#127): the client address of the latest request (shown to Administrators in the sessions list)
+    client_ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 # ---------------------------------------------------------------- fiscal years / budgets
@@ -789,3 +794,8 @@ class CheckDocument(Base):
     created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
     updated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 2.0.0 #176: an optional logo for a cover letter (PNG, validated and re-encoded; not secret, so not encrypted)
+    logo_png: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    logo_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    logo_width: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    logo_height: Mapped[int | None] = mapped_column(Integer, nullable=True)

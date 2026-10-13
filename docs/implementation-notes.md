@@ -179,6 +179,46 @@ and follows the return-address setting. The preview iframe reloads 600 ms after 
 runs and lines in page inches, so `CheckPreview` draws the stubs exactly as `_draw_stub` prints them (offset from the
 check by the sheet's first check top and the centring).
 
+**2.0.0 test build 6 — letters (#176, #177).** Migration `0028`: `check_document.logo_png` (re-encoded PNG bytes; not
+encrypted - a logo isn't secret), `logo_sha256`, `logo_width`, `logo_height`. `service.normalize_logo` accepts PNG or
+JPEG by magic bytes and Pillow (`verify()`, then decode; 16-6000 px; decompression bombs refused), converts to RGBA and
+scales down to 1500 x 600 px; `set_logo` audits `CHECK_DOCUMENT_LOGO_SET` / `_REMOVED` with the fingerprint and size
+only. Routes: `POST /documents/{id}/logo` (multipart, 1 MB read limit), `POST /documents/{id}/logo/remove`,
+`GET /documents/{id}/logo` (setup only, `no-store`). `LetterConfig` adds `logo_position` (LEFT|CENTER),
+`preprinted` + `preprinted_margin` (1-4 in), `window` (NONE|LETTER|ADDRESS_PAGE), `window_return` and
+`return_dx/dy`, `payee_dx/dy` (±0.75 in) over `documents.WINDOW_PRESET` (text start and window box per window, page
+inches) with `FOLD_LINES` at 11/3 and 22/3 in. `letter_pdf(cfg, data, logo=, test=)`: the window addresses (return
+address = the letterhead lines, first in bold, up to 4; payee up to 5 lines) are drawn on the first page by an
+`onFirstPage` callback; in LETTER mode the flow starts with a spacer to just below the first fold, has no "To:" block
+and the logo moves to the top right; ADDRESS_PAGE starts with an empty first page (`Spacer` + `PageBreak`). Dashed
+window boxes and fold marks only with `test=True` (test print and live preview).
+
+**2.0.0 test build 6 — administration (#126).** Permissions `system.view` (Administrator, Auditor) and
+`system.manage` (Administrator). `config.setting_sources()` returns raw values and their source with the same
+precedence as `load_settings`, which now remembers its command-line overrides in `config.CLI_OVERRIDES`.
+`services/admin_settings.py`: `effective()` (the running value, the source, editable/locked, and `restart_required`
+when what the service would start with now differs from the running value), `save()` (allow-list `EDITABLE`, `RANGES`,
+`CHOICES`, combination checks, `SETTING_LOCKED`, password callback for `trusted_proxies`, one `SECURITY_WEAKENING`
+confirmation, `write_config()` then `SERVER_SETTINGS_CHANGED`), `rewrite_toml()` (line-based: replaces `key = …` lines
+inside `[server]`, adds missing keys at the end of the table, creates it if needed; an inline comment on a replaced line
+is dropped), `rename_organization()`, `backup_age()` (from the latest `BACKUP_CREATED` / `SCHEDULED_BACKUP_CREATED`,
+else `SYSTEM_RESTORED`, else the initialization) and `set_backup_warning_days()`. Migration `0029`:
+`workspace.backup_warning_days` (default 7). Routes in `routers/admin.py`: `GET/PUT /api/system/settings`,
+`PUT /api/system/organization`, `GET/PUT /api/system/backup-age`; `GET /api/system/backup-schedule/alert` adds `stale`
+and `stale_message` for the banner. Frontend `pages/AdminSettings.tsx`; Auditors get System/About in the menu.
+#127: migration `0030` adds `auth_session.client_ip`, set by `create_session(..., ip)` and refreshed by `deps._load`
+with `last_seen_at`. `services/sessions.py`: active = not revoked, not expired, idle timeout not passed, user of the
+workspace; `end_one` (not your own current session: `OWN_SESSION`), `end_user`, `end_everyone` (keeps the caller's).
+Routes `GET /api/system/sessions`, `POST /api/system/sessions/{ref}/end`, `/sessions/end-user`, `/sessions/end-all`.
+#128: `services/diagnostics.py` - `build()` returns the JSON file (`POST /api/system/diagnostics`, Administrators);
+`storage()` (database incl. WAL/SHM, attachments folder size and count, `shutil.disk_usage` of the data folder, Alembic
+current vs head) is shared with the health check; `recent_log_lines()` reads the rotated `fmpoc.log.N` files oldest
+first into a 1,000-line deque and `scrub()`s each line.
+#129: `diagnostics.health()` = `storage()` + `low_disk` (free < 1 GB or < 10 %); `integrity_check()` runs
+`PRAGMA integrity_check(20)` (one read transaction; WAL mode keeps writers going), logs the details and returns OK or a
+plain message. Routes `GET /api/system/health-check`, `POST /api/system/health-check/integrity`; the Administrators'
+banner endpoint (`/api/system/backup-schedule/alert`) adds `low_disk`.
+
 **1.10.0 Update notification (issue #58; channel decided 2026-10-09).** Migration `0024`: `update_check` (one row).
 `services/updates.py`: `channel(settings)` - setting `update_channel` (`auto` → from `build_info.json`: `main` →
 stable, `test` → test, anything else / no build info → none); `check(app, force)` - due after 24 h (6 h after an error),

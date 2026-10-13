@@ -47,3 +47,18 @@ then choose two different signers when printing; above an optional amount only t
 - The **cover letter** and **envelope** editors show a live **preview** with sample data as you type, and their
   sections can be collapsed. The **check style** preview draws a voucher check's **stubs** under the check.
 - **My account** and **System/About** show when your version was built in **local time** (hover for UTC).
+
+## Letter logo, window envelopes and administration (test build 6)
+- A **cover letter** can carry your **logo** (top left or centered), be printed on **pre-printed letterhead paper**
+  (the top of the page stays blank), and carry the addresses for a **#10 double-window envelope** — at the top of the
+  letter or on a separate address page. Details: [Check printing](check-printing.md#cover-letters-and-envelopes).
+- **System/About** has new sections for Administrators: rename the **organization**, a **backup reminder** (a warning
+  after a set number of days without a backup), and **Settings** — every setting in effect and where it comes from;
+  on a server, the security and session settings can be changed there (they take effect after a restart). Auditors
+  can see the settings too. Details: [Configuration](configuration.md#changing-settings-in-the-application-200-126).
+- **Signed-in sessions** on System/About: who is signed in, since when and from which address. An Administrator can
+  end a session (for example a forgotten sign-in on a shared computer) or end all other sessions.
+- **Download diagnostics** on System/About gives an Administrator a file to share when asking for help. It holds no
+  financial data, passwords or keys.
+- **Health** on System/About: database and attachment sizes, free disk space and an integrity check; a warning
+  appears for Administrators when the disk is nearly full.

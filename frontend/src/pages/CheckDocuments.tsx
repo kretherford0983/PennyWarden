@@ -99,7 +99,7 @@ function EditorFrame({ title, e, onClose, children, singleFeed }: { title: strin
 }
 
 /** #186: the live preview at the top of a letter or envelope editor (sample data, unsaved settings). */
-function PreviewSection({ doc, e, scope }: { doc: any; e: ReturnType<typeof useEditor>; scope: string }) {
+function PreviewSection({ doc, e, scope, version = "" }: { doc: any; e: ReturnType<typeof useEditor>; scope: string; version?: string }) {
   const pinKey = `${scope}-pin`;
   const [pin, setPin] = useState(() => viewState.get(pinKey) ?? false);
   useEffect(() => { viewState.set(pinKey, pin); }, [pin, pinKey]);
@@ -110,7 +110,7 @@ function PreviewSection({ doc, e, scope }: { doc: any; e: ReturnType<typeof useE
       <label className="check"><input type="checkbox" checked={pin} onChange={(ev) => setPin(ev.target.checked)} /> Keep at the top</label>
     }>
       <LivePdfPreview url={`/api/checks/documents/${doc.id}/preview`} body={{ config: e.cfg }} title={letter ? "Cover letter preview" : "Envelope preview"}
-                      aspect={aspect} deps={[e.cfg]} />
+                      aspect={aspect} deps={[e.cfg, version]} />
       <p className="hint">{letter ? "The letter as it prints, with a sample payee and two sample invoices. It updates as you type." :
         "The envelope as it prints, with a sample payee. It updates as you type; Test print shows it on the page as the printer is fed."}</p>
     </Section>
@@ -140,9 +140,18 @@ function LetterEditor({ setup, doc, onClose, onSaved }: { setup: any; doc: any; 
   const allCols: any[] = setup.letter_columns;
   const unused = allCols.filter((x) => !cols.some((y) => y.key === x.key));
   const move = (i: number, d: number) => e.change((x) => { const [it] = x.columns.splice(i, 1); x.columns.splice(i + d, 0, it); });
+  // #176: the logo is uploaded and removed at once (not part of Save); the preview redraws with it
+  const [logo, setLogo] = useState<any>(doc.logo || null);
+  const [logoErr, setLogoErr] = useState<unknown>(null);
+  const logoAct = async (fn: () => Promise<any>) => {
+    setLogoErr(null);
+    try { const d = await fn(); setLogo(d.logo || null); } catch (x) { setLogoErr(x); }
+  };
+  const windowed = c.window !== "NONE";
+  const off = (k: string) => (ev: any) => e.change((x) => { x[k] = Number(ev.target.value) || 0; });
   return (
     <EditorFrame title={`Cover letter: ${doc.name}`} e={e} onClose={onClose}>
-      <PreviewSection doc={doc} e={e} scope="pw-letter" />
+      <PreviewSection doc={doc} e={e} scope="pw-letter" version={logo?.version || ""} />
       <Section id="lgen" scope="pw-letter" title="General">
         <div className="row form-row">
           <Field label="Name"><input maxLength={80} value={e.name} onChange={(ev) => e.setName(ev.target.value)} /></Field>
@@ -152,8 +161,33 @@ function LetterEditor({ setup, doc, onClose, onSaved }: { setup: any; doc: any; 
         </div>
       </Section>
       <Section id="llh" scope="pw-letter" title="Letterhead">
+        <label className="check"><input type="checkbox" checked={c.preprinted} onChange={(ev) => e.change((x) => { x.preprinted = ev.target.checked; })} /> Pre-printed letterhead paper (print no letterhead or logo; keep the top of the page blank)</label>
+        {c.preprinted ? (
+          <Field label="Blank space at the top (in)"><input type="number" min={1} max={4} step={0.125} value={c.preprinted_margin} onChange={(ev) => e.change((x) => { x.preprinted_margin = Number(ev.target.value) || 2; })} /></Field>
+        ) : null}
         <Lines label="Letterhead" idBase="lh" lines={c.letterhead} max={6} variables={vars} onChange={(l) => e.change((x) => { x.letterhead = l; })} />
-        <p className="hint">The first line prints in bold. <code>{"{ORG}"}</code> is the organization's name. Typical lines: street, town, phone, email.</p>
+        <p className="hint">The first line prints in bold. <code>{"{ORG}"}</code> is the organization's name. Typical lines: street, town, phone, email.
+          {c.preprinted ? " On pre-printed paper these lines are used only as the return address in a window envelope." : ""}</p>
+        <fieldset className="lines">
+          <legend>Logo</legend>
+          <ErrorBox error={logoErr} />
+          {logo ? (
+            <div className="row form-row">
+              <img className="logo-thumb" src={`/api/checks/documents/${doc.id}/logo?v=${logo.version}`} alt="The letter's logo" />
+              <Field label="Logo position"><select value={c.logo_position} onChange={(ev) => e.change((x) => { x.logo_position = ev.target.value; })}>
+                <option value="LEFT">Top left</option><option value="CENTER">Top center (the letterhead lines are centered too)</option></select></Field>
+              <button type="button" className="small" onClick={() => logoAct(() => api.post(`/api/checks/documents/${doc.id}/logo/remove`, {}))}>Remove logo</button>
+            </div>
+          ) : <p className="muted">No logo.</p>}
+          <label className="button small">{logo ? "Replace logo…" : "Add a logo…"}
+            <input type="file" accept="image/png,image/jpeg" hidden aria-label="Logo image" onChange={(ev) => {
+              const f = ev.target.files?.[0];
+              ev.target.value = "";
+              if (f) logoAct(() => api.upload(`/api/checks/documents/${doc.id}/logo`, f));
+            }} />
+          </label>
+          <p className="hint">PNG or JPEG, at most 1 MB. It prints above the letterhead lines, scaled to fit 2.5 × 1 in. Adding or removing the logo takes effect at once.</p>
+        </fieldset>
         <label className="check"><input type="checkbox" checked={c.show_date} onChange={(ev) => e.change((x) => { x.show_date = ev.target.checked; })} /> Print today's date under the letterhead</label>
       </Section>
       <Section id="ltext" scope="pw-letter" title="Text">
@@ -186,6 +220,29 @@ function LetterEditor({ setup, doc, onClose, onSaved }: { setup: any; doc: any; 
         <Field label="Total line label"><input maxLength={60} value={c.total_label} onChange={(ev) => e.change((x) => { x.total_label = ev.target.value; })} /></Field>
         <PatternInput id="closing" label="Closing paragraph(s)" multiline maxLength={2000} value={c.closing} variables={vars} hint={false} onChange={(v) => e.change((x) => { x.closing = v; })} />
         <PatternInput id="signoff" label="Sign-off" value={c.signoff} variables={vars} hint={false} onChange={(v) => e.change((x) => { x.signoff = v; })} />
+      </Section>
+      <Section id="lwin" scope="pw-letter" title="Window envelope (#10 double-window)">
+        <Field label="Address for a window envelope">
+          <select value={c.window} onChange={(ev) => e.change((x) => { x.window = ev.target.value; })}>
+            <option value="NONE">None (the letter goes in a plain envelope)</option>
+            <option value="LETTER">On the letter: addresses at the top, the letter starts below the first fold</option>
+            <option value="ADDRESS_PAGE">On a separate address page in front of the letter</option>
+          </select>
+        </Field>
+        {windowed ? (
+          <>
+            <label className="check"><input type="checkbox" checked={c.window_return} onChange={(ev) => e.change((x) => { x.window_return = ev.target.checked; })} /> Return address (the letterhead lines) in the upper window</label>
+            <p className="hint">The page is folded in three with the addresses on the top panel facing the windows. Positions follow a standard #10 double-window
+              envelope; if yours differs, move each address (inches; right and down are positive). Test print draws the windows as dashed boxes and marks the folds:
+              print it on plain paper, fold it and hold it behind the envelope.</p>
+            <div className="row form-row">
+              <Field label="Return address – right (in)"><input type="number" step={0.0625} min={-0.75} max={0.75} value={c.return_dx} onChange={off("return_dx")} /></Field>
+              <Field label="Return address – down (in)"><input type="number" step={0.0625} min={-0.75} max={0.75} value={c.return_dy} onChange={off("return_dy")} /></Field>
+              <Field label="Payee address – right (in)"><input type="number" step={0.0625} min={-0.75} max={0.75} value={c.payee_dx} onChange={off("payee_dx")} /></Field>
+              <Field label="Payee address – down (in)"><input type="number" step={0.0625} min={-0.75} max={0.75} value={c.payee_dy} onChange={off("payee_dy")} /></Field>
+            </div>
+          </>
+        ) : null}
       </Section>
       <Section id="lsign" scope="pw-letter" title="Signed by">
         <p className="hint">The letter is signed (by name — never the signature image) by the check's signer: name, title and organization. When the check prints

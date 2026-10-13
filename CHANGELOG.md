@@ -3,7 +3,7 @@
 Versions are `Breaking.Major.Minor` from 1.6.0 (docs/branching.md).
 
 ## 2.0.0 — unreleased
-Database migrations `0025`, `0026` and `0027` (three columns and five tables added; no existing data changes). Rolling back to 1.10.0
+Database migrations `0025` to `0030` (nine columns and five tables added; no existing data changes). Rolling back to 1.10.0
 needs the data snapshot the installer takes before the upgrade (docs/upgrade.md). 2.0.0 is built and tested in
 several test builds; the notes below grow with each one.
 
@@ -102,6 +102,37 @@ several test builds; the notes below grow with each one.
   as you type (it can be kept at the top while you scroll), and sections that collapse like the check style editor's.
 - **Voucher stubs in the check preview (#186).** The check style preview draws the stubs under the check with sample
   data, exactly where they print.
+
+**Test build 6 — letter logo, window envelopes, administration (#176, #177, #126–#129)**
+Database migrations `0028` to `0030` (empty columns: the letter logo, the backup reminder, session addresses).
+- **Cover letter logo (#176).** An optional PNG or JPEG logo (at most 1 MB; checked and re-encoded as PNG) prints
+  above the letterhead lines, top left or top center (the lines are then centered too), scaled to fit 2.5 × 1 inch.
+- **Pre-printed letterhead paper (#176).** Prints no letterhead or logo and keeps the top of the page blank (2 inches
+  by default, adjustable).
+- **#10 double-window envelopes (#177).** A cover letter can carry the addresses for a double-window envelope: the
+  payee's name and address in the lower window and, optionally, the return address (the letterhead lines) in the upper
+  window — either at the top of the letter itself (the letter starts below the first fold) or on a separate address
+  page in front of it. Positions follow a standard #10 double-window envelope and each address can be moved; the test
+  print draws the windows and the folds for a plain-paper check against the envelope.
+- **Settings (#126).** System/About lists every setting in effect and where it comes from (default, config.toml,
+  environment, command line); Auditors can view it. On a server install an Administrator can change the proxy, cookie,
+  HSTS, session, sign-in lock and log settings there: saved to config.toml (comments and other entries kept, the old
+  file kept as config.toml.bak), in effect after a restart. Settings set by the environment or the command line are
+  locked; changing trusted proxies needs your password; changes that make the server less strict ask for a
+  confirmation; every change is audited. Database migration `0029`.
+- **Rename the organization (#126)** on System/About. New reports, letters and backup names use the new name.
+- **Backup reminder (#126).** Administrators see a warning when no backup has been made for 7 days (adjustable on
+  System/About; 0 turns it off).
+- **Signed-in sessions (#127).** System/About lists who is signed in (sign-in time, last activity, address). An
+  Administrator can end one session, all sessions of a user, or end everyone else's sessions; Auditors can view the list.
+  Ending a session signs the person out at their next click. Database migration `0030`.
+- **Diagnostics (#128).** *Download diagnostics* on System/About (Administrators): version, operating system, settings,
+  database and attachment sizes, free disk space, the database version and the last 1,000 log lines, with passwords,
+  keys, session identifiers, amounts, account numbers and email addresses left out or replaced. Nothing is sent
+  anywhere; each download is audited.
+- **Health (#129).** System/About shows the database and attachment sizes, free disk space and the database version,
+  and runs an integrity check of the database (safe while people work; audited). Administrators see a warning on every
+  page when less than 1 GB or 10 % of the disk is free.
 
 ## 1.10.0 — 2026-10-09
 Database migration `0024` (one table added; no existing data changes). Rolling back to 1.9.0 needs the data snapshot

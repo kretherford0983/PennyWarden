@@ -192,8 +192,39 @@ def _coerce(name: str, value, current):
     return str(value)
 
 
+# 2.0.0 (#126): the command-line options the running process was started with (highest precedence), so the
+# effective settings view can show each setting's source and lock the ones an edit could not change.
+CLI_OVERRIDES: dict = {}
+CONFIG_FILE = "config.toml"
+
+
+def setting_sources(data_dir: Path, cli: dict | None = None) -> tuple[dict, dict]:
+    """(raw values, source per setting) from config.toml, the environment and the command line - the same
+    precedence as load_settings: default < config.toml < environment (FM_*) < command line."""
+    values: dict = {}
+    sources: dict = {}
+    cfg = data_dir / CONFIG_FILE
+    if cfg.is_file():
+        try:
+            with cfg.open("rb") as fh:
+                for k, v in (tomllib.load(fh).get("server", {}) or {}).items():
+                    values[k], sources[k] = v, "config.toml"
+        except (OSError, tomllib.TOMLDecodeError):
+            pass
+    for f in fields(Settings):
+        env = os.environ.get(_ENV_PREFIX + f.name.upper())
+        if env is not None:
+            values[f.name], sources[f.name] = env, "environment"
+    for k, v in (CLI_OVERRIDES if cli is None else cli).items():
+        if v is not None:
+            values[k], sources[k] = v, "command line"
+    return values, sources
+
+
 def load_settings(overrides: dict | None = None) -> Settings:
     """Build settings from defaults, config file and environment (then explicit overrides e.g. CLI)."""
+    global CLI_OVERRIDES
+    CLI_OVERRIDES = {k: v for k, v in (overrides or {}).items() if v is not None}
     s = Settings()
     env_data_dir = os.environ.get(_ENV_PREFIX + "DATA_DIR")
     explicit = (overrides or {}).get("data_dir") or env_data_dir
