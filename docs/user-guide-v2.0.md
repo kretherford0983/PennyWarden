@@ -40,3 +40,10 @@ Administrators can create a **voucher check** style (one check per sheet with a 
 listing the invoices paid, the total and the check number) and give any style **two signature lines**. Register Users
 then choose two different signers when printing; above an optional amount only the first signature prints. Details:
 [Check printing](check-printing.md#10-voucher-checks-check-with-stubs).
+
+## Polish from testing (test build 5)
+- **Test prints** have no outline or page markings any more — only the **calibration page** draws the check's edges —
+  and one TEST – NOT A CHECK watermark (plus a small one across each signature line with a test signature).
+- The **cover letter** and **envelope** editors show a live **preview** with sample data as you type, and their
+  sections can be collapsed. The **check style** preview draws a voucher check's **stubs** under the check.
+- **My account** and **System/About** show when your version was built in **local time** (hover for UTC).

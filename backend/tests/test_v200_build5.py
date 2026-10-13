@@ -114,3 +114,50 @@ def test_version_api_serves_built_at_local(env, monkeypatch, tmp_path, local_zon
     f.write_text(json.dumps({"version": "2.0.0", "branch": "test", "run": 7, "built_at": "2026-10-10T21:15:03Z"}))
     b = env.bu.get("/api/system/version").json()["build"]
     assert b["built_at"] == "2026-10-10T21:15:03Z" and b["built_at_local"] == "2026-10-10 4:15 PM CDT"
+
+
+# ------------------------------------------------------------------ #186 live previews and stubs in the preview
+def test_document_live_preview_unsaved_settings_not_audited(env):
+    from test_v200_checks import enable
+    enable(env)
+    letter = env.admin.post("/api/checks/documents", {"kind": "LETTER"}).json()
+    envelope = env.admin.post("/api/checks/documents", {"kind": "ENVELOPE"}).json()
+    cfg = {**letter["config"], "subject": "Preview subject {PAYEE}"}
+    r = env.admin.post(f"/api/checks/documents/{letter['id']}/preview", {"config": cfg})
+    assert r.status_code == 200 and r.headers["content-type"] == "application/pdf"
+    t = " ".join(p.extract_text() for p in PdfReader(io.BytesIO(r.content)).pages)
+    assert "Preview subject SAMPLE VENDOR COMPANY" in t and "158092" in t
+    r = env.admin.post(f"/api/checks/documents/{envelope['id']}/preview", {"config": envelope["config"]})
+    page = PdfReader(io.BytesIO(r.content)).pages[0]
+    # the envelope upright on an envelope-sized page, without the test print's marks
+    assert (float(page.mediabox.width), float(page.mediabox.height)) == (9.5 * 72, 4.125 * 72)
+    t = page.extract_text()
+    assert "SAMPLE VENDOR COMPANY" in t and "ENVELOPE TEST" not in t
+    # an invalid unsaved setting is a validation error, not a crash
+    bad = env.admin.post(f"/api/checks/documents/{letter['id']}/preview", {"config": {**cfg, "subject": "{NOPE}"}})
+    assert bad.status_code == 422
+    assert not env.admin.get("/api/audit-events?action=CHECK_DOCUMENT_TEST_PRINT").json()["items"]
+    for c in (env.ru, env.bm, env.bu, env.auditor):
+        assert c.post(f"/api/checks/documents/{letter['id']}/preview", {}).status_code == 403
+
+
+def test_sample_stubs_drawing_matches_the_print(env):
+    from test_v200_checks import enable
+    enable(env)
+    voucher = presets.config_for("VOUCHER_TOP")
+    r = env.admin.post("/api/checks/sample-stubs", {"config": voucher})
+    assert r.status_code == 200
+    d = r.json()["stubs"]
+    texts = [t["text"] for t in d["texts"]]
+    assert any("OFFICE COPY" in t for t in texts) and "158092" in texts and "Total: $3,199.30" in texts
+    assert any(ln["dash"] for ln in d["lines"]) and d["bottom"] == 11.0
+    # every stub text is placed where the calibration page prints it
+    cfg = config.parse(voucher)
+    from fmpoc.services.checkprint.service import sample_stub
+    pdf = render.calibration_pdf(cfg, render.placement_for(cfg, cfg.feed("voucher")), sample_stub(cfg))
+    printed = {(t, round(x, 2), round(y, 2)) for t, x, y in _texts(pdf)}
+    for t in d["texts"]:
+        if t["anchor"] == "start":
+            assert (t["text"], round(t["x"], 2), round(t["y"], 2)) in printed, t
+    assert env.admin.post("/api/checks/sample-stubs", {"config": presets.config_for("STANDARD_3UP")}).json() == {"stubs": None}
+    assert env.ru.post("/api/checks/sample-stubs", {"config": voucher}).status_code == 403

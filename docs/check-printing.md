@@ -138,7 +138,8 @@ The **vendor copy never shows budgets**; the **office copy** adds the budget col
 the **check number from the register** (the confirmed number — after a spoiled check, the reprint shows the new one);
 the check itself never gets a printed number. When a payment has more lines than fit, the stub shows as many as fit
 and *…and N more, see enclosed letter*, and the user confirms before printing (print the cover letter, which lists
-every line). The stubs are on the test print and the calibration page; the preview on the screen shows the check only.
+every line). The stubs are drawn under the check in the preview (sample data), and print on the test print and the
+calibration page.
 
 ## For Register Users: printing a check
 
@@ -201,7 +202,10 @@ are shown but locked — to change them, edit the transaction in the register �
 ### Setting them up (Administrators)
 Payments Setup has a **Cover letters** and an **Envelopes** section. **New cover letter** and **New #10 envelope**
 create a template and open its editor on a page of its own. The first template of each kind becomes the **default**; **Make default** and
-**Deactivate** change that. **Test print (sample data)** shows the template with a sample payee and invoices.
+**Deactivate** change that. A **preview** at the top of the editor shows the letter or envelope with a sample payee
+and invoices as you type (tick **Keep at the top** to keep it in view while you scroll); each section can be
+collapsed. **Test print (sample data)** prints it — an envelope test print is laid out on the page the way the printer
+is fed.
 
 A **cover letter** has:
 

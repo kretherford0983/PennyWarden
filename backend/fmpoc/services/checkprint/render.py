@@ -624,6 +624,54 @@ def _stubs(c, cfg: StyleConfig, pl, data: StubData | None, outline: bool = False
     c.restoreState()
 
 
+class _StubRecorder:
+    """#186: records what `_draw_stub` draws (text runs and lines) so the setup screen's preview can draw the stubs
+    exactly as they print. Coordinates: page inches from the sheet's top-left corner."""
+
+    def __init__(self, paper_height: float):
+        self.h = paper_height
+        self.font = ("SANS", False, 9.0)
+        self.dash = False
+        self.texts: list[dict] = []
+        self.lines: list[dict] = []
+
+    def saveState(self): pass
+    def restoreState(self): pass
+    def setFillGray(self, _g): pass
+    def setStrokeGray(self, _g): pass
+    def setLineWidth(self, _w): pass
+
+    def setDash(self, *a):
+        self.dash = bool(a)
+
+    def setFont(self, name: str, size: float):
+        key = name[3:].removesuffix("-B")
+        self.font = (key, name.endswith("-B"), size)
+
+    def _text(self, x, y, text, anchor):
+        key, bold, size = self.font
+        self.texts.append({"x": round(x / PT, 4), "y": round(self.h - y / PT, 4), "text": text, "font": key,
+                           "bold": bold, "size": size, "anchor": anchor})
+
+    def drawString(self, x, y, text): self._text(x, y, text, "start")
+    def drawRightString(self, x, y, text): self._text(x, y, text, "end")
+
+    def line(self, x1, y1, x2, y2):
+        self.lines.append({"x1": round(x1 / PT, 4), "y1": round(self.h - y1 / PT, 4), "x2": round(x2 / PT, 4),
+                           "y2": round(self.h - y2 / PT, 4), "dash": self.dash})
+
+
+def stub_drawing(cfg: StyleConfig, data: StubData | None) -> dict | None:
+    """#186: the stubs as the setup preview draws them (sample data), with the perforation line of each stub."""
+    if not cfg.stubs or data is None:
+        return None
+    rec = _StubRecorder(cfg.stock.paper_height)
+    for i, st in enumerate(cfg.stubs):
+        _draw_stub(rec, cfg, st, data, True, (data.titles or [])[i] if data.titles and i < len(data.titles) else None)
+    return {"texts": rec.texts, "lines": rec.lines,
+            "bottom": max(st.top + st.height for st in cfg.stubs)}
+
+
 SAMPLE_STUB = StubData(title="SAMPLE ORGANIZATION", check_number="1001", payee="SAMPLE PAYEE COMPANY INC",
                        date="", amount="$3,199.30",
                        rows=[{"INVOICE": "158092", "INVOICE_DATE": "08/29/2026", "DESCRIPTION": "Supplies",

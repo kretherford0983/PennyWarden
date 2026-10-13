@@ -2,7 +2,7 @@
  * to scale with the built-in fonts, the pattern input with variable autocomplete, and browser print instructions. */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
-import { Modal } from "../components";
+import { ErrorBox, Modal } from "../components";
 
 export type FontInfo = { key: string; label: string; descent: number; descent_bold: number; cap_height: number };
 export type Variable = { name: string; description: string };
@@ -40,15 +40,27 @@ export function measure(text: string, family: string, bold: boolean, sizePt: num
   return (ctx2d.measureText(text).width / 100) * (sizePt / 72);
 }
 
+/** #186: the voucher stubs as the server draws them (sample data): text runs and lines in page inches. */
+export type StubDrawing = {
+  texts: { x: number; y: number; text: string; font: string; bold: boolean; size: number; anchor: "start" | "end" }[];
+  lines: { x1: number; y1: number; x2: number; y2: number; dash: boolean }[];
+  bottom: number;
+};
+
 export type FieldText = { text: string; size: number; fits: boolean; shrunk?: boolean; suggestion?: string | null };
 
 /** The check drawn to scale (inches): the stock outline (pre-printed lines, labels), the clear zone, field boxes and the
  * text as it will print. `highlight` outlines one field. */
-export function CheckPreview({ cfg, fonts, texts, highlight, showBoxes = true, signature, signature2 }: {
+export function CheckPreview({ cfg, fonts, texts, highlight, showBoxes = true, signature, signature2, stubs }: {
   cfg: any; fonts: FontInfo[]; texts: Record<string, FieldText> | null; highlight?: string | null; showBoxes?: boolean;
-  signature?: string | null; signature2?: string | null;
+  signature?: string | null; signature2?: string | null; stubs?: StubDrawing | null;
 }) {
   const cw = cfg.stock.check_width, ch = cfg.stock.check_height;
+  // #186: voucher stubs are drawn in page inches; the check sits at the sheet's first check top, centred across it
+  const sx = (cw - (cfg.stock.paper_width ?? cw)) / 2, sy = -(cfg.stock.check_tops?.[0] ?? 0);
+  const vx = stubs ? Math.min(0, sx) : 0;
+  const vw = stubs ? Math.max(cw, (cfg.stock.paper_width ?? cw)) : cw;
+  const vh = stubs ? Math.max(ch, stubs.bottom + sy) : ch;
   const fi = (k: string) => fonts.find((f) => f.key === k) || fonts[0];
   const font = (name: string) => {
     const f = cfg.fields[name];
@@ -102,7 +114,7 @@ export function CheckPreview({ cfg, fonts, texts, highlight, showBoxes = true, s
   if (cfg.stock.signature_lines === 2 && cfg.fields.signature2) sigs.push([cfg.fields.signature2, signature2 ?? "SIGNATURE 2"]);
   const boxes = [...TEXT_FIELDS, "signature", ...(cfg.stock.signature_lines === 2 && cfg.fields.signature2 ? ["signature2"] : [])];
   return (
-    <svg className="check-preview" viewBox={`-0.05 -0.05 ${cw + 0.1} ${ch + 0.1}`} role="img" aria-label="Check preview drawn to scale"
+    <svg className="check-preview" viewBox={`${vx - 0.05} -0.05 ${vw + 0.1} ${vh + 0.1}`} role="img" aria-label="Check preview drawn to scale"
          style={{ width: "100%", maxWidth: 900, display: "block", background: "var(--surface-2, #f7f5ee)" }}>
       <rect x={0} y={0} width={cw} height={ch} fill="none" stroke="currentColor" strokeWidth={0.01} opacity={0.5} />
       <rect x={0} y={ch - CLEAR_ZONE} width={cw} height={CLEAR_ZONE} fill="currentColor" opacity={0.08} />
@@ -128,6 +140,18 @@ export function CheckPreview({ cfg, fonts, texts, highlight, showBoxes = true, s
           {label}
         </text>
       ))}
+      {stubs ? (
+        <g data-testid="stub-preview" transform={`translate(${sx} ${sy})`}>
+          {stubs.lines.map((l, i) => (
+            <line key={i} x1={l.x1} y1={l.y1} x2={l.x2} y2={l.y2} stroke="currentColor" strokeWidth={l.dash ? 0.008 : 0.007}
+                  strokeDasharray={l.dash ? "0.055 0.04" : undefined} opacity={l.dash ? 0.45 : 0.8} />
+          ))}
+          {stubs.texts.map((t, i) => (
+            <text key={i} x={t.x} y={t.y} textAnchor={t.anchor} fontFamily={`PW-${t.font}`} fontWeight={t.bold ? 700 : 400}
+                  fontSize={t.size / 72} fill="currentColor">{t.text}</text>
+          ))}
+        </g>
+      ) : null}
     </svg>
   );
 }
@@ -264,6 +288,62 @@ export function PdfLinks({ pdf, label = "Open in a new tab" }: { pdf: { url: str
 /** 2.0.0 (#174): a generated PDF shown in the page with a Print button that opens the browser's print dialog
  * directly - one click to see it, one to print. Download and a new tab remain for browsers that can't print a PDF
  * from the page. */
+/** #174: which setup sections are collapsed and whether a preview is pinned - kept in memory while the app is open
+ * (AC-SEC-006: the app keeps nothing in browser storage). */
+export const viewState = new Map<string, boolean>();
+
+/** #174 / #186: a collapsible section of a Payments Setup editor (check styles, cover letters, envelopes). */
+export function Section({ id, title, children, extra, className = "", scope = "pw-check-setup" }: {
+  id: string; title: string; children: React.ReactNode; extra?: React.ReactNode; className?: string; scope?: string;
+}) {
+  const key = `${scope}-${id}`;
+  const [open, setOpen] = useState(() => viewState.get(key) ?? true);
+  const toggle = () => {
+    const next = !open;
+    setOpen(next);
+    viewState.set(key, next);
+  };
+  return (
+    <section className={`card collapsible ${open ? "open" : "closed"} ${className}`} aria-labelledby={`${id}-h`}>
+      <div className="collapsible-head">
+        <h2 id={`${id}-h`}>
+          <button type="button" className="collapse-btn" aria-expanded={open} aria-controls={`${id}-body`} onClick={toggle}>
+            <span aria-hidden="true" className="chev">{open ? "▾" : "▸"}</span> {title}
+          </button>
+        </h2>
+        {extra}
+      </div>
+      <div id={`${id}-body`} hidden={!open}>{children}</div>
+    </section>
+  );
+}
+
+/** #186: the live preview of a letter or envelope template - the PDF the server draws with sample data from the
+ * unsaved settings, refreshed shortly after each change. The previous page stays until the new one is ready. */
+export function LivePdfPreview({ url, body, title, aspect, deps }: {
+  url: string; body: unknown; title: string; aspect: number; deps: unknown[];
+}) {
+  const [pdf, setPdf] = usePdf();
+  const [err, setErr] = useState<unknown>(null);
+  useEffect(() => {
+    let live = true;
+    const h = setTimeout(() => {
+      api.postBlob(url, body).then((b) => { if (live) { setPdf(b, "preview.pdf"); setErr(null); } },
+        (x) => { if (live) setErr(x); });
+    }, 600);
+    return () => { live = false; clearTimeout(h); };
+  }, deps); // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <div className="live-preview" data-testid="live-preview">
+      <ErrorBox error={err} />
+      {pdf ? (
+        <iframe className="live-preview-frame" src={`${pdf.url}#toolbar=0&navpanes=0&view=Fit`} title={title}
+                style={{ aspectRatio: String(aspect) }} />
+      ) : <p className="muted">Drawing the preview…</p>}
+    </div>
+  );
+}
+
 export function PdfViewer({ pdf, title, onClose, singleFeed, children }: {
   pdf: { url: string; name: string }; title: string; onClose: () => void; singleFeed?: boolean; children?: React.ReactNode;
 }) {

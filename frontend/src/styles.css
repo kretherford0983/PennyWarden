@@ -438,6 +438,11 @@ label.button { display: inline-block; padding: 3px 10px; border-radius: 6px; bor
 .collapsible.pinned { padding-top: 8px; padding-bottom: 8px; }
 .collapsible.pinned .check-preview { max-height: 30vh; width: auto !important; margin: 4px auto; }
 .collapsible.pinned .hint, .collapsible.pinned .alert { display: none; }
+/* #186: live preview of a cover letter or envelope template */
+.live-preview-frame { display: block; width: 100%; border: 1px solid var(--border); border-radius: 6px; background: #525659; margin: 8px 0; }
+.doc-preview.letter .live-preview-frame { max-width: 640px; margin-left: auto; margin-right: auto; }
+.doc-preview.envelope .live-preview-frame { max-width: 900px; }
+.collapsible.pinned .live-preview-frame { height: 34vh; aspect-ratio: auto !important; margin: 4px auto; }
 .form-row { align-items: flex-start; }
 /* inputs line up whether or not a field has help text below it; checkboxes sit on the input line */
 .form-row > .check { margin-top: 19px; min-height: 34px; }
