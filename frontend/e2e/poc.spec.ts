@@ -2362,7 +2362,7 @@ test("#126: an Administrator renames the organization, sees the effective settin
   await expect(page.getByRole("region", { name: "Backup reminder" }).getByRole("status")).toHaveText("Saved.");
 });
 
-test("#127, #128: an Administrator sees the signed-in sessions and downloads diagnostics", async ({ page }) => {
+test("#127-#129: an Administrator sees the signed-in sessions, downloads diagnostics and checks the health", async ({ page }) => {
   await login(page, "admin");
   await page.getByRole("link", { name: "System/About" }).click();
   const s = page.getByRole("region", { name: "Signed-in sessions" });
@@ -2372,4 +2372,9 @@ test("#127, #128: an Administrator sees the signed-in sessions and downloads dia
   const dl = page.waitForEvent("download");
   await page.getByRole("button", { name: "Download diagnostics" }).click();
   expect((await dl).suggestedFilename()).toMatch(/^pennywarden-diagnostics-\d{14}\.json$/);
+  // #129: health and the integrity check
+  const h = page.getByRole("region", { name: "Health" });
+  await expect(h.getByText("up to date")).toBeVisible();
+  await h.getByRole("button", { name: "Run integrity check" }).click();
+  await expect(h.getByRole("status")).toContainText("The database passed the integrity check.");
 });

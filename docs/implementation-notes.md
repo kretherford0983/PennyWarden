@@ -214,6 +214,10 @@ Routes `GET /api/system/sessions`, `POST /api/system/sessions/{ref}/end`, `/sess
 `storage()` (database incl. WAL/SHM, attachments folder size and count, `shutil.disk_usage` of the data folder, Alembic
 current vs head) is shared with the health check; `recent_log_lines()` reads the rotated `fmpoc.log.N` files oldest
 first into a 1,000-line deque and `scrub()`s each line.
+#129: `diagnostics.health()` = `storage()` + `low_disk` (free < 1 GB or < 10 %); `integrity_check()` runs
+`PRAGMA integrity_check(20)` (one read transaction; WAL mode keeps writers going), logs the details and returns OK or a
+plain message. Routes `GET /api/system/health-check`, `POST /api/system/health-check/integrity`; the Administrators'
+banner endpoint (`/api/system/backup-schedule/alert`) adds `low_disk`.
 
 **1.10.0 Update notification (issue #58; channel decided 2026-10-09).** Migration `0024`: `update_check` (one row).
 `services/updates.py`: `channel(settings)` - setting `update_channel` (`auto` → from `build_info.json`: `main` →

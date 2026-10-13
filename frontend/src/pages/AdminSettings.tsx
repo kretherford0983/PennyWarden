@@ -222,3 +222,44 @@ export function DiagnosticsPanel() {
     </section>
   );
 }
+
+const size = (b: number | null | undefined) => (b == null ? "—" : b >= 1024 ** 3 ? `${(b / 1024 ** 3).toFixed(1)} GB` : b >= 1024 ** 2 ? `${(b / 1024 ** 2).toFixed(1)} MB` : `${Math.ceil(b / 1024)} KB`);
+
+/** 2.0.0 (#129): database and storage health (Administrators). */
+export function HealthPanel() {
+  const [h, setH] = useState<any>(null);
+  const [chk, setChk] = useState<any>(null);
+  const [err, setErr] = useState<unknown>(null);
+  const [busy, setBusy] = useState(false);
+  const load = () => api.get("/api/system/health-check").then(setH, setErr);
+  useEffect(() => { load(); }, []);
+  const run = async () => {
+    setErr(null); setBusy(true);
+    try { setChk(await api.post("/api/system/health-check/integrity", {})); } catch (x) { setErr(x); } finally { setBusy(false); }
+  };
+  return (
+    <section className="card" aria-labelledby="health-h">
+      <h2 id="health-h">Health</h2>
+      <ErrorBox error={err} />
+      {h ? (
+        <>
+          {h.low_disk ? <div className="alert warn" role="alert">{h.low_disk_message}</div> : null}
+          <dl className="dl">
+            <dt>Database</dt><dd>{size(h.database_bytes)}</dd>
+            <dt>Attachments</dt><dd>{size(h.attachments_bytes)} ({h.attachment_files} files)</dd>
+            <dt>Free disk space</dt><dd>{size(h.disk.free)}{h.disk.free_percent != null ? ` (${h.disk.free_percent} %)` : ""}{h.low_disk ? " – low" : ""}</dd>
+            <dt>Database version</dt><dd>{h.migrations.current || "—"} {h.migrations.up_to_date ? <span className="badge">up to date</span> : <span className="badge grey">expected {h.migrations.head}</span>}</dd>
+          </dl>
+          <p className="hint">A warning appears here and at the top of every page for Administrators when less than 1 GB or 10 % of the disk is free.</p>
+        </>
+      ) : null}
+      <div className="actions left">
+        <button onClick={run} disabled={busy}>{busy ? "Checking…" : "Run integrity check"}</button>
+        <button onClick={load}>Refresh</button>
+      </div>
+      {chk ? <div className={`alert ${chk.ok ? "ok" : "error"}`} role="status">{chk.message} <span className="muted">({chk.seconds} s)</span></div> : null}
+      <p className="hint">The integrity check reads the whole database to make sure it is not damaged. It is safe while people are working; on a large
+        database it can take a minute. Each check is recorded in the audit log.</p>
+    </section>
+  );
+}
