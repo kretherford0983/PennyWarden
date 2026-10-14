@@ -104,7 +104,22 @@ row's menu: a small ⋯ button at the end of the row, made with `RowMenu` (`comp
   upload) stay as buttons.
 - In E2E tests use the `rowAction(scope, rowName, item)` helper.
 
-## 6. Where these rules live
+## 6. Tabbed pages
+
+A page that has grown into many unrelated sections is split into **tabs** (first used on System/About, #216):
+
+- Each tab has **its own address** (`/about/<tab>`, the first tab is the page's own address), so it can be bookmarked,
+  survives a reload, and the browser's **Back** returns to the previous tab. Links elsewhere (banners, help text) point
+  to the tab, e.g. `/about/backups`.
+- **Tabs a user can't use are not shown**; an address for a hidden or unknown tab shows the first tab (and replaces
+  the address).
+- WAI-ARIA tabs: a `role="tablist"` with a label, `role="tab"` buttons (`aria-selected`, only the open tab in the Tab
+  order) and one `role="tabpanel"`. **←**/**→** move between tabs and open them; **Home**/**End** go to the first/last.
+- Use `PageTabs` (`pages/About.tsx`) and the `.page-tabs` style: a tab bar under the page title, the open tab underlined
+  in the primary colour.
+- Inside a tab, small switches between views of one section (Backup / Scheduled / Restore) stay as buttons.
+
+## 7. Where these rules live
 
 | Rule | CSS / component |
 |---|---|
@@ -114,3 +129,4 @@ row's menu: a small ⋯ button at the end of the row, made with `RowMenu` (`comp
 | Sticky action bar | `.sticky-actions` (uses the content area's `--pad-x` / `--pad-y`) |
 | Field | `Field` in `components.tsx` |
 | Row menu | `RowMenu` in `components.tsx`; `.row-menu` in `styles.css` |
+| Page tabs | `PageTabs` in `pages/About.tsx`; `.page-tabs` in `styles.css` |

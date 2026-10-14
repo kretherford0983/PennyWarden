@@ -158,11 +158,11 @@ export function BackupFailedBanner({ path }: { path: string }) {
   if (!a?.failed && !a?.stale && !a?.low_disk) return null;
   return (
     <>
-      {a.failed ? <div className="alert error banner" role="alert" data-testid="backup-failed-banner">{a.message} <Link to="/about">Backup settings</Link></div> : null}
+      {a.failed ? <div className="alert error banner" role="alert" data-testid="backup-failed-banner">{a.message} <Link to="/about/backups">Backup settings</Link></div> : null}
       {/* 2.0.0 (#126): no backup for the set number of days */}
-      {a.stale && !a.failed ? <div className="alert warn banner" role="alert" data-testid="backup-age-banner">{a.stale_message} <Link to="/about">Backup / Restore</Link></div> : null}
+      {a.stale && !a.failed ? <div className="alert warn banner" role="alert" data-testid="backup-age-banner">{a.stale_message} <Link to="/about/backups">Backup / Restore</Link></div> : null}
       {/* 2.0.0 (#129): low disk space on the data folder's volume */}
-      {a.low_disk ? <div className="alert warn banner" role="alert" data-testid="low-disk-banner">{a.low_disk_message} <Link to="/about">Health</Link></div> : null}
+      {a.low_disk ? <div className="alert warn banner" role="alert" data-testid="low-disk-banner">{a.low_disk_message} <Link to="/about/health">System health</Link></div> : null}
     </>
   );
 }

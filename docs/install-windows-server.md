@@ -117,7 +117,7 @@ port = 8765
 secure_cookies = "true"     # browsers reach it over HTTPS
 hsts = true                 # browsers keep using HTTPS for this site
 trusted_proxies = "127.0.0.1"   # believe the client address Caddy passes on
-# where scheduled backups may be written (System/About -> Backup / Restore -> Scheduled):
+# where scheduled backups may be written (System/About -> Backups -> Backup / Restore -> Scheduled):
 backup_folders = ['D:\PennyWarden-backups', '\\nas\backups\pennywarden']
 ```
 
@@ -234,7 +234,7 @@ Then create the other users under **Users**.
 
 ## 7. Backups
 
-- **From the application:** System/About → Backup / Restore. *Backup* creates an encrypted file you download (keep
+- **From the application:** System/About → Backups → Backup / Restore. *Backup* creates an encrypted file you download (keep
   its passphrase in a password manager). *Scheduled* writes backups automatically to one of the `backup_folders` from
   `config.toml` — give the `pennywarden` account write access to that folder (for a share, the share and its
   folder permissions). Administrators get a warning when no backup has been made for 7 days.
@@ -253,7 +253,7 @@ Then create the other users under **Users**.
 
 ## 8. Upgrading
 
-1. Make a backup (System/About → Backup / Restore), or stop the service and copy `C:\ProgramData\PennyWarden`.
+1. Make a backup (System/About → Backups → Backup / Restore), or stop the service and copy `C:\ProgramData\PennyWarden`.
 2. Unzip the new version into its own folder next to the old one, e.g. `C:\PennyWarden\2.1.0` (as in step 2).
 3. Switch over:
 

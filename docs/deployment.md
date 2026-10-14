@@ -32,7 +32,7 @@ Native packages need no separately installed Python, Node.js, SQLite, Docker or 
 Startup applies pending Alembic migrations, binds to `127.0.0.1:8765`, waits for `/api/health`, and opens the
 default browser when a desktop session is available. Plain HTTP is acceptable because traffic stays on loopback.
 
-> **Data protection:** create encrypted backups regularly (System/About → Backup / Restore, since 1.4.1 — see
+> **Data protection:** create encrypted backups regularly (System/About → Backups → Backup / Restore, since 1.4.1 — see
 > docs/backup-restore.md) and keep them off this machine together with their passphrase.
 > From 1.9.0 PennyWarden can also write them on a schedule (Backup / Restore → **Scheduled**) to a folder you
 > choose, such as an external drive. On a server the folder must be listed by the server owner with

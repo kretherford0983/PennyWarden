@@ -1,6 +1,6 @@
 # Backup and restore (since 1.4.1)
 
-Administrators create and restore backups on **System/About → Backup / Restore**. A new installation can also be
+Administrators create and restore backups on **System/About → Backups → Backup / Restore**. A new installation can also be
 set up from a backup in the **initialization wizard** ("Restore from a backup instead").
 
 ## What a backup contains
@@ -39,13 +39,13 @@ passphrase, encrypted with a random **server key** that never leaves this server
 
 ## Creating a backup
 
-System/About → Backup / Restore → **Backup**: passphrase twice + your own password → **Create backup**. The database
+System/About → Backups → Backup / Restore → **Backup**: passphrase twice + your own password → **Create backup**. The database
 is copied with SQLite's online backup API, so users can keep working. The download starts automatically; the file
 stays downloadable from that page for one hour and is then deleted from the server's work folder.
 
 ## Restoring
 
-System/About → Backup / Restore → **Restore**: choose the `.fmbak` file, enter its passphrase, your password and type
+System/About → Backups → Backup / Restore → **Restore**: choose the `.fmbak` file, enter its passphrase, your password and type
 `RESTORE`. The file is uploaded in 20 MB parts (so large backups pass Cloudflare Tunnel's 100 MB request limit;
 an interrupted part is retried). The page then shows each step:
 
@@ -118,7 +118,7 @@ pennywarden restore --list [--data-dir DIR]
 
 ## Scheduled backups (since 1.9.0)
 
-System/About → Backup / Restore → **Scheduled** writes backups on its own, without anyone signed in:
+System/About → Backups → Backup / Restore → **Scheduled** writes backups on its own, without anyone signed in:
 
 - **Schedule:** Daily at a time, or Weekly on a day at a time — the computer's (server's) local time.
 - **Folder:** one folder the operating system running PennyWarden can already see: a local folder, an external drive

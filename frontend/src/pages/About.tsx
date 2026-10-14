@@ -1,6 +1,7 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { api } from "../api";
 import { BuildDetails, ErrorBox, Loading } from "../components";
+import { useRouter } from "../router";
 import { BackupRestore } from "./BackupRestore";
 import { UpdateSettings } from "./Updates";
 import { useMe } from "../App";
@@ -8,35 +9,103 @@ import { MaintenancePanel } from "./Maintenance";
 import { AdvancedPanel } from "./Reinitialize";
 import { BackupWarningSetting, DiagnosticsPanel, HealthPanel, OrganizationPanel, SecurityOverviewPanel, SessionsPanel, SettingsPanel } from "./AdminSettings";
 
+/** 2.0.0 build 11 (#216, docs/ui-standards.md): System/About in tabs, each at its own address (/about/<tab>, so it can
+ * be bookmarked, reloaded and reached with Back). Tabs the user can't use are not shown; an unknown or unavailable tab
+ * address shows About. */
+export const ABOUT_TABS = [
+  ["about", "About"], ["general", "General"], ["settings", "Settings"], ["backups", "Backups"],
+  ["security", "Security"], ["health", "System health"], ["advanced", "Advanced"],
+] as const;
+export type AboutTab = (typeof ABOUT_TABS)[number][0];
+export const aboutPath = (tab: AboutTab) => (tab === "about" ? "/about" : `/about/${tab}`);
+
 export default function About() {
   const { can } = useMe();
+  const { path, navigate } = useRouter();
   const [a, setA] = useState<any>(null);
   const [org, setOrg] = useState<string | null>(null);
   useEffect(() => {
     api.get("/api/system/about").then(setA);
     api.get("/api/system/status").then((s) => setOrg(s.workspace_name));
   }, []);
-  if (!a) return <Loading />;
   const admin = can("system.manage");
+  const viewer = can("system.view");                  // Administrators and Auditors
+  const backups = !!a && a.restore_max_mb != null;     // the backup/restore permission (the server says)
+  const allowed: Record<AboutTab, boolean> = {
+    about: true, general: admin, settings: viewer, backups: backups || admin, security: viewer, health: admin,
+    advanced: admin || backups,
+  };
+  const asked = (path.split("/")[2] || "about") as AboutTab;
+  const known = ABOUT_TABS.some(([k]) => k === asked);
+  const tab: AboutTab = known && allowed[asked] ? asked : "about";
+  useEffect(() => {   // a tab address this user can't use (or a typo) becomes /about
+    if (a && path !== aboutPath(tab) && path.startsWith("/about")) navigate(aboutPath(tab), { replace: true });
+  }, [a, path, tab]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!a) return <Loading />;
+  const tabs = ABOUT_TABS.filter(([k]) => allowed[k]);
+  const panels: Record<AboutTab, () => ReactNode> = {
+    about: () => (
+      <>
+        <BuildDetails info={a} />
+        {a.bind_host ? <dl className="dl"><dt>Bind address</dt><dd>{a.bind_host}:{a.port}</dd></dl> : null}
+        {a.insecure_transport_warning ? <div className="alert warn">Network deployment without HTTPS configuration is not secure.</div> : null}
+        <div className="alert warn" role="note"><strong>Data protection:</strong> {a.backup_notice}</div>
+        {backups ? <UpdateSettings /> : null}
+      </>
+    ),
+    general: () => (
+      <>
+        {org != null ? <OrganizationPanel name={org} onRenamed={(n) => { setOrg(n); window.dispatchEvent(new CustomEvent("pw:workspace-renamed", { detail: n })); }} /> : null}
+        <ModulesPanel />
+      </>
+    ),
+    settings: () => <SettingsPanel />,
+    backups: () => (
+      <>
+        {backups ? <BackupRestore maxMb={a.restore_max_mb} /> : null}
+        {admin ? <section className="card" aria-labelledby="backup-age-h"><h2 id="backup-age-h">Backup reminder</h2><BackupWarningSetting /></section> : null}
+      </>
+    ),
+    security: () => <><SecurityOverviewPanel /><SessionsPanel /></>,
+    health: () => <><HealthPanel /><DiagnosticsPanel /></>,
+    advanced: () => <>{admin ? <MaintenancePanel /> : null}{backups ? <AdvancedPanel /> : null}</>,
+  };
   return (
     <div>
       <h1>System / About</h1>
-      <BuildDetails info={a} />
-      {a.bind_host ? <dl className="dl"><dt>Bind address</dt><dd>{a.bind_host}:{a.port}</dd></dl> : null}
-      {a.insecure_transport_warning ? <div className="alert warn">Network deployment without HTTPS configuration is not secure.</div> : null}
-      <div className="alert warn" role="note"><strong>Data protection:</strong> {a.backup_notice}</div>
-      {admin && org != null ? <OrganizationPanel name={org} onRenamed={(n) => { setOrg(n); window.dispatchEvent(new CustomEvent("pw:workspace-renamed", { detail: n })); }} /> : null}
-      {a.restore_max_mb != null ? <UpdateSettings /> : null}
-      {a.restore_max_mb != null ? <ModulesPanel /> : null}
-      {a.restore_max_mb != null ? <BackupRestore maxMb={a.restore_max_mb} /> : null}
-      {admin ? <section className="card" aria-labelledby="backup-age-h"><h2 id="backup-age-h">Backup reminder</h2><BackupWarningSetting /></section> : null}
-      {can("system.view") ? <SecurityOverviewPanel /> : null}
-      {can("system.view") ? <SessionsPanel /> : null}
-      {can("system.view") ? <SettingsPanel /> : null}
-      {admin ? <MaintenancePanel /> : null}
-      {admin ? <HealthPanel /> : null}
-      {admin ? <DiagnosticsPanel /> : null}
-      {a.restore_max_mb != null ? <AdvancedPanel /> : null}
+      {tabs.length > 1 ? <PageTabs label="System/About sections" tabs={tabs} current={tab} onSelect={(k) => navigate(aboutPath(k))} /> : null}
+      <div role={tabs.length > 1 ? "tabpanel" : undefined} id={`about-panel`} aria-labelledby={tabs.length > 1 ? `about-tab-${tab}` : undefined}
+           data-testid={`about-${tab}`} key={tab}>
+        {panels[tab]()}
+      </div>
+    </div>
+  );
+}
+
+/** #216: a page's tab bar (WAI-ARIA tabs, automatic activation): ←/→ move between tabs and open them, Home/End go to
+ * the first/last. The caller keeps the open tab in the address. */
+export function PageTabs<K extends string>({ label, tabs, current, onSelect }: {
+  label: string; tabs: readonly (readonly [K, string])[]; current: K; onSelect: (k: K) => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const go = (i: number) => {
+    const n = (i + tabs.length) % tabs.length;
+    onSelect(tabs[n][0]);
+    requestAnimationFrame(() => ref.current?.querySelectorAll<HTMLButtonElement>("[role=tab]")[n]?.focus());
+  };
+  const onKey = (e: KeyboardEvent) => {
+    const i = tabs.findIndex(([k]) => k === current);
+    if (e.key === "ArrowRight") { e.preventDefault(); go(i + 1); }
+    else if (e.key === "ArrowLeft") { e.preventDefault(); go(i - 1); }
+    else if (e.key === "Home") { e.preventDefault(); go(0); }
+    else if (e.key === "End") { e.preventDefault(); go(tabs.length - 1); }
+  };
+  return (
+    <div className="page-tabs" role="tablist" aria-label={label} ref={ref} onKeyDown={onKey}>
+      {tabs.map(([k, l]) => (
+        <button key={k} type="button" role="tab" id={`about-tab-${k}`} aria-selected={k === current} aria-controls="about-panel"
+                tabIndex={k === current ? 0 : -1} className={k === current ? "current" : ""} onClick={() => onSelect(k)}>{l}</button>
+      ))}
     </div>
   );
 }
