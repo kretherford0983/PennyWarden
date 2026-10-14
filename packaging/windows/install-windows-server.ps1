@@ -214,6 +214,12 @@ function Protect-ProgramFolder([string]$Dir) {
   $grants = @("*S-1-5-18:(OI)(CI)F", "*S-1-5-32-544:(OI)(CI)F", "*S-1-5-32-545:(OI)(CI)RX", "${ServiceAccount}:(OI)(CI)RX")
   $r = Invoke-Native "icacls.exe" (@("$Dir", "/inheritance:r", "/grant:r") + $grants)
   if ($r.Code -ne 0) { Fail "could not set the permissions of ${Dir}: $($r.Out)" }
+  # Everything inside takes these permissions - a folder moved in from the temporary folder would otherwise keep the
+  # temporary folder's (only the installing Administrator; the service can't start python.exe).
+  Get-ChildItem -LiteralPath $Dir -Force | Where-Object { -not ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) } | ForEach-Object {
+    $r = Invoke-Native "icacls.exe" @($_.FullName, "/reset", "/T", "/C", "/Q")
+    if ($r.Code -ne 0) { Fail "could not reset the permissions of $($_.FullName): $($r.Out)" }
+  }
 }
 
 function Read-ConfigPort([string]$Cfg) {
