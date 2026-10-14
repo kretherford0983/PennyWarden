@@ -503,3 +503,86 @@ export function LegalLinks({ license, sourceUrl }: { license: string; sourceUrl?
     </span>
   );
 }
+
+/** 2.0.0 build 11 (#215, docs/ui-standards.md): a table row's actions. **Edit** stays a visible button next to it (the
+ * caller renders it); every other action is an item of this menu, opened from a real <button> marked ⋯ ("Actions for
+ * <row>"). Keyboard: Enter/Space or ↓ opens it on the first item, ↑ on the last; ↑/↓/Home/End move; Enter/Space
+ * choose; Escape or Tab closes it, and the focus goes back to the button. Destructive items (danger) go last, after a
+ * divider, and keep their own confirmations. The menu is drawn fixed to the viewport so a scrolling table can't clip
+ * it; it follows its button when the page scrolls and closes when the button scrolls out of view. */
+export type RowAction = { label: string; onClick: () => void; danger?: boolean; disabled?: boolean; title?: string };
+
+let rowMenuSeq = 0;
+
+export function RowMenu({ name, actions }: { name: string; actions: (RowAction | null | false | undefined)[] }) {
+  const items = [...actions.filter((a): a is RowAction => !!a)].sort((a, b) => Number(!!a.danger) - Number(!!b.danger));
+  const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ top: number; right: number; up: boolean }>({ top: 0, right: 0, up: false });
+  const btn = useRef<HTMLButtonElement>(null);
+  const menu = useRef<HTMLUListElement>(null);
+  const [id] = useState(() => `row-menu-${++rowMenuSeq}`);
+  const focusItem = (i: number) => {
+    const els = Array.from(menu.current?.querySelectorAll<HTMLButtonElement>("[role=menuitem]:not([aria-disabled=true])") || []);
+    if (!els.length) return;
+    els[(i + els.length) % els.length].focus();
+  };
+  const place = () => {
+    const r = btn.current?.getBoundingClientRect();
+    if (!r) return false;
+    const up = r.bottom + 40 + items.length * 34 > window.innerHeight && r.top > window.innerHeight / 2;
+    setPos({ top: up ? r.top : r.bottom, right: Math.max(8, window.innerWidth - r.right), up });
+    return r.bottom > 0 && r.top < window.innerHeight;
+  };
+  const show = (first: "first" | "last") => {
+    place();
+    setOpen(true);
+    requestAnimationFrame(() => focusItem(first === "first" ? 0 : -1));
+  };
+  const close = (refocus = true) => { setOpen(false); if (refocus) btn.current?.focus(); };
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: Event) => {
+      const t = e.target as Node;
+      if (!menu.current?.contains(t) && !btn.current?.contains(t)) setOpen(false);
+    };
+    // scrolling or resizing moves the menu with its button; it closes once the button leaves the window
+    const gone = (e: Event) => { if (!menu.current?.contains(e.target as Node) && !place()) setOpen(false); };
+    document.addEventListener("mousedown", away);
+    window.addEventListener("scroll", gone, true);
+    window.addEventListener("resize", gone);
+    return () => { document.removeEventListener("mousedown", away); window.removeEventListener("scroll", gone, true); window.removeEventListener("resize", gone); };
+  }, [open]);
+  if (!items.length) return null;
+  const onMenuKey = (e: React.KeyboardEvent) => {
+    const els = Array.from(menu.current?.querySelectorAll<HTMLButtonElement>("[role=menuitem]:not([aria-disabled=true])") || []);
+    const i = els.indexOf(document.activeElement as HTMLButtonElement);
+    if (e.key === "ArrowDown") { e.preventDefault(); focusItem(i + 1); }
+    else if (e.key === "ArrowUp") { e.preventDefault(); focusItem(i - 1); }
+    else if (e.key === "Home") { e.preventDefault(); focusItem(0); }
+    else if (e.key === "End") { e.preventDefault(); focusItem(-1); }
+    else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); }   // not the dialog around it
+    else if (e.key === "Tab") { close(false); }
+  };
+  const label = `Actions for ${name}`;
+  return (
+    <>
+      <button ref={btn} type="button" className="small row-menu-btn" aria-label={label} title={label} aria-haspopup="menu"
+              aria-expanded={open} aria-controls={open ? id : undefined}
+              onClick={() => (open ? close() : show("first"))}
+              onKeyDown={(e) => { if (e.key === "ArrowDown") { e.preventDefault(); show("first"); } else if (e.key === "ArrowUp") { e.preventDefault(); show("last"); } }}>
+        <span aria-hidden="true">⋯</span>
+      </button>
+      {open ? createPortal(
+        <ul ref={menu} id={id} role="menu" aria-label={label} className="row-menu" onKeyDown={onMenuKey}
+            style={pos.up ? { bottom: window.innerHeight - pos.top + 2, right: pos.right } : { top: pos.top + 2, right: pos.right }}>
+          {items.map((a, i) => (
+            <li key={a.label} role="none" className={a.danger && i > 0 && !items[i - 1].danger ? "divider" : undefined}>
+              <button type="button" role="menuitem" tabIndex={-1} className={`menu-item${a.danger ? " danger" : ""}`} title={a.title}
+                      aria-disabled={a.disabled || undefined}
+                      onClick={() => { if (a.disabled) return; close(); a.onClick(); }}>{a.label}</button>
+            </li>
+          ))}
+        </ul>, document.body) : null}
+    </>
+  );
+}

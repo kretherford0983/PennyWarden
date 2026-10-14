@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "../api";
-import { ErrorBox, Field, Loading, Modal, GuardedForm } from "../components";
+import { ErrorBox, Field, Loading, Modal, GuardedForm, RowMenu } from "../components";
 import { useMe } from "../App";
 
 const ROLES: Record<string, [string, string][]> = {
@@ -62,9 +62,11 @@ export default function Users() {
               {manage ? (
                 <td className="actions-cell">
                   <button className="small" onClick={() => setEdit(u)}>Edit</button>
-                  <button className="small" onClick={() => setReset(u)}>Reset password</button>
-                  {u.mfa_enabled ? <button className="small" onClick={() => setMfaReset(u)}>Reset two-step</button> : null}
-                  {u.security_questions_set ? <button className="small" onClick={() => setQReset(u)}>Reset security questions</button> : null}
+                  <RowMenu name={u.username} actions={[
+                    { label: "Reset password", onClick: () => setReset(u) },
+                    u.mfa_enabled && { label: "Reset two-step", onClick: () => setMfaReset(u) },
+                    u.security_questions_set && { label: "Reset security questions", onClick: () => setQReset(u) },
+                  ]} />
                 </td>
               ) : null}
             </tr>

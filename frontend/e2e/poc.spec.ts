@@ -4,7 +4,7 @@ import { createHmac } from "node:crypto";
 import { existsSync, mkdtempSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 
 /** Escape every regular-expression metacharacter (backslash included) so text is matched literally. */
 const reEscape = (t: string) => t.replace(/[\\^$.*+?()[\]{}|]/g, "\\$&");
@@ -41,6 +41,13 @@ async function login(page: Page, user: string, pw = PW) {
   await page.getByLabel("Password").fill(pw);
   await page.getByRole("button", { name: "Sign in" }).click();
   await passGates(page);
+}
+
+/** 2.0.0 build 11 (#215): a row action other than Edit is an item of the row's ⋯ menu ("Actions for <row name>"). */
+async function rowAction(scope: Page | Locator, rowName: string | RegExp, item: string | RegExp) {
+  const page = "page" in scope ? (scope as Locator).page() : (scope as Page);
+  await scope.getByRole("button", { name: typeof rowName === "string" ? `Actions for ${rowName}` : new RegExp(`^Actions for ${rowName.source}`) }).first().click();
+  await page.getByRole("menu").getByRole("menuitem", { name: item }).click();
 }
 
 async function logout(page: Page) {
@@ -247,7 +254,7 @@ test("AC-FY-VIS-001..007 + AC-BUD: Budget Manager creates Draft FY, budget, inst
   await b.getByRole("button", { name: "Create" }).click();
   await expect(page.getByRole("row", { name: /1000 Operations/ })).toContainText("Draft (unapproved)");
   // sub-budget + Other recalculation
-  await page.getByRole("button", { name: "+ Sub-budget" }).click();
+  await rowAction(page, /1000 Operations/, "+ Sub-budget");
   const c = page.getByRole("dialog");
   await c.getByLabel("Sub-budget code (e.g. 01)").fill("01");
   await c.getByLabel("Name").fill("Travel");
@@ -287,7 +294,7 @@ test("AC-FY-VIS-006 / AC-REG-001 / AC-SEC-011: Register User allocates to Draft 
   const payload = `<img src=x onerror="window.__xss=1">Vendor`;
   await e.getByLabel(/Organization Name/).fill(payload);
   await e.getByRole("button", { name: "Save" }).click();
-  await expect(page.getByRole("cell", { name: payload })).toBeVisible();
+  await expect(page.getByRole("cell", { name: payload, exact: true })).toBeVisible();
   await nav.getByRole("link", { name: "Register" }).click();
   await expect(page.getByLabel("Register bank account")).toContainText("Operating - ******9012");
   await page.getByRole("button", { name: "New transaction" }).click();
@@ -975,7 +982,7 @@ test("CR-018: two-step verification — setup, recovery codes, sign-in, trusted 
   await page.getByRole("link", { name: "Users", exact: true }).click();
   const row = page.getByRole("row", { name: /bm1/ });
   await expect(row).toContainText("On");
-  await row.getByRole("button", { name: "Reset two-step" }).click();
+  await rowAction(row, "bm1", "Reset two-step");
   const dlg = page.getByRole("dialog");
   await dlg.getByLabel("Reason (required)").fill("E2E test");
   await dlg.getByRole("button", { name: "Reset two-step verification" }).click();
@@ -1318,7 +1325,7 @@ test("#88: updating a non-register balance keeps a dated history", async ({ page
   await page.getByRole("link", { name: "Bank Accounts" }).click();
   const table = page.getByTestId("accounts-INVESTMENTS_OTHER");
   const row = table.getByRole("row", { name: /Index Fund/ });
-  await row.getByRole("button", { name: "Update balance" }).click();
+  await rowAction(row, "Index Fund", "Update balance");
   const dlg = page.getByRole("dialog", { name: "Update balance: Index Fund" });
   await dlg.getByLabel("Balance", { exact: true }).fill("5150.25");
   const d = new Date(Date.now() - 20 * 86400000).toISOString().slice(0, 10);
@@ -1597,7 +1604,7 @@ test("CR-036: organization and personal reminders - bell, dashboard, resolve wit
   await expect(page.getByTestId("bell-count")).toHaveText("1");
   await page.getByRole("link", { name: /Notifications/ }).click();
   await expect(page.getByTestId("reminder")).toHaveCount(1);
-  await page.getByRole("button", { name: "Resolve File the annual return" }).click();
+  await rowAction(page, "File the annual return", "Resolve…");
   dlg = page.getByRole("dialog", { name: "Resolve reminder" });
   await dlg.getByLabel("Note (optional)").fill("Filed online");
   await dlg.getByRole("button", { name: "Mark as resolved" }).click();
@@ -1605,7 +1612,7 @@ test("CR-036: organization and personal reminders - bell, dashboard, resolve wit
   await expect(page.getByTestId("bell-count")).toHaveCount(0);
   await page.getByRole("tab", { name: "Resolved" }).click();
   await expect(page.getByTestId("reminder")).toContainText("Filed online");
-  await page.getByRole("button", { name: "Reopen File the annual return" }).click();
+  await rowAction(page, "File the annual return", "Reopen");
   await expect(page.getByTestId("bell-count")).toHaveText("1");
   await logout(page);
 });
@@ -1630,7 +1637,7 @@ test("1.6.7: a recurring organization reminder creates its next occurrence when 
   const item = page.getByTestId("reminder").filter({ hasText: "Reconcile the bank statement" });
   await expect(item.getByTestId("reminder-repeat")).toHaveText("Repeats every 3 months");
   // resolving it announces and creates the next one
-  await page.getByRole("button", { name: "Resolve Reconcile the bank statement" }).click();
+  await rowAction(page, "Reconcile the bank statement", "Resolve…");
   dlg = page.getByRole("dialog", { name: "Resolve reminder" });
   await expect(dlg).toContainText("The next one will be due");
   await dlg.getByRole("button", { name: "Mark as resolved" }).click();
@@ -1641,7 +1648,7 @@ test("1.6.7: a recurring organization reminder creates its next occurrence when 
   await page.screenshot({ path: "e2e-screenshots/light-reminder-repeat-upcoming.png" });
   // deleting the upcoming occurrence ends the series
   page.once("dialog", (d) => d.accept());
-  await page.getByRole("button", { name: "Delete Reconcile the bank statement" }).click();
+  await rowAction(page, "Reconcile the bank statement", "Delete");
   await expect(item).toHaveCount(0);
   await logout(page);
 });
@@ -2375,7 +2382,14 @@ test("#127-#129: an Administrator sees the signed-in sessions, downloads diagnos
   await page.getByRole("link", { name: "System/About" }).click();
   const s = page.getByRole("region", { name: "Signed-in sessions" });
   await expect(s.getByRole("row", { name: /admin.*you, this session/ })).toBeVisible();
-  await expect(s.getByRole("row", { name: /you, this session/ }).getByRole("button", { name: "End session" })).toHaveCount(0);
+  // your own session can't be ended from here (#215: the actions are in the row's ⋯ menu)
+  const mine = s.getByRole("row", { name: /you, this session/ });
+  if (await mine.getByRole("button", { name: /^Actions for/ }).count()) {
+    await mine.getByRole("button", { name: /^Actions for/ }).click();
+    await expect(page.getByRole("menu")).toBeVisible();
+    await expect(page.getByRole("menuitem", { name: "End session" })).toHaveCount(0);
+    await page.keyboard.press("Escape");
+  }
   // #128: the diagnostics download
   const dl = page.waitForEvent("download");
   await page.getByRole("button", { name: "Download diagnostics" }).click();
@@ -2469,7 +2483,7 @@ test("#217: several cover letters and envelopes, Duplicate, the window-envelope 
   await page.getByRole("button", { name: "Back to Payments Setup" }).click();
   await expect(letters.getByRole("row")).toHaveCount(before + 1);
   // Duplicate copies a template and opens the copy with its name selected
-  await letters.getByRole("button", { name: "Duplicate Refund letter" }).click();
+  await rowAction(letters, "Refund letter", "Duplicate");
   await expect(page.getByRole("heading", { name: "Cover letter: Refund letter copy" })).toBeVisible();
   await expect(page.getByLabel("Name", { exact: true })).toBeFocused();
   await page.getByRole("button", { name: "Back to Payments Setup" }).click();
@@ -2496,6 +2510,56 @@ test("#217: several cover letters and envelopes, Duplicate, the window-envelope 
   await page.getByRole("button", { name: "Back to Payments Setup" }).click();
   await expect(envelopes.getByRole("row", { name: /#10 envelope \d+/ })).toBeVisible();
   await page.screenshot({ path: "e2e-screenshots/light-check-templates.png", fullPage: true });
+});
+
+// ---------------------------------------------------------------- 2.0.0 build 11 (#215): row actions in a menu
+test("#215: Edit stays visible; the other row actions are in a keyboard-usable ⋯ menu", async ({ page }) => {
+  await login(page, "admin");
+  await page.goto("/users");
+  const row = page.getByRole("row", { name: /bm1/ });
+  await expect(row.getByRole("button", { name: "Edit", exact: true })).toBeVisible();
+  await expect(row.getByRole("button", { name: "Reset password" })).toHaveCount(0);      // no longer on the row
+  const btn = row.getByRole("button", { name: "Actions for bm1" });
+  await expect(btn).toHaveAttribute("aria-haspopup", "menu");
+  await expect(btn).toHaveAttribute("title", "Actions for bm1");
+  await expect(btn).toHaveAttribute("aria-expanded", "false");
+  expect(await btn.evaluate((b) => b.tagName)).toBe("BUTTON");
+  // keyboard: Enter opens on the first item, arrows move, Escape closes and returns the focus to the button
+  await btn.focus();
+  await page.keyboard.press("Enter");
+  const menu = page.getByRole("menu", { name: "Actions for bm1" });
+  await expect(menu).toBeVisible();
+  await expect(btn).toHaveAttribute("aria-expanded", "true");
+  await expect(menu.getByRole("menuitem").first()).toBeFocused();
+  await expect(menu.getByRole("menuitem", { name: "Reset password" })).toBeFocused();
+  await page.keyboard.press("ArrowDown");
+  await expect(menu.getByRole("menuitem").nth(1)).toBeFocused();
+  await page.keyboard.press("ArrowUp");
+  await page.keyboard.press("ArrowUp");                                                   // wraps to the last item
+  await expect(menu.getByRole("menuitem").last()).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(menu).toHaveCount(0);
+  await expect(btn).toBeFocused();
+  // ArrowUp on the button opens on the last item; Space chooses it; a dialog opens
+  await page.keyboard.press("ArrowUp");
+  await expect(page.getByRole("menu").getByRole("menuitem").last()).toBeFocused();
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Space");
+  await expect(page.getByRole("menu").getByRole("menuitem", { name: "Reset password" })).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(page.getByRole("dialog")).toBeVisible();
+  await page.getByRole("dialog").getByRole("button", { name: "Close" }).first().click();
+  // clicking outside closes it
+  await btn.click();
+  await expect(page.getByRole("menu")).toBeVisible();
+  await page.getByRole("heading", { name: "Users" }).first().click();
+  await expect(page.getByRole("menu")).toHaveCount(0);
+  // every row of the users table: Edit plus the menu button
+  for (const r of await page.locator("table tbody tr").all()) {
+    await expect(r.getByRole("button", { name: "Edit", exact: true })).toHaveCount(1);
+    await expect(r.getByRole("button", { name: /^Actions for / })).toHaveCount(1);
+  }
+  await page.screenshot({ path: "e2e-screenshots/light-row-menu.png" });
 });
 
 // ---------------------------------------------------------------- 2.0.0 build 11 (#214): UI standards (docs/ui-standards.md)

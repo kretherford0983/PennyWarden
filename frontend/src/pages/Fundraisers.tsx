@@ -1,7 +1,7 @@
 // v1.6.0 CR-033: Fundraiser module - list per Fiscal Year (+ upcoming), details, create/edit (Budget Manager).
 import { lazy, Suspense, useEffect, useRef, useState, type FormEvent } from "react";
 import { api, money, todayIso } from "../api";
-import { Attachments, EntityPicker, ErrorBox, Field, GuardedForm, Loading, Modal } from "../components";
+import { Attachments, EntityPicker, ErrorBox, Field, GuardedForm, Loading, Modal, RowMenu } from "../components";
 import { positionTitle } from "./SignatureOptions";
 import { Link, useRouter } from "../router";
 import { useMe } from "../App";
@@ -183,7 +183,9 @@ export function FundraiserDetail({ id }: { id: number }) {
                   <td className={`num ${Number(b.net) < 0 ? "neg" : ""}`}>{money(b.net)}</td>
                   <td className="row-actions">{canLines ? <>
                     <button className="small" aria-label={`Edit bucket ${b.name}`} onClick={() => setBucketEdit(b)}>Edit</button>
-                    <button className="small danger" aria-label={`Delete bucket ${b.name}`} onClick={() => window.confirm(`Delete the bucket “${b.name}”? Its lines become unassigned.`) && act(async () => setF(await api.delete(`/api/fundraisers/${id}/buckets/${b.id}`)))}>Delete</button>
+                    <RowMenu name={`bucket ${b.name}`} actions={[
+                      { label: "Delete", danger: true, onClick: () => window.confirm(`Delete the bucket “${b.name}”? Its lines become unassigned.`) && act(async () => setF(await api.delete(`/api/fundraisers/${id}/buckets/${b.id}`))) },
+                    ]} />
                   </> : null}</td>
                 </tr>
               ))}

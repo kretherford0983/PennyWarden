@@ -2,7 +2,7 @@
  * server installs) and the backup age warning. The server validates everything; this is convenience only. */
 import { useEffect, useState } from "react";
 import { api } from "../api";
-import { ErrorBox, Field, Modal, useConfirmable } from "../components";
+import { ErrorBox, Field, Modal, RowMenu, useConfirmable } from "../components";
 
 export function OrganizationPanel({ name, onRenamed }: { name: string; onRenamed: (n: string) => void }) {
   const [v, setV] = useState(name);
@@ -167,9 +167,11 @@ export function SessionsPanel() {
                   <td>{when(s.signed_in_at)}</td><td>{when(s.last_activity_at)}</td><td>{s.client_ip || "—"}</td>
                   {d.can_end ? (
                     <td className="actions-cell">
-                      {!s.current ? <button className="small" onClick={() => act(() => api.post(`/api/system/sessions/${s.ref}/end`, {}), () => `Session of ${s.username} ended.`)}>End session</button> : null}{" "}
-                      {d.sessions.filter((x: any) => x.user_id === s.user_id && !x.current).length > 1 ?
-                        <button className="small" onClick={() => act(() => api.post("/api/system/sessions/end-user", { user_id: s.user_id }), (n) => `${n} session(s) of ${s.username} ended.`)}>End all of {s.username}</button> : null}
+                      <RowMenu name={`the session of ${s.username}${s.current ? " (you)" : ""} signed in ${when(s.signed_in_at)}`} actions={[
+                        !s.current && { label: "End session", onClick: () => act(() => api.post(`/api/system/sessions/${s.ref}/end`, {}), () => `Session of ${s.username} ended.`), danger: true },
+                        d.sessions.filter((x: any) => x.user_id === s.user_id && !x.current).length > 1 &&
+                          { label: `End all of ${s.username}`, onClick: () => act(() => api.post("/api/system/sessions/end-user", { user_id: s.user_id }), (n) => `${n} session(s) of ${s.username} ended.`), danger: true },
+                      ]} />
                     </td>
                   ) : null}
                 </tr>
