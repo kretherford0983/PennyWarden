@@ -1,14 +1,16 @@
-/** 2.0.0 (#125): reinitialize (keeping users) - System/About → Advanced, and the banner after it. */
+/** 2.0.0 (#125): reinitialize (keeping users) - System/About → Advanced tab → Reinitialize, and the banner after it. */
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "../api";
 import { ErrorBox, Field, GuardedForm } from "../components";
 import { poll, Steps } from "./BackupRestore";
 
-export function AdvancedPanel() {
-  const [open, setOpen] = useState(false);   // collapsed by default; the form exists only while it is open
+/** Collapsed by default; the form exists only while it is open. Build 13: titled "Reinitialize" (it sits on the Advanced
+ * tab, so "Advanced" read twice), with no second heading inside. */
+export function ReinitializePanel() {
+  const [open, setOpen] = useState(false);
   return (
-    <details className="card advanced" data-testid="advanced" onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
-      <summary><h2 style={{ display: "inline" }}>Advanced</h2></summary>
+    <details className="card advanced" data-testid="reinitialize" onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
+      <summary><h2 style={{ display: "inline" }}>Reinitialize</h2></summary>
       {open ? <Reinitialize /> : null}
     </details>
   );
@@ -37,8 +39,7 @@ function Reinitialize() {
   if (!info) return <ErrorBox error={err} />;
   const running = job?.state === "running";
   return (
-    <section aria-labelledby="reinit-h">
-      <h3 id="reinit-h">Reinitialize (keep the users)</h3>
+    <section aria-label="Reinitialize (keep the users)">
       <div className="alert error" role="note">
         <strong>This removes all financial data:</strong> {info.removed.join(", ")}. Currently {info.counts.transactions} transactions,{" "}
         {info.counts.fiscal_years} Fiscal Years, {info.counts.entities} entities, {info.counts.bank_accounts} bank accounts and {info.counts.attachments} attachments.

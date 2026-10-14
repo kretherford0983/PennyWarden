@@ -73,7 +73,7 @@ then choose two different signers when printing; above an optional amount only t
   restore](backup-restore.md)).
 - After a restore, **Reports → Restore re-entry reports** lists what was entered or changed after the backup, so it
   can be entered again.
-- **Reinitialize** (System/About → Advanced): start again with no financial data but the same users, after a safety
+- **Reinitialize** (System/About → Advanced → Reinitialize): start again with no financial data but the same users, after a safety
   backup the server can always restore ([Backup and restore](backup-restore.md#reinitialize-keeping-the-users-since-200)).
 - **Windows server:** the [Windows server guide](install-windows-server.md) now covers everything from the download
   to HTTPS, a Windows service, backups, upgrades and troubleshooting.

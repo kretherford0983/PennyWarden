@@ -2807,7 +2807,8 @@ test("#125: an Administrator reinitializes (keeping the users); everyone sees th
   await login(page, "admin");
   await page.getByRole("link", { name: "System/About" }).click();
   await aboutTab(page, "Advanced");
-  await page.getByTestId("advanced").locator("summary").click();
+  await expect(page.getByRole("heading", { name: "Advanced", exact: true })).toHaveCount(0);   // build 13: not "Advanced" twice
+  await page.getByTestId("reinitialize").locator("summary", { hasText: "Reinitialize" }).click();
   await page.getByLabel('Type "reinitialize" to confirm').fill("reinitialize");
   await page.getByLabel("Your password").last().fill(PW);
   await page.getByRole("button", { name: "Reinitialize" }).click();
