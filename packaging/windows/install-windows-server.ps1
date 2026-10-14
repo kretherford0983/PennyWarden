@@ -208,6 +208,20 @@ function Protect-Folder([string]$Dir, [switch]$AdminsOnly) {
   if ($r.Code -ne 0) { Fail "could not set the permissions of ${Dir}: $($r.Out)" }
 }
 
+function Protect-ProgramFolder([string]$Dir) {
+  # The service runs code from here: only SYSTEM and Administrators may change it (new folders at the root of C:
+  # let every signed-in user write); Users and the service account may read and run it.
+  $grants = @("*S-1-5-18:(OI)(CI)F", "*S-1-5-32-544:(OI)(CI)F", "*S-1-5-32-545:(OI)(CI)RX", "${ServiceAccount}:(OI)(CI)RX")
+  $r = Invoke-Native "icacls.exe" (@("$Dir", "/inheritance:r", "/grant:r") + $grants)
+  if ($r.Code -ne 0) { Fail "could not set the permissions of ${Dir}: $($r.Out)" }
+  # Everything inside takes these permissions - a folder moved in from the temporary folder would otherwise keep the
+  # temporary folder's (only the installing Administrator; the service can't start python.exe).
+  Get-ChildItem -LiteralPath $Dir -Force | Where-Object { -not ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) } | ForEach-Object {
+    $r = Invoke-Native "icacls.exe" @($_.FullName, "/reset", "/T", "/C", "/Q")
+    if ($r.Code -ne 0) { Fail "could not reset the permissions of $($_.FullName): $($r.Out)" }
+  }
+}
+
 function Read-ConfigPort([string]$Cfg) {
   if (-not (Test-Path -LiteralPath $Cfg)) { return 0 }
   $inServer = $false
@@ -224,6 +238,18 @@ function Wait-Healthy([int]$P, [int]$Seconds = 120) {
     Start-Sleep -Seconds 1
   }
   return $false
+}
+
+function Show-ServiceEvents {
+  # what NSSM and the Service Control Manager wrote about the service (why it would not start)
+  try {
+    Get-WinEvent -FilterHashtable @{ LogName = "Application"; ProviderName = "nssm"; StartTime = (Get-Date).AddMinutes(-10) } -MaxEvents 8 -ErrorAction Stop |
+      ForEach-Object { Write-Host "    event (nssm): $($_.Message -replace '\s+', ' ')" }
+  } catch { }
+  try {
+    Get-WinEvent -FilterHashtable @{ LogName = "System"; ProviderName = "Service Control Manager"; StartTime = (Get-Date).AddMinutes(-10) } -MaxEvents 8 -ErrorAction Stop |
+      Where-Object { $_.Message -match "PennyWarden" } | ForEach-Object { Write-Host "    event (SCM): $($_.Message -replace '\s+', ' ')" }
+  } catch { }
 }
 
 function Show-LogTail {
@@ -383,6 +409,7 @@ try {
   $r = Invoke-Native "sc.exe" @("config", $Service, "obj=", $ServiceAccount)
   if ($r.Code -ne 0) { Fail "could not set the service account: $($r.Out)" }
   Protect-Folder $DataDir
+  Protect-ProgramFolder $InstallDir
 
   # ---- 6. HTTPS with Caddy
   if ($Domain) {
@@ -411,14 +438,15 @@ try {
 
   # ---- 7. start and check
   Say "Starting PennyWarden"
-  Start-Service -Name $Service
-  if (-not (Wait-Healthy $Port)) {
+  $started = $true
+  try { Start-Service -Name $Service } catch { $started = $false; Write-Host "    the service did not start: $($_.Exception.Message)"; Show-ServiceEvents }
+  if (-not $started -or -not (Wait-Healthy $Port)) {
     Show-LogTail
     if ($previous -and (Test-Path -LiteralPath $previous)) {
       Write-Host "PennyWarden $tag did not answer - putting back the previous version ($previous)." -ForegroundColor Yellow
       Stop-Svc $Service
       Set-Link $link $previous
-      Start-Service -Name $Service
+      try { Start-Service -Name $Service } catch { }
       if (Wait-Healthy $Port) { Fail "the upgrade to $tag failed; the previous version is running again. The data copy is in $bak." }
       Fail "the upgrade to $tag failed and the previous version did not start either. The data copy is in $bak."
     }

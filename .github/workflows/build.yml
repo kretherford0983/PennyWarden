@@ -36,6 +36,7 @@ jobs:
     timeout-minutes: 30
     outputs:
       version: ${{ steps.meta.outputs.version }}
+      artifact: ${{ steps.meta.outputs.artifact }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -45,7 +46,11 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - id: meta
         name: Version
-        run: echo "version=$(bash scripts/version.sh)" >> "$GITHUB_OUTPUT"
+        run: |
+          V="$(bash scripts/version.sh)"
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          # artifact names may not contain "/" (manual runs on feature/... branches)
+          echo "artifact=PennyWarden-$V-${GITHUB_REF_NAME//\//-}-$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
       - name: Build info shown in the app (My Account / System About)
         env:
           VERSION: ${{ steps.meta.outputs.version }}
@@ -136,13 +141,25 @@ jobs:
         # NSSM 2.24 (public domain) is attached to the release so install-windows-server.ps1 can check it against
         # SHA256SUMS.txt. nssm.cc publishes no SHA-256; this is the SHA-1 published in the Chocolatey package.
         run: |
+          # nssm.cc is often slow or down: the same file from the Internet Archive is the fallback. The SHA-1 decides,
+          # whichever source answered.
           $zip = "$env:RUNNER_TEMP/nssm-2.24.zip"
-          for ($i = 1; $i -le 5; $i++) {
-            try { Invoke-WebRequest https://nssm.cc/release/nssm-2.24.zip -OutFile $zip -UseBasicParsing; break }
-            catch { if ($i -eq 5) { throw }; Start-Sleep -Seconds (10 * $i) }
+          $sources = @("https://nssm.cc/release/nssm-2.24.zip",
+                       "https://web.archive.org/web/2023id_/https://nssm.cc/release/nssm-2.24.zip",
+                       "https://nssm.cc/release/nssm-2.24.zip")
+          $ok = $false
+          foreach ($u in $sources) {
+            for ($i = 1; $i -le 3 -and -not $ok; $i++) {
+              try {
+                Invoke-WebRequest $u -OutFile $zip -UseBasicParsing -TimeoutSec 60
+                $sha1 = (Get-FileHash $zip -Algorithm SHA1).Hash.ToLowerInvariant()
+                if ($sha1 -eq "be7b3577c6e3a280e5106a9e9db5b3775931cefc") { $ok = $true; Write-Host "nssm-2.24.zip from $u" }
+                else { Write-Host "::warning::nssm-2.24.zip from $u has SHA-1 $sha1 - ignored" }
+              } catch { Write-Host "::warning::$u : $($_.Exception.Message)"; Start-Sleep -Seconds (10 * $i) }
+            }
+            if ($ok) { break }
           }
-          $sha1 = (Get-FileHash $zip -Algorithm SHA1).Hash.ToLowerInvariant()
-          if ($sha1 -ne "be7b3577c6e3a280e5106a9e9db5b3775931cefc") { throw "nssm-2.24.zip SHA-1 $sha1 does not match" }
+          if (-not $ok) { throw "could not get nssm-2.24.zip with the expected SHA-1 from any source" }
           Expand-Archive $zip -DestinationPath "$env:RUNNER_TEMP/nssm"
           Copy-Item "$env:RUNNER_TEMP/nssm/nssm-2.24/win64/nssm.exe" dist/nssm.exe
           (Get-FileHash dist/nssm.exe).Hash
@@ -220,7 +237,7 @@ jobs:
         run: (cd release && sha256sum -- * > SHA256SUMS.txt && cat SHA256SUMS.txt)
       - uses: actions/upload-artifact@v7
         with:
-          name: PennyWarden-${{ needs.package.outputs.version }}-${{ github.ref_name }}-${{ github.run_number }}
+          name: ${{ needs.package.outputs.artifact }}
           path: release/
           # test/main packages are kept permanently on the GitHub release; the run copy only feeds the publish job.
           # Short retention keeps Actions artifact storage (1 GB on GitHub Pro) well below the limit.
@@ -238,7 +255,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/download-artifact@v8
         with:
-          name: PennyWarden-${{ needs.package.outputs.version }}-${{ github.ref_name }}-${{ github.run_number }}
+          name: ${{ needs.package.outputs.artifact }}
           path: release
       - name: Publish GitHub release
         env:
