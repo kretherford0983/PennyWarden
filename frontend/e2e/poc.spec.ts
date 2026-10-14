@@ -2424,7 +2424,9 @@ test("#134: real names - search the Users list, sort by last name, names in the 
 test("#133: readable audit log - summary, what changed, technical details", async ({ page }) => {
   await login(page, "admin");
   await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Audit Log", exact: true }).click();
-  await page.getByLabel("Action").selectOption({ label: "User created" });
+  // (the "Object type" label's text also contains "…transaction", so find the Action field by its exact label)
+  await page.locator(".filters .field").filter({ has: page.locator(".field-label", { hasText: /^Action$/ }) }).locator("select")
+    .selectOption({ label: "User created" });
   const row = page.getByRole("row", { name: /User created/ }).first();
   await row.getByRole("button", { name: "Details" }).click();
   const detail = page.locator(".audit-readable").first();
@@ -2494,6 +2496,127 @@ test("#217: several cover letters and envelopes, Duplicate, the window-envelope 
   await page.getByRole("button", { name: "Back to Payments Setup" }).click();
   await expect(envelopes.getByRole("row", { name: /#10 envelope \d+/ })).toBeVisible();
   await page.screenshot({ path: "e2e-screenshots/light-check-templates.png", fullPage: true });
+});
+
+// ---------------------------------------------------------------- 2.0.0 build 11 (#214): UI standards (docs/ui-standards.md)
+/** Measures every visible form row (.row, .filters, .page-head, .report-options with fields) on the page: per line of the
+ * row, the inputs and selects share one top and the standard height, full-size buttons match them, and small buttons
+ * and inline checkboxes are centred on them. Returns the violations as readable strings. */
+async function layoutViolations(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const out: string[] = [];
+    const H = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--control-h")) || 34;
+    const vis = (e: Element) => { const r = (e as HTMLElement).getBoundingClientRect(); return r.width > 0 && r.height > 0 && getComputedStyle(e).visibility !== "hidden"; };
+    const name = (e: Element) => (e.closest(".field")?.querySelector(".field-label, label")?.textContent || (e as HTMLElement).innerText || e.getAttribute("aria-label") || e.tagName).trim().slice(0, 40);
+    for (const row of Array.from(document.querySelectorAll(".row, .filters, .page-head, .report-options"))) {
+      if (!vis(row)) continue;
+      const kids = Array.from(row.children).flatMap((c) => (c.matches("fieldset.form-guard") ? Array.from(c.children) : [c])).filter(vis);
+      const fields = kids.filter((k) => k.matches(".field"));
+      if (!fields.length) continue;
+      const ctrls = fields.map((f) => f.querySelector("input:not([type=checkbox]):not([type=radio]):not([type=file]), select"))
+        .filter((c): c is HTMLElement => !!c && vis(c));
+      const where = `${(row.closest("section, .modal, form, main")?.querySelector("h1, h2, h3")?.textContent || "").trim().slice(0, 40)} / ${ctrls.map(name).join(", ")}`;
+      // lines of a wrapped row: controls whose tops are within 6px
+      const lines: HTMLElement[][] = [];
+      for (const c of ctrls) {
+        const t = c.getBoundingClientRect().top;
+        const line = lines.find((l) => Math.abs(l[0].getBoundingClientRect().top - t) < 6);
+        if (line) line.push(c); else lines.push([c]);
+      }
+      for (const line of lines) {
+        const r0 = line[0].getBoundingClientRect();
+        for (const c of line) {
+          const r = c.getBoundingClientRect();
+          if (Math.abs(r.top - r0.top) > 1) out.push(`${where}: "${name(c)}" is ${Math.round(r.top - r0.top)}px off the line`);
+          if (Math.abs(r.height - H) > 1) out.push(`${where}: "${name(c)}" is ${Math.round(r.height)}px tall, not ${H}`);
+        }
+        const mid = r0.top + r0.height / 2;
+        for (const k of kids) {
+          if (!k.matches("button, a.button, label.button, .check")) continue;
+          const r = k.getBoundingClientRect();
+          if (r.bottom < r0.top - 4 || r.top > r0.bottom + 4) continue;           // on another line of the row
+          const small = k.matches("button.small, a.button.small, label.button");
+          if (k.matches(".check") || small) {
+            if (Math.abs(r.top + r.height / 2 - mid) > 1.5) out.push(`${where}: "${name(k)}" is not centred on the inputs (${Math.round(r.top + r.height / 2 - mid)}px)`);
+          } else if (Math.abs(r.top - r0.top) > 1 || Math.abs(r.height - H) > 1) {
+            out.push(`${where}: button "${name(k)}" is not on the input line (top ${Math.round(r.top - r0.top)}px, ${Math.round(r.height)}px tall)`);
+          }
+        }
+      }
+    }
+    return out;
+  });
+}
+
+async function formCheck(page: Page, shot: string) {
+  await page.waitForTimeout(150);
+  await page.screenshot({ path: `e2e-screenshots/forms/${shot}.png`, fullPage: true });
+  expect(await layoutViolations(page), shot).toEqual([]);
+}
+
+test("#214: form rows line up - one control height, buttons and checkboxes centred, solid action bar (every form)", async ({ page }) => {
+  test.setTimeout(180_000);
+  // Budget Manager screens
+  await login(page, "bm1");
+  for (const [path, shot] of [["/fiscal-years", "fiscal-years"], ["/budgets", "budgets"], ["/bank-accounts", "bank-accounts"],
+                              ["/entities", "entities"], ["/reports", "reports"], ["/register", "register-bm"], ["/", "dashboard"]] as const) {
+    await page.goto(path);
+    await expect(page.locator("h1").first()).toBeVisible();
+    await formCheck(page, shot);
+  }
+  await page.goto("/entities");
+  await page.getByRole("button", { name: "New entity" }).click();
+  await formCheck(page, "entity-new");
+  await page.goto("/bank-accounts");
+  await page.getByRole("button", { name: /New (bank )?account/ }).first().click();
+  await formCheck(page, "bank-account-new");
+  await page.goto("/");
+  await logout(page);
+  // Register User: the register's filters and transaction form, a new payment
+  await login(page, "ru1", "Brand-New-Pass-99");
+  await page.goto("/register?account=1");
+  await expect(page.getByLabel("Register Fiscal Year filter")).toBeVisible();
+  await formCheck(page, "register");
+  await page.getByRole("button", { name: /New transaction/ }).first().click();
+  await formCheck(page, "register-new-transaction");
+  await page.goto("/payments");
+  await page.getByRole("link", { name: /New payment/ }).or(page.getByRole("button", { name: /New payment/ })).first().click();
+  await expect(page.getByLabel("Check #")).toBeVisible();
+  await formCheck(page, "payment-new");
+  await page.goto("/");
+  await logout(page);
+  // Administrator: users, audit log, Payments Setup and its editors, System/About, My account
+  await login(page, "admin");
+  for (const [path, shot] of [["/users", "users"], ["/audit-log", "audit-log"], ["/check-setup", "payments-setup"], ["/about", "about"], ["/account", "account"]] as const) {
+    await page.goto(path);
+    await expect(page.locator("h1").first()).toBeVisible();
+    await formCheck(page, shot);
+  }
+  await page.goto("/users");
+  await page.getByRole("button", { name: "New user" }).click();
+  await formCheck(page, "user-new");
+  await page.goto("/");
+  await page.goto("/check-setup");
+  for (const [region, shot] of [["Check styles", "check-style-editor"], ["Cover letters", "letter-editor"], ["Envelopes", "envelope-editor"]] as const) {
+    await page.getByRole("region", { name: region }).getByRole("button", { name: "Edit", exact: true }).first().click();
+    const back = page.getByRole("button", { name: /^Back to (Payments Setup|check styles)$/ });
+    await expect(back).toBeVisible();
+    await formCheck(page, shot);
+    // the action bar is a solid footer: whatever is under the bottom edge of the content area is the bar
+    await page.locator(".content").evaluate((c) => { c.scrollTop = c.scrollHeight / 3; });
+    await page.waitForTimeout(100);
+    const covered = await page.evaluate(() => {
+      const c = document.querySelector(".content")!.getBoundingClientRect();
+      const bar = document.querySelector(".sticky-actions")!;
+      return [c.left + 4, c.left + c.width / 2, c.right - 24].every((x) => [c.bottom - 2, c.bottom - 12].every((y) => {
+        const e = document.elementFromPoint(x, y);
+        return !!e && (e === bar || bar.contains(e));
+      }));
+    });
+    expect(covered, `${shot}: content shows through or beside the action bar`).toBe(true);
+    expect(await page.locator(".sticky-actions").evaluate((b) => getComputedStyle(b).backgroundColor)).not.toMatch(/rgba\(.*, 0\)|transparent/);
+    await back.click();
+  }
 });
 
 // Keep this test LAST: it removes the financial data the other tests use.

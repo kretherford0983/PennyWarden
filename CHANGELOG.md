@@ -198,7 +198,7 @@ Database migrations `0028` to `0030` (empty columns: the letter logo, the backup
   upgrades after copying the data folder, and puts the previous version back if the new one doesn't start;
   `-Uninstall` keeps the data. Tested on every build on a Windows Server runner (docs/install-windows-server.md).
 
-**Test build 11 — polish from testing (#217, …)**
+**Test build 11 — polish from testing (#217, #214, …)**
 - **Several cover letters and envelopes (#217).** *New cover letter* / *New #10 envelope* gave every template the same
   default name, so a second one was refused (names are unique, deactivated templates included, and templates are never
   deleted — BR-001). A new template is now numbered (*Invoice payment letter 2*) and opens with its name selected;
@@ -209,6 +209,11 @@ Database migrations `0028` to `0030` (empty columns: the letter logo, the backup
 - **Previews in Safari (#217).** The letter and envelope previews in Payments Setup were blank in Safari (an inline
   PDF). They are now pictures of the printed page, drawn by the server with PDFium (new dependency `pypdfium2`,
   BSD-3-Clause/Apache-2.0); where it can't load, the editor falls back to the PDF with an *Open preview* link.
+- **Forms line up (#214).** On every form the labels of a row line up and so do the inputs, whether or not a field has
+  help text; text boxes, dropdowns, date fields and buttons are the same height; small buttons such as *+ New
+  entity* and inline checkboxes such as *Include VOID transactions* are centred on the inputs; the Save bar of the
+  Payments Setup editors is a solid footer that nothing shows through. The rules are written down in
+  `docs/ui-standards.md` for every future screen.
 
 ## 1.10.0 — 2026-10-09
 Database migration `0024` (one table added; no existing data changes). Rolling back to 1.9.0 needs the data snapshot
