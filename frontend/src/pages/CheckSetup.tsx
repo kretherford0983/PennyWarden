@@ -2,7 +2,7 @@
  * with a live preview drawn to scale, fonts, amount styles, feed modes, the default memo, signers and their signature
  * images, the signature limit, test prints with dummy data and the calibration page. No financial data is shown here
  * (BR-003): test prints use built-in dummy data. */
-import { DocumentEditor, DocumentsSection } from "./CheckDocuments";
+import { DocFocus, DocumentEditor, DocumentsSection } from "./CheckDocuments";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "../api";
 import { ErrorBox, Field, GuardedForm, Loading, Modal } from "../components";
@@ -18,6 +18,8 @@ export default function CheckSetup() {
   const [name, setName] = useState("");
   const [copyOf, setCopyOf] = useState<any>(null);
   const [editingDoc, setEditingDoc] = useState<any>(null);     // a cover letter or envelope template
+  const [docFocus, setDocFocus] = useState<DocFocus>(undefined);   // #217: where its editor opens
+  const editDoc = (d: any, focus?: DocFocus) => { setEditingDoc(d); setDocFocus(focus); };
   const load = () => api.get("/api/checks/setup").then((x) => { setS(x); setPreset((p) => p || x.presets[0]?.key || ""); }, setErr);
   useEffect(() => { load(); }, []);
   useCheckFonts(s?.fonts);
@@ -33,7 +35,8 @@ export default function CheckSetup() {
     try { await api.post(`/api/checks/styles/${st.id}/active`, { active }); load(); } catch (x) { setErr(x); }
   };
   if (editingDoc) {
-    return <DocumentEditor setup={s} doc={editingDoc} onClose={() => { setEditingDoc(null); load(); }} onSaved={(d) => { setEditingDoc(d); load(); }} />;
+    return <DocumentEditor setup={s} doc={editingDoc} focus={docFocus} onOpen={editDoc} onClose={() => { editDoc(null); load(); }}
+                           onSaved={(d) => { setEditingDoc(d); setDocFocus(undefined); load(); }} />;
   }
   if (editing) {
     return <StyleEditor setup={s} style={editing} onClose={() => { setEditing(null); load(); }} onSaved={(st) => { setEditing(st); load(); }} />;
@@ -77,7 +80,7 @@ export default function CheckSetup() {
         <p className="hint">{s.presets.find((p: any) => p.key === preset)?.description}</p>
       </section>
       <Signers setup={s} onChanged={load} />
-      <DocumentsSection setup={s} onChanged={load} onEdit={setEditingDoc} />
+      <DocumentsSection setup={s} onChanged={load} onEdit={editDoc} />
       {copyOf ? <CopyStyle style={copyOf} onClose={() => setCopyOf(null)} onDone={() => { setCopyOf(null); load(); }} /> : null}
     </div>
   );

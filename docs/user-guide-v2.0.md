@@ -91,3 +91,11 @@ then choose two different signers when printing; above an optional amount only t
 On a Windows server, `install-windows-server.ps1` from the release installs or upgrades PennyWarden as a service in
 one step, with HTTPS through Caddy (`-Domain`) or behind your Cloudflare Tunnel. Details:
 [Windows server guide](install-windows-server.md#the-installer-script-recommended).
+
+## Payments Setup polish (test build 11)
+- Keep **several cover letters and envelopes**: a new one is numbered (*Invoice payment letter 2*) and opens with its
+  name ready to type over, and **Duplicate** copies one with all its settings.
+- **Window envelopes** are set up on a cover letter (**New window-envelope letter**); the Envelopes section points
+  there.
+- The letter and envelope **previews** are pictures of the printed page and show in every browser, Safari included.
+  Details: [Check printing](check-printing.md#cover-letters-and-envelopes).

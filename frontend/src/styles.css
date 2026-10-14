@@ -443,6 +443,11 @@ label.button { display: inline-block; padding: 3px 10px; border-radius: 6px; bor
 .doc-preview.letter .live-preview-frame { max-width: 640px; margin-left: auto; margin-right: auto; }
 .doc-preview.envelope .live-preview-frame { max-width: 900px; }
 .collapsible.pinned .live-preview-frame { height: 34vh; aspect-ratio: auto !important; margin: 4px auto; }
+/* build 11 (#217): the preview is a picture of the printed page (Safari shows inline PDFs blank) */
+.live-preview-image { display: block; width: 100%; height: auto; border: 1px solid var(--border); border-radius: 6px; background: #dcdee2; margin: 8px 0; }
+.doc-preview.letter .live-preview-image { max-width: 640px; margin-left: auto; margin-right: auto; }
+.doc-preview.envelope .live-preview-image { max-width: 900px; }
+.collapsible.pinned .live-preview-image { width: auto; max-width: 100%; height: 34vh; object-fit: contain; margin: 4px auto; }
 .form-row { align-items: flex-start; }
 /* inputs line up whether or not a field has help text below it; checkboxes sit on the input line */
 .form-row > .check { margin-top: 19px; min-height: 34px; }

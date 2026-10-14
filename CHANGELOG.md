@@ -198,6 +198,18 @@ Database migrations `0028` to `0030` (empty columns: the letter logo, the backup
   upgrades after copying the data folder, and puts the previous version back if the new one doesn't start;
   `-Uninstall` keeps the data. Tested on every build on a Windows Server runner (docs/install-windows-server.md).
 
+**Test build 11 — polish from testing (#217, …)**
+- **Several cover letters and envelopes (#217).** *New cover letter* / *New #10 envelope* gave every template the same
+  default name, so a second one was refused (names are unique, deactivated templates included, and templates are never
+  deleted — BR-001). A new template is now numbered (*Invoice payment letter 2*) and opens with its name selected;
+  **Duplicate** copies a template with all its settings and logo.
+- **Window envelopes are easier to find (#217).** **New window-envelope letter** starts a cover letter set up for a
+  #10 double-window envelope, and the Envelopes section and the envelope editor point to the letter's *Window
+  envelope* settings.
+- **Previews in Safari (#217).** The letter and envelope previews in Payments Setup were blank in Safari (an inline
+  PDF). They are now pictures of the printed page, drawn by the server with PDFium (new dependency `pypdfium2`,
+  BSD-3-Clause/Apache-2.0); where it can't load, the editor falls back to the PDF with an *Open preview* link.
+
 ## 1.10.0 — 2026-10-09
 Database migration `0024` (one table added; no existing data changes). Rolling back to 1.9.0 needs the data snapshot
 the installer takes before the upgrade (docs/upgrade.md).

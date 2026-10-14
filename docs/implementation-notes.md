@@ -279,6 +279,25 @@ puts the previous junction target back; keeps one previous version. `build.yml`:
 Windows job downloads `nssm-2.24.zip` (SHA-1 check), attaches `nssm.exe` and runs
 `packaging/windows/test_server_installer.ps1` (install, upgrade, uninstall under Windows PowerShell 5.1).
 
+**2.0.0 test build 11 — Payments Setup templates (#217).** No migration. `service.create_document(kind, name, preset)`:
+without a name the template gets `free_document_name(kind, base)` — the first of `base`, `base 2`, … unused by any
+template of the kind, deactivated ones included (they are never deleted, BR-001); a typed name must still be unique
+(409 `DUPLICATE_NAME`). Preset `WINDOW` (letters only) = default letter config with `window = LETTER`, name *Window
+envelope letter*. `duplicate_document` (`POST /api/checks/documents/{id}/duplicate`, `checks.setup`) copies the config
+and logo into a new active template named `<name> copy[ N]` (the original name cut to 71 characters so the suffix
+fits 80), default only if its kind has no active default, within `MAX_DOCUMENTS`; audited as
+`CHECK_DOCUMENT_CREATED` with `duplicated_from` and `logo_sha256`. Previews: `services/checkprint/raster.py` renders
+the sample PDF with PDFium (`pypdfium2`, imported lazily under a lock; up to 3 pages stacked, longer side 1600 px) and
+`POST /api/checks/documents/{id}/preview-image` returns the PNG (`no-store`, `X-Page-Count`), or 501
+`PREVIEW_UNAVAILABLE` when PDFium can't load (the macOS wheel needs macOS 13+); the PDF endpoint `/preview` stays as
+the fallback. Frontend `LivePreview` (`checkShared.tsx`) shows the PNG in an `<img>` (Safari renders blob PDFs in an
+inline frame blank), and on `PREVIEW_UNAVAILABLE` the PDF frame plus an *Open preview* link. `CheckDocuments.tsx`:
+*Duplicate*, *New window-envelope letter*, the window-envelope pointer in the Envelopes section and the envelope
+editor (`onOpen(letter, "window")` opens the letter at its Window envelope section), name field focused and selected
+for new/duplicated templates. Packaging: the PyInstaller specs collect `pypdfium2_raw`'s library and data;
+`scripts/third_party_notices.py` now includes every file in a PEP 639 `licenses/` folder (PDFium's dependency
+licenses). Tests: `tests/test_v200_build11.py`, E2E "#217".
+
 **1.10.0 Update notification (issue #58; channel decided 2026-10-09).** Migration `0024`: `update_check` (one row).
 `services/updates.py`: `channel(settings)` - setting `update_channel` (`auto` → from `build_info.json`: `main` →
 stable, `test` → test, anything else / no build info → none); `check(app, force)` - due after 24 h (6 h after an error),

@@ -83,7 +83,10 @@ def python_components() -> list[dict]:
         lic = meta.get("License-Expression") or _classifier_license(meta) or (meta.get("License") or "").split("\n")[0]
         texts = []
         for f in dist.files or []:
-            if LICENSE_NAMES.search(str(f)) and ".dist-info/" in str(f) or str(f).endswith("bitstream-vera-license.txt"):
+            # 2.0.0 build 11: also every file in a PEP 639 licenses/ folder (pypdfium2 ships PDFium's dependency licenses
+            # there under their own names, e.g. BUILD_LICENSES/freetype.txt)
+            if (LICENSE_NAMES.search(str(f)) or ".dist-info/licenses/" in str(f)) and ".dist-info/" in str(f) \
+                    or str(f).endswith("bitstream-vera-license.txt"):
                 p = Path(dist.locate_file(f))
                 if p.is_file():
                     texts.append((str(f).split("/")[-1], p.read_text(errors="replace").strip()))

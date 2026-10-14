@@ -2206,7 +2206,7 @@ test("#165-#166: Administrator sets up a cover letter and an envelope; a Registe
   await expect(page.getByRole("heading", { name: "Check styles" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Signers and signatures" })).toHaveCount(0);
   // #186: a live preview with sample data, and collapsible sections
-  await expect(page.getByTitle("Cover letter preview")).toBeVisible();
+  await expect(page.getByRole("img", { name: "Cover letter preview" })).toBeVisible();
   await page.getByRole("button", { name: "Signed by" }).click();
   await expect(page.getByLabel("Name when there is no signer")).toBeHidden();
   await page.getByRole("button", { name: "Signed by" }).click();
@@ -2232,7 +2232,7 @@ test("#165-#166: Administrator sets up a cover letter and an envelope; a Registe
   await expect(page.getByRole("heading", { name: "Cover letters" })).toHaveCount(0);
   // the return address starts as the default letter's letterhead
   await expect(page.getByLabel("Return address line 2", { exact: true })).toHaveValue("100 Example Street, Sampletown");
-  await expect(page.getByTitle("Envelope preview")).toBeVisible();
+  await expect(page.getByRole("img", { name: "Envelope preview" })).toBeVisible();
   await page.getByRole("button", { name: "Back to Payments Setup" }).click();
   const letters = page.getByRole("region", { name: "Cover letters" });
   const envelopes = page.getByRole("region", { name: "Envelopes" });
@@ -2441,6 +2441,59 @@ test("#131: the security overview lists what needs attention", async ({ page }) 
   const ov = page.getByRole("region", { name: "Security overview" });
   await expect(ov.getByTestId("secov-two_step")).toContainText("Needs attention");
   await expect(ov.getByTestId("secov-admins")).toContainText("Info");
+});
+
+// ---------------------------------------------------------------- 2.0.0 build 11 (#217): several templates, Duplicate, window envelopes
+test("#217: several cover letters and envelopes, Duplicate, the window-envelope pointer and picture previews", async ({ page }) => {
+  await login(page, "admin");
+  await page.getByRole("link", { name: "Payments Setup" }).click();
+  const letters = page.getByRole("region", { name: "Cover letters" });
+  const envelopes = page.getByRole("region", { name: "Envelopes" });
+  await expect(letters.getByRole("row", { name: /Invoice payment letter/ }).first()).toBeVisible();   // the list has loaded
+  const before = await letters.getByRole("row").count();
+  // a second cover letter gets a free name, selected so it can be typed over at once
+  await letters.getByRole("button", { name: "New cover letter" }).click();
+  await expect(page.getByRole("heading", { name: /^Cover letter: Invoice payment letter \d+$/ })).toBeVisible();
+  const nameBox = page.getByLabel("Name", { exact: true });
+  await expect(nameBox).toBeFocused();
+  await page.keyboard.type("Refund letter");
+  await expect(nameBox).toHaveValue("Refund letter");
+  // the preview is a picture of the printed page (Safari shows inline PDFs blank)
+  const pic = page.getByRole("img", { name: "Cover letter preview" });
+  await expect(pic).toBeVisible();
+  await expect.poll(() => pic.evaluate((i: HTMLImageElement) => i.complete && i.naturalWidth > 0 && i.naturalHeight > i.naturalWidth)).toBe(true);
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Saved." })).toBeVisible();
+  await page.getByRole("button", { name: "Back to Payments Setup" }).click();
+  await expect(letters.getByRole("row")).toHaveCount(before + 1);
+  // Duplicate copies a template and opens the copy with its name selected
+  await letters.getByRole("button", { name: "Duplicate Refund letter" }).click();
+  await expect(page.getByRole("heading", { name: "Cover letter: Refund letter copy" })).toBeVisible();
+  await expect(page.getByLabel("Name", { exact: true })).toBeFocused();
+  await page.getByRole("button", { name: "Back to Payments Setup" }).click();
+  await expect(letters.getByRole("row", { name: /Refund letter copy/ })).toBeVisible();
+  // a window-envelope letter from the preset
+  await letters.getByRole("button", { name: "New window-envelope letter" }).click();
+  await expect(page.getByRole("heading", { name: "Cover letter: Window envelope letter" })).toBeVisible();
+  await expect(page.getByLabel("Address for a window envelope")).toHaveValue("LETTER");
+  await page.getByRole("button", { name: "Back to Payments Setup" }).click();
+  // the Envelopes section points to the cover letter's Window envelope settings
+  const pointer = envelopes.getByTestId("window-pointer");
+  await expect(pointer).toContainText("Using #10 double-window envelopes?");
+  await pointer.getByRole("button", { name: /Open the window envelope settings of/ }).click();
+  await expect(page.getByRole("heading", { name: "Cover letter: Window envelope letter" })).toBeVisible();
+  await expect(page.getByLabel("Address for a window envelope")).toBeFocused();
+  await page.getByRole("button", { name: "Back to Payments Setup" }).click();
+  // a second envelope, its picture preview, and the same pointer inside the envelope editor
+  await envelopes.getByRole("button", { name: "New #10 envelope" }).click();
+  await expect(page.getByRole("heading", { name: /^Envelope: #10 envelope \d+$/ })).toBeVisible();
+  const env = page.getByRole("img", { name: "Envelope preview" });
+  await expect.poll(() => env.evaluate((i: HTMLImageElement) => i.complete && i.naturalWidth > 2 * i.naturalHeight)).toBe(true);
+  await page.getByTestId("window-pointer").getByRole("button", { name: /Open the window envelope settings of/ }).click();
+  await expect(page.getByLabel("Address for a window envelope")).toBeFocused();
+  await page.getByRole("button", { name: "Back to Payments Setup" }).click();
+  await expect(envelopes.getByRole("row", { name: /#10 envelope \d+/ })).toBeVisible();
+  await page.screenshot({ path: "e2e-screenshots/light-check-templates.png", fullPage: true });
 });
 
 // Keep this test LAST: it removes the financial data the other tests use.

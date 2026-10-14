@@ -200,12 +200,22 @@ are shown but locked — to change them, edit the transaction in the register �
 ## Cover letters and envelopes
 
 ### Setting them up (Administrators)
-Payments Setup has a **Cover letters** and an **Envelopes** section. **New cover letter** and **New #10 envelope**
-create a template and open its editor on a page of its own. The first template of each kind becomes the **default**; **Make default** and
-**Deactivate** change that. A **preview** at the top of the editor shows the letter or envelope with a sample payee
-and invoices as you type (tick **Keep at the top** to keep it in view while you scroll); each section can be
-collapsed. **Test print (sample data)** prints it — an envelope test print is laid out on the page the way the printer
-is fed.
+Payments Setup has a **Cover letters** and an **Envelopes** section. Keep as many of each as you need — for example
+one letter for invoices, one for a refund and one for a donation; the letter and envelope are chosen for each payment
+when printing (only active ones are offered). **New cover letter** and **New #10 envelope** create a template and open
+its editor on a page of its own, with the name selected so you can type the real one at once (a new template is
+numbered — *Invoice payment letter 2* — until you rename it; names are unique, deactivated templates included).
+**Duplicate** copies a template with all its settings, the letter's logo included, as *… copy*. The first template of
+each kind becomes the **default**; **Make default** and **Deactivate** change that. Templates are never deleted —
+deactivate one you no longer use (BR-001). A **preview** at the top of the editor shows the letter or envelope with a
+sample payee and invoices as you type (tick **Keep at the top** to keep it in view while you scroll); it is a picture of
+the page exactly as it prints, so it shows in every browser, Safari included. Each section can be collapsed. **Test
+print (sample data)** prints it — an envelope test print is laid out on the page the way the printer is fed.
+
+> **Window envelopes are set up on the cover letter.** A #10 double-window envelope needs no envelope printing: the
+> letter carries the return and payee addresses, which show through the windows. Use **New window-envelope letter**
+> (or the *Window envelope* section of any cover letter, below); the Envelopes section and the envelope editor link
+> there.
 
 A **cover letter** has:
 
