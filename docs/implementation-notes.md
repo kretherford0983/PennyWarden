@@ -316,6 +316,17 @@ it covers the content area's padding (content used to show in the 16 px under an
 "#214" (`layoutViolations`) measures every visible form row on 20 screens and forms and checks that the area under
 the editors' action bar is the bar; screenshots in `e2e-screenshots/forms/`. Reference: `docs/ui-standards.md`.
 
+**2.0.0 test build 11 — row actions menu (#215; icon ⋯ decided by Kyle 2026-10-13).** `RowMenu` (`components.tsx`):
+a `<button class="small row-menu-btn">` (⋯, `aria-label`/`title` "Actions for <name>", `aria-haspopup="menu"`,
+`aria-expanded`, `aria-controls` while open) and a `role="menu"` list portalled to `<body>` with `position: fixed` at the
+button (above it near the bottom of the window) so a scrolling `.table-wrap` can't clip it; items are
+`role="menuitem"` buttons with `tabIndex=-1` and roving focus. Escape stops propagation so a surrounding dialog stays
+open. Falsy actions are dropped and `danger` ones sorted last behind a divider. Applied to Users, Budgets
+(`BudgetTable`), Bank Accounts, Entities, Payments Setup (check styles, signers — the image upload is a hidden file input
+clicked from the menu — letters, envelopes), fundraiser buckets, reminders (`ReminderItem`: Edit visible; Resolve…,
+Reopen, Delete in the menu) and System/About sessions. E2E: `rowAction()` helper; test "#215" (keyboard, focus return,
+outside click, every Users row).
+
 **1.10.0 Update notification (issue #58; channel decided 2026-10-09).** Migration `0024`: `update_check` (one row).
 `services/updates.py`: `channel(settings)` - setting `update_channel` (`auto` → from `build_info.json`: `main` →
 stable, `test` → test, anything else / no build info → none); `check(app, force)` - due after 24 h (6 h after an error),

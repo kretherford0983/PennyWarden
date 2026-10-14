@@ -2,7 +2,7 @@
  * Text sections use the pattern syntax with autocomplete; test prints use sample data only (BR-003). */
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
-import { ErrorBox, Field } from "../components";
+import { ErrorBox, Field, RowMenu } from "../components";
 import { LivePreview, PatternInput, PdfViewer, Section, usePdf, viewState } from "./checkShared";
 
 const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
@@ -44,10 +44,13 @@ export function DocumentsSection({ setup, onChanged, onEdit }: { setup: any; onC
                   <td>{d.is_default ? "Default" : ""}</td>
                   <td>{d.active ? "Active" : <span className="badge grey">Deactivated</span>}</td>
                   <td className="actions-cell">
-                    <button className="small" onClick={() => onEdit(d)}>Edit</button>{" "}
-                    <button className="small" onClick={() => duplicate(d)} aria-label={`Duplicate ${d.name}`}>Duplicate</button>{" "}
-                    {d.active && !d.is_default ? <button className="small" onClick={() => act(() => api.post(`/api/checks/documents/${d.id}/flags`, { is_default: true }))}>Make default</button> : null}{" "}
-                    <button className="small" onClick={() => act(() => api.post(`/api/checks/documents/${d.id}/flags`, { active: !d.active }))}>{d.active ? "Deactivate" : "Activate"}</button>
+                    <button className="small" onClick={() => onEdit(d)}>Edit</button>
+                    <RowMenu name={d.name} actions={[
+                      { label: "Duplicate", onClick: () => duplicate(d) },
+                      d.active && !d.is_default && { label: "Make default", onClick: () => act(() => api.post(`/api/checks/documents/${d.id}/flags`, { is_default: true })) },
+                      d.active ? { label: "Deactivate", onClick: () => act(() => api.post(`/api/checks/documents/${d.id}/flags`, { active: false })), danger: true }
+                        : { label: "Activate", onClick: () => act(() => api.post(`/api/checks/documents/${d.id}/flags`, { active: true })) },
+                    ]} />
                   </td>
                 </tr>
               ))}

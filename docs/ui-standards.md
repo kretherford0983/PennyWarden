@@ -75,7 +75,36 @@ with no fields at all (only buttons, checkboxes and text) centres everything on 
   a light shadow — page content never shows through, beside or below it while scrolling. Used by the Payments Setup
   editors (check style, cover letter, envelope).
 
-## 5. Where these rules live
+## 5. Row actions: Edit plus the ⋯ menu
+
+In a table (or list) of records, **Edit** is a visible button and **every other action** of the row is an item of the
+row's menu: a small ⋯ button at the end of the row, made with `RowMenu` (`components.tsx`).
+
+```tsx
+<td className="actions-cell">
+  <button className="small" onClick={() => setEdit(u)}>Edit</button>
+  <RowMenu name={u.username} actions={[
+    { label: "Reset password", onClick: () => setReset(u) },
+    u.mfa_enabled && { label: "Reset two-step", onClick: () => setMfaReset(u) },
+    { label: "Deactivate", onClick: …, danger: true },
+  ]} />
+</td>
+```
+
+- The menu button is a real `<button>` (never a link) with `aria-label` and tooltip **"Actions for <row name>"**,
+  `aria-haspopup="menu"` and `aria-expanded`. Give `name` something that identifies the row to a screen-reader user.
+- Keyboard: **Enter**/**Space** or **↓** opens the menu on the first item, **↑** on the last; **↑**/**↓**/**Home**/**End**
+  move; **Enter**/**Space** choose; **Escape** closes it and the focus returns to the button; **Tab** closes it.
+  A click outside closes it; when the page scrolls the menu stays with its button.
+- **Destructive actions go last** (`danger: true`; `RowMenu` sorts them to the end, after a divider, in red) and
+  keep their own confirmation.
+- Pass actions the user can't use as `false`/`null`; a row with no actions shows no menu button.
+- An upload action opens a hidden `<input type="file">` from its menu item.
+- Not row actions: controls that edit a list inside a form (↑ / ↓ / Remove on a column list, Remove on a file to
+  upload) stay as buttons.
+- In E2E tests use the `rowAction(scope, rowName, item)` helper.
+
+## 6. Where these rules live
 
 | Rule | CSS / component |
 |---|---|
@@ -84,3 +113,4 @@ with no fields at all (only buttons, checkboxes and text) centres everything on 
 | Form rows | `:is(.row, .filters, .page-head, .report-options):has(> .field)` rules |
 | Sticky action bar | `.sticky-actions` (uses the content area's `--pad-x` / `--pad-y`) |
 | Field | `Field` in `components.tsx` |
+| Row menu | `RowMenu` in `components.tsx`; `.row-menu` in `styles.css` |
