@@ -88,6 +88,8 @@ async function request<T>(method: string, url: string, body?: unknown, isForm = 
   }
   if (!res.ok) {
     const err = new ApiError(res.status, data);
+    // build 13: maintenance mode came on while this page was open - the screens hide their change actions
+    if (res.status === 503 && data?.error?.code === "MAINTENANCE") window.dispatchEvent(new CustomEvent("pw:maintenance-changed"));
     if (res.status === 401 && !url.startsWith("/api/auth/login")) {
       // v1.5.0: MFA_REQUIRED means "signed in, second step outstanding" - the app shows the two-step screen
       window.dispatchEvent(new CustomEvent("fm:unauthenticated", { detail: { code: data?.error?.code } }));

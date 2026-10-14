@@ -56,6 +56,23 @@ async function aboutTab(page: Page, name: string) {
   await expect(page.getByRole("tab", { name, exact: true })).toHaveAttribute("aria-selected", "true");
 }
 
+/** Build 13: the buttons and links that would change something, still shown on these pages (none while maintenance mode
+ * is on for a non-Administrator). Returns "path: label" for each. */
+const CHANGE_ACTION = /^(New |\+ |Edit|✎|Actions for |Transfer|Zero-dollar|Delete|Close|Make |Update balance|Copy|Reopen|Resolve|Print check|Create |Record |Mark |Void|Correct |Upload|Add |Attach|Duplicate|Archive|Cancel fundraiser|Reinstate|Lock|Unlock|Reject|Approve|Save)/;
+async function pausedActions(page: Page, paths: string[]): Promise<string[]> {
+  const out: string[] = [];
+  for (const path of paths) {
+    await page.goto(path);
+    await expect(page.locator("h1").first()).toBeVisible();
+    await page.waitForLoadState("networkidle");
+    for (const el of await page.locator("main button:visible, main a.button:visible, .content button:visible, .content a.button:visible").all()) {
+      const name = ((await el.getAttribute("aria-label")) || (await el.innerText())).trim();
+      if (CHANGE_ACTION.test(name) && !(await el.isDisabled())) out.push(`${path}: ${name}`);
+    }
+  }
+  return [...new Set(out)];
+}
+
 async function logout(page: Page) {
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
@@ -2432,6 +2449,16 @@ test("#130: maintenance mode - Administrators keep working, the others see the m
   const csrf = (await (await page.request.get("/api/auth/me")).json()).csrf_token;
   const r = await page.request.post("/api/entities", { data: { entity_type: "ORGANIZATION", organization_name: "Blocked Org", confirmations: ["DUPLICATE_ENTITY"] }, headers: { "X-CSRF-Token": csrf } });
   expect(r.status()).toBe(503);
+  // build 13: no screen offers an action that would change something (they see what a read-only role sees)
+  const shown = await pausedActions(page, ["/", "/fiscal-years", "/budgets", "/bank-accounts", "/register?account=1", "/entities",
+                                           "/fundraisers", "/notifications", "/reports"]);
+  expect(shown).toEqual([]);
+  // looking things up still works, also when it is a POST (the Financial Flow Report review)
+  await page.goto("/reports");
+  await expect(page.getByRole("heading", { name: "Reports" })).toBeVisible();
+  await logout(page);
+  await login(page, "ru1", "Brand-New-Pass-99");
+  expect(await pausedActions(page, ["/", "/register?account=1", "/payments", "/entities", "/notifications"])).toEqual([]);
   await logout(page);
   await login(page, "admin");
   await page.getByRole("link", { name: "System/About" }).click();
