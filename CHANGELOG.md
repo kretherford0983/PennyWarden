@@ -240,6 +240,17 @@ Database migrations `0028` to `0030` (empty columns: the letter logo, the backup
 **Test build 13 — polish from release-candidate testing**
 - System/About → Advanced: the collapsible section is now called **Reinitialize** (it read "Advanced" twice), and the
   repeated heading inside it is gone.
+- **`pennywarden` command on Linux servers.** The server installer now adds `/usr/local/bin/pennywarden`, so the host
+  commands (`sudo pennywarden restore …`, `reinitialize`, `reset-password`, `reset-mfa`) work as documented — before,
+  only `/opt/pennywarden/current/pennywarden` existed and `pennywarden` was "command not found".
+- The undo command shown after a reinitialize is the exact one for the installation: `sudo pennywarden restore …` on
+  a Linux server, the full `PennyWarden.cmd` path (as Administrator) on Windows, no `sudo` on a local install; the
+  web hints say `sudo` too. `pennywarden restore --list` prints the full path of each backup kept on the server and a
+  ready-to-paste command, since that folder can't be tab-completed without root.
+- **Maintenance mode:** everyone but Administrators now sees the screens without the actions that would change
+  something (as a read-only role does), instead of buttons that fail; looking things up that uses POST — the
+  Financial Flow Report, the audit log export, *Reveal* account number, the fundraiser preview — works again during
+  maintenance.
 
 ## 1.10.0 — 2026-10-09
 Database migration `0024` (one table added; no existing data changes). Rolling back to 1.9.0 needs the data snapshot

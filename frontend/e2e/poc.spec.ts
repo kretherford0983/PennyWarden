@@ -65,7 +65,8 @@ async function pausedActions(page: Page, paths: string[]): Promise<string[]> {
     await page.goto(path);
     await expect(page.locator("h1").first()).toBeVisible();
     await page.waitForLoadState("networkidle");
-    for (const el of await page.locator("main button:visible, main a.button:visible, .content button:visible, .content a.button:visible").all()) {
+    // (tabs such as "Resolved" switch views; they change nothing)
+    for (const el of await page.locator(".content :is(button, a.button):visible:not([role=tab])").all()) {
       const name = ((await el.getAttribute("aria-label")) || (await el.innerText())).trim();
       if (CHANGE_ACTION.test(name) && !(await el.isDisabled())) out.push(`${path}: ${name}`);
     }
@@ -2245,6 +2246,12 @@ test("#165-#166: Administrator sets up a cover letter and an envelope; a Registe
   await page.getByRole("button", { name: "Signed by" }).click();
   await expect(page.getByLabel("Name when there is no signer")).toBeHidden();
   await page.getByRole("button", { name: "Signed by" }).click();
+  // build 13: a new letter is a draft until saved; a logo can be added once it is saved
+  await expect(page.getByTestId("draft-note")).toBeVisible();
+  await expect(page.getByLabel("Logo image")).toHaveCount(0);
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Saved." })).toBeVisible();
+  await expect(page.getByTestId("draft-note")).toHaveCount(0);
   // #176: a logo (a tiny PNG made here: synthetic) and #177: the address for a window envelope
   const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAADAAAAAYCAIAAAAzn+mLAAAAN0lEQVR4nO3OMQHAIADAMEDINCERqfv39GRHoiDz2Wf8ybod+BIqQkWoCBWhIlSEilARKkJFqLyoawE+y3CGBgAAAABJRU5ErkJggg==", "base64");
   await page.getByLabel("Logo image").setInputFiles({ name: "logo.png", mimeType: "image/png", buffer: png });
@@ -2268,6 +2275,8 @@ test("#165-#166: Administrator sets up a cover letter and an envelope; a Registe
   // the return address starts as the default letter's letterhead
   await expect(page.getByLabel("Return address line 2", { exact: true })).toHaveValue("100 Example Street, Sampletown");
   await expect(page.getByRole("img", { name: "Envelope preview" })).toBeVisible();
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Saved." })).toBeVisible();
   await page.getByRole("button", { name: "Back to Payments Setup" }).click();
   const letters = page.getByRole("region", { name: "Cover letters" });
   const envelopes = page.getByRole("region", { name: "Envelopes" });
@@ -2532,12 +2541,28 @@ test("#217: several cover letters and envelopes, Duplicate, the window-envelope 
   await rowAction(letters, "Refund letter", "Duplicate");
   await expect(page.getByRole("heading", { name: "Cover letter: Refund letter copy" })).toBeVisible();
   await expect(page.getByLabel("Name", { exact: true })).toBeFocused();
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Saved." })).toBeVisible();
   await page.getByRole("button", { name: "Back to Payments Setup" }).click();
   await expect(letters.getByRole("row", { name: /Refund letter copy/ })).toBeVisible();
+  // build 13: a new letter left without saving leaves nothing behind
+  const kept = await letters.getByRole("row").count();
+  await letters.getByRole("button", { name: "New cover letter" }).click();
+  await expect(page.getByTestId("draft-note")).toBeVisible();
+  await page.getByRole("button", { name: "Back to Payments Setup" }).click();      // untouched: no question asked
+  await expect(letters.getByRole("row")).toHaveCount(kept);
+  await letters.getByRole("button", { name: "New cover letter" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Changed but not kept");
+  page.once("dialog", (d) => d.accept());
+  await page.getByRole("button", { name: "Back to Payments Setup" }).click();
+  await expect(letters.getByRole("row")).toHaveCount(kept);
+  await expect(letters.getByRole("row", { name: /Changed but not kept/ })).toHaveCount(0);
   // a window-envelope letter from the preset
   await letters.getByRole("button", { name: "New window-envelope letter" }).click();
   await expect(page.getByRole("heading", { name: "Cover letter: Window envelope letter" })).toBeVisible();
   await expect(page.getByLabel("Address for a window envelope")).toHaveValue("LETTER");
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Saved." })).toBeVisible();
   await page.getByRole("button", { name: "Back to Payments Setup" }).click();
   // the Envelopes section points to the cover letter's Window envelope settings
   const pointer = envelopes.getByTestId("window-pointer");
@@ -2551,6 +2576,8 @@ test("#217: several cover letters and envelopes, Duplicate, the window-envelope 
   await expect(page.getByRole("heading", { name: /^Envelope: #10 envelope \d+$/ })).toBeVisible();
   const env = page.getByRole("img", { name: "Envelope preview" });
   await expect.poll(() => env.evaluate((i: HTMLImageElement) => i.complete && i.naturalWidth > 2 * i.naturalHeight)).toBe(true);
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Saved." })).toBeVisible();
   await page.getByTestId("window-pointer").getByRole("button", { name: /Open the window envelope settings of/ }).click();
   await expect(page.getByLabel("Address for a window envelope")).toBeFocused();
   await page.getByRole("button", { name: "Back to Payments Setup" }).click();
@@ -2759,6 +2786,8 @@ async function formCheck(page: Page, shot: string) {
   await page.waitForTimeout(150);
   await page.screenshot({ path: `e2e-screenshots/forms/${shot}.png`, fullPage: true });
   expect(await layoutViolations(page), shot).toEqual([]);
+  // build 13: only the content area scrolls - the page itself never runs on past the end (a long editor did)
+  expect(await page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight), `${shot}: the page scrolls`).toBeLessThanOrEqual(1);
 }
 
 test("#214: form rows line up - one control height, buttons and checkboxes centred, solid action bar (every form)", async ({ page }) => {

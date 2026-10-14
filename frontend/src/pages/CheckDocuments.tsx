@@ -16,13 +16,14 @@ export type DocFocus = "name" | "window" | undefined;
  * template opens its editor on a page of its own (DocumentEditor, shown by Payments Setup in place of the page).
  * Build 11 (#217): new templates get a free name ("… 2"), Duplicate copies one, and the Envelopes section points to the
  * cover letter's Window envelope settings (a window envelope needs no envelope printing - the letter carries the
- * addresses). Templates are never deleted (BR-001): deactivate one instead. */
+ * addresses). Templates are never deleted (BR-001): deactivate one instead. Build 13: New and Duplicate open a DRAFT -
+ * nothing is stored until its first Save, so backing out keeps nothing. */
 export function DocumentsSection({ setup, onChanged, onEdit }: { setup: any; onChanged: () => void; onEdit: (doc: any, focus?: DocFocus) => void }) {
   const [err, setErr] = useState<unknown>(null);
   const act = async (fn: () => Promise<any>) => { setErr(null); try { await fn(); onChanged(); } catch (x) { setErr(x); } };
-  const create = (kind: "LETTER" | "ENVELOPE", preset?: "WINDOW") =>
-    act(async () => onEdit(await api.post("/api/checks/documents", preset ? { kind, preset } : { kind }), "name"));
-  const duplicate = (d: any) => act(async () => onEdit(await api.post(`/api/checks/documents/${d.id}/duplicate`, {}), "name"));
+  const draft = (q: string) => act(async () => onEdit(await api.get(`/api/checks/documents/draft?${q}`), "name"));
+  const create = (kind: "LETTER" | "ENVELOPE", preset?: "WINDOW") => draft(`kind=${kind}${preset ? `&preset=${preset}` : ""}`);
+  const duplicate = (d: any) => draft(`kind=${d.kind}&duplicate_of=${d.id}`);
   const docs = setup.documents || [];
   const letters = docs.filter((d: any) => d.kind === "LETTER");
   const windowLetter = letters.find((d: any) => d.active && d.config?.window !== "NONE")
@@ -99,24 +100,36 @@ function NameField({ e, focus }: { e: ReturnType<typeof useEditor>; focus?: DocF
   return <Field label="Name"><input ref={ref} maxLength={80} value={e.name} onChange={(ev) => e.setName(ev.target.value)} /></Field>;
 }
 
+/** Build 13: a draft (`doc.id` null: new or duplicated, not stored yet) previews and test-prints through the draft
+ * endpoints and is created by its first Save. */
 function useEditor(doc: any, onSaved: (d: any) => void) {
+  const isDraft = doc.id == null;
   const [cfg, setCfg] = useState<any>(clone(doc.config));
   const [name, setName] = useState(doc.name);
   const [err, setErr] = useState<unknown>(null);
   const [dirty, setDirty] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const [saved, setSaved] = useState(!!doc.justCreated);   // a draft's first Save reopens the editor on the stored template
   const [pdf, setPdf] = usePdf();
   const [viewing, setViewing] = useState(false);
   const change = (fn: (c: any) => void) => { const c = clone(cfg); fn(c); setCfg(c); setDirty(true); setSaved(false); };
   const save = async () => {
     setErr(null);
-    try { const d = await api.put(`/api/checks/documents/${doc.id}`, { name, config: cfg }); setDirty(false); setSaved(true); onSaved(d); } catch (x) { setErr(x); }
+    try {
+      const d = isDraft
+        ? await api.post("/api/checks/documents", { kind: doc.kind, name, config: cfg, ...(doc.duplicate_of ? { duplicate_of: doc.duplicate_of } : {}) })
+        : await api.put(`/api/checks/documents/${doc.id}`, { name, config: cfg });
+      setDirty(false); setSaved(true); onSaved(isDraft ? { ...d, justCreated: true } : d);
+    } catch (x) { setErr(x); }
   };
   const test = async () => {
     setErr(null);
-    try { setPdf(await api.postBlob(`/api/checks/documents/${doc.id}/test-print`, { config: cfg }), `${doc.kind.toLowerCase()}-test.pdf`); setViewing(true); } catch (x) { setErr(x); }
+    try {
+      const blob = isDraft ? await api.postBlob("/api/checks/documents/draft/test-print", { kind: doc.kind, config: cfg, logo_from: doc.duplicate_of ?? null })
+        : await api.postBlob(`/api/checks/documents/${doc.id}/test-print`, { config: cfg });
+      setPdf(blob, `${doc.kind.toLowerCase()}-test.pdf`); setViewing(true);
+    } catch (x) { setErr(x); }
   };
-  return { cfg, change, name, setName: (v: string) => { setName(v); setDirty(true); }, err, dirty, saved, save, test, pdf, viewing, setViewing, reset: () => { setCfg(clone(doc.config)); setName(doc.name); setDirty(false); } };
+  return { isDraft, cfg, change, name, setName: (v: string) => { setName(v); setDirty(true); }, err, dirty, saved, save, test, pdf, viewing, setViewing, reset: () => { setCfg(clone(doc.config)); setName(doc.name); setDirty(false); } };
 }
 
 function EditorFrame({ title, e, onClose, children, singleFeed }: { title: string; e: ReturnType<typeof useEditor>; onClose: () => void; children: React.ReactNode; singleFeed?: boolean }) {
@@ -124,15 +137,19 @@ function EditorFrame({ title, e, onClose, children, singleFeed }: { title: strin
     <div className="check-setup">
       <div className="row space-between">
         <h1>{title}</h1>
-        <button onClick={() => { if (!e.dirty || window.confirm("Leave without saving your changes?")) onClose(); }}>Back to Payments Setup</button>
+        <button onClick={() => {
+          if (!e.dirty || window.confirm(e.isDraft ? "This new template is not saved yet. Leave without keeping it?" : "Leave without saving your changes?")) onClose();
+        }}>Back to Payments Setup</button>
       </div>
+      {e.isDraft ? <div className="alert info" role="note" data-testid="draft-note"><b>Not saved yet.</b> Nothing is kept until you click <b>Save</b>;
+        going back without saving leaves no template behind.</div> : null}
       <ErrorBox error={e.err} />
       {children}
       <div className="actions sticky-actions">
         {e.saved ? <span className="hint" role="status">Saved.</span> : null}
         <button onClick={e.test}>Test print (sample data)</button>
         <button onClick={e.reset} disabled={!e.dirty}>Undo changes</button>
-        <button className="primary" onClick={e.save} disabled={!e.dirty}>Save</button>
+        <button className="primary" onClick={e.save} disabled={!e.dirty && !e.isDraft}>Save</button>
       </div>
       {e.pdf && e.viewing ? <PdfViewer pdf={e.pdf} title="Test print" singleFeed={singleFeed} onClose={() => e.setViewing(false)} /> : null}
     </div>
@@ -150,7 +167,9 @@ function PreviewSection({ doc, e, scope, version = "" }: { doc: any; e: ReturnTy
     <Section id="pv" scope={scope} title="Preview (drawn to scale, sample data)" className={`doc-preview ${letter ? "letter" : "envelope"} ${pin ? "pinned" : ""}`} extra={
       <label className="check"><input type="checkbox" checked={pin} onChange={(ev) => setPin(ev.target.checked)} /> Keep at the top</label>
     }>
-      <LivePreview imageUrl={`/api/checks/documents/${doc.id}/preview-image`} pdfUrl={`/api/checks/documents/${doc.id}/preview`} body={{ config: e.cfg }}
+      <LivePreview imageUrl={e.isDraft ? "/api/checks/documents/draft/preview-image" : `/api/checks/documents/${doc.id}/preview-image`}
+                   pdfUrl={e.isDraft ? "/api/checks/documents/draft/preview" : `/api/checks/documents/${doc.id}/preview`}
+                   body={e.isDraft ? { kind: doc.kind, config: e.cfg, logo_from: doc.duplicate_of ?? null } : { config: e.cfg }}
                    title={letter ? "Cover letter preview" : "Envelope preview"} aspect={aspect} deps={[e.cfg, version]} />
       <p className="hint">{letter ? "The letter as it prints, with a sample payee and two sample invoices. It updates as you type." :
         "The envelope as it prints, with a sample payee. It updates as you type; Test print shows it on the page as the printer is fed."}</p>
@@ -220,7 +239,16 @@ function LetterEditor({ setup, doc, focus, onClose, onSaved }: EditorProps) {
         <fieldset className="lines">
           <legend>Logo</legend>
           <ErrorBox error={logoErr} />
-          {logo ? (
+          {e.isDraft ? (
+            logo?.from ? (
+              <div className="row form-row">
+                <img className="logo-thumb" src={`/api/checks/documents/${logo.from}/logo?v=${logo.version}`} alt="The letter's logo" />
+                <Field label="Logo position"><select value={c.logo_position} onChange={(ev) => e.change((x) => { x.logo_position = ev.target.value; })}>
+                  <option value="LEFT">Top left</option><option value="CENTER">Top center (the letterhead lines are centered too)</option></select></Field>
+                <p className="hint">The copied letter's logo; it is copied when you save.</p>
+              </div>
+            ) : <p className="muted">No logo. Save the letter first, then add one here.</p>
+          ) : logo ? (
             <div className="row form-row">
               <img className="logo-thumb" src={`/api/checks/documents/${doc.id}/logo?v=${logo.version}`} alt="The letter's logo" />
               <Field label="Logo position"><select value={c.logo_position} onChange={(ev) => e.change((x) => { x.logo_position = ev.target.value; })}>
@@ -228,13 +256,13 @@ function LetterEditor({ setup, doc, focus, onClose, onSaved }: EditorProps) {
               <button type="button" className="small" onClick={() => logoAct(() => api.post(`/api/checks/documents/${doc.id}/logo/remove`, {}))}>Remove logo</button>
             </div>
           ) : <p className="muted">No logo.</p>}
-          <label className="button small">{logo ? "Replace logo…" : "Add a logo…"}
+          {e.isDraft ? null : <label className="button small">{logo ? "Replace logo…" : "Add a logo…"}
             <input type="file" accept="image/png,image/jpeg" hidden aria-label="Logo image" onChange={(ev) => {
               const f = ev.target.files?.[0];
               ev.target.value = "";
               if (f) logoAct(() => api.upload(`/api/checks/documents/${doc.id}/logo`, f));
             }} />
-          </label>
+          </label>}
           <p className="hint">PNG or JPEG, at most 1 MB. It prints above the letterhead lines, scaled to fit 2.5 × 1 in. Adding or removing the logo takes effect at once.</p>
         </fieldset>
         <label className="check"><input type="checkbox" checked={c.show_date} onChange={(ev) => e.change((x) => { x.show_date = ev.target.checked; })} /> Print today's date under the letterhead</label>

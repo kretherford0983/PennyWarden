@@ -147,6 +147,21 @@ WantedBy=multi-user.target
 UNIT
 
 ln -sfn "$REL" "$OPT/current"
+# 2.0.0 build 13: the host commands (sudo pennywarden restore | reinitialize | reset-password | reset-mfa ...) on the
+# PATH. A wrapper, not a symlink: it always runs the current release.
+CMD=/usr/local/bin/pennywarden
+if [ ! -e "$CMD" ] || grep -q "PennyWarden host-command wrapper" "$CMD" 2>/dev/null; then
+  install -d -m 0755 /usr/local/bin
+  cat > "$CMD.tmp" <<CMDSH
+#!/bin/sh
+# PennyWarden host-command wrapper (written by install-server.sh). Run with sudo, e.g.:
+#   sudo pennywarden restore --list
+exec $OPT/current/pennywarden "\$@"
+CMDSH
+  chmod 0755 "$CMD.tmp" && mv -f "$CMD.tmp" "$CMD"
+else
+  echo "NOTE: $CMD exists and was not written by this installer; left unchanged (use $OPT/current/pennywarden)."
+fi
 systemctl daemon-reload
 systemctl enable --now "$SVC" >/dev/null
 systemctl restart "$SVC"
@@ -171,6 +186,7 @@ done
 ls -1dt "$OPT"/releases/* | tail -n +4 | xargs -r rm -rf
 "$REL/python/bin/python3" -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:$PORT/api/system/status').read().decode())"
 echo "Installed. Service: systemctl status $SVC | logs: journalctl -u $SVC -f | data: $DATA"
+echo "Host commands: sudo pennywarden restore --list | restore FILE | reinitialize | reset-password --user NAME | reset-mfa --user NAME (add --data-dir $DATA)"
 echo "Point your tunnel/reverse proxy at http://127.0.0.1:$PORT"
 if [ "$MIGRATE" = 1 ]; then
   echo

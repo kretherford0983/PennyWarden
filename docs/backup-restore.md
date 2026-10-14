@@ -114,7 +114,13 @@ pennywarden restore --list [--data-dir DIR]
 
   Add `--use-server-key` for a backup made by this container (the key is on the data volume), or
   `--passphrase-file /backups/passphrase.txt`. Without either, add `-it` to `run` to type the passphrase.
-- `--list` shows the backups this server can recover (date, size, who made it).
+- `--list` shows the backups this server can recover (date, size, who made it) and, for those kept on the server
+  (such as the `pre-reinitialize/` safety backups), their **full path** plus a ready-to-paste restore command. Use it instead of
+  typing the path: those folders are readable only by the service account and root (they hold backups the server can
+  decrypt), so a normal shell can't list them or complete their file names with Tab, even with `sudo` in front.
+- **The `pennywarden` command (Linux server, since 2.0.0).** The installer adds `/usr/local/bin/pennywarden`, which
+  runs the current release, so `sudo pennywarden …` works from any folder. An installation made before 2.0.0 gets it
+  with the next run of the installer; until then use `sudo /opt/pennywarden/current/pennywarden …`.
 
 ## Scheduled backups (since 1.9.0)
 
@@ -172,8 +178,10 @@ Entity numbers continue from the last one, so a new entity never reuses a number
    used, which only the server's owner can use.
 2. The application pauses, makes the **safety backup** and checks it. If that fails, nothing is removed.
 3. The backup goes to `pre-reinitialize/` in the data folder — never downloadable or removable from the web, and every
-   one is kept. It is always recoverable by the server: the page shows the file and the command to undo it:
-   `pennywarden restore <data folder>/pre-reinitialize/<file>.fmbak --use-server-key`.
+   one is kept. It is always recoverable by the server: the page shows the file and the exact command to undo it for
+   this installation — on a Linux server
+   `sudo pennywarden restore "<data folder>/pre-reinitialize/<file>.fmbak" --use-server-key --data-dir "<data folder>"`,
+   on Windows the full path of `PennyWarden.cmd` in a terminal opened as Administrator.
 4. The removal happens in one database transaction (all or nothing); the attachment files are removed after it.
    Everyone else is signed out. Everyone who signs in sees a notice (who, when) until an Administrator acknowledges it.
 

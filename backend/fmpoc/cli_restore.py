@@ -44,6 +44,38 @@ def in_container() -> bool:
         os.environ.get("PENNYWARDEN_IN_CONTAINER") == "1"
 
 
+def host_command(settings) -> tuple[str, str]:
+    """2.0.0 build 13: the command that runs a host command (restore, reinitialize ...) on THIS installation, and where
+    to run it - shown to the Administrator, so it must work when pasted:
+      Linux/macOS server  "sudo pennywarden" (the installer adds /usr/local/bin/pennywarden; before that, the program's
+                          full path), from a shell on the server;
+      Windows             the full path of PennyWarden.cmd, in a terminal opened as Administrator;
+      local install       the program itself, no sudo (quit PennyWarden first);
+      container           "pennywarden" in a one-off container on the same data volume (docs/backup-restore.md)."""
+    if in_container():
+        return "pennywarden", "in a one-off container on the same data volume (see docs/backup-restore.md, Docker)"
+    if os.name == "nt":
+        exe = Path(sys.executable)          # <install>\current\python\python.exe
+        cmd = exe.parent.parent / "PennyWarden.cmd"
+        return (f'"{cmd}"' if cmd.is_file() else "PennyWarden.cmd"), "in a terminal opened as Administrator on the server"
+    found = shutil.which("pennywarden") or ("/usr/local/bin/pennywarden" if Path("/usr/local/bin/pennywarden").is_file()
+                                            else None)
+    if found:
+        prog = "pennywarden"
+    else:   # a portable install without the command: the launcher next to the bundled Python (or the frozen program)
+        exe = Path(sys.executable)
+        launcher = exe.parent.parent.parent / "pennywarden" if exe.parent.name == "bin" else exe
+        prog = f'"{launcher}"' if " " in str(launcher) else str(launcher)
+    if getattr(settings, "mode", "server") == "server":
+        return f"sudo {prog}", "in a shell on the server"
+    return prog, "on this computer, with PennyWarden quit"
+
+
+def restore_command(settings, path) -> str:
+    cmd, _where = host_command(settings)
+    return f'{cmd} restore "{path}" --use-server-key --data-dir "{settings.data_dir}"'
+
+
 def is_elevated() -> bool:
     if os.name == "nt":
         try:
@@ -322,12 +354,24 @@ def list_backups(settings) -> int:
         say("No backups made on this server can be recovered with the server key.")
         return 0
     say(f"{'Created (UTC)':<22} {'Size':>10}  {'Kind':<17} {'By':<16} File")
+    first_path = None
     for r in rows:
         size = f"{(r['size'] or 0) / 1024 / 1024:.1f} MB"
         say(f"{(r['created_at'] or '')[:19]:<22} {size:>10}  {r['kind']:<17} {(r['created_by'] or '')[:16]:<16} "
-            f"{r['filename']}" + (f"  ({r['location']})" if r.get("location") else ""))
+            f"{r['filename']}")
+        # build 13: the full path of a copy kept on this server, ready to paste (the folder is readable only with
+        # sudo, so a shell can't complete the name)
+        p = settings.data_dir / r["location"] if r.get("location") else None
+        if p is not None and p.is_file():
+            say(f"{'':<22} {'':>10}  {'':<17} {'':<16} {p}")
+            first_path = first_path or p
+        elif r.get("location"):
+            say(f"{'':<22} {'':>10}  {'':<17} {'':<16} (was {r['location']}; no longer on this server)")
     say("Each of these can be restored with --use-server-key (only the file itself: a copy elsewhere is matched by its "
         "content).")
+    if first_path is not None:
+        say("The newest kept on this server, for example:")
+        say(f"    {restore_command(settings, first_path)}")
     return 0
 
 
@@ -430,8 +474,8 @@ def reinitialize(args) -> int:
     match_ownership(settings.data_dir, ["database", "attachments", reinit.PRE_DIR, "backup-recovery", "server-key"])
     say("Reinitialized. The users are kept; everyone must sign in again.")
     say(f"Safety backup: {safety['path']}")
-    say(f"To undo: stop the service and run  pennywarden restore \"{safety['path']}\" --use-server-key"
-        + (f" --data-dir \"{settings.data_dir}\"" if args.data_dir else ""))
+    say(f"To undo, run ({host_command(settings)[1]}; it stops the service first):")
+    say(f"    {restore_command(settings, safety['path'])}")
     if stopped:
         if ask("Start the PennyWarden service again?", args.yes):
             say("Service started." if start_service() else "The service could not be started: start it yourself.")

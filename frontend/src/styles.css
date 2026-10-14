@@ -78,7 +78,9 @@ fieldset:disabled:not(.form-guard) { opacity: .6; }  /* 1.7.2 (#55): own roles s
 .nav-collapsed .sidenav .nav-label { display: none; }
 .nav-collapsed .sidenav a { justify-content: center; padding: 8px 0; }
 .nav-collapsed .nav-toggle { align-self: center; }
-.content { --pad-y: 16px; --pad-x: 20px; flex: 1; padding: var(--pad-y) var(--pad-x); min-width: 0; overflow: auto; }
+/* build 13: position: relative keeps absolutely positioned bits (screen-reader labels, hidden inputs) inside the
+   scrolling area - otherwise they stretched the whole page and it scrolled on past the end of an editor */
+.content { --pad-y: 16px; --pad-x: 20px; flex: 1; padding: var(--pad-y) var(--pad-x); min-width: 0; overflow: auto; position: relative; }
 @media (max-width: 800px) {
   .sidenav { width: 56px; }
   .sidenav .nav-label { display: none; }

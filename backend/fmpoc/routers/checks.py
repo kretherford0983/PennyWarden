@@ -474,6 +474,15 @@ class DocCreateIn(In):
     kind: Literal["LETTER", "ENVELOPE"]
     name: str | None = Field(default=None, max_length=80)
     preset: Literal["WINDOW"] | None = None          # build 11 (#217): a cover letter for a window envelope
+    config: dict | None = None                        # build 13: the editor's draft settings, saved at once
+    duplicate_of: int | None = None                   # build 13: a draft copied from this template (logo too)
+
+
+class DraftIn(In):
+    """Build 13: preview or test-print a template that is not saved yet."""
+    kind: Literal["LETTER", "ENVELOPE"]
+    config: dict
+    logo_from: int | None = None                      # a duplicated letter shows its source's logo
 
 
 class DocUpdateIn(In):
@@ -519,9 +528,55 @@ class EnvelopePrinterIn(In):
 
 @router.post("/documents", status_code=201)
 def create_document(body: DocCreateIn, db: Session = Depends(get_db), ctx: Ctx = Depends(setup_ctx)):
-    d = svc.create_document(db, ctx, body.kind, body.name, body.preset)
+    source = svc.get_document(db, ctx, body.duplicate_of) if body.duplicate_of is not None else None
+    d = svc.create_document(db, ctx, body.kind, body.name, body.preset, body.config, source)
     db.commit()
     return svc.doc_out(d)
+
+
+# build 13: a new or duplicated template is a draft in the editor until its first Save - nothing is stored before
+@router.get("/documents/draft")
+def document_draft(kind: Literal["LETTER", "ENVELOPE"], preset: Literal["WINDOW"] | None = None,
+                   duplicate_of: int | None = None, db: Session = Depends(get_db), ctx: Ctx = Depends(setup_ctx)):
+    source = svc.get_document(db, ctx, duplicate_of) if duplicate_of is not None else None
+    return svc.draft_document(db, ctx, kind, preset, source)
+
+
+def _draft_parts(db, ctx, body: DraftIn):
+    cfg = svc._doc_config_or_422(body.kind, body.config)
+    logo = None
+    if body.logo_from is not None and body.kind == "LETTER":
+        logo = svc.get_document(db, ctx, body.logo_from, "LETTER").logo_png
+    return cfg, logo
+
+
+@router.post("/documents/draft/preview-image")
+def draft_preview_image(body: DraftIn, db: Session = Depends(get_db), ctx: Ctx = Depends(setup_ctx)):
+    cfg, logo = _draft_parts(db, ctx, body)
+    if not raster.available():
+        raise AppError(501, "PREVIEW_UNAVAILABLE", "The picture preview is not available on this server.")
+    pdf = svc.sample_letter_pdf(cfg, logo) if body.kind == "LETTER" else svc.sample_envelope_pdf(cfg, preview=True)
+    png, pages = raster.pdf_to_png(pdf)
+    return Response(png, media_type="image/png",
+                    headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+                             "X-Page-Count": str(pages)})
+
+
+@router.post("/documents/draft/preview")
+def draft_preview(body: DraftIn, db: Session = Depends(get_db), ctx: Ctx = Depends(setup_ctx)):
+    cfg, logo = _draft_parts(db, ctx, body)
+    pdf = svc.sample_letter_pdf(cfg, logo) if body.kind == "LETTER" else svc.sample_envelope_pdf(cfg, preview=True)
+    return _pdf(pdf, f"{body.kind.lower()}-preview.pdf")
+
+
+@router.post("/documents/draft/test-print")
+def draft_test_print(body: DraftIn, db: Session = Depends(get_db), ctx: Ctx = Depends(setup_ctx)):
+    cfg, logo = _draft_parts(db, ctx, body)
+    pdf = svc.sample_letter_pdf(cfg, logo) if body.kind == "LETTER" else svc.sample_envelope_pdf(cfg)
+    audit.record(db, ctx, "CHECK_DOCUMENT_TEST_PRINT", "check_document", None, None,
+                 {"unsaved_settings": True, "draft": True, "kind": body.kind})
+    db.commit()
+    return _pdf(pdf, f"{body.kind.lower()}-test-print.pdf")
 
 
 @router.post("/documents/{doc_id}/duplicate", status_code=201)

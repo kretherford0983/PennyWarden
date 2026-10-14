@@ -11,6 +11,9 @@ export const REMINDERS_CHANGED = "fm:reminders-changed"; // the bell in the top 
 export function ReminderItem({ r, onResolve, onReopen, onEdit, onDelete }: {
   r: any; onResolve?: (r: any) => void; onReopen?: (r: any) => void; onEdit?: (r: any) => void; onDelete?: (r: any) => void;
 }) {
+  // build 13: the item's own flags come from the server; during maintenance mode nobody but an Administrator may act
+  const { paused } = useMe();
+  if (paused) { onResolve = onReopen = onEdit = onDelete = undefined; }
   return (
     <li className={`reminder reminder-${r.state.toLowerCase()}`} data-testid="reminder">
       <div className="reminder-main">

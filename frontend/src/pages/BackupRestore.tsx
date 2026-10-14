@@ -67,7 +67,7 @@ export function BackupPanel() {
           {/* 2.0.0 (#124) */}
           <label className="check"><input type="checkbox" checked={f.recoverable} onChange={(e) => setF({ ...f, recoverable: e.target.checked })} /> Let this server recover the passphrase</label>
           <p className="hint">If the passphrase is ever forgotten, the owner of this server can still restore this backup from the server's command line
-            (<code>pennywarden restore FILE --use-server-key</code>). It works only on this server, with this exact file: a copy taken to another
+            (<code>sudo pennywarden restore FILE --use-server-key</code>). It works only on this server, with this exact file: a copy taken to another
             computer still needs the passphrase, and restoring from this page always does. Turn it off and nobody can recover a lost passphrase.</p>
           <Field label="Your password" hint="Confirms that it is you."><input type="password" required autoComplete="current-password" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} /></Field>
           <div className="actions left"><button className="primary" type="submit">Create backup</button></div>
@@ -115,7 +115,7 @@ function ServerBackups() {
           ))}
         </tbody>
       </table>
-      <p className="hint">The server owner restores one with <code>pennywarden restore FILE --use-server-key</code> (the service is stopped first; see the
+      <p className="hint">The server owner restores one with <code>sudo pennywarden restore FILE --use-server-key</code> (the service is stopped first; see the
         backup and restore guide). <code>pennywarden restore --list</code> shows the same list on the server.</p>
     </details>
   );

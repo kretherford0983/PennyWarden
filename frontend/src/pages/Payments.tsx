@@ -14,8 +14,10 @@ import { ErrorBox, Field, Loading } from "../components";
 import { Link, useRouter } from "../router";
 import { PrintCheckDialog } from "./CheckPrint";
 import { TxnForm } from "./Register";
+import { useMe } from "../App";
 
 export default function Payments() {
+  const { can } = useMe();   // build 13: hidden while maintenance mode pauses changes
   const { search } = useRouter();
   const txnParam = Number(new URLSearchParams(search).get("txn")) || null;
   const [accounts, setAccounts] = useState<any[] | null>(null);
@@ -76,7 +78,7 @@ export default function Payments() {
               {accounts.map((a) => <option key={a.id} value={a.id}>{a.label}</option>)}
             </select>
           </Field>
-          <button className="primary" onClick={() => setForm(true)} disabled={!acct}>New payment</button>
+          {can("checks.print") ? <button className="primary" onClick={() => setForm(true)} disabled={!acct}>New payment</button> : null}
         </div>
       )}
       <section className="card" aria-labelledby="recent-h">
@@ -106,7 +108,8 @@ export default function Payments() {
 
 /** The transaction's details, read-only: on the payment screens they can't be changed (edit them in the register). */
 function LockedTxn({ t, onPrint }: { t: any; onPrint: () => void }) {
-  const printable = t.status === "ACTIVE" && t.transaction_type === "WITHDRAWAL" && !t.closed_fiscal_year_protected && Number(t.total) > 0;
+  const { can } = useMe();
+  const printable = can("checks.print") && t.status === "ACTIVE" && t.transaction_type === "WITHDRAWAL" && !t.closed_fiscal_year_protected && Number(t.total) > 0;
   return (
     <section className="card locked-txn" aria-label="Transaction details (locked)">
       <p className="hint">These details come from the register and can't be changed here. To change them,{" "}

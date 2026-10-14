@@ -46,7 +46,8 @@ function Reinitialize() {
         <div><strong>Kept:</strong> {info.kept.join(", ")}.</div>
       </div>
       <p className="hint">A safety backup is made first and checked; if that fails, nothing is removed. It is kept in the server's <code>pre-reinitialize/</code> folder
-        (it can't be downloaded here), and the server's owner can always restore it with <code>pennywarden restore … --use-server-key</code>. Everyone else
+        (it can't be downloaded here), and the server's owner can always restore it with <code>sudo pennywarden restore … --use-server-key</code> (Linux; on Windows
+        <code>PennyWarden.cmd restore …</code> as Administrator). Everyone else
         is signed out, and everyone sees a notice after signing in until an Administrator acknowledges it. It can be done once in 24 hours from here.</p>
       {info.cooldown_until ? <div className="alert warn">Reinitialized less than 24 hours ago: possible again after {new Date(info.cooldown_until).toLocaleString()}.</div> : null}
       <ErrorBox error={err} />
@@ -70,7 +71,8 @@ function Reinitialize() {
       {job?.state === "done" ? (
         <div className="alert ok" role="status" data-testid="reinit-done">
           Reinitialized. Safety backup: <b>{job.result.filename}</b> in <code>{job.result.folder}</code>.
-          <div>To undo, the server's owner stops the service and runs: <code>{job.result.restore_command}</code></div>
+          <div>To undo, the server's owner runs this {job.result.restore_where || "on the server"} (it asks to stop the service first and starts it again
+            afterwards): <code>{job.result.restore_command}</code></div>
         </div>
       ) : null}
     </section>
