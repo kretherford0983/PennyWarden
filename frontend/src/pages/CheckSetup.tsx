@@ -2,10 +2,10 @@
  * with a live preview drawn to scale, fonts, amount styles, feed modes, the default memo, signers and their signature
  * images, the signature limit, test prints with dummy data and the calibration page. No financial data is shown here
  * (BR-003): test prints use built-in dummy data. */
-import { DocumentEditor, DocumentsSection } from "./CheckDocuments";
+import { DocFocus, DocumentEditor, DocumentsSection } from "./CheckDocuments";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "../api";
-import { ErrorBox, Field, GuardedForm, Loading, Modal } from "../components";
+import { ErrorBox, Field, GuardedForm, Loading, Modal, RowMenu } from "../components";
 import { BrowserTips, CheckPreview, FIELD_LABELS, PatternInput, PdfViewer, Section, TEXT_FIELDS, useCheckFonts, usePdf, viewState, type FieldText, type StubDrawing } from "./checkShared";
 
 const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
@@ -18,6 +18,8 @@ export default function CheckSetup() {
   const [name, setName] = useState("");
   const [copyOf, setCopyOf] = useState<any>(null);
   const [editingDoc, setEditingDoc] = useState<any>(null);     // a cover letter or envelope template
+  const [docFocus, setDocFocus] = useState<DocFocus>(undefined);   // #217: where its editor opens
+  const editDoc = (d: any, focus?: DocFocus) => { setEditingDoc(d); setDocFocus(focus); };
   const load = () => api.get("/api/checks/setup").then((x) => { setS(x); setPreset((p) => p || x.presets[0]?.key || ""); }, setErr);
   useEffect(() => { load(); }, []);
   useCheckFonts(s?.fonts);
@@ -33,7 +35,8 @@ export default function CheckSetup() {
     try { await api.post(`/api/checks/styles/${st.id}/active`, { active }); load(); } catch (x) { setErr(x); }
   };
   if (editingDoc) {
-    return <DocumentEditor setup={s} doc={editingDoc} onClose={() => { setEditingDoc(null); load(); }} onSaved={(d) => { setEditingDoc(d); load(); }} />;
+    return <DocumentEditor setup={s} doc={editingDoc} focus={docFocus} onOpen={editDoc} onClose={() => { editDoc(null); load(); }}
+                           onSaved={(d) => { setEditingDoc(d); setDocFocus(undefined); load(); }} />;
   }
   if (editing) {
     return <StyleEditor setup={s} style={editing} onClose={() => { setEditing(null); load(); }} onSaved={(st) => { setEditing(st); load(); }} />;
@@ -55,10 +58,11 @@ export default function CheckSetup() {
                   <td>{st.name}</td><td>{st.checks_per_sheet}</td><td>{st.feed_modes.map((m: any) => m.label).join("; ")}</td>
                   <td>{st.active ? "Active" : <span className="badge grey">Deactivated</span>}</td>
                   <td className="actions-cell">
-                    <button className="small" onClick={() => setEditing(st)}>Edit</button>{" "}
-                    <button className="small" onClick={() => setCopyOf(st)}>Copy…</button>{" "}
-                    {st.active ? <button className="small" onClick={() => setActive(st, false)}>Deactivate</button>
-                      : <button className="small" onClick={() => setActive(st, true)}>Activate</button>}
+                    <button className="small" onClick={() => setEditing(st)}>Edit</button>
+                    <RowMenu name={st.name} actions={[
+                      { label: "Copy…", onClick: () => setCopyOf(st) },
+                      st.active ? { label: "Deactivate", onClick: () => setActive(st, false), danger: true } : { label: "Activate", onClick: () => setActive(st, true) },
+                    ]} />
                   </td>
                 </tr>
               ))}
@@ -77,7 +81,7 @@ export default function CheckSetup() {
         <p className="hint">{s.presets.find((p: any) => p.key === preset)?.description}</p>
       </section>
       <Signers setup={s} onChanged={load} />
-      <DocumentsSection setup={s} onChanged={load} onEdit={setEditingDoc} />
+      <DocumentsSection setup={s} onChanged={load} onEdit={editDoc} />
       {copyOf ? <CopyStyle style={copyOf} onClose={() => setCopyOf(null)} onDone={() => { setCopyOf(null); load(); }} /> : null}
     </div>
   );
@@ -540,13 +544,17 @@ function Signers({ setup, onChanged }: { setup: any; onChanged: () => void }) {
                 <td>{x.has_image ? <img src={`/api/checks/signers/${x.id}/preview?v=${v}-${x.image_uploaded_at}`} alt={`Sample of ${x.name}'s signature`} height={40} /> : <span className="muted">No image</span>}</td>
                 <td>{x.active ? "Active" : <span className="badge grey">Deactivated</span>}</td>
                 <td className="actions-cell">
-                  <button className="small" onClick={() => setEdit(x)}>Edit…</button>{" "}
-                  <label className="button small">Upload image<input type="file" accept="image/png" hidden onChange={(e) => {
+                  <button className="small" onClick={() => setEdit(x)}>Edit…</button>
+                  <input type="file" accept="image/png" hidden id={`signer-image-${x.id}`} aria-label={`Signature image for ${x.name}`} onChange={(e) => {
                     const f = e.target.files?.[0]; e.target.value = "";
                     if (f) act(() => api.upload(`/api/checks/signers/${x.id}/image`, f));
-                  }} /></label>{" "}
-                  {x.has_image ? <button className="small" onClick={() => window.confirm(`Remove ${x.name}'s signature image?`) && act(() => api.post(`/api/checks/signers/${x.id}/image/remove`))}>Remove image</button> : null}{" "}
-                  <button className="small" onClick={() => act(() => api.post(`/api/checks/signers/${x.id}/active`, { active: !x.active }))}>{x.active ? "Deactivate" : "Activate"}</button>
+                  }} />
+                  <RowMenu name={x.name} actions={[
+                    { label: x.has_image ? "Replace image…" : "Upload image…", onClick: () => (document.getElementById(`signer-image-${x.id}`) as HTMLInputElement | null)?.click() },
+                    x.has_image && { label: "Remove image", onClick: () => window.confirm(`Remove ${x.name}'s signature image?`) && act(() => api.post(`/api/checks/signers/${x.id}/image/remove`)), danger: true },
+                    x.active ? { label: "Deactivate", onClick: () => act(() => api.post(`/api/checks/signers/${x.id}/active`, { active: false })), danger: true }
+                      : { label: "Activate", onClick: () => act(() => api.post(`/api/checks/signers/${x.id}/active`, { active: true })) },
+                  ]} />
                 </td>
               </tr>
             ))}

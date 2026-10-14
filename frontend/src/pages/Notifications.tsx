@@ -1,7 +1,7 @@
 // v1.6.3 CR-036: reminders and notifications. Personal reminders are private; organization reminders are shared.
 import { useEffect, useState, type FormEvent } from "react";
 import { api, todayIso } from "../api";
-import { ErrorBox, Field, GuardedForm, Loading, Modal } from "../components";
+import { ErrorBox, Field, GuardedForm, Loading, Modal, RowMenu } from "../components";
 import { Link } from "../router";
 import { useMe } from "../App";
 
@@ -29,10 +29,13 @@ export function ReminderItem({ r, onResolve, onReopen, onEdit, onDelete }: {
         {r.state === "RESOLVED" ? <div className="muted">Resolved {String(r.resolved_at).slice(0, 10)} by {r.resolved_by || "?"}{r.resolution_note ? ` — ${r.resolution_note}` : ""}</div> : null}
       </div>
       <div className="row-actions">
-        {r.can_resolve && onResolve ? <button className="small primary" aria-label={`Resolve ${r.title}`} onClick={() => onResolve(r)}>Resolve</button> : null}
-        {r.can_reopen && onReopen ? <button className="small" aria-label={`Reopen ${r.title}`} onClick={() => onReopen(r)}>Reopen</button> : null}
+        {/* #215: Edit stays visible, the other actions are in the ⋯ menu */}
         {r.can_edit && onEdit ? <button className="small" aria-label={`Edit ${r.title}`} onClick={() => onEdit(r)}>Edit</button> : null}
-        {r.can_edit && onDelete ? <button className="small danger" aria-label={`Delete ${r.title}`} onClick={() => onDelete(r)}>Delete</button> : null}
+        <RowMenu name={r.title} actions={[
+          r.can_resolve && onResolve && { label: "Resolve…", onClick: () => onResolve(r) },
+          r.can_reopen && onReopen && { label: "Reopen", onClick: () => onReopen(r) },
+          r.can_edit && onDelete && { label: "Delete", onClick: () => onDelete(r), danger: true },
+        ]} />
       </div>
     </li>
   );

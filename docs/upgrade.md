@@ -213,7 +213,7 @@ running on identical data and the `NOTE:` lines were gone; a fresh install on an
 ### Cleanup after the rename to PennyWarden
 
 Do this on each migrated server **once you are sure you will not go back** — for example after a few days of
-normal use and one fresh backup (System/About → Backup / Restore) stored off the server. Until then the leftovers
+normal use and one fresh backup (System/About → Backups → Backup / Restore) stored off the server. Until then the leftovers
 only cost disk space. The installer reminds you with a `NOTE:` line as long as they exist.
 
 ```bash
@@ -322,7 +322,7 @@ identical data and a further upgrade took its snapshot in `/var/backups/fundward
 ### Cleanup after the rename
 
 Do this on each migrated server (dev, test, later any other) **once you are sure you will not go back** — for
-example after a few days of normal use and one fresh backup (System/About → Backup / Restore) stored off the server.
+example after a few days of normal use and one fresh backup (System/About → Backups → Backup / Restore) stored off the server.
 Until then the leftovers only cost disk space. The installer reminds you with a `NOTE:` line as long as they exist.
 
 ```bash

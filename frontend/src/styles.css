@@ -5,6 +5,8 @@
   --green-fg: #1d6b2c; --yellow-fg: #7a5a00; --red-fg: #9b1c14;
   --warn-bg: #fff4d6; --warn-border: #e0b84c; --err-bg: #fde8e6; --err-border: #e0827a; --ok-bg: #e5f5e8; --info-bg: #e7f0fb;
   --focus: #2b7de9;
+  /* build 11 (#214, docs/ui-standards.md): one control height; a field label is one 17px line + the 3px field gap */
+  --control-h: 34px; --control-h-sm: 26px; --label-h: 20px;
   color-scheme: light;
 }
 [data-theme="dark"] {
@@ -37,7 +39,7 @@ textarea { min-height: 60px; width: 100%; }
 .field { display: flex; flex-direction: column; gap: 3px; margin-bottom: 10px; min-width: 150px; }
 .field input:not([type=checkbox]):not([type=radio]), .field select { width: 100%; }
 .field-inner { display: flex; flex-direction: column; gap: 3px; }
-.field-label { font-weight: 600; font-size: 12px; color: var(--muted); }
+.field-label, .field.pattern-input > label { display: block; font-weight: 600; font-size: 12px; line-height: 17px; color: var(--muted); }
 .hint { font-size: 12px; color: var(--muted); }
 .muted { color: var(--muted); }
 .neg { color: var(--danger); font-weight: 600; }
@@ -76,20 +78,20 @@ fieldset:disabled:not(.form-guard) { opacity: .6; }  /* 1.7.2 (#55): own roles s
 .nav-collapsed .sidenav .nav-label { display: none; }
 .nav-collapsed .sidenav a { justify-content: center; padding: 8px 0; }
 .nav-collapsed .nav-toggle { align-self: center; }
-.content { flex: 1; padding: 16px 20px; min-width: 0; overflow: auto; }
+.content { --pad-y: 16px; --pad-x: 20px; flex: 1; padding: var(--pad-y) var(--pad-x); min-width: 0; overflow: auto; }
 @media (max-width: 800px) {
   .sidenav { width: 56px; }
   .sidenav .nav-label { display: none; }
   .sidenav a { justify-content: center; padding: 8px 0; }
   .nav-toggle { display: none; }
-  .content { padding: 12px; }
+  .content { --pad-y: 12px; --pad-x: 12px; }
 }
 .page-head { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; margin-bottom: 8px; }
 .page-head h1 { margin-right: auto; }
 .page-head .field { margin-bottom: 0; }
 .filters { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; margin: 8px 0; }
 .filters .field { min-width: 130px; }
-.filters .filters-clear { margin-bottom: 10px; } /* lines up with the inputs (a field has a 10px bottom margin) */
+/* .filters-clear: placed by the #214 form-row rules */
 .table-wrap { overflow-x: auto; }
 .table { width: 100%; border-collapse: collapse; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; }
 .table th, .table td { padding: 6px 8px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
@@ -414,7 +416,11 @@ fieldset.keep { border: 1px solid var(--border, #d0d7de); border-radius: 6px; pa
 .num-in .unit { font-size: 11px; color: var(--muted); }
 .field-table td { white-space: nowrap; }
 .field-table select { max-width: 150px; }
-.sticky-actions { position: sticky; bottom: 0; background: var(--bg, var(--surface)); padding: 10px 0; border-top: 1px solid var(--border); z-index: 5; }
+/* #214: a sticky action bar is a solid footer across the whole content area, down to the window's edge - nothing
+   scrolls visibly behind, beside or below it (it covers the content area's padding) */
+.sticky-actions { position: sticky; bottom: calc(-1 * var(--pad-y, 16px)); z-index: 7; background: var(--bg);
+  margin: 12px calc(-1 * var(--pad-x, 20px)) calc(-1 * var(--pad-y, 16px)); padding: 10px var(--pad-x, 20px) calc(10px + var(--pad-y, 16px));
+  border-top: 1px solid var(--border); box-shadow: 0 -4px 10px rgba(0, 0, 0, .08); }
 .alert.success { background: var(--green-bg); color: var(--green-fg); }
 .browser-tips ul { margin: 4px 0 4px 18px; padding: 0; }
 .print-check .card.subtle { background: var(--surface-2); }
@@ -443,10 +449,12 @@ label.button { display: inline-block; padding: 3px 10px; border-radius: 6px; bor
 .doc-preview.letter .live-preview-frame { max-width: 640px; margin-left: auto; margin-right: auto; }
 .doc-preview.envelope .live-preview-frame { max-width: 900px; }
 .collapsible.pinned .live-preview-frame { height: 34vh; aspect-ratio: auto !important; margin: 4px auto; }
-.form-row { align-items: flex-start; }
-/* inputs line up whether or not a field has help text below it; checkboxes sit on the input line */
-.form-row > .check { margin-top: 19px; min-height: 34px; }
-.form-row > button { margin-top: 19px; }
+/* build 11 (#217): the preview is a picture of the printed page (Safari shows inline PDFs blank) */
+.live-preview-image { display: block; width: 100%; height: auto; border: 1px solid var(--border); border-radius: 6px; background: #dcdee2; margin: 8px 0; }
+.doc-preview.letter .live-preview-image { max-width: 640px; margin-left: auto; margin-right: auto; }
+.doc-preview.envelope .live-preview-image { max-width: 900px; }
+.collapsible.pinned .live-preview-image { width: auto; max-width: 100%; height: 34vh; object-fit: contain; margin: 4px auto; }
+.form-row { align-items: flex-start; }   /* the form-row rules are now general: see "#214 form rows" at the end */
 
 /* 2.0.0 (#165, #166): letters, envelopes, handwritten checks */
 .segmented { display: flex; gap: 1rem; margin-bottom: 0.75rem; padding: 0.4rem 0.6rem; border: 1px solid var(--border, #ccc); border-radius: 6px; }
@@ -468,3 +476,55 @@ fieldset.lines .pi-wrap { flex: 1; }
 .audit-readable .sub-table { margin: 0; font-size: .9em; }
 .audit-readable details.technical { margin-top: 8px; }
 .audit-table .audit-action { font-weight: 600; }
+
+/* ---------------------------------------------------------------- #214 (build 11): UI standards - docs/ui-standards.md
+   1. One control height: text boxes, date fields, selects and buttons are --control-h tall; small controls (button.small,
+      select.small, label.button) are --control-h-sm. */
+input:not([type=checkbox], [type=radio], [type=file], [type=range], [type=color], [type=image], [type=hidden]),
+select:not([multiple]):not([size]) { height: var(--control-h); }
+button:not(.small, .link, .linklike, .collapse-btn, .icon-btn, .nav-toggle, .update-dot, .menu-item),
+a.button:not(.small) { min-height: var(--control-h); }
+button:not(.small, .link, .linklike, .collapse-btn, .icon-btn, .nav-toggle, .update-dot, .menu-item) { line-height: 20px; }
+input.small, select.small { height: var(--control-h-sm); }
+button.small, a.button.small, label.button { min-height: var(--control-h-sm); }
+button.small, label.button { display: inline-flex; align-items: center; justify-content: center; line-height: 1.2; vertical-align: middle; }
+
+/* 2. Form rows: a row of fields (.row, .filters, .page-head, .report-options) lines up on the labels, so the inputs
+      line up whether or not a field has help text under it (the help text grows downwards, never moves a neighbour).
+      Buttons and inline checkboxes in such a row sit on the input line, vertically centred with the inputs. */
+:is(.row, .filters, .page-head, .report-options):has(> .field, > .form-guard > .field) { align-items: flex-start; }
+:is(.row, .filters, .page-head, .report-options):has(> .field, > .form-guard > .field) > :is(button, a.button, .check),
+:is(.row, .filters, .page-head, .report-options):has(> .field, > .form-guard > .field) > .form-guard > :is(button, a.button, .check) {
+  margin-top: var(--label-h); margin-bottom: 0; }
+:is(.row, .filters, .page-head, .report-options):has(> .field, > .form-guard > .field) > .check,
+:is(.row, .filters, .page-head, .report-options):has(> .field, > .form-guard > .field) > .form-guard > .check {
+  min-height: var(--control-h); }
+:is(.row, .filters, .page-head, .report-options):has(> .field, > .form-guard > .field) > :is(button.small, a.button.small, label.button),
+:is(.row, .filters, .page-head, .report-options):has(> .field, > .form-guard > .field) > .form-guard > :is(button.small, a.button.small, label.button) {
+  margin-top: calc(var(--label-h) + (var(--control-h) - var(--control-h-sm)) / 2); }
+/* a row of only buttons, checkboxes and short text: everything centred on one line */
+.row:not(:has(> .field, > .form-guard > .field, > div, > fieldset:not(.form-guard))) { align-items: center; }
+.row:not(:has(> .field, > .form-guard > .field, > div, > fieldset:not(.form-guard))) > .check { margin: 0; min-height: var(--control-h); }
+
+/* a page title next to fields (Register: title, bank account, buttons) sits on the input line too */
+.page-head:has(> .field, > .form-guard > .field) > h1 { margin-top: var(--label-h); margin-bottom: 0; line-height: var(--control-h); }
+
+/* #215 (build 11): row actions - Edit stays visible, everything else in the ⋯ menu (RowMenu in components.tsx) */
+.actions-cell, .row-actions { white-space: nowrap; }
+.actions-cell .row-menu-btn, .row-actions .row-menu-btn { min-width: 30px; font-size: 16px; font-weight: 700; letter-spacing: 1px; padding: 0 6px; }
+.row-menu { position: fixed; z-index: 30; min-width: 190px; max-width: 320px; margin: 0; padding: 4px 0; list-style: none;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, .22); }
+.row-menu li.divider { border-top: 1px solid var(--border); margin-top: 4px; padding-top: 4px; }
+.row-menu .menu-item { display: block; width: 100%; text-align: left; background: none; border: 0; border-radius: 0; padding: 7px 14px;
+  font: inherit; color: var(--text); cursor: pointer; white-space: nowrap; }
+.row-menu .menu-item:hover, .row-menu .menu-item:focus { background: var(--surface-2); outline: none; }
+.row-menu .menu-item:focus-visible { box-shadow: inset 0 0 0 2px var(--focus); }
+.row-menu .menu-item.danger { color: var(--danger); }
+.row-menu .menu-item[aria-disabled=true] { opacity: .5; cursor: not-allowed; }
+
+/* #216 (build 11): a page's tab bar (System/About) - each tab has its own address */
+.page-tabs { display: flex; flex-wrap: wrap; gap: 2px; border-bottom: 1px solid var(--border); margin: 0 0 14px; }
+.page-tabs [role=tab] { background: none; border: 0; border-bottom: 3px solid transparent; border-radius: 6px 6px 0 0; margin-bottom: -1px;
+  padding: 6px 14px; color: var(--muted); font-weight: 600; min-height: var(--control-h); }
+.page-tabs [role=tab]:hover { color: var(--text); background: var(--surface-2); }
+.page-tabs [role=tab].current { color: var(--primary); border-bottom-color: var(--primary); }

@@ -1,6 +1,6 @@
 import { Fragment } from "react";
 import { money } from "../api";
-import { BudgetState, Remaining } from "../components";
+import { BudgetState, Remaining, RowMenu } from "../components";
 import { Link } from "../router";
 
 export interface BudgetActions {
@@ -82,11 +82,13 @@ function Row({ r, level, editable, actions, parent, showOutside, registerLinks, 
       {editable ? (
         <td className="actions-cell">
           {canEdit && actions?.onEdit ? <button className="small" aria-label={`Edit ${r.display_code}`} title="Edit" onClick={() => actions.onEdit!(r)}>✎ Edit</button> : null}
-          {canEdit && level === 0 && actions?.onAddChild ? <button className="small" onClick={() => actions.onAddChild!(r)}>+ Sub-budget</button> : null}
-          {canEdit && actions?.onReject ? <button className="small" onClick={() => actions.onReject!(r)}>Reject</button> : null}
-          {canEdit && actions?.onInactivate ? <button className="small" onClick={() => actions.onInactivate!(r)}>Inactivate</button> : null}
-          {level === 0 && !r.system_managed && r.status === "APPROVED" && r.locked && actions?.onUnlock ? <button className="small" onClick={() => actions.onUnlock!(r)}>Unlock</button> : null}
-          {level === 0 && !r.system_managed && r.status === "APPROVED" && !r.locked && actions?.onLock ? <button className="small" onClick={() => actions.onLock!(r)}>Lock</button> : null}
+          <RowMenu name={`${r.display_code} ${r.name}`} actions={[
+            canEdit && level === 0 && actions?.onAddChild && { label: "+ Sub-budget", onClick: () => actions.onAddChild!(r) },
+            level === 0 && !r.system_managed && r.status === "APPROVED" && r.locked && actions?.onUnlock && { label: "Unlock", onClick: () => actions.onUnlock!(r) },
+            level === 0 && !r.system_managed && r.status === "APPROVED" && !r.locked && actions?.onLock && { label: "Lock", onClick: () => actions.onLock!(r) },
+            canEdit && actions?.onReject && { label: "Reject", onClick: () => actions.onReject!(r), danger: true },
+            canEdit && actions?.onInactivate && { label: "Inactivate", onClick: () => actions.onInactivate!(r), danger: true },
+          ]} />
         </td>
       ) : null}
     </tr>

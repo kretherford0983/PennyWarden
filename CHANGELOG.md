@@ -198,6 +198,45 @@ Database migrations `0028` to `0030` (empty columns: the letter logo, the backup
   upgrades after copying the data folder, and puts the previous version back if the new one doesn't start;
   `-Uninstall` keeps the data. Tested on every build on a Windows Server runner (docs/install-windows-server.md).
 
+**Test build 11 — polish from testing (#217, #214, #215, #216)**
+- **Several cover letters and envelopes (#217).** *New cover letter* / *New #10 envelope* gave every template the same
+  default name, so a second one was refused (names are unique, deactivated templates included, and templates are never
+  deleted — BR-001). A new template is now numbered (*Invoice payment letter 2*) and opens with its name selected;
+  **Duplicate** copies a template with all its settings and logo.
+- **Window envelopes are easier to find (#217).** **New window-envelope letter** starts a cover letter set up for a
+  #10 double-window envelope, and the Envelopes section and the envelope editor point to the letter's *Window
+  envelope* settings.
+- **Previews in Safari (#217).** The letter and envelope previews in Payments Setup were blank in Safari (an inline
+  PDF). They are now pictures of the printed page, drawn by the server with PDFium (new dependency `pypdfium2`,
+  BSD-3-Clause/Apache-2.0); where it can't load, the editor falls back to the PDF with an *Open preview* link.
+- **Forms line up (#214).** On every form the labels of a row line up and so do the inputs, whether or not a field has
+  help text; text boxes, dropdowns, date fields and buttons are the same height; small buttons such as *+ New
+  entity* and inline checkboxes such as *Include VOID transactions* are centred on the inputs; the Save bar of the
+  Payments Setup editors is a solid footer that nothing shows through. The rules are written down in
+  `docs/ui-standards.md` for every future screen.
+- **Row actions in a menu (#215).** Tables with several buttons per row are tidier: **Edit** stays a button and every
+  other action is in the **⋯** menu at the end of the row (users, budgets, bank accounts, entities, check styles,
+  signers, cover letters and envelopes, fundraiser buckets, reminders, signed-in sessions). It works with the keyboard
+  and screen readers; destructive actions are last and still ask to confirm.
+- **System/About in tabs (#216).** The page had grown to 14 sections; it now has tabs — **About** (version, licence,
+  update check), **General** (organization name, optional modules), **Settings**, **Backups** (backup / restore,
+  scheduled backups, backup reminder), **Security** (security overview, signed-in sessions), **System health** (health,
+  integrity check, diagnostics) and **Advanced** (maintenance mode, reinitialize). Each tab has its own address
+  (`/about/backups` …) that can be bookmarked; Auditors see About, Settings and Security; the backup and disk-space
+  banners open the right tab.
+
+**Test build 12 — audit log export (#188)**
+- **Export the Audit Log for an audit review.** *Export CSV* and *Printable PDF* on the Audit Log hold every entry
+  matching the filters (all pages, up to 10,000) in the same plain words as the screen: when (in your time zone, with
+  UTC in the CSV), who, what happened and what changed. Financial content stays withheld for Administrators, CSV cells
+  can't start a spreadsheet formula, and every export is recorded in the audit log (*Audit log exported*).
+- Dependency updates (Dependabot #223, #224): FastAPI 0.143.0, Pydantic 2.14.0 with pydantic-core 2.50.0 (the core
+  pin Dependabot missed, which failed #224), SQLAlchemy 2.1.4, pypdf 6.20.0, pycparser 3.11; Playwright 1.64.0 and
+  Vite 6.4.4 (build tools). FastAPI's automatic OpenTelemetry exporter setup became opt-in; PennyWarden doesn't use it.
+- Dependabot no longer proposes `pydantic` updates on their own (#224 failed because the matching `pydantic_core` can't
+  move with it); pydantic and pydantic_core are updated together by hand. Security updates still arrive. Takes
+  effect when 2.0.0 is on main.
+
 ## 1.10.0 — 2026-10-09
 Database migration `0024` (one table added; no existing data changes). Rolling back to 1.9.0 needs the data snapshot
 the installer takes before the upgrade (docs/upgrade.md).

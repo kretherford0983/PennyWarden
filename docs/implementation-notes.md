@@ -3,6 +3,10 @@
 Authority order followed: business rules (03) → security (04) → acceptance criteria (08) → domain/workflow/
 architecture/database (02, 05, 06, 07) → product requirements (01, 09). No specification file was modified.
 
+**UI standards (2.0.0, #214):** every screen follows [ui-standards.md](ui-standards.md) — form rows that line up on
+their labels, one control height, buttons and inline checkboxes centred on the input line, solid sticky action bars.
+New screens use the shared `Field` component and CSS described there; the E2E test "#214" measures them.
+
 ## 1. Specification ambiguities and how they were resolved
 
 None of the items below blocked implementation, but each required a choice the documents do not make. They are
@@ -278,6 +282,85 @@ stay with it) as the NSSM service `Caddy` under LocalSystem and opens 80/443; wa
 puts the previous junction target back; keeps one previous version. `build.yml`: the release includes the script; the
 Windows job downloads `nssm-2.24.zip` (SHA-1 check), attaches `nssm.exe` and runs
 `packaging/windows/test_server_installer.ps1` (install, upgrade, uninstall under Windows PowerShell 5.1).
+
+**2.0.0 test build 11 — Payments Setup templates (#217).** No migration. `service.create_document(kind, name, preset)`:
+without a name the template gets `free_document_name(kind, base)` — the first of `base`, `base 2`, … unused by any
+template of the kind, deactivated ones included (they are never deleted, BR-001); a typed name must still be unique
+(409 `DUPLICATE_NAME`). Preset `WINDOW` (letters only) = default letter config with `window = LETTER`, name *Window
+envelope letter*. `duplicate_document` (`POST /api/checks/documents/{id}/duplicate`, `checks.setup`) copies the config
+and logo into a new active template named `<name> copy[ N]` (the original name cut to 71 characters so the suffix
+fits 80), default only if its kind has no active default, within `MAX_DOCUMENTS`; audited as
+`CHECK_DOCUMENT_CREATED` with `duplicated_from` and `logo_sha256`. Previews: `services/checkprint/raster.py` renders
+the sample PDF with PDFium (`pypdfium2`, imported lazily under a lock; up to 3 pages stacked, longer side 1600 px) and
+`POST /api/checks/documents/{id}/preview-image` returns the PNG (`no-store`, `X-Page-Count`), or 501
+`PREVIEW_UNAVAILABLE` when PDFium can't load (the macOS wheel needs macOS 13+); the PDF endpoint `/preview` stays as
+the fallback. Frontend `LivePreview` (`checkShared.tsx`) shows the PNG in an `<img>` (Safari renders blob PDFs in an
+inline frame blank), and on `PREVIEW_UNAVAILABLE` the PDF frame plus an *Open preview* link. `CheckDocuments.tsx`:
+*Duplicate*, *New window-envelope letter*, the window-envelope pointer in the Envelopes section and the envelope
+editor (`onOpen(letter, "window")` opens the letter at its Window envelope section), name field focused and selected
+for new/duplicated templates. Packaging: the PyInstaller specs collect `pypdfium2_raw`'s library and data;
+`scripts/third_party_notices.py` now includes every file in a PEP 639 `licenses/` folder (PDFium's dependency
+licenses). Tests: `tests/test_v200_build11.py`, E2E "#217".
+
+**2.0.0 test build 11 — UI standards (#214).** No backend change. `styles.css`: `--control-h` (34 px),
+`--control-h-sm` (26 px) and `--label-h` (20 px = `.field-label` line-height 17 px + the 3 px `.field` gap) on
+`:root`; inputs (not checkbox/radio/file/range/colour) and single selects get `height: --control-h`, buttons (not
+`.small`/`.link`/`.linklike`/icon/nav buttons) `min-height: --control-h`, small controls `--control-h-sm`. Rows of
+fields (`.row`, `.filters`, `.page-head`, `.report-options` that have a `.field` child, also through a `GuardedForm`'s
+`fieldset.form-guard` with `display: contents`) use `align-items: flex-start`; their direct button / `.check` children
+get `margin-top: --label-h` (small ones `+ (--control-h - --control-h-sm) / 2`), checkboxes `min-height: --control-h`
+(replaces the old `.form-row` 19 px offsets). Rows with no fields centre their items. `.content` exposes its padding
+as `--pad-x` / `--pad-y`; `.sticky-actions` sticks at `bottom: -pad-y` with negative margins and matching padding so
+it covers the content area's padding (content used to show in the 16 px under and the 20 px beside the bar),
+`z-index: 7` (above a pinned preview), opaque `--bg`. The pattern input's `<label>` uses the field-label style. E2E
+"#214" (`layoutViolations`) measures every visible form row on 20 screens and forms and checks that the area under
+the editors' action bar is the bar; screenshots in `e2e-screenshots/forms/`. Reference: `docs/ui-standards.md`.
+
+**2.0.0 test build 11 — row actions menu (#215; icon ⋯ decided by Kyle 2026-10-13).** `RowMenu` (`components.tsx`):
+a `<button class="small row-menu-btn">` (⋯, `aria-label`/`title` "Actions for <name>", `aria-haspopup="menu"`,
+`aria-expanded`, `aria-controls` while open) and a `role="menu"` list portalled to `<body>` with `position: fixed` at the
+button (above it near the bottom of the window) so a scrolling `.table-wrap` can't clip it; items are
+`role="menuitem"` buttons with `tabIndex=-1` and roving focus. Escape stops propagation so a surrounding dialog stays
+open. Falsy actions are dropped and `danger` ones sorted last behind a divider. Applied to Users, Budgets
+(`BudgetTable`), Bank Accounts, Entities, Payments Setup (check styles, signers — the image upload is a hidden file input
+clicked from the menu — letters, envelopes), fundraiser buckets, reminders (`ReminderItem`: Edit visible; Resolve…,
+Reopen, Delete in the menu) and System/About sessions. E2E: `rowAction()` helper; test "#215" (keyboard, focus return,
+outside click, every Users row).
+
+**2.0.0 test build 11 — System/About tabs (#216).** `pages/About.tsx`: `ABOUT_TABS` (`about`, `general`,
+`settings`, `backups`, `security`, `health`, `advanced`), the open tab from the path (`/about` or `/about/<tab>`, App
+routes both to `About`); visibility — About everyone; General and System health `system.manage`; Settings and Security
+`system.view` (Administrator, Auditor; the panels stay read-only for Auditors as before); Backups and Advanced the
+Administrator (`restore_max_mb` present) / `system.manage`. A hidden or unknown tab is replaced by `/about`. `PageTabs`
+(WAI-ARIA tabs, automatic activation, ←/→/Home/End); panels unchanged, only regrouped. The backup-failed and
+backup-age banners link to `/about/backups`, low disk to `/about/health`; the About API's backup notice points to
+System/About → Backups. The server's SPA fallback already serves `/about/<tab>` on reload. Docs updated to the new
+locations. E2E: `aboutTab()` helper; test "#216" (addresses, reload, Back, keyboard, unknown tab, banner links via a
+mocked alert, Auditor tabs); the #214 audit covers every tab.
+
+**2.0.0 test build 12 — audit log export (#188; moved into 2.0.0 by Kyle 2026-10-14).** `routers/audit_log.py`: the
+list's filters became a `Filters` model and `_query` / `_ordered`, shared by `GET /api/audit-events` and the new
+`POST /api/audit-events/export` (`ExportIn`: filters + `format` csv|pdf + `time_zone`, `extra=forbid`). Every
+matching entry goes through `_out` (so `readable` and the Administrator withholding are identical to the screen);
+over `audit_export.MAX_EXPORT` (10,000) → 422 `EXPORT_TOO_LARGE`, nothing recorded. The export is audited before the
+file is built (`AUDIT_LOG_EXPORTED`, object `audit_log`, category SECURITY, `{format, entries, filters, time_zone}`).
+`services/audit_export.py`: `to_csv` (UTF-8 BOM; columns Event #, Local time (<zone>), UTC time, Actor, Category,
+Action, Object, Object #, Summary, What changed — an update as `Field: before → after (changed)`, a new record as
+`Field: value`, removed as `Field: value (before)`, empty fields left out, line tables as `Line n: Column: value; …`;
+every cell through `reports._csv_safe`) and `to_pdf` (reportlab, Letter landscape, Vera fonts: header with exported
+by/when/zone/filters/count, then per entry the action, summary, time · actor · category · event #, and the same
+Field/Before/After/changed table as the screen; footer with organization and page). Frontend `AuditLog.tsx`: *Export
+CSV* (downloads) and *Printable PDF* (`PdfViewer` with Print/Open/Download) send the current filters and the browser's
+time zone; the list reloads to show the export entry. Tests: `tests/test_v200_build12.py`, E2E "#188".
+The PDF never wraps an entry's change table in another table (a one-cell table can't split, so a long entry broke the
+layout): the table is indented with `hAlign`, repeats its header across pages, and a single cell is cut at 2,500
+characters with a pointer to the CSV, which holds everything.
+
+**2.0.0 test build 12 — dependencies (Dependabot #223, #224, folded in by Kyle's request 2026-10-14).** `requirements.txt`:
+fastapi 0.143.0, pydantic 2.14.0 + **pydantic_core 2.50.0** (Dependabot bumped pydantic but not its pinned core, so
+#224's install failed), SQLAlchemy 2.1.4, pypdf 6.20.0, pycparser 3.11 — resolved in a clean Python 3.12 environment
+(no new transitive packages; wheels for Windows x64, Linux x64/arm64 and macOS arm64 checked). Frontend dev tools:
+@playwright/test 1.64.0, vite 6.4.4 (lockfile identical to #223). Notices regenerated with Python 3.12.
 
 **1.10.0 Update notification (issue #58; channel decided 2026-10-09).** Migration `0024`: `update_check` (one row).
 `services/updates.py`: `channel(settings)` - setting `update_channel` (`auto` → from `build_info.json`: `main` →

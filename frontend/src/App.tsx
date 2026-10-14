@@ -202,7 +202,7 @@ function Shell({ workspace, warning, mode, onLogout }: { workspace: string; warn
   else if (path === "/account") page = <Account updates={mode === "local" ? updates : null} />;
   else if (path === "/users") page = guard("/users", <Users />);
   else if (path === "/audit-log") page = guard("/audit-log", <AuditLog />);
-  else if (path === "/about") page = <About />;
+  else if (path === "/about" || path.startsWith("/about/")) page = <About />;   // #216: /about/<tab>
   else if (path === "/fiscal-years") page = guard("/fiscal-years", <FiscalYears />);
   else if ((m = match("/fiscal-years/:id", path))) page = guard("/fiscal-years", <FiscalYearDetail id={Number(m.id)} />);
   else if (path === "/budgets") page = guard("/budgets", <Budgets />);

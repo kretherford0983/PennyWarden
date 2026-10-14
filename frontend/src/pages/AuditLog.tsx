@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useState } from "react";
 import { api, qs } from "../api";
 import { ErrorBox, Field, Loading } from "../components";
+import { PdfViewer } from "./checkShared";
 
 /** 2.0.0 (#133): times in the viewer's own time zone (UTC on hover). */
 const local = (iso: string) => new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
@@ -68,10 +69,52 @@ export default function AuditLog() {
     api.get(`/api/audit-events${qs({ ...f, limit, offset: page * limit })}`).then(setData, setErr);
   }, [f, page]);
   const set = (k: keyof typeof f) => (e: any) => { setPage(0); setF({ ...f, [k]: e.target.value }); };
+  // 2.0.0 build 12 (#188): export the filtered list (all pages) as CSV or a printable PDF - same entries and wording as
+  // here, built by the server (financial content withheld for Administrators); every export is recorded in this log
+  const [busy, setBusy] = useState<"" | "csv" | "pdf">("");
+  const [pdf, setPdf] = useState<{ url: string; name: string } | null>(null);
+  const [exportErr, setExportErr] = useState<unknown>(null);
+  const exportAs = async (format: "csv" | "pdf") => {
+    setExportErr(null);
+    setBusy(format);
+    try {
+      const body: Record<string, string> = { format };
+      for (const [k, v] of Object.entries(f)) if (v) body[k] = v;
+      try { body.time_zone = Intl.DateTimeFormat().resolvedOptions().timeZone || ""; } catch { /* UTC */ }
+      if (!body.time_zone) delete body.time_zone;
+      const blob = await api.postBlob("/api/audit-events/export", body);
+      const d = new Date();
+      const p2 = (n: number) => String(n).padStart(2, "0");
+      const name = `audit-log-${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}-${p2(d.getHours())}${p2(d.getMinutes())}${p2(d.getSeconds())}.${format}`;
+      const url = URL.createObjectURL(blob);
+      if (format === "pdf") {
+        if (pdf) URL.revokeObjectURL(pdf.url);
+        setPdf({ url, name });
+      } else {
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = name;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 30_000);
+      }
+      setPage(0);
+      api.get(`/api/audit-events${qs({ ...f, limit, offset: 0 })}`).then(setData, () => undefined);   // shows the export entry
+    } catch (x) { setExportErr(x); } finally { setBusy(""); }
+  };
   return (
     <div>
-      <h1>Audit Log</h1>
-      <p className="muted">Append-only. Audit events cannot be edited or deleted. Times are in your time zone.</p>
+      <div className="page-head">
+        <h1>Audit Log</h1>
+        <button type="button" onClick={() => exportAs("csv")} disabled={!!busy || !data?.total}>{busy === "csv" ? "Exporting…" : "Export CSV"}</button>
+        <button type="button" onClick={() => exportAs("pdf")} disabled={!!busy || !data?.total}>{busy === "pdf" ? "Exporting…" : "Printable PDF"}</button>
+      </div>
+      <p className="muted">Append-only. Audit events cannot be edited or deleted. Times are in your time zone.
+        {" "}<span className="hint">Export CSV and Printable PDF hold every entry matching the filters below (all pages, up to 10,000), with the same
+        summaries and changes as here; each export is recorded in this log.</span></p>
+      <ErrorBox error={exportErr} />
+      {pdf ? <PdfViewer pdf={pdf} title="Audit log export" onClose={() => setPdf(null)} /> : null}
       <div className="filters">
         <Field label="Object type">
           <select value={f.object_type} onChange={set("object_type")}>
