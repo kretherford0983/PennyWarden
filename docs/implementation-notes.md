@@ -3,6 +3,10 @@
 Authority order followed: business rules (03) → security (04) → acceptance criteria (08) → domain/workflow/
 architecture/database (02, 05, 06, 07) → product requirements (01, 09). No specification file was modified.
 
+**UI standards (2.0.0, #214):** every screen follows [ui-standards.md](ui-standards.md) — form rows that line up on
+their labels, one control height, buttons and inline checkboxes centred on the input line, solid sticky action bars.
+New screens use the shared `Field` component and CSS described there; the E2E test "#214" measures them.
+
 ## 1. Specification ambiguities and how they were resolved
 
 None of the items below blocked implementation, but each required a choice the documents do not make. They are
@@ -297,6 +301,20 @@ editor (`onOpen(letter, "window")` opens the letter at its Window envelope secti
 for new/duplicated templates. Packaging: the PyInstaller specs collect `pypdfium2_raw`'s library and data;
 `scripts/third_party_notices.py` now includes every file in a PEP 639 `licenses/` folder (PDFium's dependency
 licenses). Tests: `tests/test_v200_build11.py`, E2E "#217".
+
+**2.0.0 test build 11 — UI standards (#214).** No backend change. `styles.css`: `--control-h` (34 px),
+`--control-h-sm` (26 px) and `--label-h` (20 px = `.field-label` line-height 17 px + the 3 px `.field` gap) on
+`:root`; inputs (not checkbox/radio/file/range/colour) and single selects get `height: --control-h`, buttons (not
+`.small`/`.link`/`.linklike`/icon/nav buttons) `min-height: --control-h`, small controls `--control-h-sm`. Rows of
+fields (`.row`, `.filters`, `.page-head`, `.report-options` that have a `.field` child, also through a `GuardedForm`'s
+`fieldset.form-guard` with `display: contents`) use `align-items: flex-start`; their direct button / `.check` children
+get `margin-top: --label-h` (small ones `+ (--control-h - --control-h-sm) / 2`), checkboxes `min-height: --control-h`
+(replaces the old `.form-row` 19 px offsets). Rows with no fields centre their items. `.content` exposes its padding
+as `--pad-x` / `--pad-y`; `.sticky-actions` sticks at `bottom: -pad-y` with negative margins and matching padding so
+it covers the content area's padding (content used to show in the 16 px under and the 20 px beside the bar),
+`z-index: 7` (above a pinned preview), opaque `--bg`. The pattern input's `<label>` uses the field-label style. E2E
+"#214" (`layoutViolations`) measures every visible form row on 20 screens and forms and checks that the area under
+the editors' action bar is the bar; screenshots in `e2e-screenshots/forms/`. Reference: `docs/ui-standards.md`.
 
 **1.10.0 Update notification (issue #58; channel decided 2026-10-09).** Migration `0024`: `update_check` (one row).
 `services/updates.py`: `channel(settings)` - setting `update_channel` (`auto` → from `build_info.json`: `main` →

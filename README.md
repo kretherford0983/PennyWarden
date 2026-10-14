@@ -152,6 +152,7 @@ guide: [docs/check-printing.md](docs/check-printing.md)).
 - [docs/branching.md](docs/branching.md) — branches, builds, releases and versioning (`Breaking.Major.Minor`)
 - [docs/product-site.md](docs/product-site.md) — the product page at pennywarden.org and the release data files
 - [docs/implementation-notes.md](docs/implementation-notes.md) — design decisions, including every change request (§1a)
+- [docs/ui-standards.md](docs/ui-standards.md) — UI standards every screen follows: form rows, control heights, action bars
 - [CHANGELOG.md](CHANGELOG.md) — what changed in each version
 - `scripts/demo_data.py` and `scripts/readme_screenshots.mjs` — fill a new, empty installation with a made-up
   organization and retake the screenshots on this page; `scripts/macos_install_mockups.mjs` redraws the
