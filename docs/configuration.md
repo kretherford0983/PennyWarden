@@ -110,7 +110,7 @@ On a **local** install the page shows the settings; change them in `config.toml`
 old one.
 
 **Backup reminder.** Administrators see a warning at the top of every page when no backup (made in System/About or
-scheduled) has been made for 7 days; System/About → *Backup reminder* changes the number of days (0 turns it off). On a
+scheduled) has been made for 7 days; System/About → Backups → *Backup reminder* changes the number of days (0 turns it off). On a
 new or restored installation the days count from the installation or the restore.
 
 Debug mode, interactive API docs (`/docs`, `/openapi.json`) and verbose exception pages are never enabled.

@@ -123,7 +123,7 @@ return every quarter, renew the insurance every year — so duties survive a cha
 The first start shows the **Initialization Wizard** (organization name, administrator account). There are no
 default credentials. Details, HTTPS, Docker and moving data between machines: [docs/deployment.md](docs/deployment.md).
 Upgrades never touch your data or configuration: [docs/upgrade.md](docs/upgrade.md). **Make encrypted backups
-regularly** (System/About → Backup / Restore) and keep them off the machine: [docs/backup-restore.md](docs/backup-restore.md).
+regularly** (System/About → Backups → Backup / Restore) and keep them off the machine: [docs/backup-restore.md](docs/backup-restore.md).
 
 PennyWarden is provided without warranty (see [License](#license)). It is a record-keeping tool, not accounting,
 tax or legal advice.

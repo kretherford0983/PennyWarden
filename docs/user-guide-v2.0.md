@@ -6,7 +6,7 @@ guide is [check-printing.md](check-printing.md).*
 ## Check printing (test build 1)
 PennyWarden can now print your checks on printable check stock that already carries the bank numbers.
 
-**Administrators** turn it on in **System/About → Optional modules → Payments module**, then open **Payments Setup** to:
+**Administrators** turn it on in **System/About → General → Optional modules → Payments module**, then open **Payments Setup** to:
 - create a **check style** from a preset (the first preset is a Letter sheet with three 3.5-inch checks) and adjust
   where each field prints, with a preview drawn to scale;
 - choose fonts, how the amounts look, and a **default memo** such as `{BUDGET_CODE}, INVOICE {INVOICE}`;
@@ -99,3 +99,6 @@ one step, with HTTPS through Caddy (`-Domain`) or behind your Cloudflare Tunnel.
   there.
 - The letter and envelope **previews** are pictures of the printed page and show in every browser, Safari included.
   Details: [Check printing](check-printing.md#cover-letters-and-envelopes).
+- **Tidier screens:** form fields, dropdowns and buttons line up; tables show **Edit** and a **⋯** menu with the other
+  actions of the row; **System/About** is split into tabs (About, General, Settings, Backups, Security, System health,
+  Advanced), each with its own address you can bookmark.

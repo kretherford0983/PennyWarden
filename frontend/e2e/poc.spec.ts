@@ -50,13 +50,19 @@ async function rowAction(scope: Page | Locator, rowName: string | RegExp, item: 
   await page.getByRole("menu").getByRole("menuitem", { name: item }).click();
 }
 
+/** 2.0.0 build 11 (#216): System/About is in tabs; open one (the System/About page must be showing). */
+async function aboutTab(page: Page, name: string) {
+  await page.getByRole("tablist", { name: "System/About sections" }).getByRole("tab", { name, exact: true }).click();
+  await expect(page.getByRole("tab", { name, exact: true })).toHaveAttribute("aria-selected", "true");
+}
+
 async function logout(page: Page) {
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
 }
 
 // 1.7.1 (#47): every user has a display name - it is what the top bar shows (#46)
-const SHOWN: Record<string, string> = { bm1: "Bea Manager", ru1: "Rae Register" };
+const SHOWN: Record<string, string> = { bm1: "Bea Manager", ru1: "Rae Register", auditor1: "Ada Auditor" };
 
 async function createUser(page: Page, username: string, roleLabel: string) {
   await page.goto("/users");
@@ -1000,6 +1006,7 @@ let backupFile = "";
 test("CR-023 / CR-025: Administrator creates an encrypted backup and restores it", async ({ page }) => {
   await login(page, "admin");
   await page.getByRole("link", { name: "System/About" }).click();
+  await aboutTab(page, "Backups");
   await expect(page.getByRole("heading", { name: "Backup / Restore" })).toBeVisible();
   await page.getByLabel("Backup passphrase").fill(BACKUP_PASS);
   await page.getByLabel("Repeat the passphrase").fill(BACKUP_PASS);
@@ -1092,7 +1099,8 @@ test("CR-028 / CR-030 / CR-029 / CR-032: account groups, chart columns, signatur
   // CR-032: passphrase fields line up
   await login(page, "admin");
   await page.getByRole("link", { name: "System/About" }).click();
-  await expect(page.getByLabel("Fundraiser module")).toBeVisible(); // the modules panel loads above and shifts the page
+  await aboutTab(page, "Backups");
+  await expect(page.getByRole("heading", { name: "Backup / Restore" })).toBeVisible();
   const a = await page.getByLabel("Backup passphrase").boundingBox();
   const b = await page.getByLabel("Repeat the passphrase").boundingBox();
   expect(Math.abs(a!.y - b!.y)).toBeLessThan(2);
@@ -1419,6 +1427,7 @@ test("CR-031: dashboard sections can be hidden, reordered and reset; saved per u
 test("CR-033: Administrator turns on fundraisers; Budget Manager creates, filters and views one; shells are upcoming", async ({ page }) => {
   await login(page, "admin");
   await page.getByRole("link", { name: "System/About" }).click();
+  await aboutTab(page, "General");
   await page.getByLabel("Fundraiser module").check();
   await expect(page.getByRole("status").filter({ hasText: "Saved." })).toBeVisible();
   await expect(page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Fundraisers" })).toHaveCount(0);
@@ -1936,6 +1945,7 @@ test("#62: an Administrator sets up scheduled backups to a folder, tests it and 
   const folder = mkdtempSync(join(tmpdir(), "pw-e2e-backups-"));
   await login(page, "admin");
   await page.getByRole("link", { name: "System/About" }).click();
+  await aboutTab(page, "Backups");
   await page.getByRole("tab", { name: "Scheduled" }).click();
   const card = page.locator("section", { has: page.getByRole("heading", { name: "Scheduled backups" }) });
   await card.getByLabel("Back up automatically").check();
@@ -2042,6 +2052,7 @@ async function samplePng(w = 240, h = 60): Promise<Buffer> {
 test("#156-#162: Administrator sets up check printing; a Register User prints a check, with the number confirmed", async ({ page }) => {
   await login(page, "admin");
   await page.getByRole("link", { name: "System/About" }).click();
+  await aboutTab(page, "General");
   await page.getByLabel("Payments module").check();
   await expect(page.getByRole("status").filter({ hasText: "Saved." })).toBeVisible();
   await page.reload();
@@ -2363,15 +2374,18 @@ test("#167: Administrator sets up a voucher check with two signature lines; a Re
 test("#126: an Administrator renames the organization, sees the effective settings and sets the backup reminder", async ({ page }) => {
   await login(page, "admin");
   await page.getByRole("link", { name: "System/About" }).click();
+  await aboutTab(page, "General");
   await page.getByLabel("Organization name").fill("E2E Org Renamed");
   await page.getByRole("button", { name: "Rename" }).click();
   await expect(page.locator(".brand")).toContainText("E2E Org Renamed");
   await page.getByLabel("Organization name").fill("E2E Org");
   await page.getByRole("button", { name: "Rename" }).click();
   await expect(page.locator(".brand")).toContainText("E2E Org");
+  await aboutTab(page, "Settings");
   const settings = page.getByRole("region", { name: "Settings" });
   await expect(settings.getByRole("row", { name: /Session idle timeout \(minutes\) 30 default/ })).toBeVisible();
   await expect(settings.getByRole("button", { name: "Save settings" })).toHaveCount(0);   // local install: view only
+  await aboutTab(page, "Backups");
   await page.getByLabel("Warn when there is no backup for (days, 0 = never)").fill("3");
   await page.getByRole("region", { name: "Backup reminder" }).getByRole("button", { name: "Save" }).click();
   await expect(page.getByRole("region", { name: "Backup reminder" }).getByRole("status")).toHaveText("Saved.");
@@ -2380,6 +2394,7 @@ test("#126: an Administrator renames the organization, sees the effective settin
 test("#127-#129: an Administrator sees the signed-in sessions, downloads diagnostics and checks the health", async ({ page }) => {
   await login(page, "admin");
   await page.getByRole("link", { name: "System/About" }).click();
+  await aboutTab(page, "Security");
   const s = page.getByRole("region", { name: "Signed-in sessions" });
   await expect(s.getByRole("row", { name: /admin.*you, this session/ })).toBeVisible();
   // your own session can't be ended from here (#215: the actions are in the row's â‹¯ menu)
@@ -2391,6 +2406,7 @@ test("#127-#129: an Administrator sees the signed-in sessions, downloads diagnos
     await page.keyboard.press("Escape");
   }
   // #128: the diagnostics download
+  await aboutTab(page, "System health");
   const dl = page.waitForEvent("download");
   await page.getByRole("button", { name: "Download diagnostics" }).click();
   expect((await dl).suggestedFilename()).toMatch(/^pennywarden-diagnostics-\d{14}\.json$/);
@@ -2404,6 +2420,7 @@ test("#127-#129: an Administrator sees the signed-in sessions, downloads diagnos
 test("#130: maintenance mode - Administrators keep working, the others see the message and can't change anything", async ({ page }) => {
   await login(page, "admin");
   await page.getByRole("link", { name: "System/About" }).click();
+  await aboutTab(page, "Advanced");
   const p = page.getByRole("region", { name: "Maintenance mode" });
   await p.getByLabel("Message for the users").fill("Year-end close until Monday.");
   await p.getByRole("button", { name: "Turn on maintenance mode" }).click();
@@ -2418,6 +2435,7 @@ test("#130: maintenance mode - Administrators keep working, the others see the m
   await logout(page);
   await login(page, "admin");
   await page.getByRole("link", { name: "System/About" }).click();
+  await aboutTab(page, "Advanced");
   await page.getByRole("region", { name: "Maintenance mode" }).getByRole("button", { name: "Turn off" }).click();
   await expect(page.getByTestId("maintenance-notice")).toHaveCount(0);
 });
@@ -2454,6 +2472,7 @@ test("#133: readable audit log - summary, what changed, technical details", asyn
 test("#131: the security overview lists what needs attention", async ({ page }) => {
   await login(page, "admin");
   await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "System/About", exact: true }).click();
+  await aboutTab(page, "Security");
   const ov = page.getByRole("region", { name: "Security overview" });
   await expect(ov.getByTestId("secov-two_step")).toContainText("Needs attention");
   await expect(ov.getByTestId("secov-admins")).toContainText("Info");
@@ -2562,6 +2581,67 @@ test("#215: Edit stays visible; the other row actions are in a keyboard-usable â
   await page.screenshot({ path: "e2e-screenshots/light-row-menu.png" });
 });
 
+// ---------------------------------------------------------------- 2.0.0 build 11 (#216): System/About in tabs
+test("#216: System/About tabs have their own addresses; Auditors see three; banners open the right tab", async ({ page }) => {
+  await login(page, "admin");
+  await page.getByRole("link", { name: "System/About" }).click();
+  const tabs = page.getByRole("tablist", { name: "System/About sections" });
+  await expect(tabs.getByRole("tab")).toHaveText(["About", "General", "Settings", "Backups", "Security", "System health", "Advanced"]);
+  await expect(page).toHaveURL(/\/about$/);
+  await expect(tabs.getByRole("tab", { name: "About" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("tabpanel")).toContainText("Data protection");
+  // each tab opens at its own address; reloading keeps it; Back returns to the previous tab
+  await aboutTab(page, "Backups");
+  await expect(page).toHaveURL(/\/about\/backups$/);
+  await expect(page.getByRole("heading", { name: "Backup / Restore" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Optional modules" })).toHaveCount(0);   // only this tab's sections
+  await page.reload();
+  await expect(tabs.getByRole("tab", { name: "Backups" })).toHaveAttribute("aria-selected", "true");
+  await expect(page.getByRole("heading", { name: "Backup / Restore" })).toBeVisible();
+  await aboutTab(page, "System health");
+  await expect(page).toHaveURL(/\/about\/health$/);
+  await page.goBack();
+  await expect(page).toHaveURL(/\/about\/backups$/);
+  await expect(tabs.getByRole("tab", { name: "Backups" })).toHaveAttribute("aria-selected", "true");
+  // keyboard: arrows move between the tabs and open them
+  await tabs.getByRole("tab", { name: "Backups" }).focus();
+  await page.keyboard.press("ArrowRight");
+  await expect(tabs.getByRole("tab", { name: "Security" })).toBeFocused();
+  await expect(page).toHaveURL(/\/about\/security$/);
+  await page.keyboard.press("Home");
+  await expect(page).toHaveURL(/\/about$/);
+  await page.keyboard.press("ArrowLeft");
+  await expect(page).toHaveURL(/\/about\/advanced$/);
+  // a bookmarked address opens its tab directly; an unknown one shows About
+  await page.goto("/about/general");
+  await expect(page.getByLabel("Organization name")).toBeVisible();
+  await page.goto("/about/nonsense");
+  await expect(page).toHaveURL(/\/about$/);
+  // the backup and disk-space banners link to their tab
+  await page.route("**/api/system/backup-schedule/alert", (r) => r.fulfill({ json: {
+    failed: true, message: "The last scheduled backup failed.", stale: false, low_disk: true, low_disk_message: "Low disk space." } }));
+  await page.goto("/");
+  await page.getByTestId("backup-failed-banner").getByRole("link", { name: "Backup settings" }).click();
+  await expect(page).toHaveURL(/\/about\/backups$/);
+  await expect(page.getByRole("heading", { name: "Backup / Restore" })).toBeVisible();
+  await page.getByTestId("low-disk-banner").getByRole("link", { name: "System health" }).click();
+  await expect(page).toHaveURL(/\/about\/health$/);
+  await expect(page.getByRole("region", { name: "Health" })).toBeVisible();
+  await page.unroute("**/api/system/backup-schedule/alert");
+  await page.screenshot({ path: "e2e-screenshots/light-about-tabs.png" });
+  // an Auditor sees About, Settings and Security only; an Administrator-only address shows About
+  await createUser(page, "auditor1", "Auditor");
+  await logout(page);
+  await login(page, "auditor1");
+  await page.getByRole("link", { name: "System/About" }).click();
+  await expect(page.getByRole("tablist", { name: "System/About sections" }).getByRole("tab")).toHaveText(["About", "Settings", "Security"]);
+  await page.goto("/about/backups");
+  await expect(page).toHaveURL(/\/about$/);
+  await page.goto("/about/security");
+  await expect(page.getByRole("region", { name: "Security overview" })).toBeVisible();
+  await logout(page);
+});
+
 // ---------------------------------------------------------------- 2.0.0 build 11 (#214): UI standards (docs/ui-standards.md)
 /** Measures every visible form row (.row, .filters, .page-head, .report-options with fields) on the page: per line of the
  * row, the inputs and selects share one top and the standard height, full-size buttons match them, and small buttons
@@ -2651,7 +2731,10 @@ test("#214: form rows line up - one control height, buttons and checkboxes centr
   await logout(page);
   // Administrator: users, audit log, Payments Setup and its editors, System/About, My account
   await login(page, "admin");
-  for (const [path, shot] of [["/users", "users"], ["/audit-log", "audit-log"], ["/check-setup", "payments-setup"], ["/about", "about"], ["/account", "account"]] as const) {
+  for (const [path, shot] of [["/users", "users"], ["/audit-log", "audit-log"], ["/check-setup", "payments-setup"], ["/about", "about"],
+                              ["/about/general", "about-general"], ["/about/settings", "about-settings"], ["/about/backups", "about-backups"],
+                              ["/about/security", "about-security"], ["/about/health", "about-health"], ["/about/advanced", "about-advanced"],
+                              ["/account", "account"]] as const) {
     await page.goto(path);
     await expect(page.locator("h1").first()).toBeVisible();
     await formCheck(page, shot);
@@ -2687,6 +2770,7 @@ test("#214: form rows line up - one control height, buttons and checkboxes centr
 test("#125: an Administrator reinitializes (keeping the users); everyone sees the notice until it is acknowledged", async ({ page }) => {
   await login(page, "admin");
   await page.getByRole("link", { name: "System/About" }).click();
+  await aboutTab(page, "Advanced");
   await page.getByTestId("advanced").locator("summary").click();
   await page.getByLabel('Type "reinitialize" to confirm').fill("reinitialize");
   await page.getByLabel("Your password").last().fill(PW);

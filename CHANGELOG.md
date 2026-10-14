@@ -198,7 +198,7 @@ Database migrations `0028` to `0030` (empty columns: the letter logo, the backup
   upgrades after copying the data folder, and puts the previous version back if the new one doesn't start;
   `-Uninstall` keeps the data. Tested on every build on a Windows Server runner (docs/install-windows-server.md).
 
-**Test build 11 — polish from testing (#217, #214, #215, …)**
+**Test build 11 — polish from testing (#217, #214, #215, #216)**
 - **Several cover letters and envelopes (#217).** *New cover letter* / *New #10 envelope* gave every template the same
   default name, so a second one was refused (names are unique, deactivated templates included, and templates are never
   deleted — BR-001). A new template is now numbered (*Invoice payment letter 2*) and opens with its name selected;
@@ -218,6 +218,12 @@ Database migrations `0028` to `0030` (empty columns: the letter logo, the backup
   other action is in the **⋯** menu at the end of the row (users, budgets, bank accounts, entities, check styles,
   signers, cover letters and envelopes, fundraiser buckets, reminders, signed-in sessions). It works with the keyboard
   and screen readers; destructive actions are last and still ask to confirm.
+- **System/About in tabs (#216).** The page had grown to 14 sections; it now has tabs — **About** (version, licence,
+  update check), **General** (organization name, optional modules), **Settings**, **Backups** (backup / restore,
+  scheduled backups, backup reminder), **Security** (security overview, signed-in sessions), **System health** (health,
+  integrity check, diagnostics) and **Advanced** (maintenance mode, reinitialize). Each tab has its own address
+  (`/about/backups` …) that can be bookmarked; Auditors see About, Settings and Security; the backup and disk-space
+  banners open the right tab.
 
 ## 1.10.0 — 2026-10-09
 Database migration `0024` (one table added; no existing data changes). Rolling back to 1.9.0 needs the data snapshot

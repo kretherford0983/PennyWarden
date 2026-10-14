@@ -327,6 +327,17 @@ clicked from the menu — letters, envelopes), fundraiser buckets, reminders (`R
 Reopen, Delete in the menu) and System/About sessions. E2E: `rowAction()` helper; test "#215" (keyboard, focus return,
 outside click, every Users row).
 
+**2.0.0 test build 11 — System/About tabs (#216).** `pages/About.tsx`: `ABOUT_TABS` (`about`, `general`,
+`settings`, `backups`, `security`, `health`, `advanced`), the open tab from the path (`/about` or `/about/<tab>`, App
+routes both to `About`); visibility — About everyone; General and System health `system.manage`; Settings and Security
+`system.view` (Administrator, Auditor; the panels stay read-only for Auditors as before); Backups and Advanced the
+Administrator (`restore_max_mb` present) / `system.manage`. A hidden or unknown tab is replaced by `/about`. `PageTabs`
+(WAI-ARIA tabs, automatic activation, ←/→/Home/End); panels unchanged, only regrouped. The backup-failed and
+backup-age banners link to `/about/backups`, low disk to `/about/health`; the About API's backup notice points to
+System/About → Backups. The server's SPA fallback already serves `/about/<tab>` on reload. Docs updated to the new
+locations. E2E: `aboutTab()` helper; test "#216" (addresses, reload, Back, keyboard, unknown tab, banner links via a
+mocked alert, Auditor tabs); the #214 audit covers every tab.
+
 **1.10.0 Update notification (issue #58; channel decided 2026-10-09).** Migration `0024`: `update_check` (one row).
 `services/updates.py`: `channel(settings)` - setting `update_channel` (`auto` → from `build_info.json`: `main` →
 stable, `test` → test, anything else / no build info → none); `check(app, force)` - due after 24 h (6 h after an error),

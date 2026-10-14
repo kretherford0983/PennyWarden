@@ -18,7 +18,7 @@ printed transaction).
 ## For Administrators: setting up
 
 ### 1. Turn the module on
-**System/About → Optional modules → Payments module.** *Payments Setup* appears in your menu, and Register Users get
+**System/About → General → Optional modules → Payments module.** *Payments Setup* appears in your menu, and Register Users get
 **Payments** in their menu and a **Print check…** button on withdrawals in the register.
 
 ### 2. Create a check style

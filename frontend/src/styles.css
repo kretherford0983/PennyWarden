@@ -521,3 +521,10 @@ button.small, label.button { display: inline-flex; align-items: center; justify-
 .row-menu .menu-item:focus-visible { box-shadow: inset 0 0 0 2px var(--focus); }
 .row-menu .menu-item.danger { color: var(--danger); }
 .row-menu .menu-item[aria-disabled=true] { opacity: .5; cursor: not-allowed; }
+
+/* #216 (build 11): a page's tab bar (System/About) - each tab has its own address */
+.page-tabs { display: flex; flex-wrap: wrap; gap: 2px; border-bottom: 1px solid var(--border); margin: 0 0 14px; }
+.page-tabs [role=tab] { background: none; border: 0; border-bottom: 3px solid transparent; border-radius: 6px 6px 0 0; margin-bottom: -1px;
+  padding: 6px 14px; color: var(--muted); font-weight: 600; min-height: var(--control-h); }
+.page-tabs [role=tab]:hover { color: var(--text); background: var(--surface-2); }
+.page-tabs [role=tab].current { color: var(--primary); border-bottom-color: var(--primary); }
