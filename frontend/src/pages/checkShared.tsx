@@ -1,7 +1,7 @@
 /** 2.0.0 (#157, #160, #162): pieces shared by the check setup screen and the print screen - the check preview drawn
  * to scale with the built-in fonts, the pattern input with variable autocomplete, and browser print instructions. */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { api } from "../api";
+import { api, ApiError } from "../api";
 import { ErrorBox, Modal } from "../components";
 
 export type FontInfo = { key: string; label: string; descent: number; descent_bold: number; cap_height: number };
@@ -318,27 +318,43 @@ export function Section({ id, title, children, extra, className = "", scope = "p
   );
 }
 
-/** #186: the live preview of a letter or envelope template - the PDF the server draws with sample data from the
- * unsaved settings, refreshed shortly after each change. The previous page stays until the new one is ready. */
-export function LivePdfPreview({ url, body, title, aspect, deps }: {
-  url: string; body: unknown; title: string; aspect: number; deps: unknown[];
+/** #186 / build 11 (#217): the live preview of a letter or envelope template - the server draws the template with sample
+ * data from the unsaved settings, shortly after each change; the previous picture stays until the new one is ready.
+ * It is shown as a picture (PNG of the PDF that prints), because Safari shows a PDF in an inline frame blank. Where the
+ * server can't draw pictures (PREVIEW_UNAVAILABLE) it falls back to the PDF in a frame plus an "Open preview" link. */
+export function LivePreview({ imageUrl, pdfUrl, body, title, aspect, deps }: {
+  imageUrl: string; pdfUrl: string; body: unknown; title: string; aspect: number; deps: unknown[];
 }) {
+  const [img, setImg] = useState<string | null>(null);
   const [pdf, setPdf] = usePdf();
+  const [usePdfFallback, setFallback] = useState(false);
   const [err, setErr] = useState<unknown>(null);
+  useEffect(() => () => { if (img) URL.revokeObjectURL(img); }, [img]);
   useEffect(() => {
     let live = true;
     const h = setTimeout(() => {
-      api.postBlob(url, body).then((b) => { if (live) { setPdf(b, "preview.pdf"); setErr(null); } },
-        (x) => { if (live) setErr(x); });
+      const ok = () => { if (live) setErr(null); };
+      const fail = (x: unknown) => { if (live) setErr(x); };
+      if (usePdfFallback) {
+        api.postBlob(pdfUrl, body).then((b) => { if (live) { setPdf(b, "preview.pdf"); ok(); } }, fail);
+        return;
+      }
+      api.postBlob(imageUrl, body).then((b) => { if (live) { setImg(URL.createObjectURL(b)); ok(); } },
+        (x) => { if (live && x instanceof ApiError && x.code === "PREVIEW_UNAVAILABLE") setFallback(true); else fail(x); });
     }, 600);
     return () => { live = false; clearTimeout(h); };
-  }, deps); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [...deps, usePdfFallback]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <div className="live-preview" data-testid="live-preview">
       <ErrorBox error={err} />
-      {pdf ? (
-        <iframe className="live-preview-frame" src={`${pdf.url}#toolbar=0&navpanes=0&view=Fit`} title={title}
-                style={{ aspectRatio: String(aspect) }} />
+      {usePdfFallback ? (pdf ? (
+        <>
+          <iframe className="live-preview-frame" src={`${pdf.url}#toolbar=0&navpanes=0&view=Fit`} title={title}
+                  style={{ aspectRatio: String(aspect) }} />
+          <p className="hint"><a href={pdf.url} target="_blank" rel="noopener">Open preview</a> (if the preview above stays blank in this browser)</p>
+        </>
+      ) : <p className="muted">Drawing the preview…</p>) : img ? (
+        <img className="live-preview-image" src={img} alt={title} data-testid="live-preview-image" />
       ) : <p className="muted">Drawing the preview…</p>}
     </div>
   );

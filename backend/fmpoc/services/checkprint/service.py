@@ -1098,27 +1098,81 @@ def set_logo(db: Session, ctx, d: CheckDocument, data: bytes | None) -> CheckDoc
     return d
 
 
-def create_document(db: Session, ctx, kind: str, name: str | None) -> CheckDocument:
-    if kind not in ("LETTER", "ENVELOPE"):
-        raise validation("Unknown template kind.", "kind")
+DOC_DEFAULT_NAMES = {"LETTER": "Invoice payment letter", "ENVELOPE": "#10 envelope"}
+DOC_PRESETS = {"WINDOW": ("LETTER", "Window envelope letter")}     # build 11 (#217): preset -> (kind, name)
+
+
+def free_document_name(db: Session, ctx, kind: str, base: str) -> str:
+    """Build 11 (#217): the first of "base", "base 2", "base 3"... no template of this kind uses yet. Deactivated
+    templates keep their names (BR-001: they are never deleted), so they count too."""
+    taken = {x.name.lower() for x in list_documents(db, ctx, kind)}
+    base = base.strip()[:80]
+    if base.lower() not in taken:
+        return base
+    n = 2
+    while True:
+        suffix = f" {n}"
+        cand = base[:80 - len(suffix)].rstrip() + suffix
+        if cand.lower() not in taken:
+            return cand
+        n += 1
+
+
+def _new_document(db: Session, ctx, kind: str, name: str, config: dict, logo: CheckDocument | None = None,
+                  source: CheckDocument | None = None) -> CheckDocument:
+    existing = list_documents(db, ctx, kind)
+    d = CheckDocument(workspace_id=ctx.workspace_id, kind=kind, name=name, active=True,
+                      is_default=not any(x.active and x.is_default for x in existing),
+                      config_json=json.dumps(config), created_by_user_id=ctx.user.id, updated_by_user_id=ctx.user.id)
+    if logo is not None and logo.logo_png:
+        d.logo_png, d.logo_sha256, d.logo_width, d.logo_height = (logo.logo_png, logo.logo_sha256, logo.logo_width,
+                                                                  logo.logo_height)
+    db.add(d)
+    db.flush()
+    after = _doc_snapshot(d)
+    if source is not None:
+        after["duplicated_from"] = source.id
+        after["logo_sha256"] = d.logo_sha256
+    audit.record(db, ctx, "CHECK_DOCUMENT_CREATED", "check_document", d.id, None, after)
+    return d
+
+
+def _check_room(db: Session, ctx) -> None:
     if len(list_documents(db, ctx)) >= MAX_DOCUMENTS:
         raise conflict("TOO_MANY", f"At most {MAX_DOCUMENTS} letter and envelope templates can be kept.")
-    name = _name(name or ("Invoice payment letter" if kind == "LETTER" else "#10 envelope"))
-    existing = list_documents(db, ctx, kind)
-    if any(x.name.lower() == name.lower() for x in existing):
-        raise conflict("DUPLICATE_NAME", f"A template named \"{name}\" already exists.")
+
+
+def create_document(db: Session, ctx, kind: str, name: str | None, preset: str | None = None) -> CheckDocument:
+    """A new template. Without a name it gets the kind's (or preset's) default name, numbered when taken (#217);
+    a name the user typed must be unique as before."""
+    if kind not in ("LETTER", "ENVELOPE"):
+        raise validation("Unknown template kind.", "kind")
+    if preset is not None and (preset not in DOC_PRESETS or DOC_PRESETS[preset][0] != kind):
+        raise validation("Unknown template preset.", "preset")
+    _check_room(db, ctx)
+    if name is not None and name.strip():
+        name = _name(name)
+        if any(x.name.lower() == name.lower() for x in list_documents(db, ctx, kind)):
+            raise conflict("DUPLICATE_NAME", f"A template named \"{name}\" already exists.")
+    else:
+        name = free_document_name(db, ctx, kind, DOC_PRESETS[preset][1] if preset else DOC_DEFAULT_NAMES[kind])
     letterhead = None
     if kind == "ENVELOPE":   # the return address starts as the default letter's letterhead
         letter = next((x for x in list_documents(db, ctx, "LETTER", False) if x.is_default), None)
         letterhead = doc_config(letter).letterhead if letter else None
-    d = CheckDocument(workspace_id=ctx.workspace_id, kind=kind, name=name, active=True,
-                      is_default=not any(x.active and x.is_default for x in existing),
-                      config_json=json.dumps(documents.default_config(kind, letterhead)),
-                      created_by_user_id=ctx.user.id, updated_by_user_id=ctx.user.id)
-    db.add(d)
-    db.flush()
-    audit.record(db, ctx, "CHECK_DOCUMENT_CREATED", "check_document", d.id, None, _doc_snapshot(d))
-    return d
+    config = documents.default_config(kind, letterhead)
+    if preset == "WINDOW":   # #217: a letter for a #10 double-window envelope (addresses on the letter's top panel)
+        config["window"] = "LETTER"
+        config["include_by_default"] = True
+    return _new_document(db, ctx, kind, name, config)
+
+
+def duplicate_document(db: Session, ctx, d: CheckDocument) -> CheckDocument:
+    """Build 11 (#217): a copy of a template with all its settings, the letter's logo included. The copy is active and
+    becomes the default only when its kind has no active default."""
+    _check_room(db, ctx)
+    name = free_document_name(db, ctx, d.kind, f"{d.name[:71].rstrip()} copy")   # room for " copy 999"
+    return _new_document(db, ctx, d.kind, name, doc_config(d).model_dump(), logo=d, source=d)
 
 
 def update_document(db: Session, ctx, d: CheckDocument, name: str, config: dict) -> CheckDocument:

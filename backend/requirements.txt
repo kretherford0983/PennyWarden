@@ -19,6 +19,8 @@ pyotp==2.10.0
 segno==1.6.6
 # v1.6.0 CR-033: linear-time regular expressions for the fundraiser filter (no catastrophic backtracking)
 google-re2==1.1.20251105
+# 2.0.0 build 11 (#217): PDFium renders the Payments Setup previews as pictures (Safari shows inline PDFs blank)
+pypdfium2==5.14.0
 # Transitive dependencies, pinned (v1.5.0) so every package ships exactly the versions listed in
 # THIRD-PARTY-NOTICES.txt (regenerate with: python scripts/third_party_notices.py)
 annotated-doc==0.0.5

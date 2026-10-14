@@ -1,36 +1,51 @@
 /** 2.0.0 (#165, #166): cover letter and #10 envelope templates on the Administrator's Payments Setup screen.
  * Text sections use the pattern syntax with autocomplete; test prints use sample data only (BR-003). */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { ErrorBox, Field } from "../components";
-import { LivePdfPreview, PatternInput, PdfViewer, Section, usePdf, viewState } from "./checkShared";
+import { LivePreview, PatternInput, PdfViewer, Section, usePdf, viewState } from "./checkShared";
 
 const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
 const DOC_FONTS: [string, string][] = [["CARLITO", "Carlito (Calibri-compatible)"], ["SANS", "Liberation Sans (Arial-compatible)"], ["SERIF", "Liberation Serif (Times-compatible)"]];
 
+/** Where an editor opens: "name" selects the name (a new or duplicated template, #217); "window" opens the letter's
+ * Window envelope section. */
+export type DocFocus = "name" | "window" | undefined;
+
 /** The template lists on the Payments Setup page: cover letters and envelopes, each its own section. Editing a
- * template opens its editor on a page of its own (DocumentEditor, shown by Payments Setup in place of the page). */
-export function DocumentsSection({ setup, onChanged, onEdit }: { setup: any; onChanged: () => void; onEdit: (doc: any) => void }) {
+ * template opens its editor on a page of its own (DocumentEditor, shown by Payments Setup in place of the page).
+ * Build 11 (#217): new templates get a free name ("… 2"), Duplicate copies one, and the Envelopes section points to the
+ * cover letter's Window envelope settings (a window envelope needs no envelope printing - the letter carries the
+ * addresses). Templates are never deleted (BR-001): deactivate one instead. */
+export function DocumentsSection({ setup, onChanged, onEdit }: { setup: any; onChanged: () => void; onEdit: (doc: any, focus?: DocFocus) => void }) {
   const [err, setErr] = useState<unknown>(null);
   const act = async (fn: () => Promise<any>) => { setErr(null); try { await fn(); onChanged(); } catch (x) { setErr(x); } };
-  const create = (kind: "LETTER" | "ENVELOPE") => act(async () => onEdit(await api.post("/api/checks/documents", { kind })));
+  const create = (kind: "LETTER" | "ENVELOPE", preset?: "WINDOW") =>
+    act(async () => onEdit(await api.post("/api/checks/documents", preset ? { kind, preset } : { kind }), "name"));
+  const duplicate = (d: any) => act(async () => onEdit(await api.post(`/api/checks/documents/${d.id}/duplicate`, {}), "name"));
   const docs = setup.documents || [];
-  const card = (kind: "LETTER" | "ENVELOPE", id: string, label: string, intro: string, newLabel: string) => {
+  const letters = docs.filter((d: any) => d.kind === "LETTER");
+  const windowLetter = letters.find((d: any) => d.active && d.config?.window !== "NONE")
+    || letters.find((d: any) => d.active && d.is_default) || letters.find((d: any) => d.active);
+  const card = (kind: "LETTER" | "ENVELOPE", id: string, label: string, intro: React.ReactNode, buttons: React.ReactNode, note?: React.ReactNode) => {
     const list = docs.filter((d: any) => d.kind === kind);
     return (
       <section className="card" aria-labelledby={id}>
         <h2 id={id}>{label}</h2>
         <p className="hint">{intro}</p>
+        {note}
         {list.length ? (
           <table className="table compact">
             <thead><tr><th>Name</th><th>Default</th><th>Status</th><th /></tr></thead>
             <tbody>
               {list.map((d: any) => (
                 <tr key={d.id}>
-                  <td>{d.name}</td><td>{d.is_default ? "Default" : ""}</td>
+                  <td>{d.name}{" "}{kind === "LETTER" && d.config?.window && d.config.window !== "NONE" ? <span className="badge grey">Window envelope</span> : null}</td>
+                  <td>{d.is_default ? "Default" : ""}</td>
                   <td>{d.active ? "Active" : <span className="badge grey">Deactivated</span>}</td>
                   <td className="actions-cell">
                     <button className="small" onClick={() => onEdit(d)}>Edit</button>{" "}
+                    <button className="small" onClick={() => duplicate(d)} aria-label={`Duplicate ${d.name}`}>Duplicate</button>{" "}
                     {d.active && !d.is_default ? <button className="small" onClick={() => act(() => api.post(`/api/checks/documents/${d.id}/flags`, { is_default: true }))}>Make default</button> : null}{" "}
                     <button className="small" onClick={() => act(() => api.post(`/api/checks/documents/${d.id}/flags`, { active: !d.active }))}>{d.active ? "Deactivate" : "Activate"}</button>
                   </td>
@@ -39,23 +54,46 @@ export function DocumentsSection({ setup, onChanged, onEdit }: { setup: any; onC
             </tbody>
           </table>
         ) : <p className="muted">None yet.</p>}
-        <div className="actions left"><button onClick={() => create(kind)}>{newLabel}</button></div>
+        <div className="actions left">{buttons}</div>
       </section>
     );
   };
   return (
     <>
       <ErrorBox error={err} />
-      {card("LETTER", "letters-h", "Cover letters", "Optional: a letter listing the invoices paid, printed with the check (or on its own for a check written by hand) and attached to the transaction.", "New cover letter")}
-      {card("ENVELOPE", "envelopes-h", "Envelopes", "Optional: a #10 envelope addressed to the payee, printed with the check (or on its own) and attached to the transaction.", "New #10 envelope")}
+      {card("LETTER", "letters-h", "Cover letters",
+        "Optional: a letter listing the invoices paid, printed with the check (or on its own for a check written by hand) and attached to the transaction. Keep as many as you need (for example invoices, a refund, a donation); the letter is chosen for each payment when printing.",
+        <>
+          <button onClick={() => create("LETTER")}>New cover letter</button>
+          <button onClick={() => create("LETTER", "WINDOW")}>New window-envelope letter</button>
+        </>)}
+      {card("ENVELOPE", "envelopes-h", "Envelopes", "Optional: a #10 envelope addressed to the payee, printed with the check (or on its own) and attached to the transaction.",
+        <button onClick={() => create("ENVELOPE")}>New #10 envelope</button>,
+        <div className="alert info" data-testid="window-pointer">
+          <b>Using #10 double-window envelopes?</b> Nothing is printed on a window envelope: the cover letter carries the return and payee addresses, so it is
+          set up on a cover letter, in its <i>Window envelope</i> section.{" "}
+          {windowLetter ? <button type="button" className="linklike" onClick={() => onEdit(windowLetter, "window")}>Open the window envelope settings of “{windowLetter.name}”</button>
+            : <button type="button" className="linklike" onClick={() => create("LETTER", "WINDOW")}>Start a window-envelope letter</button>}
+        </div>)}
     </>
   );
 }
 
 /** A cover letter or envelope template's editor - the whole page, nothing else from Payments Setup above it. */
-export function DocumentEditor({ setup, doc, onClose, onSaved }: { setup: any; doc: any; onClose: () => void; onSaved: (d: any) => void }) {
+export function DocumentEditor({ setup, doc, focus, onClose, onSaved, onOpen }: {
+  setup: any; doc: any; focus?: DocFocus; onClose: () => void; onSaved: (d: any) => void; onOpen: (d: any, focus?: DocFocus) => void;
+}) {
   const Editor = doc.kind === "LETTER" ? LetterEditor : EnvelopeEditor;
-  return <Editor key={doc.id} setup={setup} doc={doc} onClose={onClose} onSaved={onSaved} />;
+  return <Editor key={doc.id} setup={setup} doc={doc} focus={focus} onClose={onClose} onSaved={onSaved} onOpen={onOpen} />;
+}
+
+type EditorProps = { setup: any; doc: any; focus?: DocFocus; onClose: () => void; onSaved: (d: any) => void; onOpen: (d: any, focus?: DocFocus) => void };
+
+/** #217: a new or duplicated template opens with its name selected, ready to type over. */
+function NameField({ e, focus }: { e: ReturnType<typeof useEditor>; focus?: DocFocus }) {
+  const ref = useRef<HTMLInputElement>(null);
+  useEffect(() => { if (focus === "name" && ref.current) { ref.current.focus(); ref.current.select(); } }, [focus]);
+  return <Field label="Name"><input ref={ref} maxLength={80} value={e.name} onChange={(ev) => e.setName(ev.target.value)} /></Field>;
 }
 
 function useEditor(doc: any, onSaved: (d: any) => void) {
@@ -109,8 +147,8 @@ function PreviewSection({ doc, e, scope, version = "" }: { doc: any; e: ReturnTy
     <Section id="pv" scope={scope} title="Preview (drawn to scale, sample data)" className={`doc-preview ${letter ? "letter" : "envelope"} ${pin ? "pinned" : ""}`} extra={
       <label className="check"><input type="checkbox" checked={pin} onChange={(ev) => setPin(ev.target.checked)} /> Keep at the top</label>
     }>
-      <LivePdfPreview url={`/api/checks/documents/${doc.id}/preview`} body={{ config: e.cfg }} title={letter ? "Cover letter preview" : "Envelope preview"}
-                      aspect={aspect} deps={[e.cfg, version]} />
+      <LivePreview imageUrl={`/api/checks/documents/${doc.id}/preview-image`} pdfUrl={`/api/checks/documents/${doc.id}/preview`} body={{ config: e.cfg }}
+                   title={letter ? "Cover letter preview" : "Envelope preview"} aspect={aspect} deps={[e.cfg, version]} />
       <p className="hint">{letter ? "The letter as it prints, with a sample payee and two sample invoices. It updates as you type." :
         "The envelope as it prints, with a sample payee. It updates as you type; Test print shows it on the page as the printer is fed."}</p>
     </Section>
@@ -132,8 +170,16 @@ function Lines({ label, lines, max, onChange, variables, idBase }: { label: stri
   );
 }
 
-function LetterEditor({ setup, doc, onClose, onSaved }: { setup: any; doc: any; onClose: () => void; onSaved: (d: any) => void }) {
+function LetterEditor({ setup, doc, focus, onClose, onSaved }: EditorProps) {
+  if (focus === "window") viewState.set("pw-letter-lwin", true);   // #217: arrive at an open Window envelope section
   const e = useEditor(doc, onSaved);
+  const winRef = useRef<HTMLSelectElement>(null);
+  useEffect(() => {
+    if (focus === "window" && winRef.current) {
+      winRef.current.scrollIntoView({ block: "center" });
+      winRef.current.focus();
+    }
+  }, [focus]);
   const c = e.cfg;
   const vars = setup.letter_variables;
   const cols: any[] = c.columns;
@@ -154,7 +200,7 @@ function LetterEditor({ setup, doc, onClose, onSaved }: { setup: any; doc: any; 
       <PreviewSection doc={doc} e={e} scope="pw-letter" version={logo?.version || ""} />
       <Section id="lgen" scope="pw-letter" title="General">
         <div className="row form-row">
-          <Field label="Name"><input maxLength={80} value={e.name} onChange={(ev) => e.setName(ev.target.value)} /></Field>
+          <NameField e={e} focus={focus} />
           <Field label="Font"><select value={c.font} onChange={(ev) => e.change((x) => { x.font = ev.target.value; })}>{DOC_FONTS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Field>
           <Field label="Size (pt)"><input type="number" min={8} max={14} step={0.5} value={c.size} onChange={(ev) => e.change((x) => { x.size = Number(ev.target.value) || 11; })} /></Field>
           <label className="check"><input type="checkbox" checked={c.include_by_default} onChange={(ev) => e.change((x) => { x.include_by_default = ev.target.checked; })} /> "Include cover letter" starts ticked on the print screen</label>
@@ -222,8 +268,10 @@ function LetterEditor({ setup, doc, onClose, onSaved }: { setup: any; doc: any; 
         <PatternInput id="signoff" label="Sign-off" value={c.signoff} variables={vars} hint={false} onChange={(v) => e.change((x) => { x.signoff = v; })} />
       </Section>
       <Section id="lwin" scope="pw-letter" title="Window envelope (#10 double-window)">
+        <p className="hint">For #10 double-window envelopes nothing is printed on the envelope: the addresses print on this letter and show through the
+          windows. Leave this at <i>None</i> for a plain envelope (printed from an envelope template).</p>
         <Field label="Address for a window envelope">
-          <select value={c.window} onChange={(ev) => e.change((x) => { x.window = ev.target.value; })}>
+          <select ref={winRef} value={c.window} onChange={(ev) => e.change((x) => { x.window = ev.target.value; })}>
             <option value="NONE">None (the letter goes in a plain envelope)</option>
             <option value="LETTER">On the letter: addresses at the top, the letter starts below the first fold</option>
             <option value="ADDRESS_PAGE">On a separate address page in front of the letter</option>
@@ -256,16 +304,24 @@ function LetterEditor({ setup, doc, onClose, onSaved }: { setup: any; doc: any; 
   );
 }
 
-function EnvelopeEditor({ setup, doc, onClose, onSaved }: { setup: any; doc: any; onClose: () => void; onSaved: (d: any) => void }) {
+function EnvelopeEditor({ setup, doc, focus, onClose, onSaved, onOpen }: EditorProps) {
   const e = useEditor(doc, onSaved);
   const c = e.cfg;
+  const letters = (setup.documents || []).filter((d: any) => d.kind === "LETTER" && d.active);
+  const winLetter = letters.find((d: any) => d.config?.window !== "NONE") || letters.find((d: any) => d.is_default) || letters[0];
+  const openWindow = () => { if (!e.dirty || window.confirm("Leave without saving your changes?")) onOpen(winLetter, "window"); };
   const n = (k: string) => (ev: any) => e.change((x) => { x[k] = Number(ev.target.value) || 0; });
   return (
     <EditorFrame title={`Envelope: ${doc.name}`} e={e} onClose={onClose} singleFeed>
+      <div className="alert info" data-testid="window-pointer">
+        <b>This is for plain envelopes printed with the payee's address.</b> For #10 double-window envelopes, set up the <i>Window envelope</i> section of a
+        cover letter instead: the letter carries the addresses.{" "}
+        {winLetter ? <button type="button" className="linklike" onClick={openWindow}>Open the window envelope settings of “{winLetter.name}”</button> : null}
+      </div>
       <PreviewSection doc={doc} e={e} scope="pw-envelope" />
       <Section id="egen" scope="pw-envelope" title="General">
         <div className="row form-row">
-          <Field label="Name"><input maxLength={80} value={e.name} onChange={(ev) => e.setName(ev.target.value)} /></Field>
+          <NameField e={e} focus={focus} />
           <Field label="Width (in)"><input type="number" step={0.125} value={c.width} onChange={n("width")} /></Field>
           <Field label="Height (in)"><input type="number" step={0.125} value={c.height} onChange={n("height")} /></Field>
           <Field label="Font"><select value={c.font} onChange={(ev) => e.change((x) => { x.font = ev.target.value; })}>{DOC_FONTS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Field>

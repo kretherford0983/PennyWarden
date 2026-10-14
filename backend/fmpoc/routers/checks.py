@@ -18,7 +18,7 @@ from ..deps import Ctx, auth_ctx, get_db, require
 from ..errors import AppError, forbidden, not_found, validation
 from ..models import BankAccount
 from ..services.checkprint import config as cfgmod
-from ..services.checkprint import documents, fonts, patterns, presets, render
+from ..services.checkprint import documents, fonts, patterns, presets, raster, render
 from ..services.checkprint import service as svc
 from ..services.common import get_scoped
 
@@ -473,6 +473,7 @@ def recent(bank_account_id: int, db: Session = Depends(get_db), ctx: Ctx = Depen
 class DocCreateIn(In):
     kind: Literal["LETTER", "ENVELOPE"]
     name: str | None = Field(default=None, max_length=80)
+    preset: Literal["WINDOW"] | None = None          # build 11 (#217): a cover letter for a window envelope
 
 
 class DocUpdateIn(In):
@@ -518,7 +519,15 @@ class EnvelopePrinterIn(In):
 
 @router.post("/documents", status_code=201)
 def create_document(body: DocCreateIn, db: Session = Depends(get_db), ctx: Ctx = Depends(setup_ctx)):
-    d = svc.create_document(db, ctx, body.kind, body.name)
+    d = svc.create_document(db, ctx, body.kind, body.name, body.preset)
+    db.commit()
+    return svc.doc_out(d)
+
+
+@router.post("/documents/{doc_id}/duplicate", status_code=201)
+def duplicate_document(doc_id: int, db: Session = Depends(get_db), ctx: Ctx = Depends(setup_ctx)):
+    """Build 11 (#217): copy a letter or envelope template with all its settings (logo included)."""
+    d = svc.duplicate_document(db, ctx, svc.get_document(db, ctx, doc_id))
     db.commit()
     return svc.doc_out(d)
 
@@ -587,6 +596,21 @@ def document_preview(doc_id: int, body: DocTestIn, db: Session = Depends(get_db)
     cfg = svc._doc_config_or_422(d.kind, body.config) if body.config is not None else svc.doc_config(d)
     pdf = svc.sample_letter_pdf(cfg, d.logo_png) if d.kind == "LETTER" else svc.sample_envelope_pdf(cfg, preview=True)
     return _pdf(pdf, f"{d.kind.lower()}-preview.pdf")
+
+
+@router.post("/documents/{doc_id}/preview-image")
+def document_preview_image(doc_id: int, body: DocTestIn, db: Session = Depends(get_db), ctx: Ctx = Depends(setup_ctx)):
+    """Build 11 (#217): the same live preview as a PNG picture, which every browser shows (Safari shows an inline PDF
+    blank). 501 PREVIEW_UNAVAILABLE where the PDF renderer can't load; the editor then falls back to the PDF."""
+    d = svc.get_document(db, ctx, doc_id)
+    cfg = svc._doc_config_or_422(d.kind, body.config) if body.config is not None else svc.doc_config(d)
+    if not raster.available():
+        raise AppError(501, "PREVIEW_UNAVAILABLE", "The picture preview is not available on this server.")
+    pdf = svc.sample_letter_pdf(cfg, d.logo_png) if d.kind == "LETTER" else svc.sample_envelope_pdf(cfg, preview=True)
+    png, pages = raster.pdf_to_png(pdf)
+    return Response(png, media_type="image/png",
+                    headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+                             "X-Page-Count": str(pages)})
 
 
 @router.get("/transactions/{txn_id}/documents")
