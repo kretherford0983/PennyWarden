@@ -103,6 +103,10 @@ host = "127.0.0.1"          # loopback only; Cloudflare Tunnel / reverse proxy c
 port = $PORT
 secure_cookies = "true"     # browsers reach the app over HTTPS (Cloudflare edge)
 trusted_proxies = "127.0.0.1"
+# folders an Administrator may choose for scheduled backups, as a list, e.g.
+#   backup_folders = ["/srv/pennywarden-backups", "/mnt/nas/pennywarden"]
+# They must be outside /home; the installer lets the service write to them (run it again after changing this list).
+backup_folders = []
 CFG
   chown "$USER_:$USER_" "$DATA/config.toml"; chmod 0600 "$DATA/config.toml"
 fi
@@ -147,6 +151,36 @@ WantedBy=multi-user.target
 UNIT
 
 ln -sfn "$REL" "$OPT/current"
+# 2.0.0 build 13: the service may write only to its data folder (ProtectSystem=strict), so the scheduled-backup folders
+# listed in config.toml (backup_folders) are added to its write list in a drop-in; a missing folder ("-") does not stop
+# the service from starting. Rewritten on every run; a manual "systemctl edit" override is left alone.
+DROPIN=/etc/systemd/system/$SVC.service.d
+FOLDERS="$("$REL/python/bin/python3" -I - "$DATA/config.toml" <<'PY' 2>/dev/null || true
+import sys, tomllib
+try:
+    v = tomllib.load(open(sys.argv[1], "rb")).get("server", {}).get("backup_folders", [])
+except Exception:
+    sys.exit(0)
+v = v if isinstance(v, list) else [p for p in str(v).replace("\n", ":").split(":")]
+for p in v:
+    p = str(p).strip()
+    if p.startswith("/") and "\n" not in p:
+        print(p)
+PY
+)"
+if [ -n "$FOLDERS" ]; then
+  install -d -m 0755 "$DROPIN"
+  { echo "# Written by install-server.sh from backup_folders in $DATA/config.toml - run the installer again after changing it."
+    echo "[Service]"
+    printf '%s\n' "$FOLDERS" | while IFS= read -r f; do
+      case "$f" in /home/*|/root/*|/run/user/*) echo "# $f is under a protected home folder (ProtectHome) - the service can't use it; choose another folder" ;;
+                   *) printf 'ReadWritePaths="-%s"\n' "$(printf %s "$f" | sed 's/\\/\\\\/g; s/"/\\"/g')" ;; esac
+    done
+  } > "$DROPIN/backup-folders.conf"
+  echo "==> scheduled-backup folders the service may write to:"; grep -E '^(ReadWritePaths|# /)' "$DROPIN/backup-folders.conf" | sed 's/^/    /'
+else
+  rm -f "$DROPIN/backup-folders.conf"
+fi
 # 2.0.0 build 13: the host commands (sudo pennywarden restore | reinitialize | reset-password | reset-mfa ...) on the
 # PATH. A wrapper, not a symlink: it always runs the current release.
 CMD=/usr/local/bin/pennywarden

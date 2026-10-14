@@ -129,8 +129,13 @@ System/About → Backups → Backup / Restore → **Scheduled** writes backups o
 - **Schedule:** Daily at a time, or Weekly on a day at a time — the computer's (server's) local time.
 - **Folder:** one folder the operating system running PennyWarden can already see: a local folder, an external drive
   or a mounted network share. On a **server** the server owner lists the allowed folders in `config.toml`
-  (`backup_folders = ["/mnt/nas/pennywarden"]`, docs/configuration.md) and the Administrator picks one; the service
-  account (`pennywarden` on Linux) must be able to write there. On a **local install** any folder can be entered.
+  (`backup_folders = ["/mnt/nas/pennywarden", "/srv/pennywarden-backups"]` — a list in square brackets, one quoted
+  path each; docs/configuration.md) and the Administrator picks one; the service account (`pennywarden` on Linux) must
+  be able to write there. **Linux server:** the service runs sandboxed and may write only to its data folder and the
+  folders the installer adds for it — **run the installer again after changing `backup_folders`** (it reads the list
+  and lets the service write there; folders under `/home` can't be used). Without that, *Test* reports that the
+  folder can't be written even when its owner, group and permissions are right. On a **local install** any folder can
+  be entered.
   **Test** writes and removes a small file to check the folder. Copying backups offsite is done outside PennyWarden.
 - **Passphrase and key pair:** the Administrator sets a backup passphrase once (at least 12 characters; their own
   password confirms it). PennyWarden turns it into a key pair and keeps only the public key and the private key

@@ -247,6 +247,15 @@ Database migrations `0028` to `0030` (empty columns: the letter logo, the backup
   a Linux server, the full `PennyWarden.cmd` path (as Administrator) on Windows, no `sudo` on a local install; the
   web hints say `sudo` too. `pennywarden restore --list` prints the full path of each backup kept on the server and a
   ready-to-paste command, since that folder can't be tab-completed without root.
+- **Scheduled backups to a folder on a Linux server.** The service runs sandboxed and could write only to its data
+  folder, so a folder listed in `backup_folders` failed *Test* with a permission error however its permissions were set.
+  The installer now reads `backup_folders` and lets the service write to those folders (a systemd drop-in; run the
+  installer again after changing the list). New installs' `config.toml` has `backup_folders = []` with an example.
+- **New letters and envelopes are drafts until saved.** *New cover letter*, *New #10 envelope* and *Duplicate* open the
+  editor without storing anything; the first **Save** creates the template, and going back without saving leaves
+  nothing behind (a logo can be added once the letter is saved; a duplicate's logo is copied when it is saved).
+- **No more scrolling past the end of a page.** On long pages such as the Payments Setup editors the window kept
+  scrolling after the end of the page.
 - **Maintenance mode:** everyone but Administrators now sees the screens without the actions that would change
   something (as a read-only role does), instead of buttons that fail; looking things up that uses POST — the
   Financial Flow Report, the audit log export, *Reveal* account number, the fundraiser preview — works again during
