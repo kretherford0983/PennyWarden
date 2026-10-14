@@ -2,8 +2,10 @@
 # - Routine minor/patch updates arrive as ONE pull request per ecosystem (groups below).
 # - MAJOR versions are not proposed (1.7.1): React 19, TypeScript 7 and the like need planning and testing, so each
 #   is done deliberately as its own issue. The first run in 1.6.8 opened one failing pull request per major upgrade.
-# - pydantic_core is never proposed on its own (1.7.1): pydantic requires one exact pydantic_core version, so it
-#   only ever changes together with pydantic - on a feature branch.
+# - pydantic and pydantic_core are not proposed as version updates (pydantic_core since 1.7.1, pydantic since 2.0.0):
+#   pydantic requires one exact pydantic_core version, and this updater changes the pinned lines of requirements.txt
+#   one by one without re-resolving them, so a pydantic bump alone fails to install (Dependabot #224, 2026-10-14).
+#   Both are updated together by hand on a feature branch. Their security updates still arrive (see below).
 # - Security updates (Settings -> Advanced Security -> "Dependabot security updates") are NOT held back by the
 #   rules above: every `ignore` entry below names `update-types`, and those filter version updates only. (An entry
 #   that names just a dependency would also block its security fixes - do not add one.) They are separate pull
@@ -25,6 +27,8 @@ updates:
       - dependency-name: "pydantic_core"
         update-types: ["version-update:semver-major", "version-update:semver-minor", "version-update:semver-patch"]
       - dependency-name: "pydantic-core"       # the same package under its normalized name
+        update-types: ["version-update:semver-major", "version-update:semver-minor", "version-update:semver-patch"]
+      - dependency-name: "pydantic"            # 2.0.0: needs its exact pydantic_core, so both are updated by hand
         update-types: ["version-update:semver-major", "version-update:semver-minor", "version-update:semver-patch"]
     groups:
       python:

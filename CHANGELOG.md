@@ -233,6 +233,9 @@ Database migrations `0028` to `0030` (empty columns: the letter logo, the backup
 - Dependency updates (Dependabot #223, #224): FastAPI 0.143.0, Pydantic 2.14.0 with pydantic-core 2.50.0 (the core
   pin Dependabot missed, which failed #224), SQLAlchemy 2.1.4, pypdf 6.20.0, pycparser 3.11; Playwright 1.64.0 and
   Vite 6.4.4 (build tools). FastAPI's automatic OpenTelemetry exporter setup became opt-in; PennyWarden doesn't use it.
+- Dependabot no longer proposes `pydantic` updates on their own (#224 failed because the matching `pydantic_core` can't
+  move with it); pydantic and pydantic_core are updated together by hand. Security updates still arrive. Takes
+  effect when 2.0.0 is on main.
 
 ## 1.10.0 — 2026-10-09
 Database migration `0024` (one table added; no existing data changes). Rolling back to 1.9.0 needs the data snapshot
