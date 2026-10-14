@@ -36,6 +36,7 @@ jobs:
     timeout-minutes: 30
     outputs:
       version: ${{ steps.meta.outputs.version }}
+      artifact: ${{ steps.meta.outputs.artifact }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -45,7 +46,11 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - id: meta
         name: Version
-        run: echo "version=$(bash scripts/version.sh)" >> "$GITHUB_OUTPUT"
+        run: |
+          V="$(bash scripts/version.sh)"
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          # artifact names may not contain "/" (manual runs on feature/... branches)
+          echo "artifact=PennyWarden-$V-${GITHUB_REF_NAME//\//-}-$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
       - name: Build info shown in the app (My Account / System About)
         env:
           VERSION: ${{ steps.meta.outputs.version }}
@@ -232,7 +237,7 @@ jobs:
         run: (cd release && sha256sum -- * > SHA256SUMS.txt && cat SHA256SUMS.txt)
       - uses: actions/upload-artifact@v7
         with:
-          name: PennyWarden-${{ needs.package.outputs.version }}-${{ github.ref_name }}-${{ github.run_number }}
+          name: ${{ needs.package.outputs.artifact }}
           path: release/
           # test/main packages are kept permanently on the GitHub release; the run copy only feeds the publish job.
           # Short retention keeps Actions artifact storage (1 GB on GitHub Pro) well below the limit.
@@ -250,7 +255,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/download-artifact@v8
         with:
-          name: PennyWarden-${{ needs.package.outputs.version }}-${{ github.ref_name }}-${{ github.run_number }}
+          name: ${{ needs.package.outputs.artifact }}
           path: release
       - name: Publish GitHub release
         env:
