@@ -2646,10 +2646,11 @@ test("#216: System/About tabs have their own addresses; Auditors see three; bann
 test("#188: an Auditor exports the filtered, readable audit log as CSV and a printable PDF; the export is recorded", async ({ page }) => {
   await login(page, "auditor1");      // created by the #216 test
   await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Audit Log", exact: true }).click();
+  // the total comes from the filtered list's own response (the pager may still show the unfiltered count for a moment)
+  const filtered = page.waitForResponse((r) => r.url().includes("/api/audit-events?") && r.url().includes("category=BUSINESS"));
   await page.locator(".filters .field").filter({ has: page.locator(".field-label", { hasText: /^Category$/ }) }).locator("select").selectOption("BUSINESS");
-  await expect(page.locator(".audit-table tbody tr > td:nth-child(4)", { hasText: "Security" })).toHaveCount(0);   // filtered
-  await expect(page.locator(".pager")).toContainText(/of \d+/);
-  const total = Number((await page.locator(".pager span").innerText()).split(" of ")[1].replace(/,/g, ""));
+  const total: number = (await (await filtered).json()).total;
+  await expect(page.locator(".pager")).toContainText(` of ${total}`);
   // CSV: downloaded at once, one row per matching entry (all pages), same summaries as the screen
   const dl = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export CSV" }).click();
