@@ -189,6 +189,15 @@ Database migrations `0028` to `0030` (empty columns: the letter logo, the backup
   install or upgrade the test server (with a copy button on GitHub) and the Windows and Mac downloads — followed by the
   notes. Production releases keep it at the end. pennywarden.org and the update notification still show only the notes.
 
+**Test build 10 — Windows server installer (#187)**
+- **`install-windows-server.ps1`.** One script, attached to every release, installs or upgrades PennyWarden on a
+  Windows server (run in PowerShell as Administrator): the program in `C:\PennyWarden`, the data in
+  `C:\ProgramData\PennyWarden` (only SYSTEM, Administrators and the service can read it), PennyWarden as a Windows
+  service under its own virtual account, and with `-Domain` Caddy in front of it for HTTPS with an automatic
+  certificate (without it, for a Cloudflare Tunnel). Every download is checked against its SHA-256. Running it again
+  upgrades after copying the data folder, and puts the previous version back if the new one doesn't start;
+  `-Uninstall` keeps the data. Tested on every build on a Windows Server runner (docs/install-windows-server.md).
+
 ## 1.10.0 — 2026-10-09
 Database migration `0024` (one table added; no existing data changes). Rolling back to 1.9.0 needs the data snapshot
 the installer takes before the upgrade (docs/upgrade.md).

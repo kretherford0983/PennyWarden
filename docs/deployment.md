@@ -43,7 +43,9 @@ default browser when a desktop session is available. Plain HTTP is acceptable be
 
 On **Windows** (Windows 10/11 or Windows Server): step by step in [install-windows-server.md](install-windows-server.md)
 — the portable zip, a fixed data folder with its permissions, HTTPS through Caddy (or a Cloudflare Tunnel), and a
-Windows service (NSSM) that starts it with Windows.
+Windows service (NSSM) that starts it with Windows. Since 2.0.0 the script `install-windows-server.ps1` from the release does all of it in
+one step (`-Domain books.example.org` for HTTPS through Caddy; without it, for a Cloudflare Tunnel) and upgrades the
+same way.
 
 ### Linux: one command (since 1.5.0)
 
