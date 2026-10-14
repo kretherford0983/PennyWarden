@@ -2646,11 +2646,15 @@ test("#216: System/About tabs have their own addresses; Auditors see three; bann
 test("#188: an Auditor exports the filtered, readable audit log as CSV and a printable PDF; the export is recorded", async ({ page }) => {
   await login(page, "auditor1");      // created by the #216 test
   await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Audit Log", exact: true }).click();
-  // the total comes from the filtered list's own response (the pager may still show the unfiltered count for a moment)
+  // what the screen shows is taken from the filtered list's own response: right after the change the page may still
+  // show the unfiltered list for a moment, and reading it then raced on fast runners (develop build 149)
   const filtered = page.waitForResponse((r) => r.url().includes("/api/audit-events?") && r.url().includes("category=BUSINESS"));
   await page.locator(".filters .field").filter({ has: page.locator(".field-label", { hasText: /^Category$/ }) }).locator("select").selectOption("BUSINESS");
-  const total: number = (await (await filtered).json()).total;
-  await expect(page.locator(".pager")).toContainText(` of ${total}`);
+  const listed = await (await filtered).json();
+  const total: number = listed.total;
+  await expect(page.locator(".pager span")).toHaveText(new RegExp(` of ${total}$`));   // exact: " of 159" is also in " of 1593"
+  const firstSummary: string = listed.items[0].readable.summary.split(" — ").slice(1).join(" — ");
+  await expect(page.locator(".audit-table tbody tr").first().locator("td").nth(2).locator(".muted")).toHaveText(firstSummary);
   // CSV: downloaded at once, one row per matching entry (all pages), same summaries as the screen
   const dl = page.waitForEvent("download");
   await page.getByRole("button", { name: "Export CSV" }).click();
@@ -2659,9 +2663,9 @@ test("#188: an Auditor exports the filtered, readable audit log as CSV and a pri
   const { readFileSync } = await import("node:fs");
   const csv = readFileSync((await file.path())!, "utf-8");
   expect(csv.split("\n")[0]).toContain("Event #,Local time (");
-  const firstSummary = (await page.locator(".audit-table tbody tr").first().locator("td").nth(2).locator(".muted").innerText()).trim();
   expect(csv).toContain(firstSummary.replace(/"/g, '""'));
-  expect((csv.match(/^\d+,/gm) || []).length).toBe(total);
+  // one row per entry: a row starts with the event # and its local time (a multi-line cell can't look like that)
+  expect((csv.match(/^\d+,\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2} /gm) || []).length).toBe(total);
   // PDF: shown with Print, Open in a new tab and Download
   await page.getByRole("button", { name: "Printable PDF" }).click();
   const v = page.getByRole("dialog", { name: "Audit log export" });
