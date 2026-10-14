@@ -225,6 +225,15 @@ Database migrations `0028` to `0030` (empty columns: the letter logo, the backup
   (`/about/backups` …) that can be bookmarked; Auditors see About, Settings and Security; the backup and disk-space
   banners open the right tab.
 
+**Test build 12 — audit log export (#188)**
+- **Export the Audit Log for an audit review.** *Export CSV* and *Printable PDF* on the Audit Log hold every entry
+  matching the filters (all pages, up to 10,000) in the same plain words as the screen: when (in your time zone, with
+  UTC in the CSV), who, what happened and what changed. Financial content stays withheld for Administrators, CSV cells
+  can't start a spreadsheet formula, and every export is recorded in the audit log (*Audit log exported*).
+- Dependency updates (Dependabot #223, #224): FastAPI 0.143.0, Pydantic 2.14.0 with pydantic-core 2.50.0 (the core
+  pin Dependabot missed, which failed #224), SQLAlchemy 2.1.4, pypdf 6.20.0, pycparser 3.11; Playwright 1.64.0 and
+  Vite 6.4.4 (build tools). FastAPI's automatic OpenTelemetry exporter setup became opt-in; PennyWarden doesn't use it.
+
 ## 1.10.0 — 2026-10-09
 Database migration `0024` (one table added; no existing data changes). Rolling back to 1.9.0 needs the data snapshot
 the installer takes before the upgrade (docs/upgrade.md).

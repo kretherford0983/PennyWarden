@@ -338,6 +338,30 @@ System/About → Backups. The server's SPA fallback already serves `/about/<tab>
 locations. E2E: `aboutTab()` helper; test "#216" (addresses, reload, Back, keyboard, unknown tab, banner links via a
 mocked alert, Auditor tabs); the #214 audit covers every tab.
 
+**2.0.0 test build 12 — audit log export (#188; moved into 2.0.0 by Kyle 2026-10-14).** `routers/audit_log.py`: the
+list's filters became a `Filters` model and `_query` / `_ordered`, shared by `GET /api/audit-events` and the new
+`POST /api/audit-events/export` (`ExportIn`: filters + `format` csv|pdf + `time_zone`, `extra=forbid`). Every
+matching entry goes through `_out` (so `readable` and the Administrator withholding are identical to the screen);
+over `audit_export.MAX_EXPORT` (10,000) → 422 `EXPORT_TOO_LARGE`, nothing recorded. The export is audited before the
+file is built (`AUDIT_LOG_EXPORTED`, object `audit_log`, category SECURITY, `{format, entries, filters, time_zone}`).
+`services/audit_export.py`: `to_csv` (UTF-8 BOM; columns Event #, Local time (<zone>), UTC time, Actor, Category,
+Action, Object, Object #, Summary, What changed — an update as `Field: before → after (changed)`, a new record as
+`Field: value`, removed as `Field: value (before)`, empty fields left out, line tables as `Line n: Column: value; …`;
+every cell through `reports._csv_safe`) and `to_pdf` (reportlab, Letter landscape, Vera fonts: header with exported
+by/when/zone/filters/count, then per entry the action, summary, time · actor · category · event #, and the same
+Field/Before/After/changed table as the screen; footer with organization and page). Frontend `AuditLog.tsx`: *Export
+CSV* (downloads) and *Printable PDF* (`PdfViewer` with Print/Open/Download) send the current filters and the browser's
+time zone; the list reloads to show the export entry. Tests: `tests/test_v200_build12.py`, E2E "#188".
+The PDF never wraps an entry's change table in another table (a one-cell table can't split, so a long entry broke the
+layout): the table is indented with `hAlign`, repeats its header across pages, and a single cell is cut at 2,500
+characters with a pointer to the CSV, which holds everything.
+
+**2.0.0 test build 12 — dependencies (Dependabot #223, #224, folded in by Kyle's request 2026-10-14).** `requirements.txt`:
+fastapi 0.143.0, pydantic 2.14.0 + **pydantic_core 2.50.0** (Dependabot bumped pydantic but not its pinned core, so
+#224's install failed), SQLAlchemy 2.1.4, pypdf 6.20.0, pycparser 3.11 — resolved in a clean Python 3.12 environment
+(no new transitive packages; wheels for Windows x64, Linux x64/arm64 and macOS arm64 checked). Frontend dev tools:
+@playwright/test 1.64.0, vite 6.4.4 (lockfile identical to #223). Notices regenerated with Python 3.12.
+
 **1.10.0 Update notification (issue #58; channel decided 2026-10-09).** Migration `0024`: `update_check` (one row).
 `services/updates.py`: `channel(settings)` - setting `update_channel` (`auto` → from `build_info.json`: `main` →
 stable, `test` → test, anything else / no build info → none); `check(app, force)` - due after 24 h (6 h after an error),
