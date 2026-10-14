@@ -102,3 +102,9 @@ one step, with HTTPS through Caddy (`-Domain`) or behind your Cloudflare Tunnel.
 - **Tidier screens:** form fields, dropdowns and buttons line up; tables show **Edit** and a **⋯** menu with the other
   actions of the row; **System/About** is split into tabs (About, General, Settings, Backups, Security, System health,
   Advanced), each with its own address you can bookmark.
+
+## Audit log export (test build 12)
+On the **Audit Log**, set the filters (for example the Fiscal Year's dates), then **Export CSV** for a spreadsheet or
+**Printable PDF** to print or keep. Both hold every matching entry — not only the page on screen — with the same
+summaries and *What changed* details, times in your time zone. Administrators' exports leave out financial content,
+as the screen does. Each export is itself recorded in the audit log.

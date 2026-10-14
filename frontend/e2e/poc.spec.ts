@@ -2642,6 +2642,38 @@ test("#216: System/About tabs have their own addresses; Auditors see three; bann
   await logout(page);
 });
 
+// ---------------------------------------------------------------- 2.0.0 build 12 (#188): audit log export
+test("#188: an Auditor exports the filtered, readable audit log as CSV and a printable PDF; the export is recorded", async ({ page }) => {
+  await login(page, "auditor1");      // created by the #216 test
+  await page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Audit Log", exact: true }).click();
+  // the total comes from the filtered list's own response (the pager may still show the unfiltered count for a moment)
+  const filtered = page.waitForResponse((r) => r.url().includes("/api/audit-events?") && r.url().includes("category=BUSINESS"));
+  await page.locator(".filters .field").filter({ has: page.locator(".field-label", { hasText: /^Category$/ }) }).locator("select").selectOption("BUSINESS");
+  const total: number = (await (await filtered).json()).total;
+  await expect(page.locator(".pager")).toContainText(` of ${total}`);
+  // CSV: downloaded at once, one row per matching entry (all pages), same summaries as the screen
+  const dl = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Export CSV" }).click();
+  const file = await dl;
+  expect(file.suggestedFilename()).toMatch(/^audit-log-\d{8}-\d{6}\.csv$/);
+  const { readFileSync } = await import("node:fs");
+  const csv = readFileSync((await file.path())!, "utf-8");
+  expect(csv.split("\n")[0]).toContain("Event #,Local time (");
+  const firstSummary = (await page.locator(".audit-table tbody tr").first().locator("td").nth(2).locator(".muted").innerText()).trim();
+  expect(csv).toContain(firstSummary.replace(/"/g, '""'));
+  expect((csv.match(/^\d+,/gm) || []).length).toBe(total);
+  // PDF: shown with Print, Open in a new tab and Download
+  await page.getByRole("button", { name: "Printable PDF" }).click();
+  const v = page.getByRole("dialog", { name: "Audit log export" });
+  await expect(v.getByRole("button", { name: "Print…" })).toBeVisible();
+  await expect(v.getByRole("link", { name: "Download PDF" })).toHaveAttribute("download", /^audit-log-\d{8}-\d{6}\.pdf$/);
+  await v.getByRole("button", { name: "Close" }).first().click();
+  // both exports are in the log (Security category)
+  await page.locator(".filters .field").filter({ has: page.locator(".field-label", { hasText: /^Category$/ }) }).locator("select").selectOption("SECURITY");
+  await expect(page.locator(".audit-action", { hasText: "Audit log exported" })).toHaveCount(2);
+  await logout(page);
+});
+
 // ---------------------------------------------------------------- 2.0.0 build 11 (#214): UI standards (docs/ui-standards.md)
 /** Measures every visible form row (.row, .filters, .page-head, .report-options with fields) on the page: per line of the
  * row, the inputs and selects share one top and the standard height, full-size buttons match them, and small buttons
