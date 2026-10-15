@@ -138,9 +138,14 @@ def export_events(body: ExportIn, db: Session = Depends(get_db), ctx: Ctx = Depe
                              filters=words, total=total)
         media, name = "application/pdf", f"audit-log-{stamp}.pdf"
     db.commit()
-    return Response(data, media_type=media, headers={
-        "Content-Disposition": f'attachment; filename="{name}"', "Cache-Control": "private, no-store",
-        "X-Content-Type-Options": "nosniff", "X-Entry-Count": str(total)})
+    headers = {"Content-Disposition": f'attachment; filename="{name}"', "Cache-Control": "private, no-store",
+               "X-Content-Type-Options": "nosniff", "X-Entry-Count": str(total)}
+    if body.format == "pdf":   # build 13 (#230): a picture of it for Safari, which shows an inline PDF blank
+        from ..services import pdf_preview
+        token = pdf_preview.keep(ctx.user.id, data)
+        if token:
+            headers["X-Preview-Token"] = token
+    return Response(data, media_type=media, headers=headers)
 
 
 @router.get("/meta")

@@ -20,6 +20,7 @@ from ..models import BankAccount
 from ..services.checkprint import config as cfgmod
 from ..services.checkprint import documents, fonts, patterns, presets, raster, render
 from ..services.checkprint import service as svc
+from ..services import pdf_preview
 from ..services.common import get_scoped
 
 router = APIRouter(prefix="/api/checks", tags=["checks"])
@@ -32,9 +33,13 @@ class In(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
 
 
-def _pdf(data: bytes, name: str) -> Response:
-    return Response(data, media_type="application/pdf",
-                    headers={**PDF_HEADERS, "Content-Disposition": f'inline; filename="{name}"'})
+def _pdf(ctx: Ctx, data: bytes, name: str) -> Response:
+    headers = {**PDF_HEADERS, "Content-Disposition": f'inline; filename="{name}"'}
+    # build 13 (#230): Safari shows an inline PDF blank - the screen can ask for a picture of this very PDF
+    token = pdf_preview.keep(ctx.user.id, data)
+    if token:
+        headers["X-Preview-Token"] = token
+    return Response(data, media_type="application/pdf", headers=headers)
 
 
 def setup_ctx(db: Session = Depends(get_db), ctx: Ctx = Depends(require("checks.setup"))) -> Ctx:
@@ -66,7 +71,7 @@ def font_file(key: str, weight: Literal["regular", "bold"], ctx: Ctx = Depends(a
 
 @router.get("/scale-check")
 def scale_check(db: Session = Depends(get_db), ctx: Ctx = Depends(any_ctx)):
-    return _pdf(render.scale_pdf(), "scale-check.pdf")
+    return _pdf(ctx, render.scale_pdf(), "scale-check.pdf")
 
 
 # ------------------------------------------------------------------ setup (Administrators)
@@ -184,7 +189,7 @@ def test_print(style_id: int, body: TestPrintIn, request: Request, db: Session =
                  {"feed_key": feed.key, "sample": body.sample, "signer_id": body.signer_id,
                   "unsaved_settings": body.config is not None})
     db.commit()
-    return _pdf(pdf, "check-test-print.pdf")
+    return _pdf(ctx, pdf, "check-test-print.pdf")
 
 
 class CalibrationIn(In):
@@ -198,7 +203,7 @@ def calibration(style_id: int, body: CalibrationIn, db: Session = Depends(get_db
     feed = cfg.feed(body.feed_key)
     if feed is None:
         raise validation("Unknown feed mode.", "feed_key")
-    return _pdf(render.calibration_pdf(cfg, render.placement_for(cfg, feed), svc.sample_stub(cfg)),
+    return _pdf(ctx, render.calibration_pdf(cfg, render.placement_for(cfg, feed), svc.sample_stub(cfg)),
                 "check-calibration.pdf")
 
 
@@ -379,7 +384,7 @@ def alignment_test(txn_id: int, body: JobIn, db: Session = Depends(get_db), ctx:
                  {"check_style_id": job.style.id, "feed_key": job.feed.key, "page": job.placement.page,
                   "guide": job.placement.guide})
     db.commit()
-    return _pdf(pdf, "alignment-test.pdf")
+    return _pdf(ctx, pdf, "alignment-test.pdf")
 
 
 @router.post("/transactions/{txn_id}/print")
@@ -389,7 +394,7 @@ def print_check(txn_id: int, body: PrintIn, request: Request, db: Session = Depe
     pdf = svc.print_check(db, ctx, request.app.state.settings, request.app.state.key, job,
                           check_number=body.check_number, confirm_check_number=body.confirm_check_number,
                           reprint_reason=body.reprint_reason, confirmations=body.confirmations)
-    return _pdf(pdf, f"check-{job.t.check_number}.pdf")
+    return _pdf(ctx, pdf, f"check-{job.t.check_number}.pdf")
 
 
 @router.post("/transactions/{txn_id}/spoil")
@@ -474,6 +479,15 @@ class DocCreateIn(In):
     kind: Literal["LETTER", "ENVELOPE"]
     name: str | None = Field(default=None, max_length=80)
     preset: Literal["WINDOW"] | None = None          # build 11 (#217): a cover letter for a window envelope
+    config: dict | None = None                        # build 13: the editor's draft settings, saved at once
+    duplicate_of: int | None = None                   # build 13: a draft copied from this template (logo too)
+
+
+class DraftIn(In):
+    """Build 13: preview or test-print a template that is not saved yet."""
+    kind: Literal["LETTER", "ENVELOPE"]
+    config: dict
+    logo_from: int | None = None                      # a duplicated letter shows its source's logo
 
 
 class DocUpdateIn(In):
@@ -519,9 +533,55 @@ class EnvelopePrinterIn(In):
 
 @router.post("/documents", status_code=201)
 def create_document(body: DocCreateIn, db: Session = Depends(get_db), ctx: Ctx = Depends(setup_ctx)):
-    d = svc.create_document(db, ctx, body.kind, body.name, body.preset)
+    source = svc.get_document(db, ctx, body.duplicate_of) if body.duplicate_of is not None else None
+    d = svc.create_document(db, ctx, body.kind, body.name, body.preset, body.config, source)
     db.commit()
     return svc.doc_out(d)
+
+
+# build 13: a new or duplicated template is a draft in the editor until its first Save - nothing is stored before
+@router.get("/documents/draft")
+def document_draft(kind: Literal["LETTER", "ENVELOPE"], preset: Literal["WINDOW"] | None = None,
+                   duplicate_of: int | None = None, db: Session = Depends(get_db), ctx: Ctx = Depends(setup_ctx)):
+    source = svc.get_document(db, ctx, duplicate_of) if duplicate_of is not None else None
+    return svc.draft_document(db, ctx, kind, preset, source)
+
+
+def _draft_parts(db, ctx, body: DraftIn):
+    cfg = svc._doc_config_or_422(body.kind, body.config)
+    logo = None
+    if body.logo_from is not None and body.kind == "LETTER":
+        logo = svc.get_document(db, ctx, body.logo_from, "LETTER").logo_png
+    return cfg, logo
+
+
+@router.post("/documents/draft/preview-image")
+def draft_preview_image(body: DraftIn, db: Session = Depends(get_db), ctx: Ctx = Depends(setup_ctx)):
+    cfg, logo = _draft_parts(db, ctx, body)
+    if not raster.available():
+        raise AppError(501, "PREVIEW_UNAVAILABLE", "The picture preview is not available on this server.")
+    pdf = svc.sample_letter_pdf(cfg, logo) if body.kind == "LETTER" else svc.sample_envelope_pdf(cfg, preview=True)
+    png, pages = raster.pdf_to_png(pdf)
+    return Response(png, media_type="image/png",
+                    headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+                             "X-Page-Count": str(pages)})
+
+
+@router.post("/documents/draft/preview")
+def draft_preview(body: DraftIn, db: Session = Depends(get_db), ctx: Ctx = Depends(setup_ctx)):
+    cfg, logo = _draft_parts(db, ctx, body)
+    pdf = svc.sample_letter_pdf(cfg, logo) if body.kind == "LETTER" else svc.sample_envelope_pdf(cfg, preview=True)
+    return _pdf(ctx, pdf, f"{body.kind.lower()}-preview.pdf")
+
+
+@router.post("/documents/draft/test-print")
+def draft_test_print(body: DraftIn, db: Session = Depends(get_db), ctx: Ctx = Depends(setup_ctx)):
+    cfg, logo = _draft_parts(db, ctx, body)
+    pdf = svc.sample_letter_pdf(cfg, logo) if body.kind == "LETTER" else svc.sample_envelope_pdf(cfg)
+    audit.record(db, ctx, "CHECK_DOCUMENT_TEST_PRINT", "check_document", None, None,
+                 {"unsaved_settings": True, "draft": True, "kind": body.kind})
+    db.commit()
+    return _pdf(ctx, pdf, f"{body.kind.lower()}-test-print.pdf")
 
 
 @router.post("/documents/{doc_id}/duplicate", status_code=201)
@@ -585,7 +645,7 @@ def document_test(doc_id: int, body: DocTestIn, db: Session = Depends(get_db), c
     audit.record(db, ctx, "CHECK_DOCUMENT_TEST_PRINT", "check_document", d.id, None,
                  {"unsaved_settings": body.config is not None})
     db.commit()
-    return _pdf(pdf, f"{d.kind.lower()}-test-print.pdf")
+    return _pdf(ctx, pdf, f"{d.kind.lower()}-test-print.pdf")
 
 
 @router.post("/documents/{doc_id}/preview")
@@ -595,7 +655,7 @@ def document_preview(doc_id: int, body: DocTestIn, db: Session = Depends(get_db)
     d = svc.get_document(db, ctx, doc_id)
     cfg = svc._doc_config_or_422(d.kind, body.config) if body.config is not None else svc.doc_config(d)
     pdf = svc.sample_letter_pdf(cfg, d.logo_png) if d.kind == "LETTER" else svc.sample_envelope_pdf(cfg, preview=True)
-    return _pdf(pdf, f"{d.kind.lower()}-preview.pdf")
+    return _pdf(ctx, pdf, f"{d.kind.lower()}-preview.pdf")
 
 
 @router.post("/documents/{doc_id}/preview-image")
@@ -630,7 +690,7 @@ def print_letter(txn_id: int, body: LetterIn, request: Request, db: Session = De
     t = svc.get_printable(db, ctx, txn_id)
     d = svc.get_document(db, ctx, body.document_id, "LETTER")
     pdf = svc.print_letter(db, ctx, request.app.state.settings, t, d, body.signer_id, body.confirmations)
-    return _pdf(pdf, f"letter-{t.check_number or t.id}.pdf")
+    return _pdf(ctx, pdf, f"letter-{t.check_number or t.id}.pdf")
 
 
 @router.post("/transactions/{txn_id}/envelope")
@@ -640,7 +700,7 @@ def print_envelope(txn_id: int, body: EnvelopeIn, request: Request, db: Session 
     d = svc.get_document(db, ctx, body.document_id, "ENVELOPE")
     pdf = svc.print_envelope(db, ctx, request.app.state.settings, t, d, return_address=body.return_address,
                              page=body.page, guide=body.guide, test=False, confirmations=body.confirmations)
-    return _pdf(pdf, f"envelope-{t.check_number or t.id}.pdf")
+    return _pdf(ctx, pdf, f"envelope-{t.check_number or t.id}.pdf")
 
 
 @router.post("/transactions/{txn_id}/envelope-test")
@@ -650,7 +710,7 @@ def envelope_test(txn_id: int, body: EnvelopeIn, request: Request, db: Session =
     d = svc.get_document(db, ctx, body.document_id, "ENVELOPE")
     pdf = svc.print_envelope(db, ctx, request.app.state.settings, t, d, return_address=body.return_address,
                              page=body.page, guide=body.guide, test=True, confirmations=[])
-    return _pdf(pdf, "envelope-test.pdf")
+    return _pdf(ctx, pdf, "envelope-test.pdf")
 
 
 @router.post("/transactions/{txn_id}/handwritten")

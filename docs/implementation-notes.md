@@ -116,8 +116,8 @@ register's `TxnForm` with `payment` set (withdrawal only, no clear date, "Invoic
 `POST /api/checks/payments/amount-preview` (words and number as the account's style prints them; preset defaults
 before a style is chosen; nothing stored), `GET /api/checks/payments/recent` (from the `CHECK_COPY` record copies; the
 module keeps no payment list). Frontend `pages/Payments.tsx` (`/payments`, nav for `checks.print` with the module on;
-`/payments?txn=<id>` shows the transaction locked in a disabled fieldset). Register: *New payment* (toolbar) and
-*Create payment…* (detail). The memo autocomplete sets the cursor in a layout effect (was an animation frame - typing
+`/payments?txn=<id>` shows the transaction locked in a disabled fieldset). Register: *Create payment…* (detail);
+the register's *New payment* button was removed in build 13 (Payments in the menu is the one place to start one). The memo autocomplete sets the cursor in a layout effect (was an animation frame - typing
 could land in front of the inserted variable). Tests: `tests/test_v200_payments.py`, E2E "#164".
 
 **2.0.0 Cover letters and envelopes, test build 3 (issues #165, #166, #174; decided in chat 2026-10-10).** Migration
@@ -361,6 +361,65 @@ fastapi 0.143.0, pydantic 2.14.0 + **pydantic_core 2.50.0** (Dependabot bumped p
 #224's install failed), SQLAlchemy 2.1.4, pypdf 6.20.0, pycparser 3.11 — resolved in a clean Python 3.12 environment
 (no new transitive packages; wheels for Windows x64, Linux x64/arm64 and macOS arm64 checked). Frontend dev tools:
 @playwright/test 1.64.0, vite 6.4.4 (lockfile identical to #223). Notices regenerated with Python 3.12.
+
+**2.0.0 test build 13 — release-candidate polish from testing (#230; only polish from build 11 on, Kyle
+2026-10-14).** No migration.
+- *Reinitialize:* System/About → Advanced's section is called *Reinitialize* (no second heading).
+- *Maintenance mode:* `services/maintenance.READ_ONLY_POSTS` lets POSTs that change nothing through for everyone
+  (Financial Flow Report review/PDF, audit log export, account number reveal, fundraiser filter preview). In the
+  frontend `App.tsx` `can()` keeps only `READ_PERMISSIONS` (`*.view*`, `bank_account.reveal`) while paused for a
+  non-Administrator, so screens drop their change actions (New payment on Payments, Print check…, reminder actions …); a 503
+  `MAINTENANCE` answer dispatches `pw:maintenance-changed` so the shell reloads the state at once. E2E checks pages
+  for change buttons while paused (`pausedActions`).
+- *Host commands:* `install-server.sh` writes `/usr/local/bin/pennywarden`, a wrapper that execs
+  `/opt/pennywarden/current/pennywarden` (not a symlink, so it always runs the current release; a file not written by
+  the installer is left alone). The portable launcher resolves a symlink to itself (`readlink -f`).
+  `cli_restore.host_command(settings)` / `restore_command()` give the command for the install type (Linux server
+  `sudo pennywarden`, Windows server `PennyWarden.cmd` as Administrator, local without sudo, container), used by the
+  undo text on Reinitialize and the restore hints. Run as root, `restore`/`reinitialize` already handed files back with
+  `match_ownership()`; `reset-password` and `reset-mfa` now do too (`__main__._own_again`, database and logs), so a
+  `sudo` run can't leave a root-owned SQLite journal the service can't write.
+- *Letters and envelopes as drafts:* *New letter / envelope / window-envelope letter* and *Duplicate* open the editor
+  on `GET /api/checks/documents/draft?kind=&preset=&duplicate_of=` (the config only, nothing stored); its previews and
+  test print go to `POST /api/checks/documents/draft/preview|preview-image|test-print` with `{kind, config,
+  logo_from}`; the first *Save* is `POST /api/checks/documents` with `{kind, name, config, duplicate_of}` (a duplicate's
+  logo is copied then). Leaving an unsaved draft asks first; nothing is created or audited until Save. The logo can be
+  added once the letter is saved.
+- *Over-scroll:* `.content { position: relative }` — absolutely positioned descendants (the hidden file inputs of the
+  editors) were measured against the page and stretched it below the last row.
+- *Scheduled-backup folders on the Linux server:* new installs write `backup_folders = []` to `config.toml`; the
+  installer reads the list (TOML list; a string is split on `:`) and writes the drop-in
+  `/etc/systemd/system/pennywarden.service.d/backup-folders.conf` with one quoted `ReadWritePaths="-<folder>"` per
+  folder (the service runs with `ProtectSystem=strict`; `-` = a missing folder doesn't stop it), skipping folders under
+  `/home`, `/root` or `/run/user` (`ProtectHome`) with a comment; the drop-in is removed when the list is empty. Run the
+  installer again after changing the list.
+- *Safari print previews:* Safari draws a PDF in an inline frame blank, so the print screens (check, alignment test,
+  cover letter, envelope, test prints) and the audit log PDF showed nothing. Every such response now keeps the PDF in
+  `services/pdf_preview.py` (memory, per user, 15 minutes, at most 40 / 40 MB) and names it in `X-Preview-Token`;
+  `GET /api/pdf-preview/{token}` (`routers/pdf_preview.py`) returns a PNG of it via `raster.pdf_to_png` (4 pages,
+  1400 px). Nothing is generated twice, so printing is still recorded once. Frontend: `api.requestBlob` /
+  `withPreviewToken` put the token on the Blob, `usePdf` keeps it, and `PdfViewer` in Safari (`detectBrowser()`)
+  shows the picture instead of the frame and makes **Print…** open the PDF in a new tab, where Safari shows and prints
+  it (printing a blank frame could waste a check); without a picture it falls back to the frame and the new-tab hint.
+  Other browsers are unchanged. E2E "#230" runs the print screen with Safari's user agent.
+- *Register (product owner, 2026-10-14):* no *New payment* button in the toolbar - a new payment starts on **Payments**.
+  A withdrawal's details had both *Print check…* (dialog over the register) and *Create payment…* (the
+  `/payments?txn=<id>` page with the details locked, then the same dialog); now there is one button, *Create payment…*,
+  or *Reprint check or letter…* once `check_printed`, opening `PrintCheckDialog` over the register. The `?txn=` page and
+  `LockedTxn` are gone (an old link shows the Payments page). For a printed check (`is_reprint`) with letter or
+  envelope templates (`has_documents`) `PrintCheckDialog` shows two closed `<details>` sections (*Reprint the check* →
+  `PrintForm`; *Reprint the letter or envelope* → `EnclosuresPanel`, no check printed or recorded), each mounted only
+  while open. `EnclosuresPanel` (first print and reprint): the letter list carries `window`; with a window-envelope
+  letter included the envelope part is replaced by a note (*Print an envelope anyway* shows it), a standard letter
+  shows it again.
+- *Wizard:* the first-name field's error said *Last name is required.* (`clean_person_name` now checks the field name's
+  ending).
+- *Docs and site:* the CHANGELOG's 13 test-build sections became one 2.0.0 entry by area; every document in `docs/`
+  checked against 2.0.0; `scripts/demo_data.py` updated for the security questions (1.8.0) and real names (2.0.0) and
+  sets up the Payments module (a voucher style with a made-up signature); `readme_screenshots.mjs` adds `payment.png`
+  and `check-print.png`, which the README and pennywarden.org (new *Payments* section) show.
+Tests: `tests/test_v200_build13.py`, `test_v200_maintenance.py`, `test_v200_real_names.py`; E2E "#130" (pages
+without change actions while paused) and "#217" (drafts kept only on Save).
 
 **1.10.0 Update notification (issue #58; channel decided 2026-10-09).** Migration `0024`: `update_check` (one row).
 `services/updates.py`: `channel(settings)` - setting `update_channel` (`auto` → from `build_info.json`: `main` →

@@ -9,6 +9,7 @@ which blocks everything until they finish or fail."""
 from __future__ import annotations
 
 import datetime as dt
+import re
 
 from sqlalchemy.orm import Session
 
@@ -21,6 +22,14 @@ MESSAGE_MAX = 500
 MAX_AHEAD_DAYS = 60
 # requests still allowed for everyone while maintenance mode is on
 OPEN_PREFIXES = ("/api/auth/", "/api/me/preferences", "/api/system/status")
+# build 13: POST requests that only look things up (they change no records, at most audit the look-up, like the GET
+# reports do) - "you can still look things up" covers them too
+READ_ONLY_POSTS = tuple(re.compile(p) for p in (
+    r"^/api/reports/financial-flow(/review)?$",   # Financial Flow Report: review and PDF
+    r"^/api/audit-events/export$",                # audit log CSV/PDF export (#188)
+    r"^/api/bank-accounts/\d+/reveal$",           # show the full account number (audited)
+    r"^/api/fundraisers/preview$",                # which transactions a fundraiser filter matches
+))
 
 
 def _iso(d: dt.datetime | None) -> str | None:
@@ -86,6 +95,8 @@ def enforce(request, db: Session, ctx) -> None:
     """Called for every state-changing API request after the CSRF check."""
     path = request.url.path
     if any(path.startswith(p) for p in OPEN_PREFIXES) or ctx.user is None or ctx.has("system.manage"):
+        return
+    if request.method == "POST" and any(r.match(path) for r in READ_ONLY_POSTS):
         return
     st = state(db.get(Workspace, ctx.workspace_id) if ctx.workspace_id else None)
     if st["active"]:

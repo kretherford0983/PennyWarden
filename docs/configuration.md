@@ -58,7 +58,7 @@ database (key check value stored in the workspace row).
 | `lockout_2_failures` / `lockout_2_minutes` | `FM_LOCKOUT_2_FAILURES` / `FM_LOCKOUT_2_MINUTES` | `10` / `60` | Second lock; from this one on, Administrators see a notice |
 | `lockout_3_failures` / `lockout_3_minutes` | `FM_LOCKOUT_3_FAILURES` / `FM_LOCKOUT_3_MINUTES` | `15` / `1440` | Third lock (24 hours) |
 | `lockout_disable_failures` | `FM_LOCKOUT_DISABLE_FAILURES` | `20` | The account is disabled; an Administrator (or the host `reset-password` / `reset-mfa`) enables it again |
-| `backup_folders` | `FM_BACKUP_FOLDERS` | *(empty)* | 1.9.0, server mode: the folders an Administrator may choose for scheduled backups — in `config.toml` a list (`backup_folders = ["/mnt/nas/pennywarden", "/srv/backups"]`), in the environment separated by `:` (Windows `;`). Local installs accept any folder |
+| `backup_folders` | `FM_BACKUP_FOLDERS` | *(empty)* | 1.9.0, server mode: the folders an Administrator may choose for scheduled backups — in `config.toml` a **list** in square brackets (`backup_folders = ["/mnt/nas/pennywarden", "/srv/backups"]`; a comma-separated string is read as one folder), in the environment separated by `:` (Windows `;`). New server installs write `backup_folders = []`. On the Linux server install, run the installer again after changing it: it lets the sandboxed service write to the listed folders (not under `/home`). Local installs accept any folder |
 | `update_channel` | `FM_UPDATE_CHANNEL` | `auto` | 1.10.0, the update notification: `auto` follows the build (production builds look for releases, test builds for newer test builds and releases, other builds do not check); `stable`, `test` or `off` force it. Administrators turn the check on or off in System/About |
 | `update_base_url` | `FM_UPDATE_BASE_URL` | `https://pennywarden.org` | Where the release data files (`releases.json`, `releases-test.json`) are read |
 | `log_level` | `FM_LOG_LEVEL` | `INFO` | Log level |
@@ -105,7 +105,7 @@ before), `lockout_1/2/3_minutes` (1–10080) and `log_level` (DEBUG, INFO, WARNI
 
 On a **local** install the page shows the settings; change them in `config.toml`.
 
-**Organization name.** An Administrator can rename the organization on System/About (1–120 characters; audited as
+**Organization name.** An Administrator can rename the organization on System/About → General (1–120 characters; audited as
 `ORGANIZATION_RENAMED`). New reports, letters and backup file names use the new name; documents already made keep the
 old one.
 
@@ -121,7 +121,7 @@ The data folder is the one given with `--data-dir` (for example `C:\ProgramData\
 goes there. In TOML, write Windows paths in single quotes (`backup_folders = ['D:\PennyWarden-backups']`) so the
 backslashes stay as they are. Environment variables for the service are set on the service
 (`nssm set PennyWarden AppEnvironmentExtra FM_LOG_LEVEL=INFO`), not in a terminal; they override `config.toml` and
-show as *environment* (locked) on System/About. Restart the service after changing either:
+show as *environment* (locked) on System/About → Settings. Restart the service after changing either:
 `Restart-Service PennyWarden`. Step by step: [install-windows-server.md](install-windows-server.md).
 
 ## On a Mac

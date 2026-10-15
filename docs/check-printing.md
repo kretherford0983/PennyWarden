@@ -19,7 +19,8 @@ printed transaction).
 
 ### 1. Turn the module on
 **System/About → General → Optional modules → Payments module.** *Payments Setup* appears in your menu, and Register Users get
-**Payments** in their menu and a **Print check…** button on withdrawals in the register.
+**Payments** in their menu and a **Create payment…** button on withdrawals in the register (**Reprint check or letter…** once
+its check has been printed).
 
 ### 2. Create a check style
 **Payments Setup → New check style from preset → Create.** A check style describes your check stock:
@@ -29,6 +30,9 @@ printed transaction).
 - **the fields**: where the date, payee, amounts, memo and signature print, in inches from the check's top-left
   corner, and the font of each;
 - **the feed modes**: how the paper goes into the printer (see below).
+
+Each style's row has **Edit** and a **⋯** menu with **Copy…** (a new style starting from this one — for example the
+same stock fed differently) and **Deactivate** / **Activate**.
 
 The preview shows your fields over a drawing of the stock, with sample data. The grey outline (lines, *PAY TO THE
 ORDER OF*, *DOLLARS*, …) is only there to help you place things — it never prints. The shaded strip at the bottom is
@@ -90,7 +94,8 @@ type it twice: `{{` or `}}`.
 **Add signer…**: name, title and a signature image (PNG — a scan of the signature on white paper, cropped close;
 a transparent background works best). The image is stored **encrypted** and can never be downloaded again; you only
 see a small preview marked SAMPLE. It is drawn only on real checks and, when you choose it, on your test prints.
-Every print that uses it is recorded in the audit log. Backups include the signature images.
+Every print that uses it is recorded in the audit log. Backups include the signature images. The signer's row has
+**Edit…** and a **⋯** menu with **Upload image…** / **Replace image…**, **Remove image** and **Deactivate**.
 
 **No signature above this amount** (optional): above it the signature does not print and the check is signed by hand.
 The user is told before printing.
@@ -143,8 +148,9 @@ calibration page.
 
 ## For Register Users: printing a check
 
-1. In the **Register**, open an active withdrawal and click **Print check…**. (Not offered for deposits, VOID
-   transactions or a Closed Fiscal Year.)
+1. In the **Register**, open an active withdrawal and click **Create payment…** (**Reprint check or letter…** once its check has
+   been printed). The print screen opens over the register. (Not offered for deposits, VOID transactions or a Closed
+   Fiscal Year.)
 2. The first time you print from a bank account, choose its **check style** and how many checks are left on the
    sheet.
 3. Check the **feed mode** (the sheet counter suggests one: with one check left it suggests the single-check feed),
@@ -168,6 +174,13 @@ A **record copy** of the check is attached to the transaction: the check as prin
 name* in place of each signature and *COPY – NOT NEGOTIABLE* across it (for a voucher check, the whole sheet with its
 stubs). The transaction shows **Check printed**.
 
+**Later — reprint the check or only the letter.** On a withdrawal whose check was printed, the register shows
+**Reprint check or letter…**. When cover letter or envelope templates are set up, the dialog has two closed sections:
+open **Reprint the check** (same undamaged check, with a reason — or **Mark spoiled**) or **Reprint the letter or
+envelope** when only the letter or the envelope was damaged; the check is then not printed or recorded again. Another
+letter or envelope template can be chosen there. A **window-envelope letter** carries the addresses itself, so choosing
+one hides the envelope (**Print an envelope anyway** brings it back); choosing a standard letter shows it again.
+
 ### Your printer settings
 If the printing is shifted on your printer, run the **Printer setup assistant** from the print screen:
 
@@ -181,7 +194,8 @@ Administrator's layout.
 
 ## For Register Users: payments
 
-**Payments** (in the menu) — or **New payment** on the register — enters a bill and prints its check in one go:
+**Payments** (in the menu) enters a new bill and prints its check in one go (a withdrawal already in the register is
+paid with **Create payment…** in its details, see *printing a check* above):
 
 1. Choose the account to **pay from** (the one you used last time is selected) and click **New payment**.
 2. Enter the **check date**, the **payee** (type to search; **+ New entity** adds a vendor without leaving the
@@ -194,20 +208,18 @@ Administrator's layout.
 
 The Payments page lists the checks printed from the account; **Open in register** shows the transaction.
 
-**Create payment…** on a withdrawal that is already in the register opens its payment page. The transaction's details
-are shown but locked — to change them, edit the transaction in the register — and the check is printed from there.
-
 ## Cover letters and envelopes
 
 ### Setting them up (Administrators)
 Payments Setup has a **Cover letters** and an **Envelopes** section. Keep as many of each as you need — for example
 one letter for invoices, one for a refund and one for a donation; the letter and envelope are chosen for each payment
-when printing (only active ones are offered). **New cover letter** and **New #10 envelope** create a template and open
-its editor on a page of its own, with the name selected so you can type the real one at once (a new template is
-numbered — *Invoice payment letter 2* — until you rename it; names are unique, deactivated templates included).
-**Duplicate** copies a template with all its settings, the letter's logo included, as *… copy*. The first template of
-each kind becomes the **default**; **Make default** and **Deactivate** change that. Templates are never deleted —
-deactivate one you no longer use (BR-001). A **preview** at the top of the editor shows the letter or envelope with a
+when printing (only active ones are offered). **New cover letter** and **New #10 envelope** open the editor for a new
+template on a page of its own, with the name selected so you can type the real one at once (a suggested name is
+numbered — *Invoice payment letter 2* — because names are unique, deactivated templates included). **Nothing is kept
+until you click Save**: going back without saving leaves no template behind. Each template's row has **Edit** and a
+**⋯** menu with **Duplicate** (opens an unsaved copy with all its settings, named *… copy*; the letter's logo is copied
+when you save it), **Make default** and **Deactivate** / **Activate**. The first template of each kind becomes the
+**default**. Saved templates are never deleted — deactivate one you no longer use (BR-001). A **preview** at the top of the editor shows the letter or envelope with a
 sample payee and invoices as you type (tick **Keep at the top** to keep it in view while you scroll); it is a picture of
 the page exactly as it prints, so it shows in every browser, Safari included. Each section can be collapsed. **Test
 print (sample data)** prints it — an envelope test print is laid out on the page the way the printer is fed.
@@ -231,8 +243,9 @@ A **cover letter** has:
   role** set here are used.
 - Whether **Include cover letter** starts ticked on the print screen.
 - An optional **logo** (PNG or JPEG, at most 1 MB) above the letterhead lines, **top left** or **top center** (the
-  letterhead lines are then centered too). It is scaled to fit 2.5 × 1 inch. Adding, replacing or removing it takes
-  effect at once (it is not part of *Save*) and is recorded in the audit log.
+  letterhead lines are then centered too). It is scaled to fit 2.5 × 1 inch. It can be added once the letter has been
+  saved; adding, replacing or removing it takes effect at once (it is not part of *Save*) and is recorded in the audit
+  log.
 - **Pre-printed letterhead paper** — prints no letterhead or logo and keeps the top of the page blank (2 inches by
   default; set it to where your paper's letterhead ends).
 - **Window envelope (#10 double-window)** — for mailing in a double-window envelope instead of printing an envelope:
@@ -262,7 +275,7 @@ first. Each printed letter and envelope is attached to the transaction (the same
 guide and an adjustment of up to 1/4 inch.
 
 ### Checks written by hand
-For a check you write by hand (or a personal check), open **Print check…** and choose **I'm writing the check by
+For a check you write by hand (or a personal check), open **Create payment…** and choose **I'm writing the check by
 hand**. Type the number of the check you wrote twice and click **Record check number** — the register then matches
 the bank, and no check is printed or counted. Then print the cover letter and envelope as above.
 
@@ -286,7 +299,8 @@ Browser settings that matter:
 - **Chrome, Brave, Edge:** Scale → *Actual size* (not "Fit to printable area"); check the paper size. To use a
   printer profile saved in your printer driver, click **Print using system dialog** (Ctrl+Shift+P).
 - **Firefox:** Scale → *100%*; turn off *Fit to page width*.
-- **Safari:** Scale *100%*; turn off *Auto-rotate* and *Scale to fit*.
+- **Safari:** Scale *100%*; turn off *Auto-rotate* and *Scale to fit*. Safari can't show a PDF inside the page, so
+  the print screens show a picture of the PDF instead, and **Print…** opens the PDF in a new tab: print it there (⌘P).
 
 ## Example: 3-per-page laser checks on an HP LaserJet
 

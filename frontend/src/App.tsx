@@ -54,7 +54,12 @@ export interface Me {
   csrf_token: string;
 }
 
-const MeCtx = createContext<{ me: Me; can: (p: string) => boolean; refresh: () => Promise<void>; setTheme: (t: "light" | "dark") => void; patchMe: (p: Partial<Me>) => void } | null>(null);
+const MeCtx = createContext<{ me: Me; can: (p: string) => boolean; paused: boolean; refresh: () => Promise<void>; setTheme: (t: "light" | "dark") => void; patchMe: (p: Partial<Me>) => void } | null>(null);
+
+/** 2.0.0 build 13: permissions that only let a user look things up. While maintenance mode is on, everyone but an
+ * Administrator keeps just these, so screens show what a read-only role sees (no New / Edit / Delete / ⋯ actions);
+ * the server refuses those changes anyway (503 MAINTENANCE, #130). */
+const READ_PERMISSIONS = /\.view(_[a-z_]+)?$|^bank_account\.reveal$/;
 
 export function useMe() {
   const c = useContext(MeCtx);
@@ -70,6 +75,14 @@ export default function App() {
   const { path, navigate } = useRouter();
   const [status, setStatus] = useState<any>(null);
   const [me, setMe] = useState<Me | null | undefined>(undefined);
+  // build 13: is maintenance mode in force now? Re-checked on every page change and when a change was refused for it
+  const [maintActive, setMaintActive] = useState(false);
+  useEffect(() => {
+    const load = () => api.get("/api/system/status").then((s) => setMaintActive(!!s.maintenance_mode?.active), () => undefined);
+    load();
+    window.addEventListener("pw:maintenance-changed", load);
+    return () => window.removeEventListener("pw:maintenance-changed", load);
+  }, [path]);
 
   const loadMe = async () => {
     try {
@@ -126,9 +139,11 @@ export default function App() {
   if ((me as any).names_needed > 0) {
     return <NamesGate onDone={loadMe} onLogout={async () => { try { await api.post("/api/auth/logout"); } finally { setCsrf(null); setMe(null); } }} />;
   }
+  const paused = maintActive && !me.permissions.includes("system.manage");
   const ctx = {
     me,
-    can: (p: string) => me.permissions.includes(p),
+    can: (p: string) => me.permissions.includes(p) && (!paused || READ_PERMISSIONS.test(p)),
+    paused,
     refresh: loadMe,
     setTheme: (t: "light" | "dark") => {
       applyTheme(t);

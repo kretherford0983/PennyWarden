@@ -6,7 +6,7 @@ import { BackupRestore } from "./BackupRestore";
 import { UpdateSettings } from "./Updates";
 import { useMe } from "../App";
 import { MaintenancePanel } from "./Maintenance";
-import { AdvancedPanel } from "./Reinitialize";
+import { ReinitializePanel } from "./Reinitialize";
 import { BackupWarningSetting, DiagnosticsPanel, HealthPanel, OrganizationPanel, SecurityOverviewPanel, SessionsPanel, SettingsPanel } from "./AdminSettings";
 
 /** 2.0.0 build 11 (#216, docs/ui-standards.md): System/About in tabs, each at its own address (/about/<tab>, so it can
@@ -68,7 +68,7 @@ export default function About() {
     ),
     security: () => <><SecurityOverviewPanel /><SessionsPanel /></>,
     health: () => <><HealthPanel /><DiagnosticsPanel /></>,
-    advanced: () => <>{admin ? <MaintenancePanel /> : null}{backups ? <AdvancedPanel /> : null}</>,
+    advanced: () => <>{admin ? <MaintenancePanel /> : null}{backups ? <ReinitializePanel /> : null}</>,
   };
   return (
     <div>

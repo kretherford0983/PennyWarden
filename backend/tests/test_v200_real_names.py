@@ -114,8 +114,11 @@ def test_audit_actor_name_at_the_time(env):
 
 def test_wizard_requires_the_names(app, anon):
     anon.pre_csrf()
-    for k in ("admin_first_name", "admin_last_name"):
-        assert anon.post("/api/system/initialize", {**ADMIN, k: " "}).status_code == 422
+    for k, label in (("admin_first_name", "First name"), ("admin_last_name", "Last name")):
+        r = anon.post("/api/system/initialize", {**ADMIN, k: " "})
+        assert r.status_code == 422
+        # 2.0.0 build 13: the wizard's first-name field said "Last name is required."
+        assert r.json()["error"]["errors"] == [{"field": k, "message": f"{label} is required."}]
     assert anon.post("/api/system/initialize", ADMIN).status_code == 200
     from fmpoc.models import User
     with app.state.session_factory() as db:

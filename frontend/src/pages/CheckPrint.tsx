@@ -5,7 +5,7 @@
  * check number). After printing: done, reprint (check not damaged) or mark spoiled (the number becomes a zero-dollar
  * VOID record and the payment moves to the next number). */
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { api, money } from "../api";
+import { api, money, withPreviewToken } from "../api";
 import { ErrorBox, Field, GuardedForm, Loading, Modal } from "../components";
 import { EnclosuresPanel, HandwrittenPanel } from "./CheckEnclosures";
 import { BrowserTips, CheckPreview, FIELD_LABELS, PatternInput, PdfViewer, useCheckFonts, usePdf } from "./checkShared";
@@ -19,16 +19,30 @@ export function PrintCheckDialog({ txn, onClose, onChanged }: { txn: any; onClos
   useEffect(() => { load(); }, [txn.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const [mode, setMode] = useState<"print" | "hand">("print");
   const defaultSigner = o ? (o.signers.find((s: any) => s.id === o.default_signer_id) || o.signers[0])?.id ?? null : null;
+  const reprintChoice = !!(o && o.is_reprint && o.check_style_id && o.has_documents);
   return (
     <Modal title={`Print check – transaction #${txn.id}`} onClose={onClose} wide>
       <ErrorBox error={err} />
-      {o && o.has_documents ? (
+      {o && o.has_documents && !reprintChoice ? (
         <div className="segmented" role="radiogroup" aria-label="How is the check made">
           <label><input type="radio" name="mode" checked={mode === "print"} onChange={() => setMode("print")} /> Print the check</label>
           <label><input type="radio" name="mode" checked={mode === "hand"} onChange={() => setMode("hand")} /> I'm writing the check by hand</label>
         </div>
       ) : null}
-      {o && mode === "hand" ? (
+      {o && reprintChoice ? (
+        // build 13 (#230, product owner 2026-10-14): the check was printed - reprint it, or only its letter or envelope
+        // (e.g. the letter was damaged but the check is fine). Both sections start closed.
+        <>
+          <p className="hint">Check #{o.transaction.check_number} was already printed. What do you need to print again?</p>
+          <ReprintSection id="reprint-check" title="Reprint the check">
+            <PrintForm o={o} reload={load} onClose={onClose} onChanged={onChanged} />
+          </ReprintSection>
+          <ReprintSection id="reprint-letter" title="Reprint the letter or envelope">
+            <EnclosuresPanel txnId={txn.id} signerId={defaultSigner} onChanged={onChanged}
+              intro="The check is not printed again. Printed letters and envelopes are attached to the transaction." />
+          </ReprintSection>
+        </>
+      ) : o && mode === "hand" ? (
         <HandwrittenPanel txn={o.transaction} nextNumber={o.next_check_number} signerId={defaultSigner} onChanged={() => { onChanged(); load(); }} />
       ) : !o ? (err ? null : <Loading />) : !o.check_style_id ? (
         <ChooseStyle o={o} onDone={load} />
@@ -36,6 +50,18 @@ export function PrintCheckDialog({ txn, onClose, onChanged }: { txn: any; onClos
         <PrintForm o={o} reload={load} onClose={onClose} onChanged={onChanged} />
       )}
     </Modal>
+  );
+}
+
+/** Build 13 (#230): a closed section of the reprint choice; its content exists only while it is open (like
+ * System/About → Advanced → Reinitialize), so nothing is prepared for the part the user doesn't need. */
+function ReprintSection({ id, title, children }: { id: string; title: string; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <details className="card reprint-section" data-testid={id} onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
+      <summary><h3>{title}</h3></summary>
+      {open ? children : null}
+    </details>
   );
 }
 
@@ -376,7 +402,7 @@ function PrinterAssistant({ o, feed, body, txnId, onClose }: { o: Opts; feed: st
     setSt(next);
     await api.put("/api/checks/my-printer", { check_style_id: o.check_style_id, feed_key: feed, page: single ? next.page : null, guide: single ? next.guide : null, dx: next.dx, dy: next.dy });
   };
-  const printScale = async () => { setErr(null); try { const r = await fetch("/api/checks/scale-check", { credentials: "same-origin" }); setScalePdf(await r.blob(), "scale-check.pdf"); setShow("scale"); } catch (x) { setErr(x); } };
+  const printScale = async () => { setErr(null); try { const r = await fetch("/api/checks/scale-check", { credentials: "same-origin" }); setScalePdf(withPreviewToken(r, await r.blob()), "scale-check.pdf"); setShow("scale"); } catch (x) { setErr(x); } };
   const printTest = async () => { setErr(null); try { setTestPdf(await api.postBlob(`/api/checks/transactions/${txnId}/alignment-test`, body), "alignment-test.pdf"); setStep("result"); setShow("test"); } catch (x) { setErr(x); } };
   const apply = async () => {
     setErr(null);

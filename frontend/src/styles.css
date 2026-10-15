@@ -78,7 +78,9 @@ fieldset:disabled:not(.form-guard) { opacity: .6; }  /* 1.7.2 (#55): own roles s
 .nav-collapsed .sidenav .nav-label { display: none; }
 .nav-collapsed .sidenav a { justify-content: center; padding: 8px 0; }
 .nav-collapsed .nav-toggle { align-self: center; }
-.content { --pad-y: 16px; --pad-x: 20px; flex: 1; padding: var(--pad-y) var(--pad-x); min-width: 0; overflow: auto; }
+/* build 13: position: relative keeps absolutely positioned bits (screen-reader labels, hidden inputs) inside the
+   scrolling area - otherwise they stretched the whole page and it scrolled on past the end of an editor */
+.content { --pad-y: 16px; --pad-x: 20px; flex: 1; padding: var(--pad-y) var(--pad-x); min-width: 0; overflow: auto; position: relative; }
 @media (max-width: 800px) {
   .sidenav { width: 56px; }
   .sidenav .nav-label { display: none; }
@@ -432,7 +434,13 @@ label.button { display: inline-block; padding: 3px 10px; border-radius: 6px; bor
 .amount-preview { margin: 4px 0 8px; padding: 6px 10px; background: var(--surface-2); border-radius: 6px; font-size: 13px; }
 .amount-preview .words { font-weight: 600; letter-spacing: .02em; }
 .pdf-viewer .pdf-frame { width: 100%; height: 70vh; border: 1px solid var(--border); border-radius: 6px; background: #525659; margin-top: 8px; }
+.pdf-viewer .pdf-picture { display: block; max-width: 100%; max-height: 70vh; width: auto; height: auto; margin: 8px auto 0; border: 1px solid var(--border); border-radius: 6px; background: #dcdee2; } /* build 13 (#230): Safari */
 .pdf-viewer .row { align-items: center; }
+/* build 13 (#230): the reprint choice - two collapsible sections */
+.reprint-section { margin: 10px 0; }
+.reprint-section > summary { cursor: pointer; list-style-position: inside; }
+.reprint-section > summary h3 { display: inline; margin: 0; font-size: 16px; }
+.reprint-section[open] > summary { margin-bottom: 10px; }
 .browser-tips-wrap summary { cursor: pointer; font-size: 13px; color: var(--muted); margin-top: 6px; }
 /* #174: setup editor - collapsible sections, pinned preview, aligned rows */
 .collapsible-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; }

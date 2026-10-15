@@ -33,7 +33,8 @@ def reset_mfa_cli(argv: list[str]) -> int:
 
         pennywarden reset-mfa --user NAME [--reason TEXT] [--data-dir DIR]
 
-    Run it as the account that owns the data directory (on the Linux server: sudo -u pennywarden ...). The user sets MFA
+    On the Linux server run it with sudo (sudo pennywarden reset-mfa ...); files it writes are handed back to the data
+    folder's owner afterwards (2.0.0). The user sets MFA
     up again at the next sign-in. Recorded in the audit log as MFA_RESET via "host_cli".
     """
     p = argparse.ArgumentParser(prog="pennywarden reset-mfa", description="Reset a user's two-step verification")
@@ -64,10 +65,19 @@ def reset_mfa_cli(argv: list[str]) -> int:
         mfa.reset(db, host_ctx, user, a.reason, via="host_cli")  # audit context: host action, no signed-in user
         enabled = _reenable(db, host_ctx, user)   # 1.8.0 (#113)
         db.commit()
+    _own_again(settings)
     print(f"Two-step verification for '{user.username}' was reset. They will set it up again at the next sign-in.")
     if enabled:
         print("The account was disabled; it is enabled again and its failed attempts are cleared.")
     return 0
+
+
+def _own_again(settings) -> None:
+    """2.0.0 build 13: run with sudo (as root), a host command may leave database files (SQLite journal/WAL) owned by
+    root, which the service then can't write. Like restore and reinitialize, hand them back to the data folder's
+    owner. Nothing happens when not run as root, or on Windows."""
+    from .cli_restore import match_ownership
+    match_ownership(settings.data_dir, ["database", "logs"])
 
 
 def _reenable(db, host_ctx, user) -> bool:
@@ -132,6 +142,7 @@ def reset_password_cli(argv: list[str]) -> int:
                       "trusted_browsers_revoked": trusted}, category="SECURITY")
         enabled = _reenable(db, host_ctx, user)
         db.commit()
+    _own_again(settings)
     print(f"Temporary password for '{user.username}': {temp}")
     print("It must be changed at the next sign-in.")
     if enabled:

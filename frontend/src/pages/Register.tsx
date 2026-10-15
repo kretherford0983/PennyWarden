@@ -2,7 +2,6 @@ import { Fragment, useEffect, useRef, useState, type FormEvent } from "react";
 import { api, money, newRequestKey, qs, todayIso } from "../api";
 import { allocationLabel, Attachments, EntityPicker, ErrorBox, Field, Loading, Modal, PendingFiles, useConfirmable, GuardedForm } from "../components";
 import { useMe } from "../App";
-import { Link } from "../router";
 import { EntityForm } from "./Entities";
 import { PrintCheckDialog } from "./CheckPrint";
 import { AmountPreview } from "./checkShared";
@@ -101,8 +100,8 @@ export default function Register() {
             <button className="primary" onClick={() => setModal({ kind: "txn", txn: null })}>New transaction</button>
             <button onClick={() => setModal({ kind: "transfer" })}>Transfer…</button>
             <button onClick={() => setModal({ kind: "zero" })}>Zero-dollar VOID record</button>
-            {/* 2.0.0 (#164): Payments module - enter a bill and print its check */}
-            {me.modules?.checks && can("checks.print") ? <button onClick={() => setModal({ kind: "payment" })}>New payment</button> : null}
+            {/* 2.0.0 build 13: no New payment here - a new payment is entered on Payments (menu), an existing
+                withdrawal gets Create payment… in its details (product owner, 2026-10-14) */}
           </>
         ) : null}
         <button onClick={() => setShowReviews(!showReviews)} aria-expanded={showReviews}>Fiscal Year reviews</button>
@@ -181,8 +180,6 @@ export default function Register() {
       {modal?.kind === "voiddate" ? <VoidDateForm txn={modal.txn} fys={fys} onClose={() => setModal(null)} onSaved={() => { setModal(null); load(); }} /> : null}
       {modal?.kind === "voidcheck" ? <VoidCheckForm txn={modal.txn} onClose={() => setModal(null)} onSaved={() => { setModal(null); load(); }} /> : null}
       {modal?.kind === "recon" ? <ReconModal title={modal.title} recon={modal.recon} label={modal.label} onClose={() => setModal(null)} /> : null}
-      {modal?.kind === "payment" ? <TxnForm account={acct} txn={null} fys={fys} payment onClose={() => setModal(null)}
-        onSaved={(t) => { load(); if (t) { api.put("/api/checks/payments/last-account", { bank_account_id: acct.id }).catch(() => undefined); setModal({ kind: "printcheck", txn: t }); } else setModal(null); }} /> : null}
       {modal?.kind === "printcheck" ? <PrintCheckDialog txn={modal.txn} onClose={() => setModal(null)} onChanged={load} /> : null}
       {modal?.kind === "zero" ? <ZeroVoidForm account={acct} initial={modal.initial} fys={fys} onClose={() => setModal(null)} onSaved={() => { setModal(null); load(); }} /> : null}
     </div>
@@ -233,8 +230,8 @@ function TxnDetail({ t, manage, canPrintChecks, onPrintCheck, onEdit, onVoid, on
         {/* 2.0.0 (#161): Payments module - active withdrawals over zero, not in a Closed Fiscal Year */}
         {canPrintChecks && editable && t.transaction_type === "WITHDRAWAL" && !t.transfer && Number(t.total) > 0
           ? <>
-              <button onClick={onPrintCheck}>{t.check_printed ? "Print check again…" : "Print check…"}</button>
-              <Link to={`/payments?txn=${t.id}`} className="button">Create payment…</Link>
+              {/* build 13 (product owner, 2026-10-14): one button - the print screen in a dialog over the register */}
+              <button onClick={onPrintCheck}>{t.check_printed ? "Reprint check or letter…" : "Create payment…"}</button>
             </> : null}
         {editable ? <button className="danger" onClick={onVoid}>Void…</button> : null}
         {manage && t.status === "VOID" && !t.closed_fiscal_year_protected ? <button onClick={onVoidDate}>Correct date…</button> : null}

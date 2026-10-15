@@ -3,239 +3,137 @@
 Versions are `Breaking.Major.Minor` from 1.6.0 (docs/branching.md).
 
 ## 2.0.0 — unreleased
-Database migrations `0025` to `0034` (twenty-two columns and five tables added; no existing data changes). Rolling back to 1.10.0
-needs the data snapshot the installer takes before the upgrade (docs/upgrade.md). 2.0.0 is built and tested in
-several test builds; the notes below grow with each one.
+PennyWarden 2.0.0 adds the optional **Payments module** — print checks, cover letters and envelopes from the
+register — and a large set of tools for whoever runs the server: a tidier System/About in tabs, maintenance mode,
+server-side restore and reinitialize, a security overview, a readable and exportable audit log, and an installer for
+Windows servers.
 
-**Test build 1 — check printing on 3-per-page laser stock (#156–#162, #163)**
-- **Payments module (optional).** An Administrator turns it on in System/About and sets it up in *Payments Setup*. Prints the date, payee, the
-  amount in numbers and in words, the memo and a signature on printable check stock that already carries the bank
-  numbers — never the check number or bank numbers (docs/check-printing.md).
-- **Check styles (#156).** Created from a preset and fine-tuned: the sheet (checks per sheet, tear off the top check
-  or print each position), each field's position in inches with a live preview drawn to scale over the stock's
-  pre-printed lines, and **feed modes** — a check on the sheet, or a single check fed through the manual feed like
-  an envelope (date end or pay-to end first, on a Letter page placed at the guides or a check-sized page), each with
-  a small offset and a printer note. First preset: *3 per page – standard laser (top check first)*. Nothing can be
-  placed in the bottom 5/8 inch (the bank number zone). Register Users choose the style for each bank account; a
-  sheet counter suggests the feed mode (single-check feed for the last check).
-- **What prints (#157).** Built-in fonts only (Liberation Sans, Serif and Mono — the same widths as Arial, Times New
-  Roman and Courier New — and Carlito), embedded in every PDF, with a check-wide default and per-field choices; all
-  capitals by default. Both amounts are always calculated from the transaction total: bank convention in words
-  (`… NINETY-NINE AND ··· 30/100`) with a protective fill drawn at mid-letter height between the words and the cents,
-  and `**3,199.30`. Text that doesn't fit shrinks to the field's smallest size, then the user must accept a shortened
-  version or edit it; nothing is cut off silently.
-- **Setup and test prints (#158).** Test print with sample data (TEST – NOT A CHECK) and a calibration page with
-  rulers, both using unsaved changes; every test page has a 5-inch line to check the print scale.
-- **Signers and signatures (#159).** Signature images (PNG) are stored encrypted, can never be downloaded (only a
-  SAMPLE preview), print only on real checks and admin test prints, and every use is audited. Optional amount above
-  which no signature prints.
-- **Memo patterns (#160).** Text plus `{VARIABLES}` from the transaction, with autocomplete after `{`; names ignore
-  case, an unknown name is refused with a suggestion, `{{` / `}}` print a brace, a variable with no data is a warning.
-  Administrators set a default; users can change it for one print.
-- **Printing from the register (#161).** *Print check…* on an active withdrawal (Register Users only): the user types
-  the number printed on the loaded check before every print. **Reprint** (check undamaged) needs a reason;
-  **Mark spoiled** records the number as a $0.00 VOID record and moves the payment to the next check. A record copy
-  (*SIGNATURE ON FILE*, *COPY – NOT NEGOTIABLE*, never the signature image) is attached to the transaction, which shows
-  *Check printed*.
-- **Works without printer setup (#162).** Letter pages by default, print instructions for the user's browser, a test
-  print of the actual check on plain paper, and a printer setup assistant that saves each user's own adjustment (up
-  to 1/4 inch) without changing the Administrator's layout.
-- Fix: in server mode a scheduled backup's folder is always taken from the server's configured `backup_folders`
-  (CodeQL alerts; #168).
+**Upgrading from 1.10.0.** The database is updated automatically (migrations `0025` to `0034`: columns and tables
+added, no existing data changed). Going back to 1.10.0 needs the data snapshot the installer takes before upgrading
+(docs/upgrade.md). After the upgrade, the first Administrator to sign in is asked for the first and last name of every
+account. On a Linux server, run the installer as usual: it now also adds the `pennywarden` command and lets the service
+write to your scheduled-backup folders.
 
-**Test build 2 — payments (#164)**
-- **Payments.** A *Payments* item in the menu for Register Users (Payments module on), and *New payment* on the
-  register: enter a bill once — pay from (the last account is remembered), check date, payee (search, or add a new
-  vendor without leaving), one line per invoice with its budget, invoice number, description, amount and documents —
-  and see the check amount in numbers and words as it will print. *Save and print check* records the withdrawal in the
-  register as usual (a split for several invoices) and opens the print screen; closing it is fine, the check can be
-  printed later. The Payments page lists the checks printed from the account.
-- **Create payment…** on a withdrawal in the register opens its payment page with the transaction's details locked
-  (change them in the register); the check is printed from there.
-- Fix: the cursor stays after a variable picked from the memo autocomplete, also when typing fast.
+### Payments module (optional)
+- **Turn it on** in System/About → General → Optional modules. Administrators set it up in **Payments Setup**;
+  Register Users get **Payments** in the menu and **Create payment…** on withdrawals in the register. Budget Managers have no access
+  (docs/check-printing.md). (#60)
+- **Prints on blank check stock that already carries the bank numbers:** the date, payee, the amount in numbers and
+  in words (bank style, with a protective fill), the memo and the signature — never the check number or the bank
+  numbers. Built-in fonts only, embedded in every PDF; text that doesn't fit is shrunk or must be shortened by you,
+  never cut off silently. (#157)
+- **Check styles** are made from a preset and fine-tuned with a live preview drawn to scale: **3 per page – standard
+  laser** (print the top check, tear it off, feed the last one like an envelope) and **Voucher – check on top, two
+  stubs** (a vendor stub and an office stub with the payment's lines and the check number). Every field's position can
+  be moved; nothing can be placed in the bank-number zone. Each bank account remembers its style. (#156, #167)
+- **Signers and signatures.** Signature images are stored encrypted, can't be downloaded, print only on real checks
+  (and the Administrator's test prints), and every use is audited. A style can have **two signature lines**, and
+  amounts above which one or both signatures are left off for a hand signature. (#159, #167)
+- **Memo patterns** with `{VARIABLES}` from the transaction, with autocomplete after `{`; an Administrator sets the
+  default and users can change it for one print. (#160)
+- **Payments.** **New payment** enters a bill once — pay from, check date, payee (or a new vendor), one line per
+  invoice with its budget, invoice number and date, description, amount and documents — shows the check amount in
+  words as it will print, and records it in the register. **Create payment…** on an existing withdrawal does the same
+  from the register. The Payments page lists the checks printed from each account. (#164)
+- **Printing a check.** You type the number printed on the loaded check before every print. **Reprint** needs a
+  reason; **Mark spoiled** records the number as a $0.00 VOID record and moves the payment to the next check. A record
+  copy (marked COPY – NOT NEGOTIABLE, never with the signature image) is attached to the transaction. For a check
+  written by hand, **I'm writing the check by hand** records its number (typed twice) without printing. In the
+  register a withdrawal shows **Create payment…**, and once its check is printed **Reprint check or letter…**, where
+  the check, or only a damaged letter or envelope, can be printed again. (#161, #165, #230)
+- **Works without printer setup:** Letter pages by default, instructions for your browser, a plain-paper test of the
+  actual check, and a printer setup assistant that saves each user's own small adjustment without changing the
+  Administrator's layout. Test prints say TEST – NOT A CHECK and carry a 5-inch line to check the print scale. (#158,
+  #162, #183)
+- **Safari:** it can't show a PDF inside the page, so the print screens show a picture of the check, letter or
+  envelope instead, and **Print…** opens the PDF in a new tab to print it there. (#230)
+- **Cover letters** list the invoices paid and print with the check (or on their own): letterhead lines or a **logo**,
+  or **pre-printed letterhead paper**; subject, greeting, an invoice table with the columns you choose and a total,
+  closing; signed by name by the check's signer. Keep **as many letters as you need** (for invoices, a refund, a
+  donation …); the letter is chosen for each payment. A letter can carry the addresses for a **#10 double-window
+  envelope**, on the letter itself or on an address page, with a test print that shows the windows and folds.
+  (#165, #176, #177, #217)
+- **#10 envelopes** with the payee's address from the entity, an optional return address, and the manual feed set up
+  for your printer. Printed letters and envelopes are attached to the transaction. (#166)
+- **Payments Setup.** Every editor shows a live preview of what prints, with sample data, as you type — a picture of
+  the printed page, so it works in every browser. New letters, envelopes and copies (**Duplicate**) are drafts until
+  you save them; going back without saving keeps nothing. Sections can be collapsed and the preview kept at the top.
+  (#174, #186, #217)
+- **Invoice date.** Each line of a withdrawal can have an invoice date; it can be used in memos, letters and voucher
+  stubs.
 
-**Test build 3 — cover letters, #10 envelopes, setup polish (#165, #166, #174)**
-- **Invoice date.** Each line of a withdrawal can carry an optional invoice date (register and payments); it is
-  available as `{INVOICE_DATE}` and in the cover letter's invoice table.
-- **Cover letters (#165).** Administrators keep letter templates in Payments Setup: typed letterhead lines (the first in
-  bold), today's date, subject, salutation, opening, an invoice table (choose and order the columns: invoice number,
-  invoice date, description, budget, notes, amount; a total line), closing and sign-off — all with the same `{VARIABLES}`
-  as the memo plus `{TODAY}`, `{PAYEE_ADDRESS}`, `{SIGNER}` and `{SIGNER_TITLE}`. The letter is signed by name by the
-  check's signer (never the signature image), or by a name and role set in the template. Test print with sample data.
-- **#10 envelopes (#166).** Envelope templates with the payee's name and address from the entity, an optional return
-  address (starts as the default letter's letterhead; it can be switched off for envelopes with a printed return
-  address, also for one print), positions, and the manual feed (stamp end or the other end first, Letter page at the
-  guides or an envelope-sized page). Each user can save their own small adjustment and print a plain-paper test.
-- **Printing them.** After the check prints, the print screen offers the cover letter and the envelope; a payee
-  without an address, or a variable without data, is a warning to confirm. Printed letters and envelopes are attached
-  to the transaction.
-- **Checks written by hand.** *I'm writing the check by hand* on the print screen records the check number (typed
-  twice) without printing a check, then prints the cover letter and envelope.
-- **Setup polish from test build 1 (#174).** The preview and the test print show the style's default memo filled with
-  sample data, as it is typed; every setup section can be collapsed and the preview kept at the top; PDFs open in one
-  click in a viewer with *Print…*, a new-tab link and *Download*; Escape closes only the top dialog; setup fields line
-  up whether or not they have help text.
+### System/About and running the server
+- **System/About is in tabs** — About, General, Settings, Backups, Security, System health and Advanced — each with its
+  own address you can bookmark. Auditors see About, Settings and Security. (#216)
+- **Settings.** Every setting in effect and where it comes from. On a server an Administrator can change the proxy,
+  cookie, HSTS, session, sign-in lock and log settings there (saved to `config.toml`, the old file kept; in effect
+  after a restart; every change audited). (#126)
+- **Rename the organization** (General). New reports, letters and backups use the new name. (#126)
+- **Signed-in sessions** (Security): who is signed in, since when and from where; an Administrator can end one
+  session, all of a user's, or everyone else's. (#127)
+- **Security overview** (Security): HTTPS, two-step verification by role, the last backup, locked accounts and the
+  security settings at a glance, with what needs attention and what to do about it. It only reports. (#131)
+- **System health:** database and attachment sizes, free disk space, a database integrity check, and **Download
+  diagnostics** for support (passwords, keys, amounts, account numbers and email addresses left out). Administrators
+  see a warning on every page when disk space runs low. (#128, #129)
+- **Maintenance mode** (Advanced): with a message, now or at a set time. Everyone can sign in and look things up —
+  including reports and exports — but only Administrators can change anything; the others see the screens without
+  any change actions. The message shows on the sign-in page and at the top of every page. (#130)
+- **Reinitialize** (Advanced): start again with no financial data but the same users, roles and settings — after a
+  checked safety backup that the server's owner can always restore. Confirmed with the word reinitialize, your
+  password and two-step code; everyone sees a notice until an Administrator acknowledges it. (#125)
 
-**Test build 4 — voucher checks, two signature lines (#167)**
-- **Voucher checks.** New preset *Voucher – check on top, two stubs* (one check per Letter sheet, stubs perforated at
-  3.5 and 7 inches). Each stub prints a title, the payee, date and amount, a table of the payment's lines (columns
-  chosen like the cover letter's) with the total, the memo and `CHECK #nnnn` from the register (it can be switched
-  off; never on the check itself). The vendor copy never shows budgets; the office copy adds the budget column and
-  *OFFICE COPY*. More lines than fit: *…and N more, see enclosed letter*, confirmed before printing. Stubs are on the
-  test print, calibration page, plain-paper test and the record copy.
-- **Two signature lines.** Any check style can have two; the user picks two different signers (or leaves the second
-  for a hand signature). Optional amount above which only the first signature prints, below the no-signature amount.
-  The record copy shows *SIGNATURE ON FILE* for each line.
-- **Payments module.** The optional module is now called the *Payments module*; the Administrator's setup is
-  *Payments Setup*.
-- Fix: a cover letter or envelope template opens on a page of its own (the check styles and signers were shown above
-  it); Payments Setup lists cover letters and envelopes in separate sections.
+### Backup and restore
+- **Backups the server can recover.** **Let this server recover the passphrase** (on by default) lets the server's
+  owner restore that exact backup even if its passphrase is forgotten — only from the server's command line; restoring
+  from the web always asks for the passphrase. (#124)
+- **Restore from the command line:** `sudo pennywarden restore FILE` (passphrase prompt, passphrase file or
+  `--use-server-key`); it stops and restarts the service when you say so and works on a new, empty installation.
+  `sudo pennywarden restore --list` lists the backups the server can recover, with their full paths. (#124)
+- **Re-entry report.** Every restore lists what was entered or changed after the backup, so it can be entered again;
+  financial roles download it under Reports. (#124)
+- **Backup reminder:** Administrators are warned when no backup has been made for 7 days (adjustable; 0 turns it
+  off). (#126)
 
-**Test build 5 — Payments polish from testing (#183, #185, #186)**
-- Fix: test prints have no page markings (#183). The admin test print and the plain-paper alignment test no longer
-  draw the check's outline (a small feed shift printed it on the edge of a single check); only the calibration page
-  does. One TEST – NOT A CHECK watermark under the fields and a small one across each signature line (it was drawn
-  twice on the same spot with a test signature). Page notes sit 1/4 inch inside the check, so they are never cut off.
-- **Build time in local time (#185).** The build details (My account, System/About) show when the build was made in
-  local time — your computer's time zone in local mode, the server's in server mode; hover for UTC.
-- **Letter and envelope editors (#186).** A live preview at the top, drawn with sample data from your unsaved changes
-  as you type (it can be kept at the top while you scroll), and sections that collapse like the check style editor's.
-- **Voucher stubs in the check preview (#186).** The check style preview draws the stubs under the check with sample
-  data, exactly where they print.
+### Users and the audit log
+- **First and last names** for every account, shown in the Users list (which gains search and sort by last name) and
+  in the audit log as First Last - username. (#134)
+- **Readable audit log.** Each entry reads as a sentence — who did what to which record — with the time in your time
+  zone; **Details** shows what changed in plain words (amounts as currency, readable field names, transaction lines as
+  a table). Administrators still see no financial content. (#133)
+- **Export the audit log** for an audit review: **Export CSV** and **Printable PDF** hold every entry matching the
+  filters, in the same plain words as the screen. Each export is itself recorded. (#188)
 
-**Test build 6 — letter logo, window envelopes, administration (#176, #177, #126–#129)**
-Database migrations `0028` to `0030` (empty columns: the letter logo, the backup reminder, session addresses).
-- **Cover letter logo (#176).** An optional PNG or JPEG logo (at most 1 MB; checked and re-encoded as PNG) prints
-  above the letterhead lines, top left or top center (the lines are then centered too), scaled to fit 2.5 × 1 inch.
-- **Pre-printed letterhead paper (#176).** Prints no letterhead or logo and keeps the top of the page blank (2 inches
-  by default, adjustable).
-- **#10 double-window envelopes (#177).** A cover letter can carry the addresses for a double-window envelope: the
-  payee's name and address in the lower window and, optionally, the return address (the letterhead lines) in the upper
-  window — either at the top of the letter itself (the letter starts below the first fold) or on a separate address
-  page in front of it. Positions follow a standard #10 double-window envelope and each address can be moved; the test
-  print draws the windows and the folds for a plain-paper check against the envelope.
-- **Settings (#126).** System/About lists every setting in effect and where it comes from (default, config.toml,
-  environment, command line); Auditors can view it. On a server install an Administrator can change the proxy, cookie,
-  HSTS, session, sign-in lock and log settings there: saved to config.toml (comments and other entries kept, the old
-  file kept as config.toml.bak), in effect after a restart. Settings set by the environment or the command line are
-  locked; changing trusted proxies needs your password; changes that make the server less strict ask for a
-  confirmation; every change is audited. Database migration `0029`.
-- **Rename the organization (#126)** on System/About. New reports, letters and backup names use the new name.
-- **Backup reminder (#126).** Administrators see a warning when no backup has been made for 7 days (adjustable on
-  System/About; 0 turns it off).
-- **Signed-in sessions (#127).** System/About lists who is signed in (sign-in time, last activity, address). An
-  Administrator can end one session, all sessions of a user, or end everyone else's sessions; Auditors can view the list.
-  Ending a session signs the person out at their next click. Database migration `0030`.
-- **Diagnostics (#128).** *Download diagnostics* on System/About (Administrators): version, operating system, settings,
-  database and attachment sizes, free disk space, the database version and the last 1,000 log lines, with passwords,
-  keys, session identifiers, amounts, account numbers and email addresses left out or replaced. Nothing is sent
-  anywhere; each download is audited.
-- **Health (#129).** System/About shows the database and attachment sizes, free disk space and the database version,
-  and runs an integrity check of the database (safe while people work; audited). Administrators see a warning on every
-  page when less than 1 GB or 10 % of the disk is free.
+### Easier to use
+- **Forms line up:** labels and inputs align on every form, text boxes, dropdowns, date fields and buttons are the
+  same height, and small buttons and checkboxes sit centred on the input line. (#214)
+- **Row actions in a menu:** tables show **Edit** and a **⋯** menu with the row's other actions, which works with
+  the keyboard and screen readers; destructive actions come last and still ask to confirm. (#215)
+- **Build time in your time zone** on My account and System/About. (#185)
 
-**Test build 7 — maintenance mode, command-line restore, reinitialize, Windows server guide (#130, #124, #125, #136)**
-- **Maintenance mode (#130).** An Administrator turns it on in System/About with a message, now or at a set time.
-  While it is on, everyone can sign in and look things up but only Administrators can change anything (enforced by
-  the server). Everyone sees the message - on the sign-in page and at the top of every page - from the moment it is
-  scheduled. It stays on through a restart; turning it on or off is audited. Database migration `0031`.
-- **Server-recoverable backups (#124).** *Let this server recover the passphrase* (on by default) keeps the backup's
-  passphrase locked with a key that never leaves this server, so its owner can restore that exact file even if the
-  passphrase is forgotten — only from the server's command line; the web restore always asks for the passphrase.
-  System/About lists the backups this server can recover; *Remove recovery* makes one passphrase-only.
-- **`pennywarden restore` (#124).** Restore from the server's command line: hidden prompt, passphrase file
-  (`PENNYWARDEN_PASSPHRASE_FILE`) or `--use-server-key`; asks before stopping the service, restores file ownership,
-  works on a new installation, never stops anything inside Docker; `--list` (docs/backup-restore.md).
-- **Restore re-entry report (#124).** Every restore first lists what was entered or changed after the backup in a CSV
-  report, which Budget Managers, Budget Users, Register Users and Auditors download under Reports; Administrators see
-  only a summary.
-- **Reinitialize, keeping the users (#125).** System/About → Advanced (collapsed): removes all financial data — Fiscal
-  Years, budgets, entities, bank accounts, the register, attachments, fundraisers, Payments data and organization
-  reminders — and keeps users, roles, passwords, two-step verification, the organization name, the encryption key,
-  module switches, personal preferences and the audit log. Confirmed by typing *reinitialize*, your password and (if
-  on) a two-step code; a safety backup is made and checked first (nothing is removed if that fails), kept in
-  `pre-reinitialize/` and always restorable by the server's owner with `pennywarden restore … --use-server-key`.
-  Everyone else is signed out and sees a notice until an Administrator acknowledges it. Once in 24 hours from the web;
-  `pennywarden reinitialize` on the server has no limit. Entity numbers continue. Database migration `0032`.
-- **Windows server guide (#136).** docs/install-windows-server.md rewritten end to end: the portable zip with a
-  version folder and a `current` pointer, a dedicated service account and data-folder permissions, `config.toml`,
-  HTTPS with Caddy, PennyWarden and Caddy as Windows services with NSSM (start, stop, logs), backups, restore,
-  upgrades with rollback, host commands and troubleshooting. Written against the code; not yet run on Windows.
+### Installing on a server
+- **Windows server installer:** `install-windows-server.ps1`, attached to every release, installs or upgrades
+  PennyWarden as a Windows service under its own account, with HTTPS through Caddy (`-Domain`) or behind a Cloudflare
+  Tunnel; every download is checked; an upgrade copies the data first and rolls back if the new version doesn't
+  start. The Windows server guide (docs/install-windows-server.md) covers everything step by step. (#187, #136)
+- **Linux server:** the installer adds the `pennywarden` command (`sudo pennywarden restore …`, `reinitialize`,
+  `reset-password`, `reset-mfa`). New installs' `config.toml` has an empty `backup_folders = []` list with an example.
+- **Test builds' release notes** start with the install command and downloads. (#207)
 
-**Test build 8 — real names, readable audit log, security overview (#134, #133, #131)**
-- **First and last names (#134).** Every account now has a first and last name (required, up to 60 characters
-  each, any language), set by an Administrator when creating or editing a
-  user and for the first Administrator in the Initialization Wizard. After the upgrade, the first Administrator to sign
-  in enters the names of every account that has none (a stand-in such as the display name is fine and can be
-  corrected later); until then the Users list marks them *name needed*. The Users list gets name columns, a search box
-  (name, username, display name, email) and *Sort by last name*. The audit log shows who did something as
-  **First Last - username**, with the name as it was at the time; older events keep the username. Database migration
-  `0033`.
-- **Readable audit log (#133).** Each entry reads as a sentence (who, what, which record) with the time in your own
-  time zone; *Details* shows a **What changed** table with readable field names and values (amounts as currency, Yes/No,
-  words instead of codes; only the changed fields of an update, each marked *changed*; transaction lines as a small
-  table) and the raw data under *Show technical details*. Filters offer readable action and record names. Related
-  records are named as they were when the event was written. Administrators still see no financial content: for
-  those entries only who, the kind of action and when. Database migration `0034`.
-- **Security overview (#131).** System/About shows how the installation is secured, for Administrators and (read-only)
-  Auditors: whether it is reached over HTTPS, how many active users have two-step verification (and which roles
-  don't), the last backup, locked accounts, the number of Administrators, secure cookies, HSTS, trusted proxies and
-  disabled accounts. Items that need attention — plain HTTP on a network install, users without two-step
-  verification, a backup older than the backup reminder, locked accounts — are marked, each with a short note on what
-  to do. The overview only reports; it changes nothing.
+### Fixes
+- **Scheduled backups to a folder on a Linux server** failed the folder test with a permission error even when the
+  folder's permissions were right: the service is sandboxed and could write only to its data folder. The installer
+  now lets it write to the folders in `backup_folders` (run the installer again after changing that list; folders
+  under `/home` can't be used).
+- In server mode, a scheduled backup's folder is always one of the server's configured `backup_folders`. (#168)
+- Long pages no longer keep scrolling past their end.
 
-**Test build 9 — release notes (#207)**
-- **Install command first.** A test build's release notes now start with the install block — the `curl` command to
-  install or upgrade the test server (with a copy button on GitHub) and the Windows and Mac downloads — followed by the
-  notes. Production releases keep it at the end. pennywarden.org and the update notification still show only the notes.
-
-**Test build 10 — Windows server installer (#187)**
-- **`install-windows-server.ps1`.** One script, attached to every release, installs or upgrades PennyWarden on a
-  Windows server (run in PowerShell as Administrator): the program in `C:\PennyWarden`, the data in
-  `C:\ProgramData\PennyWarden` (only SYSTEM, Administrators and the service can read it), PennyWarden as a Windows
-  service under its own virtual account, and with `-Domain` Caddy in front of it for HTTPS with an automatic
-  certificate (without it, for a Cloudflare Tunnel). Every download is checked against its SHA-256. Running it again
-  upgrades after copying the data folder, and puts the previous version back if the new one doesn't start;
-  `-Uninstall` keeps the data. Tested on every build on a Windows Server runner (docs/install-windows-server.md).
-
-**Test build 11 — polish from testing (#217, #214, #215, #216)**
-- **Several cover letters and envelopes (#217).** *New cover letter* / *New #10 envelope* gave every template the same
-  default name, so a second one was refused (names are unique, deactivated templates included, and templates are never
-  deleted — BR-001). A new template is now numbered (*Invoice payment letter 2*) and opens with its name selected;
-  **Duplicate** copies a template with all its settings and logo.
-- **Window envelopes are easier to find (#217).** **New window-envelope letter** starts a cover letter set up for a
-  #10 double-window envelope, and the Envelopes section and the envelope editor point to the letter's *Window
-  envelope* settings.
-- **Previews in Safari (#217).** The letter and envelope previews in Payments Setup were blank in Safari (an inline
-  PDF). They are now pictures of the printed page, drawn by the server with PDFium (new dependency `pypdfium2`,
-  BSD-3-Clause/Apache-2.0); where it can't load, the editor falls back to the PDF with an *Open preview* link.
-- **Forms line up (#214).** On every form the labels of a row line up and so do the inputs, whether or not a field has
-  help text; text boxes, dropdowns, date fields and buttons are the same height; small buttons such as *+ New
-  entity* and inline checkboxes such as *Include VOID transactions* are centred on the inputs; the Save bar of the
-  Payments Setup editors is a solid footer that nothing shows through. The rules are written down in
-  `docs/ui-standards.md` for every future screen.
-- **Row actions in a menu (#215).** Tables with several buttons per row are tidier: **Edit** stays a button and every
-  other action is in the **⋯** menu at the end of the row (users, budgets, bank accounts, entities, check styles,
-  signers, cover letters and envelopes, fundraiser buckets, reminders, signed-in sessions). It works with the keyboard
-  and screen readers; destructive actions are last and still ask to confirm.
-- **System/About in tabs (#216).** The page had grown to 14 sections; it now has tabs — **About** (version, licence,
-  update check), **General** (organization name, optional modules), **Settings**, **Backups** (backup / restore,
-  scheduled backups, backup reminder), **Security** (security overview, signed-in sessions), **System health** (health,
-  integrity check, diagnostics) and **Advanced** (maintenance mode, reinitialize). Each tab has its own address
-  (`/about/backups` …) that can be bookmarked; Auditors see About, Settings and Security; the backup and disk-space
-  banners open the right tab.
-
-**Test build 12 — audit log export (#188)**
-- **Export the Audit Log for an audit review.** *Export CSV* and *Printable PDF* on the Audit Log hold every entry
-  matching the filters (all pages, up to 10,000) in the same plain words as the screen: when (in your time zone, with
-  UTC in the CSV), who, what happened and what changed. Financial content stays withheld for Administrators, CSV cells
-  can't start a spreadsheet formula, and every export is recorded in the audit log (*Audit log exported*).
-- Dependency updates (Dependabot #223, #224): FastAPI 0.143.0, Pydantic 2.14.0 with pydantic-core 2.50.0 (the core
-  pin Dependabot missed, which failed #224), SQLAlchemy 2.1.4, pypdf 6.20.0, pycparser 3.11; Playwright 1.64.0 and
-  Vite 6.4.4 (build tools). FastAPI's automatic OpenTelemetry exporter setup became opt-in; PennyWarden doesn't use it.
-- Dependabot no longer proposes `pydantic` updates on their own (#224 failed because the matching `pydantic_core` can't
-  move with it); pydantic and pydantic_core are updated together by hand. Security updates still arrive. Takes
-  effect when 2.0.0 is on main.
+### Under the hood
+- New dependency **pypdfium2** (BSD-3-Clause / Apache-2.0), which draws the Payments Setup previews. Updated:
+  FastAPI 0.143.0, Pydantic 2.14.0, SQLAlchemy 2.1.4, pypdf 6.20.0 and others (THIRD-PARTY-NOTICES.txt).
+- Dependabot no longer proposes pydantic updates on their own (it can't update the matching pydantic-core with it);
+  both are updated together by hand.
+- UI standards for every new screen are written down in docs/ui-standards.md.
 
 ## 1.10.0 — 2026-10-09
 Database migration `0024` (one table added; no existing data changes). Rolling back to 1.9.0 needs the data snapshot
