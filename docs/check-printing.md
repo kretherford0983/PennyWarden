@@ -185,7 +185,8 @@ Administrator's layout.
 
 ## For Register Users: payments
 
-**Payments** (in the menu) — or **New payment** on the register — enters a bill and prints its check in one go:
+**Payments** (in the menu) enters a bill and prints its check in one go (for a withdrawal already in the register,
+use **Create payment…** in its details):
 
 1. Choose the account to **pay from** (the one you used last time is selected) and click **New payment**.
 2. Enter the **check date**, the **payee** (type to search; **+ New entity** adds a vendor without leaving the

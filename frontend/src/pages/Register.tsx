@@ -101,8 +101,8 @@ export default function Register() {
             <button className="primary" onClick={() => setModal({ kind: "txn", txn: null })}>New transaction</button>
             <button onClick={() => setModal({ kind: "transfer" })}>Transfer…</button>
             <button onClick={() => setModal({ kind: "zero" })}>Zero-dollar VOID record</button>
-            {/* 2.0.0 (#164): Payments module - enter a bill and print its check */}
-            {me.modules?.checks && can("checks.print") ? <button onClick={() => setModal({ kind: "payment" })}>New payment</button> : null}
+            {/* 2.0.0 build 13: no New payment here - a new payment is entered on Payments (menu), an existing
+                withdrawal gets Create payment… in its details (product owner, 2026-10-14) */}
           </>
         ) : null}
         <button onClick={() => setShowReviews(!showReviews)} aria-expanded={showReviews}>Fiscal Year reviews</button>
@@ -181,8 +181,6 @@ export default function Register() {
       {modal?.kind === "voiddate" ? <VoidDateForm txn={modal.txn} fys={fys} onClose={() => setModal(null)} onSaved={() => { setModal(null); load(); }} /> : null}
       {modal?.kind === "voidcheck" ? <VoidCheckForm txn={modal.txn} onClose={() => setModal(null)} onSaved={() => { setModal(null); load(); }} /> : null}
       {modal?.kind === "recon" ? <ReconModal title={modal.title} recon={modal.recon} label={modal.label} onClose={() => setModal(null)} /> : null}
-      {modal?.kind === "payment" ? <TxnForm account={acct} txn={null} fys={fys} payment onClose={() => setModal(null)}
-        onSaved={(t) => { load(); if (t) { api.put("/api/checks/payments/last-account", { bank_account_id: acct.id }).catch(() => undefined); setModal({ kind: "printcheck", txn: t }); } else setModal(null); }} /> : null}
       {modal?.kind === "printcheck" ? <PrintCheckDialog txn={modal.txn} onClose={() => setModal(null)} onChanged={load} /> : null}
       {modal?.kind === "zero" ? <ZeroVoidForm account={acct} initial={modal.initial} fys={fys} onClose={() => setModal(null)} onSaved={() => { setModal(null); load(); }} /> : null}
     </div>

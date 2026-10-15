@@ -116,8 +116,8 @@ register's `TxnForm` with `payment` set (withdrawal only, no clear date, "Invoic
 `POST /api/checks/payments/amount-preview` (words and number as the account's style prints them; preset defaults
 before a style is chosen; nothing stored), `GET /api/checks/payments/recent` (from the `CHECK_COPY` record copies; the
 module keeps no payment list). Frontend `pages/Payments.tsx` (`/payments`, nav for `checks.print` with the module on;
-`/payments?txn=<id>` shows the transaction locked in a disabled fieldset). Register: *New payment* (toolbar) and
-*Create payment…* (detail). The memo autocomplete sets the cursor in a layout effect (was an animation frame - typing
+`/payments?txn=<id>` shows the transaction locked in a disabled fieldset). Register: *Create payment…* (detail);
+the register's *New payment* button was removed in build 13 (Payments in the menu is the one place to start one). The memo autocomplete sets the cursor in a layout effect (was an animation frame - typing
 could land in front of the inserted variable). Tests: `tests/test_v200_payments.py`, E2E "#164".
 
 **2.0.0 Cover letters and envelopes, test build 3 (issues #165, #166, #174; decided in chat 2026-10-10).** Migration
@@ -368,7 +368,7 @@ fastapi 0.143.0, pydantic 2.14.0 + **pydantic_core 2.50.0** (Dependabot bumped p
 - *Maintenance mode:* `services/maintenance.READ_ONLY_POSTS` lets POSTs that change nothing through for everyone
   (Financial Flow Report review/PDF, audit log export, account number reveal, fundraiser filter preview). In the
   frontend `App.tsx` `can()` keeps only `READ_PERMISSIONS` (`*.view*`, `bank_account.reveal`) while paused for a
-  non-Administrator, so screens drop their change actions (New payment, Print check…, reminder actions …); a 503
+  non-Administrator, so screens drop their change actions (New payment on Payments, Print check…, reminder actions …); a 503
   `MAINTENANCE` answer dispatches `pw:maintenance-changed` so the shell reloads the state at once. E2E checks pages
   for change buttons while paused (`pausedActions`).
 - *Host commands:* `install-server.sh` writes `/usr/local/bin/pennywarden`, a wrapper that execs
@@ -402,6 +402,8 @@ fastapi 0.143.0, pydantic 2.14.0 + **pydantic_core 2.50.0** (Dependabot bumped p
   shows the picture instead of the frame and makes **Print…** open the PDF in a new tab, where Safari shows and prints
   it (printing a blank frame could waste a check); without a picture it falls back to the frame and the new-tab hint.
   Other browsers are unchanged. E2E "#230" runs the print screen with Safari's user agent.
+- *Register:* no *New payment* button in the toolbar (product owner): a new payment starts on **Payments**, an existing
+  withdrawal uses *Create payment…*. Its modal branch in `Register.tsx` went with it.
 - *Wizard:* the first-name field's error said *Last name is required.* (`clean_person_name` now checks the field name's
   ending).
 - *Docs and site:* the CHANGELOG's 13 test-build sections became one 2.0.0 entry by area; every document in `docs/`

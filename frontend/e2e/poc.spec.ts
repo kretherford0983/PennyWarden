@@ -2806,6 +2806,9 @@ test("#230: in Safari the check and test-print previews are pictures of the PDF,
   const t = await tr.json();
   await page.goto(`/register?account=1&txn=${t.id}`);
   await expect(page.locator(`#txn-${t.id}`).getByRole("button", { name: `Details for transaction ${t.id}` })).toHaveAttribute("aria-expanded", "true");
+  // build 13: a new payment starts on Payments only - the register has Create payment… on a withdrawal, no New payment
+  await expect(page.getByRole("button", { name: "New transaction" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "New payment" })).toHaveCount(0);
   await page.getByRole("button", { name: "Print check…" }).click();
   const dlg = page.getByRole("dialog", { name: `Print check – transaction #${t.id}` });
   // the plain-paper test: a picture, no PDF frame
