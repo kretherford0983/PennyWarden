@@ -231,7 +231,7 @@ function TxnDetail({ t, manage, canPrintChecks, onPrintCheck, onEdit, onVoid, on
         {canPrintChecks && editable && t.transaction_type === "WITHDRAWAL" && !t.transfer && Number(t.total) > 0
           ? <>
               {/* build 13 (product owner, 2026-10-14): one button - the print screen in a dialog over the register */}
-              <button onClick={onPrintCheck}>{t.check_printed ? "Reprint check…" : "Create payment…"}</button>
+              <button onClick={onPrintCheck}>{t.check_printed ? "Reprint check or letter…" : "Create payment…"}</button>
             </> : null}
         {editable ? <button className="danger" onClick={onVoid}>Void…</button> : null}
         {manage && t.status === "VOID" && !t.closed_fiscal_year_protected ? <button onClick={onVoidDate}>Correct date…</button> : null}

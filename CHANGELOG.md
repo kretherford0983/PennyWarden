@@ -38,7 +38,9 @@ write to your scheduled-backup folders.
 - **Printing a check.** You type the number printed on the loaded check before every print. **Reprint** needs a
   reason; **Mark spoiled** records the number as a $0.00 VOID record and moves the payment to the next check. A record
   copy (marked COPY – NOT NEGOTIABLE, never with the signature image) is attached to the transaction. For a check
-  written by hand, **I'm writing the check by hand** records its number (typed twice) without printing. (#161, #165)
+  written by hand, **I'm writing the check by hand** records its number (typed twice) without printing. In the
+  register a withdrawal shows **Create payment…**, and once its check is printed **Reprint check or letter…**, where
+  the check, or only a damaged letter or envelope, can be printed again. (#161, #165, #230)
 - **Works without printer setup:** Letter pages by default, instructions for your browser, a plain-paper test of the
   actual check, and a printer setup assistant that saves each user's own small adjustment without changing the
   Administrator's layout. Test prints say TEST – NOT A CHECK and carry a 5-inch line to check the print scale. (#158,

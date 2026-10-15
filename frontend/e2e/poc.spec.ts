@@ -2162,7 +2162,7 @@ test("#156-#162: Administrator sets up check printing; a Register User prints a 
   await dlg.getByRole("button", { name: "Yes – done" }).click();
   await expect(row.getByText("Check printed")).toBeVisible();
   // printing again is a reprint: a reason is required
-  await page.getByRole("button", { name: "Reprint check…" }).click();
+  await page.getByRole("button", { name: "Reprint check or letter…" }).click();
   await expect(dlg.getByText("Check #8101 was already printed")).toBeVisible();
   await dlg.getByLabel("Type the number printed on the check that is in the printer").fill("8101");
   await expect(dlg.getByRole("button", { name: "Reprint check" })).toBeDisabled();
@@ -2182,7 +2182,7 @@ test("#156-#162: Administrator sets up check printing; a Register User prints a 
 });
 
 // ---------------------------------------------------------------- 2.0.0 build 2: payments (#164)
-test("#164: a Register User enters a two-invoice payment, sees the check amount in words, prints it; the register offers Reprint check… afterwards", async ({ page }) => {
+test("#164: a Register User enters a two-invoice payment, sees the check amount in words, prints it; the register offers Reprint check or letter… afterwards", async ({ page }) => {
   await login(page, "ru1", "Brand-New-Pass-99");
   await page.getByRole("link", { name: "Payments" }).click();
   await expect(page.getByRole("heading", { name: "Payments", level: 1 })).toBeVisible();
@@ -2221,12 +2221,12 @@ test("#164: a Register User enters a two-invoice payment, sees the check amount 
   // the bank account is remembered for the next payment
   await page.reload();
   await expect(page.getByLabel("Pay from bank account")).toHaveValue("1");
-  // build 13: in the register a printed check's withdrawal offers Reprint check… (an unprinted one Create payment…),
+  // build 13: in the register a printed check's withdrawal offers Reprint check or letter… (an unprinted one Create payment…),
   // which opens the same print screen over the register
   await recent.getByRole("link", { name: "Open in register" }).first().click();
-  await expect(page.getByRole("button", { name: "Reprint check…" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Reprint check or letter…" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Create payment…" })).toHaveCount(0);
-  await page.getByRole("button", { name: "Reprint check…" }).click();
+  await page.getByRole("button", { name: "Reprint check or letter…" }).click();
   const again = page.getByRole("dialog", { name: /^Print check – transaction #\d+$/ });
   await expect(again.getByRole("img", { name: "Check preview drawn to scale" })).toContainText("SAMPLE SUPPLY COMPANY, INC");
   await again.getByRole("button", { name: "Close" }).first().click();
@@ -2842,6 +2842,35 @@ test("#230: in Safari the check and test-print previews are pictures of the PDF,
   await chk.getByRole("button", { name: "Close" }).first().click();
   await expect(dlg.getByText("Check #8391 is ready.")).toBeVisible();
   await dlg.getByRole("button", { name: "Yes – done" }).click();
+  // printed: the register offers Reprint check or letter…; the dialog has two closed sections (letter templates exist
+  // since the #165 test) - the letter or envelope can be printed again without touching the check
+  await expect(page.getByRole("button", { name: "Reprint check or letter…" })).toBeVisible();   // in the open details row
+  await page.getByRole("button", { name: "Reprint check or letter…" }).click();
+  const re = page.getByRole("dialog", { name: `Print check – transaction #${t.id}` });
+  await expect(re.getByText("Check #8391 was already printed. What do you need to print again?")).toBeVisible();
+  const reCheck = re.getByTestId("reprint-check"), reLetter = re.getByTestId("reprint-letter");
+  await expect(reCheck).not.toHaveAttribute("open", "");
+  await expect(reLetter).not.toHaveAttribute("open", "");
+  await expect(re.getByLabel("Reason for the reprint (required)")).toHaveCount(0);
+  await reLetter.getByText("Reprint the letter or envelope").click();
+  await expect(reLetter.getByText("The check is not printed again.")).toBeVisible();
+  await expect(reLetter.getByRole("button", { name: /Print envelope/ })).toBeVisible();
+  // another letter template can be chosen; a window-envelope letter needs no envelope (it can still be printed), and
+  // going back to a standard letter brings the envelope back
+  const include = reLetter.getByRole("checkbox", { name: "Include cover letter" });
+  if (!(await include.isChecked())) await include.check();
+  const letterSel = reLetter.getByRole("combobox", { name: "Cover letter", exact: true });
+  const standard = await letterSel.inputValue();
+  await letterSel.selectOption({ label: "Window envelope letter" });
+  await expect(reLetter.getByTestId("window-letter-note")).toContainText("no envelope to print");
+  await expect(reLetter.getByRole("button", { name: /Print envelope/ })).toHaveCount(0);
+  await letterSel.selectOption(standard);
+  await expect(reLetter.getByTestId("window-letter-note")).toHaveCount(0);
+  await expect(reLetter.getByRole("button", { name: /Print envelope/ })).toBeVisible();
+  await expect(re.getByLabel("Reason for the reprint (required)")).toHaveCount(0);
+  await reCheck.getByText("Reprint the check").click();
+  await expect(reCheck.getByLabel("Reason for the reprint (required)")).toBeVisible();
+  await re.getByRole("button", { name: "Close" }).first().click();
   await ctx.close();
 });
 

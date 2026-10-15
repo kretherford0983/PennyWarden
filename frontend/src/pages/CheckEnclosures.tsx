@@ -18,6 +18,7 @@ export function EnclosuresPanel({ txnId, signerId, onChanged, intro }: { txnId: 
   const [viewing, setViewing] = useState<null | "letter" | "envelope" | "envtest">(null);
   const [done, setDone] = useState<Set<string>>(new Set());
   const [adjust, setAdjust] = useState(false);
+  const [envAnyway, setEnvAnyway] = useState(false);
   const { run, dialog } = useConfirmable();
   const load = () => api.get(`/api/checks/transactions/${txnId}/documents`).then((d) => {
     setDocs(d);
@@ -30,6 +31,11 @@ export function EnclosuresPanel({ txnId, signerId, onChanged, intro }: { txnId: 
   if (!docs) return err ? <ErrorBox error={err} /> : <Loading />;
   if (!docs.letters.length && !docs.envelopes.length) return null;
   const env = docs.envelopes.find((x: any) => String(x.id) === envId);
+  // build 13 (#230): a letter for a #10 double-window envelope carries the addresses itself - choosing one hides the
+  // envelope (it can still be printed on request); choosing a standard letter brings the envelope back
+  const letter = docs.letters.find((x: any) => String(x.id) === letterId);
+  const windowLetter = !!(include && letter?.window && letter.window !== "NONE");
+  const showEnvelope = docs.envelopes.length > 0 && (!windowLetter || envAnyway);
   const printLetter = async () => {
     setErr(null);
     try {
@@ -64,7 +70,12 @@ export function EnclosuresPanel({ txnId, signerId, onChanged, intro }: { txnId: 
           {done.has("letter") ? <span className="badge green">Attached</span> : null}
         </div>
       ) : null}
-      {docs.envelopes.length ? (
+      {windowLetter ? (
+        <p className="hint" data-testid="window-letter-note"><b>Window envelope letter:</b> the addresses print on the letter and show
+          through a #10 double-window envelope, so there is no envelope to print.
+          {docs.envelopes.length && !envAnyway ? <>{" "}<button className="link small" onClick={() => setEnvAnyway(true)}>Print an envelope anyway</button></> : null}</p>
+      ) : null}
+      {showEnvelope ? (
         <>
           <div className="row form-row">
             <Field label="Envelope">

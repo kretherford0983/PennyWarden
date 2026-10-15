@@ -405,8 +405,13 @@ fastapi 0.143.0, pydantic 2.14.0 + **pydantic_core 2.50.0** (Dependabot bumped p
 - *Register (product owner, 2026-10-14):* no *New payment* button in the toolbar - a new payment starts on **Payments**.
   A withdrawal's details had both *Print check…* (dialog over the register) and *Create payment…* (the
   `/payments?txn=<id>` page with the details locked, then the same dialog); now there is one button, *Create payment…*,
-  or *Reprint check…* once `check_printed`, opening `PrintCheckDialog` over the register. The `?txn=` page and
-  `LockedTxn` are gone (an old link shows the Payments page).
+  or *Reprint check or letter…* once `check_printed`, opening `PrintCheckDialog` over the register. The `?txn=` page and
+  `LockedTxn` are gone (an old link shows the Payments page). For a printed check (`is_reprint`) with letter or
+  envelope templates (`has_documents`) `PrintCheckDialog` shows two closed `<details>` sections (*Reprint the check* →
+  `PrintForm`; *Reprint the letter or envelope* → `EnclosuresPanel`, no check printed or recorded), each mounted only
+  while open. `EnclosuresPanel` (first print and reprint): the letter list carries `window`; with a window-envelope
+  letter included the envelope part is replaced by a note (*Print an envelope anyway* shows it), a standard letter
+  shows it again.
 - *Wizard:* the first-name field's error said *Last name is required.* (`clean_person_name` now checks the field name's
   ending).
 - *Docs and site:* the CHANGELOG's 13 test-build sections became one 2.0.0 entry by area; every document in `docs/`

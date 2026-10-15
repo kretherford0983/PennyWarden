@@ -19,16 +19,30 @@ export function PrintCheckDialog({ txn, onClose, onChanged }: { txn: any; onClos
   useEffect(() => { load(); }, [txn.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const [mode, setMode] = useState<"print" | "hand">("print");
   const defaultSigner = o ? (o.signers.find((s: any) => s.id === o.default_signer_id) || o.signers[0])?.id ?? null : null;
+  const reprintChoice = !!(o && o.is_reprint && o.check_style_id && o.has_documents);
   return (
     <Modal title={`Print check – transaction #${txn.id}`} onClose={onClose} wide>
       <ErrorBox error={err} />
-      {o && o.has_documents ? (
+      {o && o.has_documents && !reprintChoice ? (
         <div className="segmented" role="radiogroup" aria-label="How is the check made">
           <label><input type="radio" name="mode" checked={mode === "print"} onChange={() => setMode("print")} /> Print the check</label>
           <label><input type="radio" name="mode" checked={mode === "hand"} onChange={() => setMode("hand")} /> I'm writing the check by hand</label>
         </div>
       ) : null}
-      {o && mode === "hand" ? (
+      {o && reprintChoice ? (
+        // build 13 (#230, product owner 2026-10-14): the check was printed - reprint it, or only its letter or envelope
+        // (e.g. the letter was damaged but the check is fine). Both sections start closed.
+        <>
+          <p className="hint">Check #{o.transaction.check_number} was already printed. What do you need to print again?</p>
+          <ReprintSection id="reprint-check" title="Reprint the check">
+            <PrintForm o={o} reload={load} onClose={onClose} onChanged={onChanged} />
+          </ReprintSection>
+          <ReprintSection id="reprint-letter" title="Reprint the letter or envelope">
+            <EnclosuresPanel txnId={txn.id} signerId={defaultSigner} onChanged={onChanged}
+              intro="The check is not printed again. Printed letters and envelopes are attached to the transaction." />
+          </ReprintSection>
+        </>
+      ) : o && mode === "hand" ? (
         <HandwrittenPanel txn={o.transaction} nextNumber={o.next_check_number} signerId={defaultSigner} onChanged={() => { onChanged(); load(); }} />
       ) : !o ? (err ? null : <Loading />) : !o.check_style_id ? (
         <ChooseStyle o={o} onDone={load} />
@@ -36,6 +50,18 @@ export function PrintCheckDialog({ txn, onClose, onChanged }: { txn: any; onClos
         <PrintForm o={o} reload={load} onClose={onClose} onChanged={onChanged} />
       )}
     </Modal>
+  );
+}
+
+/** Build 13 (#230): a closed section of the reprint choice; its content exists only while it is open (like
+ * System/About → Advanced → Reinitialize), so nothing is prepared for the part the user doesn't need. */
+function ReprintSection({ id, title, children }: { id: string; title: string; children: React.ReactNode }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <details className="card reprint-section" data-testid={id} onToggle={(e) => setOpen((e.target as HTMLDetailsElement).open)}>
+      <summary><h3>{title}</h3></summary>
+      {open ? children : null}
+    </details>
   );
 }
 

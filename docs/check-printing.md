@@ -19,7 +19,7 @@ printed transaction).
 
 ### 1. Turn the module on
 **System/About → General → Optional modules → Payments module.** *Payments Setup* appears in your menu, and Register Users get
-**Payments** in their menu and a **Create payment…** button on withdrawals in the register (**Reprint check…** once
+**Payments** in their menu and a **Create payment…** button on withdrawals in the register (**Reprint check or letter…** once
 its check has been printed).
 
 ### 2. Create a check style
@@ -148,7 +148,7 @@ calibration page.
 
 ## For Register Users: printing a check
 
-1. In the **Register**, open an active withdrawal and click **Create payment…** (**Reprint check…** once its check has
+1. In the **Register**, open an active withdrawal and click **Create payment…** (**Reprint check or letter…** once its check has
    been printed). The print screen opens over the register. (Not offered for deposits, VOID transactions or a Closed
    Fiscal Year.)
 2. The first time you print from a bank account, choose its **check style** and how many checks are left on the
@@ -173,6 +173,13 @@ calibration page.
 A **record copy** of the check is attached to the transaction: the check as printed, with *SIGNATURE ON FILE:
 name* in place of each signature and *COPY – NOT NEGOTIABLE* across it (for a voucher check, the whole sheet with its
 stubs). The transaction shows **Check printed**.
+
+**Later — reprint the check or only the letter.** On a withdrawal whose check was printed, the register shows
+**Reprint check or letter…**. When cover letter or envelope templates are set up, the dialog has two closed sections:
+open **Reprint the check** (same undamaged check, with a reason — or **Mark spoiled**) or **Reprint the letter or
+envelope** when only the letter or the envelope was damaged; the check is then not printed or recorded again. Another
+letter or envelope template can be chosen there. A **window-envelope letter** carries the addresses itself, so choosing
+one hides the envelope (**Print an envelope anyway** brings it back); choosing a standard letter shows it again.
 
 ### Your printer settings
 If the printing is shifted on your printer, run the **Printer setup assistant** from the print screen:
