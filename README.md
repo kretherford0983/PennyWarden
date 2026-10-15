@@ -4,7 +4,7 @@
 organizations and similar bodies that keep a checkbook, a budget and an annual audit. PennyWarden runs on your own
 Windows PC, Mac or Linux server; your data stays in one folder you control. No subscription, no cloud account.
 
-Current release: **1.10.0** (called *Fundwarden* from 1.6.6 to 1.6.8) · [pennywarden.org](https://pennywarden.org) · [Download](https://github.com/kretherford0983/PennyWarden/releases/latest) ·
+Current release: **2.0.0** (called *Fundwarden* from 1.6.6 to 1.6.8) · [pennywarden.org](https://pennywarden.org) · [Download](https://github.com/kretherford0983/PennyWarden/releases/latest) ·
 [Install](#install) · [Documentation](#documentation) · [Changelog](CHANGELOG.md)
 
 <p align="center">
