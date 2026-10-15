@@ -113,3 +113,24 @@ def test_duplicate_is_a_draft_and_saving_copies_the_logo(env):
     ev = [e for e in env.admin.get("/api/audit-events?action=CHECK_DOCUMENT_CREATED").json()["items"]
           if e["object_id"] == str(saved["id"])]
     assert ev[0]["after"]["duplicated_from"] == src["id"]
+
+
+def test_reset_commands_hand_files_back_to_the_data_folders_owner(monkeypatch):
+    """Build 13: `sudo pennywarden reset-mfa/reset-password` must not leave root-owned database files behind."""
+    from fmpoc import __main__ as m
+    seen = []
+    monkeypatch.setattr(cr, "match_ownership", lambda d, parts: seen.append((d, parts)))
+    m._own_again(types.SimpleNamespace(data_dir=Path("/var/lib/pennywarden")))
+    assert seen == [(Path("/var/lib/pennywarden"), ["database", "logs"])]
+
+
+def test_match_ownership_does_nothing_unless_root(tmp_path, monkeypatch):
+    (tmp_path / "database").mkdir()
+    called = []
+    monkeypatch.setattr(cr.os, "geteuid", lambda: 1000)
+    monkeypatch.setattr(cr.os, "chown", lambda *a: called.append(a))
+    cr.match_ownership(tmp_path, ["database"])
+    assert called == []
+    monkeypatch.setattr(cr.os, "geteuid", lambda: 0)
+    cr.match_ownership(tmp_path, ["database"])
+    assert called and all(c[1:] == (tmp_path.stat().st_uid, tmp_path.stat().st_gid) for c in called)

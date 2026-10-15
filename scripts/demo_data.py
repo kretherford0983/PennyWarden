@@ -48,8 +48,17 @@ class Api:
         return self.call("GET", url)
 
     def login(self, user: str) -> "Api":
-        self.csrf = self.post("/api/auth/login", {"username": user, "password": PASSWORD})["csrf_token"]
+        r = self.post("/api/auth/login", {"username": user, "password": PASSWORD})
+        self.csrf = r["csrf_token"]
+        if r.get("mfa_pending") == "QUESTIONS":
+            self.questions()
         return self
+
+    def questions(self) -> None:
+        """1.8.0: a first sign-in chooses three security questions (made-up answers)."""
+        self.csrf = self.post("/api/auth/setup/security-questions", {"questions": [
+            {"question": q, "answer": a} for q, a in (("FIRST_TEACHER", "Mrs. Demo"), ("FIRST_PET", "Demo dog"),
+                                                      ("FIRST_CAR", "Demo car"))]})["csrf_token"]
 
     def upload(self, owner_type: str, owner_id: int, name: str, data: bytes, extra: str = ""):
         return self.call("POST", f"/api/attachments?owner_type={owner_type}&owner_id={owner_id}{extra}",
@@ -68,6 +77,30 @@ def pdf(title: str, lines: list[str]) -> bytes:
     return buf.getvalue()
 
 
+def signature_png(w: int = 360, h: int = 90) -> bytes:
+    """A made-up signature: a smooth pen stroke drawn as a transparent PNG (no real person's signature)."""
+    import math
+    import struct
+    import zlib
+    raw = bytearray()
+    ink = set()
+    for x in range(10, w - 10):
+        t = x / w
+        y = h / 2 + (h / 4) * math.sin(x / 9) * (1 - t / 2) + (h / 8) * math.sin(x / 31)
+        for dy in (-1, 0, 1):
+            for dx in (0, 1):
+                ink.add((x + dx, int(y) + dy))
+    for y in range(h):
+        raw.append(0)
+        for x in range(w):
+            raw += bytes((25, 35, 90, 255)) if (x, y) in ink else bytes(4)
+
+    def chunk(kind: bytes, data: bytes) -> bytes:
+        return struct.pack(">I", len(data)) + kind + data + struct.pack(">I", zlib.crc32(kind + data))
+    return (b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 6, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(bytes(raw))) + chunk(b"IEND", b""))
+
+
 def main(base: str) -> None:
     today = dt.date.today()
     year = today.year
@@ -77,15 +110,19 @@ def main(base: str) -> None:
     if admin.get("/api/system/status").get("initialized"):
         raise SystemExit("This installation is already initialized - demo data is only for a new, empty one.")
     admin.post("/api/system/initialize", {"workspace_name": ORG, "admin_username": "admin",
-                                          "admin_email": "admin@example.org", "password": PASSWORD,
+                                          "admin_email": "admin@example.org", "admin_first_name": "Alex",
+                                          "admin_last_name": "Morgan", "password": PASSWORD,
                                           "password_confirmation": PASSWORD})
     admin.csrf = admin.get("/api/auth/me")["csrf_token"]
-    for name, shown, domain, roles in (("treasurer", "Jordan Lee", "FINANCIAL", ["BUDGET_MANAGER", "REGISTER_USER"]),
-                                       ("bookkeeper", "Sam Carter", "FINANCIAL", ["REGISTER_USER"]),
-                                       ("auditor", "Morgan Diaz", "AUDITOR", ["AUDITOR"])):
+    admin.questions()
+    for name, first, last, domain, roles in (
+            ("treasurer", "Jordan", "Lee", "FINANCIAL", ["BUDGET_MANAGER", "REGISTER_USER"]),
+            ("bookkeeper", "Sam", "Carter", "FINANCIAL", ["REGISTER_USER"]),
+            ("auditor", "Morgan", "Diaz", "AUDITOR", ["AUDITOR"])):
         admin.post("/api/users", {"username": name, "email": f"{name}@example.org", "password": PASSWORD,
-                                  "display_name": shown, "security_domain": domain, "roles": roles})
-    admin.put("/api/system/modules", {"fundraisers": True})
+                                  "display_name": f"{first} {last}", "first_name": first,
+                                  "last_name": last, "security_domain": domain, "roles": roles})
+    admin.put("/api/system/modules", {"fundraisers": True, "checks": True})   # 2.0.0: the Payments module
     bm = Api(base).login("treasurer")
 
     # ---- Fiscal Year and budgets
@@ -137,6 +174,15 @@ def main(base: str) -> None:
             "account_name": name, "financial_institution_entity_id": bank["id"], "account_type": kind,
             "account_number": number, "is_primary": primary, "opening_balance": opening,
             "opening_balance_date": f"{year}-01-01"})
+
+    # ---- 2.0.0: Payments module - a voucher check style with a (made-up) signer, used by the checking account
+    signer = admin.call("POST", "/api/checks/signers", data={"name": "Dana Whitfield", "title": "Treasurer"},
+                        files={"file": ("signature.png", signature_png(), "image/png")})
+    style = admin.post("/api/checks/styles", {"preset_key": "VOUCHER_TOP", "name": "Voucher checks"})
+    cfg = style["config"]
+    cfg.update(memo_default="{BUDGET_CODE}, INVOICE {INVOICE}", default_signer_id=signer["id"])
+    admin.put(f"/api/checks/styles/{style['id']}", {"name": "Voucher checks", "config": cfg})
+    bm.put(f"/api/checks/accounts/{acct['chk']['id']}", {"check_style_id": style["id"]})
 
     bm.upload("fiscal_year", fy["id"], "board-approval.pdf",
               pdf("Budget approval", [f"{ORG} - Fiscal Year {year}", "Approved by the board (demo document)."]),

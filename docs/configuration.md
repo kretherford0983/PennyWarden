@@ -105,7 +105,7 @@ before), `lockout_1/2/3_minutes` (1–10080) and `log_level` (DEBUG, INFO, WARNI
 
 On a **local** install the page shows the settings; change them in `config.toml`.
 
-**Organization name.** An Administrator can rename the organization on System/About (1–120 characters; audited as
+**Organization name.** An Administrator can rename the organization on System/About → General (1–120 characters; audited as
 `ORGANIZATION_RENAMED`). New reports, letters and backup file names use the new name; documents already made keep the
 old one.
 
@@ -121,7 +121,7 @@ The data folder is the one given with `--data-dir` (for example `C:\ProgramData\
 goes there. In TOML, write Windows paths in single quotes (`backup_folders = ['D:\PennyWarden-backups']`) so the
 backslashes stay as they are. Environment variables for the service are set on the service
 (`nssm set PennyWarden AppEnvironmentExtra FM_LOG_LEVEL=INFO`), not in a terminal; they override `config.toml` and
-show as *environment* (locked) on System/About. Restart the service after changing either:
+show as *environment* (locked) on System/About → Settings. Restart the service after changing either:
 `Restart-Service PennyWarden`. Step by step: [install-windows-server.md](install-windows-server.md).
 
 ## On a Mac

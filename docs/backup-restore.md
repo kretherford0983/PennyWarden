@@ -27,7 +27,8 @@ restored from the web page.** Keep the passphrase in a password manager and the 
 When **Let this server recover the passphrase** is ticked (the default), the server also keeps a *recovery file*: the
 passphrase, encrypted with a random **server key** that never leaves this server. The backup file itself is unchanged.
 
-- Only the server's owner can use it, from the server's command line: `pennywarden restore FILE --use-server-key`.
+- Only the server's owner can use it, from the server's command line: `sudo pennywarden restore FILE --use-server-key`
+  on Linux (on Windows `C:\PennyWarden\current\PennyWarden.cmd restore …` in a terminal opened as Administrator).
   The web page **always** asks for the passphrase — a stolen Administrator sign-in can't restore without it.
 - It works only **on this server** and only **for this exact file** (the recovery file is bound to the file's
   fingerprint). A copy taken to another computer still needs the passphrase.
@@ -82,9 +83,12 @@ changed after the backup"): the report holds financial data. A backup from anoth
 ## Restoring from the server's command line (since 2.0.0)
 
 ```
-pennywarden restore FILE.fmbak [--use-server-key | --passphrase-file PATH] [--data-dir DIR] [--stop-service] [--yes]
-pennywarden restore --list [--data-dir DIR]
+sudo pennywarden restore FILE.fmbak [--use-server-key | --passphrase-file PATH] [--data-dir DIR] [--stop-service] [--yes]
+sudo pennywarden restore --list [--data-dir DIR]
 ```
+
+(Linux server shown. Windows: `C:\PennyWarden\current\PennyWarden.cmd restore …` as Administrator; a local install:
+the program itself, without `sudo`, with PennyWarden quit.)
 
 - **Rights.** On a server install (the systemd service or the Windows service `PennyWarden`, see
   [install-windows-server.md](install-windows-server.md#9-host-commands)) run it with `sudo` / from a terminal
@@ -190,7 +194,7 @@ Entity numbers continue from the last one, so a new entity never reuses a number
 4. The removal happens in one database transaction (all or nothing); the attachment files are removed after it.
    Everyone else is signed out. Everyone who signs in sees a notice (who, when) until an Administrator acknowledges it.
 
-From the web it can be done once in 24 hours. On the server, `pennywarden reinitialize [--data-dir DIR]
+From the web it can be done once in 24 hours. On the server, `sudo pennywarden reinitialize [--data-dir DIR]
 [--passphrase-file PATH] [--stop-service] [--yes]` does the same with no time limit (a limit would only push people to
 delete the data folder, which leaves no backup); it asks for the word `reinitialize` unless `--yes` is given, handles
 the service like `pennywarden restore`, and is audited via `host_cli`.

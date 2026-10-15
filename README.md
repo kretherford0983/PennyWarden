@@ -13,6 +13,13 @@ Current release: **1.10.0** (called *Fundwarden* from 1.6.6 to 1.6.8) · [pennyw
 
 <sub>All screenshots show a made-up organization (`scripts/demo_data.py`).</sub>
 
+> **New in 2.0 — the Payments module.** Enter a bill once and PennyWarden records it in the register and prints its
+> check on your own printer, with a cover letter listing the invoices and a #10 envelope
+> ([more below](#payments-and-check-printing-optional-payments-module-200)). Also new: tools for the people who run
+> PennyWarden — System/About in tabs, a security overview, maintenance mode, restore from the server's command line,
+> a readable audit log you can export, and a one-step Windows server installer.
+> [What's new in 2.0](docs/user-guide-v2.0.md) · [Changelog](CHANGELOG.md)
+
 ## Why PennyWarden
 
 A volunteer treasurer has to answer three questions at any time: *what did we plan, what actually happened, and
@@ -81,7 +88,12 @@ set up once with a preview drawn to scale and test prints on plain paper; a sing
 the manual feed. The number on the loaded check is confirmed before every print, spoiled checks are recorded as
 VOID, and a record copy is attached to the transaction. **Payments** enter a bill and print its check in one go,
 with an optional **cover letter** listing the invoices and a **#10 envelope**; **voucher checks** carry vendor and
-office stubs, and styles can have **two signature lines** (docs/check-printing.md).
+office stubs, and styles can have **two signature lines** ([docs/check-printing.md](docs/check-printing.md)).
+
+<p align="center">
+  <img src="docs/screenshots/readme/payment.png" alt="New payment: the payee, two invoices and the check amount spelled out in words as it is typed" width="420">
+  <img src="docs/screenshots/readme/check-print.png" alt="The print screen: a voucher check drawn to scale with the payee, the amount in words, the memo and the signature line" width="420">
+</p>
 
 ### Reminders
 
@@ -105,8 +117,9 @@ return every quarter, renew the insurance every year — so duties survive a cha
 | **Reminders** | Personal and organization reminders, show-before days, links to a Fiscal Year, budget or account, repeating organization reminders |
 | **People and vendors** | Entities for organizations and individuals, a person's position (offered as the title when they sign) |
 | **Roles** | Administrator, Budget Manager, Budget User, Register User and read-only Auditor; administration is kept strictly apart from financial work |
-| **Security** | Argon2id passwords, two-step verification (TOTP) with recovery codes, server-side sessions, CSRF protection, AES-256-GCM encrypted bank account numbers, an append-only audit log of every change |
-| **Your data** | One folder on your machine; encrypted backup and restore from inside the application; moves between Windows, Mac and Linux; upgrades never touch data or configuration |
+| **Administration** | System/About in tabs: settings with their sources (editable on a server), organization name, optional modules, signed-in sessions, security overview, system health and diagnostics, maintenance mode, reinitialize with a safety backup |
+| **Security** | Argon2id passwords, two-step verification (TOTP) with recovery codes, server-side sessions, CSRF protection, AES-256-GCM encrypted bank account numbers, an append-only audit log of every change that reads in plain words and exports to CSV and PDF |
+| **Your data** | One folder on your machine; encrypted backups by hand or on a schedule, restore from inside the application or the server's command line; moves between Windows, Mac and Linux; upgrades never touch data or configuration |
 | **Where it runs** | Single user on a Windows PC or a Mac (Apple Silicon); several users on a Linux or Windows server behind HTTPS, or in Docker |
 
 <p align="center"><img src="docs/screenshots/readme/dashboard-dark.png" alt="The dashboard in dark mode" width="600"></p>
@@ -118,7 +131,7 @@ return every quarter, renew the insurance every year — so duties survive a cha
 | **Mac with Apple Silicon (single user)** | Download `PennyWarden-<version>-macos-arm64.dmg` from the [latest release](https://github.com/kretherford0983/PennyWarden/releases/latest), drag PennyWarden to Applications and open it. First start: *System Settings → Privacy & Security → Open Anyway* — [step by step with pictures](docs/install-macos.md). |
 | **Windows (single user)** | Download `PennyWarden-<version>-windows-x64.exe` from the [latest release](https://github.com/kretherford0983/PennyWarden/releases/latest) and double-click it. |
 | **Linux server (multiple users)** | `curl -fsSL https://github.com/kretherford0983/PennyWarden/releases/latest/download/install.sh \| sudo bash` — installs or upgrades a systemd service; put an HTTPS reverse proxy in front of it. |
-| **Windows server (multiple users)** | `PennyWarden-windows-x64.zip` in server mode as a Windows service (NSSM) behind HTTPS (Caddy) — [step by step](docs/install-windows-server.md). |
+| **Windows server (multiple users)** | `install-windows-server.ps1` from the latest release (PowerShell as Administrator) installs or upgrades PennyWarden as a Windows service, with HTTPS through Caddy or behind a Cloudflare Tunnel — [Windows server guide](docs/install-windows-server.md). |
 
 The first start shows the **Initialization Wizard** (organization name, administrator account). There are no
 default credentials. Details, HTTPS, Docker and moving data between machines: [docs/deployment.md](docs/deployment.md).

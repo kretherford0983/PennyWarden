@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>PennyWarden — free bookkeeping for small organizations</title>
-  <meta name="description" content="PennyWarden is a free, self-hosted ledger for the treasurers of clubs, booster groups and associations: budgets, bank registers and audit-ready reports, on your own computer.">
+  <meta name="description" content="PennyWarden is a free, self-hosted ledger for the treasurers of clubs, booster groups and associations: budgets, bank registers, check printing and audit-ready reports, on your own computer.">
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="site.css">
   <meta property="og:title" content="PennyWarden">
@@ -16,6 +16,7 @@
   <header class="top">
     <a class="brand" href="#"><img src="favicon.svg" alt="" width="28" height="28"> PennyWarden</a>
     <nav aria-label="Page">
+      <a href="#payments">Payments</a>
       <a href="#features">Features</a>
       <a href="#download">Download</a>
       <a href="https://github.com/kretherford0983/PennyWarden#documentation">Documentation</a>
@@ -30,6 +31,8 @@
         <p class="lead">PennyWarden is free bookkeeping for <b>clubs, booster groups, associations and other small
           organizations</b> that keep a checkbook, a budget and an annual audit. It runs on your own Windows PC, Mac or
           Linux server. Your data stays in one folder you control — no subscription, no cloud account.</p>
+        <p class="new"><span class="tag">New in 2.0</span> <a href="#payments">The Payments module</a>: pay a bill
+          once and print its check, cover letter and envelope — recorded in the register as it prints.</p>
         <p class="cta"><a class="button primary" href="#download">Download PennyWarden</a>
           <span class="muted" id="hero-version"></span></p>
       </div>
@@ -41,6 +44,30 @@
       <div><h2>What did we plan?</h2><p>Income and expense budgets for each Fiscal Year, with sub-budgets where you need detail, approved and locked with the year.</p></div>
       <div><h2>What actually happened?</h2><p>One register per bank account. Split a check across budgets, record transfers once, and see the bank's balance next to everything you have written.</p></div>
       <div><h2>Can we prove it?</h2><p>Attach the receipt to each transaction. One printable audit report holds the budgets and every transaction followed by its documents.</p></div>
+    </section>
+
+    <section id="payments" class="payments">
+      <p class="tag">New in 2.0</p>
+      <h2>Payments: from the bill to the printed check</h2>
+      <p class="lead">Enter a bill once — the payee, one line per invoice with its budget and documents — and PennyWarden
+        records the withdrawal in the register and prints the check on your own printer, on the check stock your bank
+        already numbered.</p>
+      <div class="pair">
+        <figure><img class="shot" src="screenshots/payment.png" width="1360" height="1100" loading="lazy"
+             alt="New payment: the payee, two invoices on the instruments budget, and the check amount spelled out in words as it is typed">
+          <figcaption>A payment with two invoices: the amount in words appears as you type.</figcaption></figure>
+        <figure><img class="shot" src="screenshots/check-print.png" width="1360" height="1100" loading="lazy"
+             alt="The print screen: a voucher check drawn to scale with the payee, the amount in words, the memo and the signature line">
+          <figcaption>The check drawn to scale before it prints, with the memo filled in from the invoices.</figcaption></figure>
+      </div>
+      <ul class="facts">
+        <li><b>Your check stock.</b> Three checks per page or a voucher check with two stubs listing the invoices paid. Adjust every field with a preview drawn to scale, and a printer setup assistant if your printer shifts the page.</li>
+        <li><b>Signatures under control.</b> Signature images are stored encrypted; a style can have two signature lines, and above an amount you choose the check is left for signing by hand.</li>
+        <li><b>Nothing goes missing.</b> You confirm the number of the check in the printer; a spoiled check becomes a $0.00 VOID record, and a copy of every printed check is attached to its transaction.</li>
+        <li><b>Letters and envelopes too.</b> A cover letter listing the invoices — with your logo or on your letterhead — and a #10 envelope, printed right after the check. Checks written by hand are recorded the same way.</li>
+      </ul>
+      <p class="small">The Payments module is optional: an Administrator turns it on in System/About.
+        <a href="https://github.com/kretherford0983/PennyWarden/blob/main/docs/check-printing.md">How check printing works</a>.</p>
     </section>
 
     <section id="features" class="features">
@@ -63,8 +90,9 @@
       </div>
       <ul class="facts">
         <li><b>Your data, your computer.</b> One folder, encrypted backups you can schedule, moves between Windows, Mac and Linux.</li>
-        <li><b>Safe by default.</b> Encrypted bank account numbers, two-step sign-in, and an audit log of every change.</li>
-        <li><b>One person or a committee.</b> Run it alone on a laptop, or for several people on a Linux or Windows server with separate roles.</li>
+        <li><b>Safe by default.</b> Encrypted bank account numbers, two-step sign-in, and an audit log of every change in plain words, exportable for your auditors.</li>
+        <li><b>One person or a committee.</b> Run it alone on a laptop, or for several people on a Linux or Windows server with separate roles — installed with one command on either.</li>
+        <li><b>Easy to look after.</b> Administrators get a security overview, signed-in sessions, system health, maintenance mode and settings that can be changed in the application.</li>
         <li><b>Free and open.</b> Licensed under the AGPL-3.0; the source code is on GitHub.</li>
       </ul>
     </section>
@@ -78,7 +106,7 @@
           <p>For one person on a Windows 10 or 11 PC.</p>
           <a class="button" data-dl="windows-installer" href="https://github.com/kretherford0983/PennyWarden/releases/latest">Download for Windows</a>
           <p class="small"><a data-dl="windows-portable" href="https://github.com/kretherford0983/PennyWarden/releases/latest">Portable .zip</a></p>
-          <p class="small">For several people on a Windows server: <a href="https://github.com/kretherford0983/PennyWarden/blob/main/docs/install-windows-server.md">Windows server guide</a></p>
+          <p class="small">For several people on a Windows server: the <code>install-windows-server.ps1</code> script from the release — <a href="https://github.com/kretherford0983/PennyWarden/blob/main/docs/install-windows-server.md">Windows server guide</a></p>
           <details><summary>“Windows protected your PC”?</summary>
             <p>PennyWarden is not signed with a paid code-signing certificate, so Windows SmartScreen may warn you the first time. Click <b>More info</b>, then <b>Run anyway</b>. Check the download against the checksum below if you want to be sure it is the original file.</p></details>
         </article>

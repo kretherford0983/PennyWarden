@@ -30,6 +30,9 @@ printed transaction).
   corner, and the font of each;
 - **the feed modes**: how the paper goes into the printer (see below).
 
+Each style's row has **Edit** and a **⋯** menu with **Copy…** (a new style starting from this one — for example the
+same stock fed differently) and **Deactivate** / **Activate**.
+
 The preview shows your fields over a drawing of the stock, with sample data. The grey outline (lines, *PAY TO THE
 ORDER OF*, *DOLLARS*, …) is only there to help you place things — it never prints. The shaded strip at the bottom is
 the **bank number zone** (the bottom 5/8 inch of the check): nothing may be placed there.
@@ -90,7 +93,8 @@ type it twice: `{{` or `}}`.
 **Add signer…**: name, title and a signature image (PNG — a scan of the signature on white paper, cropped close;
 a transparent background works best). The image is stored **encrypted** and can never be downloaded again; you only
 see a small preview marked SAMPLE. It is drawn only on real checks and, when you choose it, on your test prints.
-Every print that uses it is recorded in the audit log. Backups include the signature images.
+Every print that uses it is recorded in the audit log. Backups include the signature images. The signer's row has
+**Edit…** and a **⋯** menu with **Upload image…** / **Replace image…**, **Remove image** and **Deactivate**.
 
 **No signature above this amount** (optional): above it the signature does not print and the check is signed by hand.
 The user is told before printing.
@@ -202,12 +206,13 @@ are shown but locked — to change them, edit the transaction in the register �
 ### Setting them up (Administrators)
 Payments Setup has a **Cover letters** and an **Envelopes** section. Keep as many of each as you need — for example
 one letter for invoices, one for a refund and one for a donation; the letter and envelope are chosen for each payment
-when printing (only active ones are offered). **New cover letter** and **New #10 envelope** create a template and open
-its editor on a page of its own, with the name selected so you can type the real one at once (a new template is
-numbered — *Invoice payment letter 2* — until you rename it; names are unique, deactivated templates included).
-**Duplicate** copies a template with all its settings, the letter's logo included, as *… copy*. The first template of
-each kind becomes the **default**; **Make default** and **Deactivate** change that. Templates are never deleted —
-deactivate one you no longer use (BR-001). A **preview** at the top of the editor shows the letter or envelope with a
+when printing (only active ones are offered). **New cover letter** and **New #10 envelope** open the editor for a new
+template on a page of its own, with the name selected so you can type the real one at once (a suggested name is
+numbered — *Invoice payment letter 2* — because names are unique, deactivated templates included). **Nothing is kept
+until you click Save**: going back without saving leaves no template behind. Each template's row has **Edit** and a
+**⋯** menu with **Duplicate** (opens an unsaved copy with all its settings, named *… copy*; the letter's logo is copied
+when you save it), **Make default** and **Deactivate** / **Activate**. The first template of each kind becomes the
+**default**. Saved templates are never deleted — deactivate one you no longer use (BR-001). A **preview** at the top of the editor shows the letter or envelope with a
 sample payee and invoices as you type (tick **Keep at the top** to keep it in view while you scroll); it is a picture of
 the page exactly as it prints, so it shows in every browser, Safari included. Each section can be collapsed. **Test
 print (sample data)** prints it — an envelope test print is laid out on the page the way the printer is fed.
@@ -231,8 +236,9 @@ A **cover letter** has:
   role** set here are used.
 - Whether **Include cover letter** starts ticked on the print screen.
 - An optional **logo** (PNG or JPEG, at most 1 MB) above the letterhead lines, **top left** or **top center** (the
-  letterhead lines are then centered too). It is scaled to fit 2.5 × 1 inch. Adding, replacing or removing it takes
-  effect at once (it is not part of *Save*) and is recorded in the audit log.
+  letterhead lines are then centered too). It is scaled to fit 2.5 × 1 inch. It can be added once the letter has been
+  saved; adding, replacing or removing it takes effect at once (it is not part of *Save*) and is recorded in the audit
+  log.
 - **Pre-printed letterhead paper** — prints no letterhead or logo and keeps the top of the page blank (2 inches by
   default; set it to where your paper's letterhead ends).
 - **Window envelope (#10 double-window)** — for mailing in a double-window envelope instead of printing an envelope:

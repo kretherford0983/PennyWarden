@@ -40,6 +40,11 @@ boot and restarted if it stops. Then it checks that PennyWarden answers and tell
 - **Offline servers:** `-ZipPath`, `-NssmPath` and `-CaddyPath` use files you copied to the server
   (`-ZipPath` needs `-Version`).
 - **Other folders or port:** `-InstallDir`, `-DataDir`, `-Port`.
+- **Scheduled backups:** list the folders in `C:\ProgramData\PennyWarden\config.toml`
+  (`backup_folders = ['D:\PennyWarden-backups']` — a list, single quotes), give the service write access to each
+  (`icacls D:\PennyWarden-backups /grant "NT SERVICE\PennyWarden:(OI)(CI)M"`) and restart it
+  (`Restart-Service PennyWarden`). On a network share the virtual account connects as the server's computer account
+  (`DOMAIN\SERVERNAME$`), so grant that account on the share and its folder.
 - **Uninstall:** `-Uninstall` removes the services and the program folder and keeps the data folder and the upgrade
   backups.
 - `Get-Help .\install-windows-server.ps1 -Detailed` lists every option.
@@ -123,7 +128,7 @@ backup_folders = ['D:\PennyWarden-backups', '\\nas\backups\pennywarden']
 
 Single quotes keep Windows backslashes as they are. Never put passwords or keys in this file — PennyWarden doesn't
 need any there. Every setting: [configuration.md](configuration.md). Once it runs, an Administrator can see every
-setting and where it comes from on System/About, and change the security and session settings there (they are
+setting and where it comes from on System/About → Settings, and change the security and session settings there (they are
 saved to this file and take effect after a restart of the service).
 
 Settings can also come from `FM_*` environment variables. For a service they must be set **on the service** (step
