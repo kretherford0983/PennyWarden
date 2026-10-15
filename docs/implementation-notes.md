@@ -402,8 +402,11 @@ fastapi 0.143.0, pydantic 2.14.0 + **pydantic_core 2.50.0** (Dependabot bumped p
   shows the picture instead of the frame and makes **Print…** open the PDF in a new tab, where Safari shows and prints
   it (printing a blank frame could waste a check); without a picture it falls back to the frame and the new-tab hint.
   Other browsers are unchanged. E2E "#230" runs the print screen with Safari's user agent.
-- *Register:* no *New payment* button in the toolbar (product owner): a new payment starts on **Payments**, an existing
-  withdrawal uses *Create payment…*. Its modal branch in `Register.tsx` went with it.
+- *Register (product owner, 2026-10-14):* no *New payment* button in the toolbar - a new payment starts on **Payments**.
+  A withdrawal's details had both *Print check…* (dialog over the register) and *Create payment…* (the
+  `/payments?txn=<id>` page with the details locked, then the same dialog); now there is one button, *Create payment…*,
+  or *Reprint check…* once `check_printed`, opening `PrintCheckDialog` over the register. The `?txn=` page and
+  `LockedTxn` are gone (an old link shows the Payments page).
 - *Wizard:* the first-name field's error said *Last name is required.* (`clean_person_name` now checks the field name's
   ending).
 - *Docs and site:* the CHANGELOG's 13 test-build sections became one 2.0.0 entry by area; every document in `docs/`

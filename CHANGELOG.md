@@ -16,7 +16,7 @@ write to your scheduled-backup folders.
 
 ### Payments module (optional)
 - **Turn it on** in System/About → General → Optional modules. Administrators set it up in **Payments Setup**;
-  Register Users get **Payments** in the menu and **Print check…** on withdrawals. Budget Managers have no access
+  Register Users get **Payments** in the menu and **Create payment…** on withdrawals in the register. Budget Managers have no access
   (docs/check-printing.md). (#60)
 - **Prints on blank check stock that already carries the bank numbers:** the date, payee, the amount in numbers and
   in words (bank style, with a protective fill), the memo and the signature — never the check number or the bank

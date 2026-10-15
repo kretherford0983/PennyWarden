@@ -2,7 +2,6 @@ import { Fragment, useEffect, useRef, useState, type FormEvent } from "react";
 import { api, money, newRequestKey, qs, todayIso } from "../api";
 import { allocationLabel, Attachments, EntityPicker, ErrorBox, Field, Loading, Modal, PendingFiles, useConfirmable, GuardedForm } from "../components";
 import { useMe } from "../App";
-import { Link } from "../router";
 import { EntityForm } from "./Entities";
 import { PrintCheckDialog } from "./CheckPrint";
 import { AmountPreview } from "./checkShared";
@@ -231,8 +230,8 @@ function TxnDetail({ t, manage, canPrintChecks, onPrintCheck, onEdit, onVoid, on
         {/* 2.0.0 (#161): Payments module - active withdrawals over zero, not in a Closed Fiscal Year */}
         {canPrintChecks && editable && t.transaction_type === "WITHDRAWAL" && !t.transfer && Number(t.total) > 0
           ? <>
-              <button onClick={onPrintCheck}>{t.check_printed ? "Print check again…" : "Print check…"}</button>
-              <Link to={`/payments?txn=${t.id}`} className="button">Create payment…</Link>
+              {/* build 13 (product owner, 2026-10-14): one button - the print screen in a dialog over the register */}
+              <button onClick={onPrintCheck}>{t.check_printed ? "Reprint check…" : "Create payment…"}</button>
             </> : null}
         {editable ? <button className="danger" onClick={onVoid}>Void…</button> : null}
         {manage && t.status === "VOID" && !t.closed_fiscal_year_protected ? <button onClick={onVoidDate}>Correct date…</button> : null}

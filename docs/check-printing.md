@@ -19,7 +19,8 @@ printed transaction).
 
 ### 1. Turn the module on
 **System/About → General → Optional modules → Payments module.** *Payments Setup* appears in your menu, and Register Users get
-**Payments** in their menu and a **Print check…** button on withdrawals in the register.
+**Payments** in their menu and a **Create payment…** button on withdrawals in the register (**Reprint check…** once
+its check has been printed).
 
 ### 2. Create a check style
 **Payments Setup → New check style from preset → Create.** A check style describes your check stock:
@@ -147,8 +148,9 @@ calibration page.
 
 ## For Register Users: printing a check
 
-1. In the **Register**, open an active withdrawal and click **Print check…**. (Not offered for deposits, VOID
-   transactions or a Closed Fiscal Year.)
+1. In the **Register**, open an active withdrawal and click **Create payment…** (**Reprint check…** once its check has
+   been printed). The print screen opens over the register. (Not offered for deposits, VOID transactions or a Closed
+   Fiscal Year.)
 2. The first time you print from a bank account, choose its **check style** and how many checks are left on the
    sheet.
 3. Check the **feed mode** (the sheet counter suggests one: with one check left it suggests the single-check feed),
@@ -185,8 +187,8 @@ Administrator's layout.
 
 ## For Register Users: payments
 
-**Payments** (in the menu) enters a bill and prints its check in one go (for a withdrawal already in the register,
-use **Create payment…** in its details):
+**Payments** (in the menu) enters a new bill and prints its check in one go (a withdrawal already in the register is
+paid with **Create payment…** in its details, see *printing a check* above):
 
 1. Choose the account to **pay from** (the one you used last time is selected) and click **New payment**.
 2. Enter the **check date**, the **payee** (type to search; **+ New entity** adds a vendor without leaving the
@@ -198,9 +200,6 @@ use **Create payment…** in its details):
    invoices) and the print screen opens. If you close it, print the check later from the register.
 
 The Payments page lists the checks printed from the account; **Open in register** shows the transaction.
-
-**Create payment…** on a withdrawal that is already in the register opens its payment page. The transaction's details
-are shown but locked — to change them, edit the transaction in the register — and the check is printed from there.
 
 ## Cover letters and envelopes
 
@@ -269,7 +268,7 @@ first. Each printed letter and envelope is attached to the transaction (the same
 guide and an adjustment of up to 1/4 inch.
 
 ### Checks written by hand
-For a check you write by hand (or a personal check), open **Print check…** and choose **I'm writing the check by
+For a check you write by hand (or a personal check), open **Create payment…** and choose **I'm writing the check by
 hand**. Type the number of the check you wrote twice and click **Record check number** — the register then matches
 the bank, and no check is printed or counted. Then print the cover letter and envelope as above.
 
