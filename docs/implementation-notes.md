@@ -393,6 +393,15 @@ fastapi 0.143.0, pydantic 2.14.0 + **pydantic_core 2.50.0** (Dependabot bumped p
   folder (the service runs with `ProtectSystem=strict`; `-` = a missing folder doesn't stop it), skipping folders under
   `/home`, `/root` or `/run/user` (`ProtectHome`) with a comment; the drop-in is removed when the list is empty. Run the
   installer again after changing the list.
+- *Safari print previews:* Safari draws a PDF in an inline frame blank, so the print screens (check, alignment test,
+  cover letter, envelope, test prints) and the audit log PDF showed nothing. Every such response now keeps the PDF in
+  `services/pdf_preview.py` (memory, per user, 15 minutes, at most 40 / 40 MB) and names it in `X-Preview-Token`;
+  `GET /api/pdf-preview/{token}` (`routers/pdf_preview.py`) returns a PNG of it via `raster.pdf_to_png` (4 pages,
+  1400 px). Nothing is generated twice, so printing is still recorded once. Frontend: `api.requestBlob` /
+  `withPreviewToken` put the token on the Blob, `usePdf` keeps it, and `PdfViewer` in Safari (`detectBrowser()`)
+  shows the picture instead of the frame and makes **Print…** open the PDF in a new tab, where Safari shows and prints
+  it (printing a blank frame could waste a check); without a picture it falls back to the frame and the new-tab hint.
+  Other browsers are unchanged. E2E "#230" runs the print screen with Safari's user agent.
 - *Wizard:* the first-name field's error said *Last name is required.* (`clean_person_name` now checks the field name's
   ending).
 - *Docs and site:* the CHANGELOG's 13 test-build sections became one 2.0.0 entry by area; every document in `docs/`

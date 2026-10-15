@@ -292,7 +292,8 @@ Browser settings that matter:
 - **Chrome, Brave, Edge:** Scale → *Actual size* (not "Fit to printable area"); check the paper size. To use a
   printer profile saved in your printer driver, click **Print using system dialog** (Ctrl+Shift+P).
 - **Firefox:** Scale → *100%*; turn off *Fit to page width*.
-- **Safari:** Scale *100%*; turn off *Auto-rotate* and *Scale to fit*.
+- **Safari:** Scale *100%*; turn off *Auto-rotate* and *Scale to fit*. Safari can't show a PDF inside the page, so
+  the print screens show a picture of the PDF instead, and **Print…** opens the PDF in a new tab: print it there (⌘P).
 
 ## Example: 3-per-page laser checks on an HP LaserJet
 

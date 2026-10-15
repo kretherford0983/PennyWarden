@@ -134,3 +134,46 @@ def test_match_ownership_does_nothing_unless_root(tmp_path, monkeypatch):
     monkeypatch.setattr(cr.os, "geteuid", lambda: 0)
     cr.match_ownership(tmp_path, ["database"])
     assert called and all(c[1:] == (tmp_path.stat().st_uid, tmp_path.stat().st_gid) for c in called)
+
+
+# ---- #230: Safari shows an inline PDF blank - the print screens ask for a picture of the very PDF
+def test_printed_pdfs_have_a_picture_for_their_user_only(env, anon):
+    from fmpoc.services import pdf_preview
+    enable(env)
+    cfg = env.admin.get(f"{DOCS}/draft?kind=ENVELOPE").json()["config"]
+    r = env.admin.post(f"{DOCS}/draft/test-print", {"kind": "ENVELOPE", "config": cfg})
+    token = r.headers["X-Preview-Token"]
+    assert len(token) >= 32
+    pic = env.admin.get(f"/api/pdf-preview/{token}")
+    assert pic.status_code == 200 and pic.headers["content-type"] == "image/png"
+    assert pic.content[:8] == b"\x89PNG\r\n\x1a\n" and pic.headers["X-Page-Count"] == "1"
+    assert pic.headers["Cache-Control"] == "private, no-store"
+    assert env.admin.get(f"/api/pdf-preview/{token}").status_code == 200        # can be shown again
+    # another user, an unknown token, no session
+    assert env.ru.get(f"/api/pdf-preview/{token}").status_code == 404
+    assert env.admin.get("/api/pdf-preview/nope").status_code == 404
+    assert env.admin.get("/api/pdf-preview/" + "x" * 65).status_code == 404
+    anon.pre_csrf()
+    assert anon.get(f"/api/pdf-preview/{token}").status_code == 401
+    # a Register User's own PDFs (here the scale check) and the audit log PDF carry a token as well
+    r = env.ru.get("/api/checks/scale-check")
+    assert env.ru.get(f"/api/pdf-preview/{r.headers['X-Preview-Token']}").status_code == 200
+    r = env.auditor.post("/api/audit-events/export", {"format": "pdf"})
+    assert env.auditor.get(f"/api/pdf-preview/{r.headers['X-Preview-Token']}").status_code == 200
+    assert "X-Preview-Token" not in env.auditor.post("/api/audit-events/export", {"format": "csv"}).headers
+    # kept for a short time only
+    pdf_preview.clear()
+    assert env.admin.get(f"/api/pdf-preview/{token}").status_code == 404
+
+
+def test_preview_store_limits(monkeypatch):
+    from fmpoc.services import pdf_preview as pp
+    pp.clear()
+    tokens = [pp.keep(1, b"%PDF-" + bytes([i])) for i in range(pp.MAX_ENTRIES + 5)]
+    assert pp.get(1, tokens[0]) is None and pp.get(1, tokens[-1]) is not None      # oldest dropped first
+    assert pp.keep(1, b"x" * (pp.MAX_PDF_BYTES + 1)) is None
+    t = pp.keep(2, b"%PDF-late")
+    now = pp.time.monotonic()
+    monkeypatch.setattr(pp.time, "monotonic", lambda: now + pp.TTL_SECONDS + 1)
+    assert pp.get(2, t) is None
+    pp.clear()

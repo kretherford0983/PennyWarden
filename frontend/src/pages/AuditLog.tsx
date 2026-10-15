@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useState } from "react";
 import { api, qs } from "../api";
 import { ErrorBox, Field, Loading } from "../components";
-import { PdfViewer } from "./checkShared";
+import { PdfViewer, type PdfFile } from "./checkShared";
 
 /** 2.0.0 (#133): times in the viewer's own time zone (UTC on hover). */
 const local = (iso: string) => new Date(iso).toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
@@ -72,7 +72,7 @@ export default function AuditLog() {
   // 2.0.0 build 12 (#188): export the filtered list (all pages) as CSV or a printable PDF - same entries and wording as
   // here, built by the server (financial content withheld for Administrators); every export is recorded in this log
   const [busy, setBusy] = useState<"" | "csv" | "pdf">("");
-  const [pdf, setPdf] = useState<{ url: string; name: string } | null>(null);
+  const [pdf, setPdf] = useState<PdfFile | null>(null);
   const [exportErr, setExportErr] = useState<unknown>(null);
   const exportAs = async (format: "csv" | "pdf") => {
     setExportErr(null);
@@ -89,7 +89,7 @@ export default function AuditLog() {
       const url = URL.createObjectURL(blob);
       if (format === "pdf") {
         if (pdf) URL.revokeObjectURL(pdf.url);
-        setPdf({ url, name });
+        setPdf({ url, name, preview: blob.previewToken });
       } else {
         const a = document.createElement("a");
         a.href = url;

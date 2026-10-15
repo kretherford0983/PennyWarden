@@ -5,7 +5,7 @@
  * check number). After printing: done, reprint (check not damaged) or mark spoiled (the number becomes a zero-dollar
  * VOID record and the payment moves to the next number). */
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { api, money } from "../api";
+import { api, money, withPreviewToken } from "../api";
 import { ErrorBox, Field, GuardedForm, Loading, Modal } from "../components";
 import { EnclosuresPanel, HandwrittenPanel } from "./CheckEnclosures";
 import { BrowserTips, CheckPreview, FIELD_LABELS, PatternInput, PdfViewer, useCheckFonts, usePdf } from "./checkShared";
@@ -376,7 +376,7 @@ function PrinterAssistant({ o, feed, body, txnId, onClose }: { o: Opts; feed: st
     setSt(next);
     await api.put("/api/checks/my-printer", { check_style_id: o.check_style_id, feed_key: feed, page: single ? next.page : null, guide: single ? next.guide : null, dx: next.dx, dy: next.dy });
   };
-  const printScale = async () => { setErr(null); try { const r = await fetch("/api/checks/scale-check", { credentials: "same-origin" }); setScalePdf(await r.blob(), "scale-check.pdf"); setShow("scale"); } catch (x) { setErr(x); } };
+  const printScale = async () => { setErr(null); try { const r = await fetch("/api/checks/scale-check", { credentials: "same-origin" }); setScalePdf(withPreviewToken(r, await r.blob()), "scale-check.pdf"); setShow("scale"); } catch (x) { setErr(x); } };
   const printTest = async () => { setErr(null); try { setTestPdf(await api.postBlob(`/api/checks/transactions/${txnId}/alignment-test`, body), "alignment-test.pdf"); setStep("result"); setShow("test"); } catch (x) { setErr(x); } };
   const apply = async () => {
     setErr(null);

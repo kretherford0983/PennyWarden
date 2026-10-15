@@ -43,6 +43,8 @@ write to your scheduled-backup folders.
   actual check, and a printer setup assistant that saves each user's own small adjustment without changing the
   Administrator's layout. Test prints say TEST – NOT A CHECK and carry a 5-inch line to check the print scale. (#158,
   #162, #183)
+- **Safari:** it can't show a PDF inside the page, so the print screens show a picture of the check, letter or
+  envelope instead, and **Print…** opens the PDF in a new tab to print it there. (#230)
 - **Cover letters** list the invoices paid and print with the check (or on their own): letterhead lines or a **logo**,
   or **pre-printed letterhead paper**; subject, greeting, an invoice table with the columns you choose and a total,
   closing; signed by name by the check's signer. Keep **as many letters as you need** (for invoices, a refund, a

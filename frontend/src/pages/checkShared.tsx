@@ -1,7 +1,7 @@
 /** 2.0.0 (#157, #160, #162): pieces shared by the check setup screen and the print screen - the check preview drawn
  * to scale with the built-in fonts, the pattern input with variable autocomplete, and browser print instructions. */
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { api, ApiError } from "../api";
+import { api, ApiError, type PdfBlob } from "../api";
 import { ErrorBox, Modal } from "../components";
 
 export type FontInfo = { key: string; label: string; descent: number; descent_bold: number; cap_height: number };
@@ -360,12 +360,49 @@ export function LivePreview({ imageUrl, pdfUrl, body, title, aspect, deps }: {
   );
 }
 
+/** A generated PDF to print. `preview` (build 13, #230): the server's token for a picture of it. */
+export type PdfFile = { url: string; name: string; preview?: string };
+
+/** Build 13 (#230): Safari draws a PDF in an inline frame blank - and printing that frame could waste a check - so in
+ * Safari the viewer shows a picture of the very PDF (drawn by the server) and Print… opens the PDF in a new tab, where
+ * Safari shows and prints it. Other browsers keep the PDF in the page. Without a picture (an older server, or a server
+ * that can't draw one) Safari gets the frame with a pointer to the new tab. */
+function usePdfPicture(pdf: PdfFile, wanted: boolean) {
+  const [img, setImg] = useState<{ url: string; pages: number } | null>(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    if (!wanted || !pdf.preview) { setFailed(true); return; }
+    let live = true;
+    let made: string | null = null;
+    setImg(null); setFailed(false);
+    fetch(`/api/pdf-preview/${encodeURIComponent(pdf.preview)}`, { credentials: "same-origin" })
+      .then(async (r) => {
+        if (!r.ok) throw new Error(String(r.status));
+        const b = await r.blob();
+        if (!live) return;
+        made = URL.createObjectURL(b);
+        setImg({ url: made, pages: Number(r.headers.get("X-Page-Count") || "1") });
+      })
+      .catch(() => { if (live) setFailed(true); });
+    return () => { live = false; if (made) URL.revokeObjectURL(made); };
+  }, [pdf.url, pdf.preview, wanted]);
+  return { img, failed };
+}
+
 export function PdfViewer({ pdf, title, onClose, singleFeed, children }: {
-  pdf: { url: string; name: string }; title: string; onClose: () => void; singleFeed?: boolean; children?: React.ReactNode;
+  pdf: PdfFile; title: string; onClose: () => void; singleFeed?: boolean; children?: React.ReactNode;
 }) {
   const frame = useRef<HTMLIFrameElement>(null);
   const [failed, setFailed] = useState(false);
+  const safari = detectBrowser() === "safari";
+  const picture = usePdfPicture(pdf, safari);
   const print = () => {
+    if (safari) {   // Safari prints the PDF from its own viewer in a new tab
+      const a = document.createElement("a");
+      a.href = pdf.url; a.target = "_blank"; a.rel = "noopener";
+      document.body.appendChild(a); a.click(); a.remove();
+      return;
+    }
     try {
       const w = frame.current?.contentWindow;
       if (!w) throw new Error("no frame");
@@ -382,8 +419,20 @@ export function PdfViewer({ pdf, title, onClose, singleFeed, children }: {
           <button onClick={onClose}>Close</button>
         </div>
         {failed ? <div className="alert warn">This browser can't print from here: use <b>Open in a new tab</b> and print from there.</div> : null}
+        {safari ? <p className="hint" data-testid="safari-print-note">Safari: <b>Print…</b> opens the PDF in a new tab – print it from there (⌘P), at <b>100%</b>.</p> : null}
         {children}
-        <iframe ref={frame} className="pdf-frame" src={pdf.url} title={title} />
+        {!safari ? <iframe ref={frame} className="pdf-frame" src={pdf.url} title={title} />
+          : picture.img ? (
+            <>
+              <img className="pdf-picture" src={picture.img.url} alt={`${title} – picture of the PDF`} data-testid="pdf-picture" />
+              {picture.img.pages > 4 ? <p className="hint">The picture shows the first 4 of {picture.img.pages} pages; the PDF has them all.</p> : null}
+            </>
+          ) : picture.failed ? (
+            <>
+              <iframe ref={frame} className="pdf-frame" src={pdf.url} title={title} />
+              <p className="hint">If the preview above stays blank, use <b>Open in a new tab</b>.</p>
+            </>
+          ) : <p className="muted">Drawing the preview…</p>}
         <details className="browser-tips-wrap"><summary>Print settings for this browser</summary><BrowserTips singleFeed={singleFeed} /></details>
       </div>
     </Modal>
@@ -391,11 +440,11 @@ export function PdfViewer({ pdf, title, onClose, singleFeed, children }: {
 }
 
 export function usePdf() {
-  const [pdf, setPdfState] = useState<{ url: string; name: string } | null>(null);
-  const set = (blob: Blob | null, name = "check.pdf") => {
+  const [pdf, setPdfState] = useState<PdfFile | null>(null);
+  const set = (blob: PdfBlob | null, name = "check.pdf") => {
     setPdfState((old) => {
       if (old) URL.revokeObjectURL(old.url);
-      return blob ? { url: URL.createObjectURL(blob), name } : null;
+      return blob ? { url: URL.createObjectURL(blob), name, preview: blob.previewToken } : null;
     });
   };
   useEffect(() => () => { if (pdf) URL.revokeObjectURL(pdf.url); }, []); // eslint-disable-line react-hooks/exhaustive-deps

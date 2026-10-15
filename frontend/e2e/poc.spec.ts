@@ -2790,6 +2790,47 @@ async function formCheck(page: Page, shot: string) {
   expect(await page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight), `${shot}: the page scrolls`).toBeLessThanOrEqual(1);
 }
 
+test("#230: in Safari the check and test-print previews are pictures of the PDF, and Print… opens the PDF in a new tab", async ({ browser }) => {
+  // Safari draws a PDF in an inline frame blank; Chromium with Safari's user agent takes the same path in the app
+  const ctx = await browser.newContext({ baseURL: "http://127.0.0.1:8798",
+    userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Safari/605.1.15" });
+  const page = await ctx.newPage();
+  await login(page, "ru1", "Brand-New-Pass-99");
+  const post = await apiAs(page);
+  const ents = await (await page.request.get("/api/entities?search=Sample%20Supply")).json();
+  const ent = (ents.items || ents).find((e: any) => /Sample Supply Company/.test(e.display_name || e.organization_name || ""));
+  const opts = await (await page.request.get("/api/budgets/selectable?fiscal_year_id=1&transaction_type=WITHDRAWAL")).json();
+  const tr = await post("/api/transactions", { bank_account_id: 1, transaction_type: "WITHDRAWAL", transaction_date: "2026-11-27",
+    entity_id: ent.id, check_number: "8391", allocations: [{ budget_id: opts.find((o: any) => o.label === "1000-01 Travel").id, amount: "42.00", invoice_number: "S-1", description: "Safari check" }] });
+  expect(tr.status(), await tr.text()).toBe(201);
+  const t = await tr.json();
+  await page.goto(`/register?account=1&txn=${t.id}`);
+  await expect(page.locator(`#txn-${t.id}`).getByRole("button", { name: `Details for transaction ${t.id}` })).toHaveAttribute("aria-expanded", "true");
+  await page.getByRole("button", { name: "Print check…" }).click();
+  const dlg = page.getByRole("dialog", { name: `Print check – transaction #${t.id}` });
+  // the plain-paper test: a picture, no PDF frame
+  await dlg.getByRole("button", { name: "Test print on plain paper" }).click();
+  const test = page.getByRole("dialog", { name: "Alignment test (plain paper)" });
+  await expect(test.getByTestId("pdf-picture")).toBeVisible();
+  expect(await test.getByTestId("pdf-picture").evaluate((i: HTMLImageElement) => i.naturalWidth)).toBeGreaterThan(500);
+  await expect(test.locator("iframe")).toHaveCount(0);
+  await expect(test.getByTestId("safari-print-note")).toBeVisible();
+  const [tab] = await Promise.all([ctx.waitForEvent("page"), test.getByRole("button", { name: "Print…" }).click()]);
+  expect(tab.url()).toMatch(/^blob:/);
+  await tab.close();
+  await test.getByRole("button", { name: "Close" }).first().click();
+  // the check itself
+  await dlg.getByLabel("Type the number printed on the check that is in the printer").fill("8391");
+  await dlg.getByRole("button", { name: "Print check" }).click();
+  const chk = page.getByRole("dialog", { name: "Check #8391" });
+  await expect(chk.getByTestId("pdf-picture")).toBeVisible();
+  await expect(chk.locator("iframe")).toHaveCount(0);
+  await chk.getByRole("button", { name: "Close" }).first().click();
+  await expect(dlg.getByText("Check #8391 is ready.")).toBeVisible();
+  await dlg.getByRole("button", { name: "Yes – done" }).click();
+  await ctx.close();
+});
+
 test("#214: form rows line up - one control height, buttons and checkboxes centred, solid action bar (every form)", async ({ page }) => {
   test.setTimeout(180_000);
   // Budget Manager screens
