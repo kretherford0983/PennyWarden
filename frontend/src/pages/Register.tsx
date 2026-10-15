@@ -3,6 +3,8 @@ import { api, money, newRequestKey, qs, todayIso } from "../api";
 import { allocationLabel, Attachments, EntityPicker, ErrorBox, Field, Loading, Modal, PendingFiles, useConfirmable, GuardedForm } from "../components";
 import { useMe } from "../App";
 import { EntityForm } from "./Entities";
+import { PrintCheckDialog } from "./CheckPrint";
+import { AmountPreview } from "./checkShared";
 
 export default function Register() {
   const { me, can } = useMe();
@@ -98,6 +100,8 @@ export default function Register() {
             <button className="primary" onClick={() => setModal({ kind: "txn", txn: null })}>New transaction</button>
             <button onClick={() => setModal({ kind: "transfer" })}>Transfer…</button>
             <button onClick={() => setModal({ kind: "zero" })}>Zero-dollar VOID record</button>
+            {/* 2.0.0 build 13: no New payment here - a new payment is entered on Payments (menu), an existing
+                withdrawal gets Create payment… in its details (product owner, 2026-10-14) */}
           </>
         ) : null}
         <button onClick={() => setShowReviews(!showReviews)} aria-expanded={showReviews}>Fiscal Year reviews</button>
@@ -156,11 +160,11 @@ export default function Register() {
                       <td className="num">{t.deposit ? (byBudget ? <Share part={t.budget_share} total={t.deposit} /> : money(t.deposit)) : ""}</td>
                       <td className="num">{t.withdrawal ? (byBudget ? <Share part={t.budget_share} total={t.withdrawal} /> : money(t.withdrawal)) : ""}</td>
                       <td className="num">{money(t.running_balance)}</td>
-                      <td>{t.status === "DELETED" ? <span className="badge grey">Deleted</span> : t.status === "VOID" ? <span className="badge red">VOID</span> : t.cleared ? "Cleared" : "Uncleared"}{t.has_pending_review ? <span className="badge yellow">Review</span> : null}{t.transfer ? <span className="badge blue">Transfer</span> : null}{t.no_attachment ? <span className="badge grey" title={t.no_attachment_reason || ""}>No attachment</span> : null}</td>
+                      <td>{t.status === "DELETED" ? <span className="badge grey">Deleted</span> : t.status === "VOID" ? <span className="badge red">VOID</span> : t.cleared ? "Cleared" : "Uncleared"}{t.has_pending_review ? <span className="badge yellow">Review</span> : null}{t.transfer ? <span className="badge blue">Transfer</span> : null}{t.check_printed ? <span className="badge green" title="A check was printed for this transaction (record copy attached)">Check printed</span> : null}{t.no_attachment ? <span className="badge grey" title={t.no_attachment_reason || ""}>No attachment</span> : null}</td>
                       <td>{t.attachment_count ? <span aria-label={`${t.attachment_count} attachments`}>📎{t.attachment_count}</span> : ""}</td>
                     </tr>
                     {open === t.id ? (
-                      <tr className="detail-row"><td colSpan={12}><TxnDetail t={t} manage={manage} onEdit={() => setModal({ kind: t.transfer ? "legedit" : "txn", txn: t })} onVoid={() => setModal({ kind: "void", txn: t })} onVoidDate={() => setModal({ kind: "voiddate", txn: t })} onVoidCheck={() => setModal({ kind: "voidcheck", txn: t })} onChanged={load} /></td></tr>
+                      <tr className="detail-row"><td colSpan={12}><TxnDetail t={t} manage={manage} canPrintChecks={!!me.modules?.checks && can("checks.print")} onPrintCheck={() => setModal({ kind: "printcheck", txn: t })} onEdit={() => setModal({ kind: t.transfer ? "legedit" : "txn", txn: t })} onVoid={() => setModal({ kind: "void", txn: t })} onVoidDate={() => setModal({ kind: "voiddate", txn: t })} onVoidCheck={() => setModal({ kind: "voidcheck", txn: t })} onChanged={load} /></td></tr>
                     ) : null}
                   </Fragment>
                 ))}
@@ -176,12 +180,13 @@ export default function Register() {
       {modal?.kind === "voiddate" ? <VoidDateForm txn={modal.txn} fys={fys} onClose={() => setModal(null)} onSaved={() => { setModal(null); load(); }} /> : null}
       {modal?.kind === "voidcheck" ? <VoidCheckForm txn={modal.txn} onClose={() => setModal(null)} onSaved={() => { setModal(null); load(); }} /> : null}
       {modal?.kind === "recon" ? <ReconModal title={modal.title} recon={modal.recon} label={modal.label} onClose={() => setModal(null)} /> : null}
+      {modal?.kind === "printcheck" ? <PrintCheckDialog txn={modal.txn} onClose={() => setModal(null)} onChanged={load} /> : null}
       {modal?.kind === "zero" ? <ZeroVoidForm account={acct} initial={modal.initial} fys={fys} onClose={() => setModal(null)} onSaved={() => { setModal(null); load(); }} /> : null}
     </div>
   );
 }
 
-function TxnDetail({ t, manage, onEdit, onVoid, onVoidDate, onVoidCheck, onChanged }: { t: any; manage: boolean; onEdit: () => void; onVoid: () => void; onVoidDate: () => void; onVoidCheck: () => void; onChanged: () => void }) {
+function TxnDetail({ t, manage, canPrintChecks, onPrintCheck, onEdit, onVoid, onVoidDate, onVoidCheck, onChanged }: { t: any; manage: boolean; canPrintChecks: boolean; onPrintCheck: () => void; onEdit: () => void; onVoid: () => void; onVoidDate: () => void; onVoidCheck: () => void; onChanged: () => void }) {
   const [note, setNote] = useState("");
   const [err, setErr] = useState<unknown>(null);
   const editable = manage && t.status === "ACTIVE" && !t.closed_fiscal_year_protected;
@@ -211,7 +216,7 @@ function TxnDetail({ t, manage, onEdit, onVoid, onVoidDate, onVoidCheck, onChang
           {t.allocations.map((a: any) => (
             <tr key={a.id}>
               <td>{a.budget.fiscal_year.display_name}</td><td>{a.budget.label}{a.budget.status === "REJECTED" ? " (rejected)" : ""}</td>
-              <td>{a.entity?.display_name || ""}</td><td>{a.invoice_number || ""}</td><td>{a.description || ""}</td>
+              <td>{a.entity?.display_name || ""}</td><td>{a.invoice_number || ""}{a.invoice_date ? <span className="muted"> ({a.invoice_date})</span> : null}</td><td>{a.description || ""}</td>
               <td className="num">{money(a.amount)}</td>
               <td>{a.reviews.map((r: any) => `${r.category === "CROSS_FY" ? "Cross-FY" : "No FY"}: ${r.status}`).join("; ")}</td>
               <td>{a.notes || ""}</td>
@@ -222,6 +227,12 @@ function TxnDetail({ t, manage, onEdit, onVoid, onVoidDate, onVoidCheck, onChang
       </table>
       <div className="actions left">
         {editable ? <button onClick={onEdit}>Edit</button> : null}
+        {/* 2.0.0 (#161): Payments module - active withdrawals over zero, not in a Closed Fiscal Year */}
+        {canPrintChecks && editable && t.transaction_type === "WITHDRAWAL" && !t.transfer && Number(t.total) > 0
+          ? <>
+              {/* build 13 (product owner, 2026-10-14): one button - the print screen in a dialog over the register */}
+              <button onClick={onPrintCheck}>{t.check_printed ? "Reprint check or letter…" : "Create payment…"}</button>
+            </> : null}
         {editable ? <button className="danger" onClick={onVoid}>Void…</button> : null}
         {manage && t.status === "VOID" && !t.closed_fiscal_year_protected ? <button onClick={onVoidDate}>Correct date…</button> : null}
         {manage && t.status === "VOID" && t.transaction_type === "WITHDRAWAL" && !t.transfer && !t.closed_fiscal_year_protected ? <button onClick={onVoidCheck}>Correct check number…</button> : null}
@@ -240,8 +251,8 @@ function TxnDetail({ t, manage, onEdit, onVoid, onVoidDate, onVoidCheck, onChang
   );
 }
 
-type Alloc = { id?: number; fiscal_year_id: string; budget_id: string; entity_id: string; invoice_number: string; description: string; amount: string; notes: string; no_attachment: boolean; no_attachment_reason: string; files: File[] };
-const blankAlloc = (fy = ""): Alloc => ({ fiscal_year_id: fy, budget_id: "", entity_id: "", invoice_number: "", description: "", amount: "", notes: "", no_attachment: false, no_attachment_reason: "", files: [] });
+type Alloc = { id?: number; fiscal_year_id: string; budget_id: string; entity_id: string; invoice_number: string; invoice_date: string; description: string; amount: string; notes: string; no_attachment: boolean; no_attachment_reason: string; files: File[] };
+const blankAlloc = (fy = ""): Alloc => ({ fiscal_year_id: fy, budget_id: "", entity_id: "", invoice_number: "", invoice_date: "", description: "", amount: "", notes: "", no_attachment: false, no_attachment_reason: "", files: [] });
 
 function useBudgetOptions(fyIds: string[], type: string) {
   const [cache, setCache] = useState<Record<string, any[]>>({});
@@ -256,7 +267,10 @@ function useBudgetOptions(fyIds: string[], type: string) {
   return (fy: string, t: string) => cache[`${fy}:${t}`] || [];
 }
 
-function TxnForm({ account, txn, initial, fys, onClose, onSaved }: { account: any; txn: any; initial?: { check_number?: string }; fys: any[]; onClose: () => void; onSaved: () => void }) {
+/** The register's transaction form. 2.0.0 (#164): `payment` turns it into the payment form of the Payments module -
+ * a new withdrawal with one line per invoice, the check amount previewed live in words and numbers, saved straight
+ * into printing (onSaved receives the created transaction). Everything is stored by the normal register API. */
+export function TxnForm({ account, txn, initial, fys, onClose, onSaved, payment }: { account: any; txn: any; initial?: { check_number?: string }; fys: any[]; onClose: () => void; onSaved: (saved?: any) => void; payment?: boolean }) {
   const isNew = !txn;
   const [type, setType] = useState<string>(txn?.transaction_type || "WITHDRAWAL");
   const [h, setH] = useState({
@@ -268,11 +282,12 @@ function TxnForm({ account, txn, initial, fys, onClose, onSaved }: { account: an
   const [noAttDlg, setNoAttDlg] = useState<number | null>(null);
   const [allocs, setAllocs] = useState<Alloc[]>(txn ? txn.allocations.map((a: any) => ({
     id: a.id, fiscal_year_id: String(a.budget.fiscal_year.id), budget_id: String(a.budget.id), entity_id: a.entity ? String(a.entity.id) : "",
-    invoice_number: a.invoice_number || "", description: a.description || "", amount: a.amount, notes: a.notes || "",
+    invoice_number: a.invoice_number || "", invoice_date: a.invoice_date || "", description: a.description || "", amount: a.amount, notes: a.notes || "",
     no_attachment: !!a.no_attachment, no_attachment_reason: a.no_attachment_reason || "", files: [],
   })) : [blankAlloc()]);
   const [parentFiles, setParentFiles] = useState<File[]>([]);
   const [uploadIssues, setUploadIssues] = useState<null | { id: number; failed: string[] }>(null);
+  const [savedTxn, setSavedTxn] = useState<any>(null);
   const [split, setSplit] = useState(txn ? txn.allocations.length > 1 : false);
   const [nat, setNat] = useState<any>(null);
   const [entities, setEntities] = useState<any[]>([]);
@@ -297,14 +312,14 @@ function TxnForm({ account, txn, initial, fys, onClose, onSaved }: { account: an
 
   const changeType = (t: string) => {
     if (t === type) return;
-    if (isNew) { setType(t); setAllocs(allocs.map((a) => ({ ...a, budget_id: "", invoice_number: "" }))); setH({ ...h, check_number: "" }); return; }
+    if (isNew) { setType(t); setAllocs(allocs.map((a) => ({ ...a, budget_id: "", invoice_number: "", invoice_date: "" }))); setH({ ...h, check_number: "" }); return; }
     setTypeDlg(t);
   };
   const confirmType = () => {
     const t = typeDlg!;
     setType(t);
     // clear/revalidate incompatible fields: budgets must be re-selected, check/invoice numbers cleared
-    setAllocs(allocs.map((a) => ({ ...a, budget_id: "", invoice_number: t === "DEPOSIT" ? "" : a.invoice_number, entity_id: "" })));
+    setAllocs(allocs.map((a) => ({ ...a, budget_id: "", invoice_number: t === "DEPOSIT" ? "" : a.invoice_number, invoice_date: t === "DEPOSIT" ? "" : a.invoice_date, entity_id: "" })));
     setH({ ...h, check_number: t === "DEPOSIT" ? "" : h.check_number, entity_id: txn?.entity?.is_system ? "" : h.entity_id });
     setTypeDlg(null);
   };
@@ -322,7 +337,9 @@ function TxnForm({ account, txn, initial, fys, onClose, onSaved }: { account: an
     const allocations = allocs.map((a) => ({
       ...(a.id ? { id: a.id } : {}), budget_id: Number(a.budget_id), fiscal_year_id: a.fiscal_year_id ? Number(a.fiscal_year_id) : null,
       entity_id: type === "DEPOSIT" && a.entity_id ? Number(a.entity_id) : null,
-      invoice_number: type === "WITHDRAWAL" ? a.invoice_number || null : null, description: a.description || null, amount: a.amount, notes: a.notes || null,
+      invoice_number: type === "WITHDRAWAL" ? a.invoice_number || null : null,
+      invoice_date: type === "WITHDRAWAL" && a.invoice_date ? a.invoice_date : null, // 2.0.0 (#165)
+      description: a.description || null, amount: a.amount, notes: a.notes || null,
       no_attachment: split ? a.no_attachment : false, no_attachment_reason: split && a.no_attachment ? a.no_attachment_reason || null : null,
     }));
     const header = {
@@ -351,37 +368,39 @@ function TxnForm({ account, txn, initial, fys, onClose, onSaved }: { account: an
         try { await api.upload(`/api/attachments${qs({ owner_type: ot, owner_id: oid })}`, f); }
         catch (x: any) { failed.push(`${f.name}: ${x?.message || "upload failed"}`); }
       }
-      if (failed.length) setUploadIssues({ id: saved.id, failed });
-      else onSaved();
+      if (failed.length) { setUploadIssues({ id: saved.id, failed }); setSavedTxn(saved); }
+      else onSaved(saved);
     } catch (x) { setErr(x); }
   };
   if (uploadIssues) {
     return (
-      <Modal title={`Transaction #${uploadIssues.id} saved`} onClose={onSaved}>
+      <Modal title={`Transaction #${uploadIssues.id} saved`} onClose={() => onSaved(savedTxn)}>
         <div className="alert warn" role="alert">
           <p>The transaction was saved, but these files could not be uploaded:</p>
           <ul>{uploadIssues.failed.map((m) => <li key={m}>{m}</li>)}</ul>
           <p>Open the transaction in the register to add them again.</p>
         </div>
-        <div className="actions"><button className="primary" onClick={onSaved}>Close</button></div>
+        <div className="actions"><button className="primary" onClick={() => onSaved(savedTxn)}>{payment ? "Continue to printing" : "Close"}</button></div>
       </Modal>
     );
   }
   return (
-    <Modal title={isNew ? `New transaction – ${account.label}` : `Edit transaction #${txn.id}`} onClose={onClose} wide>
+    <Modal title={payment ? `New payment – ${account.label}` : isNew ? `New transaction – ${account.label}` : `Edit transaction #${txn.id}`} onClose={onClose} wide>
       <GuardedForm onSubmit={submit}>
         <ErrorBox error={err} />
         {txn?.cleared ? <div className="alert warn">This transaction has cleared. Saving changes requires confirmation and is fully audited.</div> : null}
         <p className="muted">Bank account: <b>{account.label}</b> (cannot be changed after creation; wrong-account entries must be voided and re-entered).</p>
         <div className="row">
-          <Field label="Type">
-            <select aria-label="Transaction type" value={type} onChange={(e) => changeType(e.target.value)}>
-              <option value="WITHDRAWAL">Withdrawal</option><option value="DEPOSIT">Deposit</option>
-            </select>
-          </Field>
-          <Field label="Transaction date"><input required type="date" value={h.transaction_date} onChange={(e) => setH({ ...h, transaction_date: e.target.value })} /></Field>
-          <Field label="Clear/Post date (blank = uncleared)"><input type="date" value={h.clear_date} onChange={(e) => setH({ ...h, clear_date: e.target.value })} /></Field>
-          {type === "WITHDRAWAL" ? <Field label="Check #"><input value={h.check_number} onChange={(e) => setH({ ...h, check_number: e.target.value })} /></Field> : null}
+          {payment ? null : (
+            <Field label="Type">
+              <select aria-label="Transaction type" value={type} onChange={(e) => changeType(e.target.value)}>
+                <option value="WITHDRAWAL">Withdrawal</option><option value="DEPOSIT">Deposit</option>
+              </select>
+            </Field>
+          )}
+          <Field label={payment ? "Check date" : "Transaction date"}><input required type="date" value={h.transaction_date} onChange={(e) => setH({ ...h, transaction_date: e.target.value })} /></Field>
+          {payment ? null : <Field label="Clear/Post date (blank = uncleared)"><input type="date" value={h.clear_date} onChange={(e) => setH({ ...h, clear_date: e.target.value })} /></Field>}
+          {type === "WITHDRAWAL" ? <Field label="Check #" hint={payment ? "The number printed on the check you will use (it can also be entered when printing)." : undefined}><input value={h.check_number} onChange={(e) => setH({ ...h, check_number: e.target.value })} /></Field> : null}
         </div>
         {nat?.no_fiscal_year ? (
           <div className="alert warn" role="alert">No Fiscal Year covers {h.transaction_date}. Closest configured Fiscal Year: <b>{nat.closest?.label || "none"}</b> (shown for reference only – not assumed correct). Allocations will be flagged for Fiscal Year review.</div>
@@ -393,7 +412,8 @@ function TxnForm({ account, txn, initial, fys, onClose, onSaved }: { account: an
             extraOption={txn?.entity && !txn.entity.is_system ? { id: String(txn.entity.id), label: `${txn.entity.display_name}${txn.entity.active ? "" : " (inactive)"}` } : null} />
           <button type="button" className="small" onClick={() => setNewEnt(true)}>+ New entity</button>
         </div>
-        <h3>Allocations {split ? "(split)" : ""}</h3>
+        <h3>{payment ? (split ? "Invoices" : "Invoice") : `Allocations ${split ? "(split)" : ""}`}</h3>
+        {payment ? <p className="hint">One line per invoice: its budget, invoice number, description and amount. The check is for the total.</p> : null}
         {allocs.map((a, i) => {
           const opts = options(a.fiscal_year_id, type);
           const cross = a.fiscal_year_id && nat && !nat.no_fiscal_year && !nat.covering.some((c: any) => String(c.id) === a.fiscal_year_id);
@@ -423,6 +443,7 @@ function TxnForm({ account, txn, initial, fys, onClose, onSaved }: { account: an
                     onChange={(v) => upd(i, "entity_id", v)} placeholder="Default entity" />
                 ) : null}
                 {type === "WITHDRAWAL" ? <Field label="Invoice #"><input value={a.invoice_number} onChange={(e) => upd(i, "invoice_number", e.target.value)} /></Field> : null}
+                {type === "WITHDRAWAL" ? <Field label="Invoice date"><input type="date" aria-label={`Allocation ${i + 1} Invoice date`} value={a.invoice_date} onChange={(e) => upd(i, "invoice_date", e.target.value)} /></Field> : null}
                 <Field label="Description"><input maxLength={500} value={a.description} onChange={(e) => upd(i, "description", e.target.value)} /></Field>
                 <Field label="Notes"><input value={a.notes} onChange={(e) => upd(i, "notes", e.target.value)} /></Field>
               </div>
@@ -441,10 +462,11 @@ function TxnForm({ account, txn, initial, fys, onClose, onSaved }: { account: an
           );
         })}
         <div className="row">
-          <button type="button" onClick={toggleSplit}>{split ? "Convert to single allocation" : "Split transaction"}</button>
-          {split ? <button type="button" onClick={() => setAllocs([...allocs, blankAlloc(allocs[0].fiscal_year_id)])}>+ Add allocation</button> : null}
-          <span className="total">Total (derived from allocations): <b>{money(total.toFixed(2))}</b></span>
+          <button type="button" onClick={toggleSplit}>{payment ? (split ? "Only one invoice" : "More than one invoice") : split ? "Convert to single allocation" : "Split transaction"}</button>
+          {split ? <button type="button" onClick={() => setAllocs([...allocs, blankAlloc(allocs[0].fiscal_year_id)])}>{payment ? "+ Add invoice" : "+ Add allocation"}</button> : null}
+          <span className="total">{payment ? "Check amount (total of the invoices)" : "Total (derived from allocations)"}: <b>{money(total.toFixed(2))}</b></span>
         </div>
+        {payment ? <AmountPreview accountId={account.id} total={total.toFixed(2)} /> : null}
         <Field label="Notes"><textarea value={h.notes} onChange={(e) => setH({ ...h, notes: e.target.value })} /></Field>
         <PendingFiles label="Transaction attachments" files={parentFiles} onChange={setParentFiles} />
         <label className="check">
@@ -454,7 +476,7 @@ function TxnForm({ account, txn, initial, fys, onClose, onSaved }: { account: an
         {h.no_attachment ? (
           <Field label="Reason no attachment is available (optional)" hint="Without a reason, this item stays in the Fiscal Year documentation review."><input maxLength={500} value={h.no_attachment_reason} onChange={(e) => setH({ ...h, no_attachment_reason: e.target.value })} placeholder="e.g. Bank interest - direct deposit" /></Field>
         ) : null}
-        <div className="actions">{!isNew ? <DeleteTxnButton txn={txn} onDeleted={onSaved} /> : null}<button type="button" onClick={onClose}>Cancel</button><button className="primary" type="submit">Save</button></div>
+        <div className="actions">{!isNew ? <DeleteTxnButton txn={txn} onDeleted={onSaved} /> : null}<button type="button" onClick={onClose}>Cancel</button><button className="primary" type="submit">{payment ? "Save and print check" : "Save"}</button></div>
       </GuardedForm>
       {dialog}
       {noAttDlg !== null ? (

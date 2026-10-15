@@ -13,6 +13,7 @@ from sqlalchemy import (
     ForeignKey,
     Index,
     Integer,
+    LargeBinary,
     MetaData,
     String,
     Text,
@@ -53,6 +54,22 @@ class Workspace(Base):
     next_entity_number: Mapped[int] = mapped_column(Integer, default=1)
     # v1.6.0 CR-033: optional modules, switched on by an Administrator
     fundraisers_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
+    # 2.0.0 (#156): the Payments module
+    checks_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
+    # 2.0.0 (#126): Administrators are warned after this many days without a backup (0 = off)
+    backup_warning_days: Mapped[int] = mapped_column(Integer, default=7, server_default="7", nullable=False)
+    # 2.0.0 (#130): maintenance mode - on while a message is set (from maintenance_starts_at, if given): everyone but
+    # Administrators can read but not change anything
+    maintenance_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    maintenance_starts_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)   # UTC
+    maintenance_set_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    maintenance_set_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    # 2.0.0 (#125): the last reinitialize, for the banner every user sees until an Administrator acknowledges it
+    reinitialized_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    reinitialized_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    reinitialize_backup: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    reinitialize_ack_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    reinitialize_ack_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 class Role(Base):
@@ -71,6 +88,9 @@ class User(Base):
     username_normalized: Mapped[str] = mapped_column(String(64))
     email: Mapped[str] = mapped_column(String(254))
     display_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    # 2.0.0 (#134): real names - required for every account (users from before 2.0.0 get them from an Administrator)
+    first_name: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    last_name: Mapped[str | None] = mapped_column(String(60), nullable=True)
     password_hash: Mapped[str] = mapped_column(String(255))
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     security_domain: Mapped[str] = mapped_column(String(20))  # ADMINISTRATOR | FINANCIAL | AUDITOR
@@ -78,6 +98,8 @@ class User(Base):
     nav_collapsed: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)  # v1.3 CR-014
     dashboard_charts: Mapped[str | None] = mapped_column(String(200), nullable=True)  # v1.4.1 CR-020 (comma list)
     dashboard_layout: Mapped[str | None] = mapped_column(String(200), nullable=True)  # v1.5.0 CR-031 (comma list)
+    # 2.0.0 (#164): the bank account of this user's last payment (Payments module), preselected next time
+    last_payment_account_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     password_changed_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
     created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("app_user.id"), nullable=True)
@@ -123,6 +145,8 @@ class AuthSession(Base):
     revoked_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     # v1.4.1 CR-018: NULL = fully signed in; VERIFY / ENROLL = password accepted, MFA step outstanding
     mfa_pending: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    # 2.0.0 (#127): the client address of the latest request (shown to Administrators in the sessions list)
+    client_ip: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
 
 # ---------------------------------------------------------------- fiscal years / budgets
@@ -331,6 +355,8 @@ class TransactionAllocation(Base):
     budget_id: Mapped[int] = mapped_column(ForeignKey("budget.id"), index=True, nullable=False)
     entity_id: Mapped[int | None] = mapped_column(ForeignKey("entity.id"), nullable=True)
     invoice_number: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    # 2.0.0 (#165): optional date of the invoice (withdrawals), printed in the payment cover letter
+    invoice_date: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
     description: Mapped[str | None] = mapped_column(String(500), nullable=True)
     amount_cents: Mapped[int] = mapped_column(BigInteger)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -428,6 +454,10 @@ class AuditEvent(Base):
     workspace_id: Mapped[int | None] = mapped_column(ForeignKey("workspace.id"), nullable=True, index=True)
     actor_user_id: Mapped[int | None] = mapped_column(ForeignKey("app_user.id"), nullable=True, index=True)
     actor_username: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # 2.0.0 (#134): the actor's real name when the event was written (later name changes don't rewrite history)
+    actor_name: Mapped[str | None] = mapped_column(String(130), nullable=True)
+    # 2.0.0 (#133): names of the related records when the event was written ("kind:id" -> name)
+    labels: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     timestamp: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, index=True)
     action: Mapped[str] = mapped_column(String(60), index=True)
     object_type: Mapped[str] = mapped_column(String(40))
@@ -695,3 +725,96 @@ class UpdateCheck(Base):
     last_error: Mapped[str | None] = mapped_column(String(300), nullable=True)
     updated_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     updated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+# ---------------------------------------------------------------- 2.0.0 check printing (#60)
+class CheckStyle(Base):
+    """2.0.0 (#156): a check style - the check stock, where each field prints on it and the ways it can be fed to the
+    printer. The settings are one validated JSON document (services/checkprint/config.py). Deactivated, never
+    deleted (BR-001)."""
+    __tablename__ = "check_style"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
+    name: Mapped[str] = mapped_column(String(80))
+    preset_key: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=sa_true(), nullable=False)
+    config_json: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    updated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class CheckSigner(Base):
+    """2.0.0 (#159): a signer and their signature image. The PNG is stored encrypted with the application key and can
+    never be downloaded; it is only drawn into printed checks and admin test prints."""
+    __tablename__ = "check_signer"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    title: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=sa_true(), nullable=False)
+    image_ciphertext: Mapped[str | None] = mapped_column(Text, nullable=True)
+    image_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    image_width: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    image_height: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    image_uploaded_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    image_uploaded_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+class CheckAccount(Base):
+    """2.0.0 (#156): per bank account - the check style a Register User chose for it and the sheet counter (checks
+    left on the sheet in the printer). Administrators cannot see bank accounts (BR-003), so they never set this."""
+    __tablename__ = "check_account"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
+    bank_account_id: Mapped[int] = mapped_column(ForeignKey("bank_account.id"), unique=True)
+    check_style_id: Mapped[int] = mapped_column(ForeignKey("check_style.id"))
+    sheet_remaining: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    updated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class CheckPrinterSetting(Base):
+    """2.0.0 (#162): a user's own printer settings for one check style and feed mode, applied on top of the
+    Administrator's layout (never changing it): page option, guide position and a bounded personal adjustment."""
+    __tablename__ = "check_printer_setting"
+    __table_args__ = (UniqueConstraint("user_id", "check_style_id", "feed_key",
+                                       name="uq_check_printer_setting_user_style_feed"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("app_user.id"), index=True)
+    check_style_id: Mapped[int | None] = mapped_column(ForeignKey("check_style.id"), nullable=True)
+    # 2.0.0 (#166): or an envelope template (check_style_id empty, feed_key "envelope")
+    document_id: Mapped[int | None] = mapped_column(ForeignKey("check_document.id"), nullable=True)
+    feed_key: Mapped[str] = mapped_column(String(20))
+    page: Mapped[str | None] = mapped_column(String(10), nullable=True)      # LETTER | CHECK (single feed only)
+    guide: Mapped[str | None] = mapped_column(String(10), nullable=True)     # CENTER | LEFT | RIGHT
+    dx_mils: Mapped[int] = mapped_column(Integer, default=0)                  # thousandths of an inch, check coordinates
+    dy_mils: Mapped[int] = mapped_column(Integer, default=0)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+
+class CheckDocument(Base):
+    """2.0.0 (#165, #166): a cover letter or envelope template of the Payments module - a validated JSON settings
+    document like a check style. Deactivated, never deleted (BR-001); one default per kind."""
+    __tablename__ = "check_document"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(10))            # LETTER | ENVELOPE
+    name: Mapped[str] = mapped_column(String(80))
+    active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=sa_true(), nullable=False)
+    is_default: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
+    config_json: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    updated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 2.0.0 #176: an optional logo for a cover letter (PNG, validated and re-encoded; not secret, so not encrypted)
+    logo_png: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    logo_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    logo_width: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    logo_height: Mapped[int | None] = mapped_column(Integer, nullable=True)

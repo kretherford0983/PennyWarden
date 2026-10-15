@@ -1,4 +1,4 @@
-# Upgrading a Linux server install (current release: 1.10.0)
+# Upgrading a Linux server install (current release: 2.0.0)
 
 The upgrade replaces only the application binaries. It does **not** modify:
 
@@ -10,6 +10,7 @@ Before switching versions the installer stops the service and copies the whole d
 
 | Upgrade | Database change | Rollback |
 |---|---|---|
+| 1.10.0 → 2.0.0 | migrations `0025` to `0034`, all additions — no existing value is changed or removed. Tables: `check_style`, `check_signer`, `check_account`, `check_printer_setting` (`0025`) and `check_document` (`0027`) for the Payments module. Columns: `workspace` — `checks_enabled` (off; `0025`), `backup_warning_days` (7; `0029`), four for maintenance mode (`0031`) and five for reinitialize (`0032`); `app_user` — `last_payment_account_id` (`0026`), `first_name`, `last_name` (`0033`); `transaction_allocation.invoice_date` (`0027`); `check_printer_setting.document_id` (`0027`); four logo columns on `check_document` (`0028`); `auth_session.client_ip` (`0030`); `audit_event` — `actor_name` (`0033`) and `labels` (`0034`; existing audit events are never rewritten). See *2.0.0: after the upgrade* below | switch binaries **and** restore the pre-upgrade data backup (1.10.0 does not know revisions 0025–0034) |
 | 1.9.0 → 1.10.0 | migration `0024` — creates the table `update_check` (the update notification: on/off and the last result); no existing data changes | switch binaries **and** restore the pre-upgrade data backup (1.9.0 does not know revision 0024) |
 | 1.8.0 → 1.9.0 | migration `0023` — creates the tables `backup_schedule` and `backup_run` (scheduled backups); no existing data changes. On a local install new installations give the first user every role; existing users keep their roles | switch binaries **and** restore the pre-upgrade data backup (1.8.0 does not know revision 0023) |
 | 1.7.3 → 1.8.0 | migrations `0021` and `0022` — `0021`: adds the empty column `budget.continues_budget_id` and its index; no existing budget is linked; `0022`: adds eight columns to `app_user` (count of failed attempts, lock, temporary-password flag, the question offered by *Forgot password*, notices) and the tables `user_security_question` and `security_notice` — no existing data changes; every user chooses security questions at the next sign-in | switch binaries **and** restore the pre-upgrade data backup (1.7.3 does not know revisions 0021 and 0022) |
@@ -129,8 +130,20 @@ For 1.1.1 → 1.1.0 (no schema change) switching the symlink alone is enough.
 ## Notes
 
 - The installer rewrites `/etc/systemd/system/pennywarden.service` on every run. Put any service customisations in a
-  drop-in (`sudo systemctl edit pennywarden`), which is preserved.
+  drop-in (`sudo systemctl edit pennywarden`), which is preserved. (Since 2.0.0 the installer also writes its own
+  drop-in, `backup-folders.conf`, from `backup_folders`; don't edit that one — it is rewritten.)
 - Old backups in `/var/backups/pennywarden/` are not pruned automatically; remove ones you no longer need.
+
+## Windows server
+
+**Since 2.0.0:** run `install-windows-server.ps1` from the new release again (PowerShell as Administrator). It copies
+the data folder first, installs the new version next to the old one, restarts the service and puts the previous
+version back if the new one doesn't start ([install-windows-server.md](install-windows-server.md#the-installer-script-recommended)).
+
+By hand: step by step in [install-windows-server.md](install-windows-server.md#8-upgrading) — back up, unzip the new
+version into its own folder, `Stop-Service PennyWarden`, point the `C:\PennyWarden\current` junction at the new
+folder, `Start-Service PennyWarden` (the database is updated at the start), check System/About. To roll back, point the
+junction back and restore the backup if the database changed (see the table above).
 
 ## Windows (local install)
 
@@ -142,6 +155,24 @@ Data lives in `%LOCALAPPDATA%\PennyWarden` and is separate from the program fold
 4. Run `PennyWarden.cmd` from the new folder. The database is migrated automatically on start.
 
 To roll back: stop the app, restore the backed-up data folder, and run the old program folder.
+
+## 2.0.0: after the upgrade
+
+- **Real names.** The first Administrator to sign in is asked for the first and last name of every account that has
+  none (a stand-in is fine and can be corrected later under Users). Until then the Users list marks them *name
+  needed*; nobody else is held up.
+- **Linux server: the installer does two new things.** It adds the `pennywarden` command, so host commands are
+  `sudo pennywarden …` from any folder. It also lets the sandboxed service write to the folders in `backup_folders`
+  (a drop-in, `/etc/systemd/system/pennywarden.service.d/backup-folders.conf`, rewritten on every run). **Run the
+  installer again whenever you change `backup_folders` in `config.toml`.** Folders under `/home` can't be used: the
+  service can't see `/home`. An existing `config.toml` is not changed; add `backup_folders = ["/srv/…"]` yourself if you
+  use scheduled backups.
+- **Windows server:** from now on, upgrade an installation made by `install-windows-server.ps1` by running the script
+  from the new release. An installation set up by hand keeps upgrading by hand. See *Windows server* below.
+- **Nothing to configure for the Payments module.** It stays off until an Administrator turns it on (System/About →
+  General → Optional modules).
+- **New dependency** `pypdfium2` (draws the Payments Setup previews) is part of every package; nothing to install.
+  On a Mac older than macOS 13 the previews fall back to a PDF view.
 
 ## 1.7.0: the rename to PennyWarden (server installs)
 
@@ -205,7 +236,7 @@ running on identical data and the `NOTE:` lines were gone; a fresh install on an
 ### Cleanup after the rename to PennyWarden
 
 Do this on each migrated server **once you are sure you will not go back** — for example after a few days of
-normal use and one fresh backup (System/About → Backup / Restore) stored off the server. Until then the leftovers
+normal use and one fresh backup (System/About → Backups → Backup / Restore) stored off the server. Until then the leftovers
 only cost disk space. The installer reminds you with a `NOTE:` line as long as they exist.
 
 ```bash
@@ -314,7 +345,7 @@ identical data and a further upgrade took its snapshot in `/var/backups/fundward
 ### Cleanup after the rename
 
 Do this on each migrated server (dev, test, later any other) **once you are sure you will not go back** — for
-example after a few days of normal use and one fresh backup (System/About → Backup / Restore) stored off the server.
+example after a few days of normal use and one fresh backup (System/About → Backups → Backup / Restore) stored off the server.
 Until then the leftovers only cost disk space. The installer reminds you with a `NOTE:` line as long as they exist.
 
 ```bash
@@ -364,12 +395,14 @@ Sessions that were open before the upgrade keep working until they end. At the *
 set up an authenticator app (QR code or typed key) and to save 10 recovery codes. Do it yourself first as the
 Administrator, with your phone at hand.
 
-If a user loses both the phone and the recovery codes: Users → *Reset two-step* (Administrator, reason required).
+If a user loses both the phone and the recovery codes: Users → the user's **⋯** menu → **Reset two-step** (Administrator,
+reason required).
 If the only Administrator is locked out, on the server:
 
 ```
-sudo -u fundwarden /opt/fundwarden/current/fundwarden reset-mfa --user <username> --data-dir /var/lib/fundwarden
+sudo pennywarden reset-mfa --user <username> --data-dir /var/lib/pennywarden
 ```
 
-(run it as the `fundwarden` service account so file ownership in the data directory does not change). The reset is
+(since 2.0.0; files it writes are handed back to the service account afterwards. On an older installation without the
+`pennywarden` command: `sudo -u pennywarden /opt/pennywarden/current/pennywarden reset-mfa …`). The reset is
 recorded in the audit log; the user sets up two-step verification again at the next sign-in.

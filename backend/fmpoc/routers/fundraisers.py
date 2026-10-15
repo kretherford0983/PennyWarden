@@ -15,20 +15,28 @@ from ..deps import Ctx, get_db, require
 from ..errors import validation
 from ..schemas import ReasonIn, FundraiserBucketIn, FundraiserIn, FundraiserLineIn, FundraiserPreviewIn, ModulesIn
 from ..services import fundraisers as svc
+from ..services.checkprint import service as checks_svc
 
 router = APIRouter(prefix="/api", tags=["fundraisers"])
 
 
+def _modules(db: Session, ws_id: int) -> dict:
+    return {"fundraisers": svc.module_enabled(db, ws_id), "checks": checks_svc.module_enabled(db, ws_id)}
+
+
 @router.get("/system/modules")
 def modules(db: Session = Depends(get_db), ctx: Ctx = Depends(require("modules.manage"))):
-    return {"fundraisers": svc.module_enabled(db, ctx.workspace_id)}
+    return _modules(db, ctx.workspace_id)
 
 
 @router.put("/system/modules")
 def set_modules(body: ModulesIn, db: Session = Depends(get_db), ctx: Ctx = Depends(require("modules.manage"))):
-    svc.set_module(db, ctx, body.fundraisers)
+    if body.fundraisers is not None:
+        svc.set_module(db, ctx, body.fundraisers)
+    if body.checks is not None:   # 2.0.0 (#156)
+        checks_svc.set_module(db, ctx, body.checks)
     db.commit()
-    return {"fundraisers": svc.module_enabled(db, ctx.workspace_id)}
+    return _modules(db, ctx.workspace_id)
 
 
 def viewer(db: Session = Depends(get_db), ctx: Ctx = Depends(require("fundraiser.view"))) -> Ctx:

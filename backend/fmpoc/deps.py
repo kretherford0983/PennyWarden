@@ -82,8 +82,10 @@ def _load(request: Request, db: Session) -> Ctx:
             else:
                 user = db.get(User, sess.user_id)
                 if user and user.active:
-                    if (now - sess.last_seen_at).total_seconds() > 30:
+                    ip = (ctx.ip or "")[:64] or None
+                    if (now - sess.last_seen_at).total_seconds() > 30 or (ip and sess.client_ip != ip):
                         sess.last_seen_at = now
+                        sess.client_ip = ip or sess.client_ip   # 2.0.0 (#127): shown in the sessions list
                         db.commit()
                     ctx.user, ctx.session, ctx.workspace_id = user, sess, user.workspace_id
                     ctx.mfa_pending = sess.mfa_pending
@@ -120,6 +122,15 @@ def enforce_csrf(request: Request, db: Session = Depends(get_db)) -> None:
         raise AppError(403, "CSRF_FAILED", "Missing or invalid CSRF token.")
     # Unauthenticated mutation of a protected endpoint: authentication error.
     raise AppError(401, "UNAUTHENTICATED", "Authentication required.")
+
+
+def enforce_maintenance(request: Request, db: Session = Depends(get_db)) -> None:
+    """2.0.0 (#130): global dependency after the CSRF check - while maintenance mode is on, only Administrators may
+    change anything (enforced on the backend for every state-changing request)."""
+    if request.method in SAFE_METHODS or not request.url.path.startswith("/api/"):
+        return
+    from .services import maintenance
+    maintenance.enforce(request, db, _load(request, db))
 
 
 def get_ctx(request: Request, db: Session = Depends(get_db)) -> Ctx:

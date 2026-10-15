@@ -58,8 +58,8 @@ pipeline are unchanged):
 - **Breaking** (1.x → 2.0) — a line in the sand: a change that may break the app (e.g. moving the data to a
   different database server — users decide deliberately whether to upgrade), **or** the start of something new: a
   big new area of functionality rather than support for existing features, or the app becoming publicly available
-  through its product page. Planned: 2.0.0 with the check printing module (#60), developed over several test builds
-  (product owner, 2026-10-08).
+  through its product page. 2.0.0 is such a release: the Payments module (check printing, #60), developed over 13
+  test builds (product owner, 2026-10-08).
 - **Major** (1.5 → 1.6) — one or more large new features within the current Breaking line.
 - **Minor** (1.6.0 → 1.6.1) — fixes, polish and performance; occasionally one planned feature of a Major line is
   released on its own so beta feedback can come in before the next one.
@@ -85,8 +85,10 @@ repository activity — it emails first, and **Enable workflow** on the Actions 
 Python (`backend/`), JavaScript (`frontend/`) and GitHub Actions dependencies: routine minor and patch updates as
 one pull request per group, at most 5 open per group. **Major versions are not proposed** (since 1.7.1): an upgrade
 such as React 18 → 19 or TypeScript 5 → 7 needs planning and testing, so file it as an issue and it is done on a
-feature branch like any other change. `pydantic_core` is never proposed on its own either — it only changes
-together with `pydantic`. Security updates are not held back by either rule: they arrive separately as soon as an
+feature branch like any other change. **`pydantic` and `pydantic_core` are not proposed either** (2.0.0): pydantic
+needs one exact `pydantic_core`, and Dependabot changes the pinned lines of `requirements.txt` one at a time without
+re-resolving them, so a pydantic update on its own fails to install (#224). Update the two together by hand on a
+`feature/` branch — ask me to do it. Security updates are not held back by either rule: they arrive separately as soon as an
 advisory is published, also when the fix is a major version, once *Dependabot security updates* is turned on
 (Settings → Advanced Security). Dependabot reads its settings from `main`, so a change to
 `.github/dependabot.yml` takes effect when it is released. Its branches are named `dependabot/...`:
@@ -102,7 +104,10 @@ advisory is published, also when the fix is a major version, once *Dependabot se
    `python scripts/third_party_notices.py`, review the licenses of new packages, commit) — ask me to do it. Pull
    requests into test and main, and the test and main builds, check the file strictly and fail while it is out of
    date or a shipped package is not pinned.
-5. Not wanted? Close the pull request — Dependabot does not propose that version again. (Avoid the comment
+5. Not wanted? Close the pull request. A **grouped** pull request (the usual kind) closed this way is not
+   remembered: Dependabot may propose the same versions again next week and says so in a comment (to skip a version
+   for good, add an `ignore` rule naming `update-types`). Already taken in by another pull request? Close it too —
+   once the versions are on develop there is nothing left to propose. (Avoid the comment
    `@dependabot ignore this dependency`: it also stops security fixes for that dependency.)
 
 ## One-time GitHub settings (Settings tab of the repository)

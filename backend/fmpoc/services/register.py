@@ -24,6 +24,7 @@ BUDGET_TYPE_FOR = {"DEPOSIT": "INCOME", "WITHDRAWAL": "EXPENSE"}
 # ------------------------------------------------------------------ snapshots / output
 def alloc_snapshot(a: TransactionAllocation) -> dict:
     return {"id": a.id, "budget_id": a.budget_id, "entity_id": a.entity_id, "invoice_number": a.invoice_number,
+            "invoice_date": a.invoice_date.isoformat() if a.invoice_date else None,
             "description": a.description, "amount": fmt(a.amount_cents), "notes": a.notes,
             "no_attachment": bool(a.no_attachment), "no_attachment_reason": a.no_attachment_reason,
             "removed": a.removed_at is not None}
@@ -59,8 +60,11 @@ def out(db: Session, t: RegisterTransaction, running_balance: int | None = None)
                             .order_by(FiscalYearReview.id)):
             reviews.setdefault(r.transaction_allocation_id, []).append(review_out(db, r, brief=True))
     att_counts = {}
+    check_printed = False
     for att in db.scalars(select(Attachment).where(
             (Attachment.transaction_id == t.id) | (Attachment.allocation_id.in_(ids or [-1])))):
+        if att.system_generated and att.document_type == "CHECK_COPY":   # 2.0.0 (#161): a check record copy
+            check_printed = True
         if att.active:
             key = ("t", t.id) if att.transaction_id else ("a", att.allocation_id)
             att_counts[key] = att_counts.get(key, 0) + 1
@@ -88,6 +92,7 @@ def out(db: Session, t: RegisterTransaction, running_balance: int | None = None)
         "attachment_count": att_counts.get(("t", t.id), 0) + sum(v for k, v in att_counts.items() if k[0] == "a"),
         "has_pending_review": any(r["status"] == "PENDING" for rs in reviews.values() for r in rs),
         "invoice_numbers": sorted({a.invoice_number for a in t.live_allocations if a.invoice_number}),
+        "check_printed": check_printed,
     }
 
 
@@ -213,6 +218,8 @@ def _plan_allocations(db: Session, ctx, *, txn_type: str, txn_date: dt.date, par
         else:
             if ai.invoice_number:
                 raise validation("Invoice Number applies to Withdrawal allocations only.", f"allocations.{i}.invoice_number")
+            if ai.invoice_date:
+                raise validation("Invoice date applies to Withdrawal allocations only.", f"allocations.{i}.invoice_date")
             entity_id = ai.entity_id if ai.entity_id is not None else parent_entity_id
             _entity(db, ctx, entity_id, keep_entity_ids)
         category = None if budget.is_budget_zero else _review_category(covering, budget.fiscal_year_id)
@@ -291,6 +298,7 @@ def _allocations_financially_changed(plans: list, existing: dict) -> bool:
         ex = p.existing
         if (ex.budget_id != p.budget.id or ex.amount_cents != p.amount or ex.entity_id != p.entity_id
                 or (ex.invoice_number or None) != (p.data.invoice_number or None)
+                or ex.invoice_date != p.data.invoice_date
                 or (ex.description or None) != (p.data.description or None) or (ex.notes or None) != (p.data.notes or None)):
             return True
     return False
@@ -353,7 +361,8 @@ def create(db: Session, ctx, data) -> RegisterTransaction:
     db.flush()
     for p in plans:
         a = TransactionAllocation(transaction_id=t.id, budget_id=p.budget.id, entity_id=p.entity_id,
-                                  invoice_number=p.data.invoice_number or None, description=p.data.description,
+                                  invoice_number=p.data.invoice_number or None, invoice_date=p.data.invoice_date,
+                                  description=p.data.description,
                                   amount_cents=p.amount, notes=p.data.notes,
                                   created_by_user_id=ctx.user.id, updated_by_user_id=ctx.user.id)
         if p.data.no_attachment:
@@ -477,7 +486,8 @@ def update(db: Session, ctx, t: RegisterTransaction, data) -> RegisterTransactio
     elif date_changed or "entity_id" in f:
         from ..schemas import AllocationIn
         allocs_in = [AllocationIn(id=a.id, budget_id=a.budget_id, entity_id=(a.entity_id if t.transaction_type == "DEPOSIT" else None),
-                                  invoice_number=a.invoice_number, description=a.description,
+                                  invoice_number=a.invoice_number, invoice_date=a.invoice_date,
+                                  description=a.description,
                                   amount=fmt(a.amount_cents), notes=a.notes, fiscal_year_id=a.budget.fiscal_year_id)
                      for a in t.live_allocations]
     else:
@@ -522,6 +532,7 @@ def update(db: Session, ctx, t: RegisterTransaction, data) -> RegisterTransactio
                 db.add(a)
             a.budget_id, a.entity_id, a.amount_cents = p.budget.id, p.entity_id, p.amount
             a.invoice_number = p.data.invoice_number or None
+            a.invoice_date = p.data.invoice_date
             a.description, a.notes = p.data.description, p.data.notes
             if "no_attachment" in p.data.model_fields_set or "no_attachment_reason" in p.data.model_fields_set:
                 _apply_no_attachment(a, ctx, p.data.no_attachment if "no_attachment" in p.data.model_fields_set else None,

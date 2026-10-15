@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api, qs } from "../api";
-import { ErrorBox, Field, Loading, Modal, useConfirmable, GuardedForm } from "../components";
+import { ErrorBox, Field, Loading, Modal, useConfirmable, GuardedForm, RowMenu } from "../components";
 import { useMe } from "../App";
 
 const EMPTY = { entity_type: "ORGANIZATION", organization_name: "", primary_contact: "", position: "", address_line1: "", address_line2: "", city: "",
@@ -49,7 +49,9 @@ export default function Entities() {
                       {locked ? <span className="muted" title="Only a Budget Manager can maintain Financial Institutions">Budget Manager only</span> : (
                         <>
                           <button className="small" onClick={() => setEdit(e)}>Edit</button>
-                          {e.active ? <button className="small" onClick={() => setActive(e, false)}>Inactivate</button> : <button className="small" onClick={() => setActive(e, true)}>Restore</button>}
+                          <RowMenu name={e.display_name} actions={[
+                            e.active ? { label: "Inactivate", onClick: () => setActive(e, false), danger: true } : { label: "Restore", onClick: () => setActive(e, true) },
+                          ]} />
                         </>
                       )}
                     </td>

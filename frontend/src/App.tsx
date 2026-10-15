@@ -19,10 +19,15 @@ import Entities from "./pages/Entities";
 import Account from "./pages/Account";
 import Reports from "./pages/Reports";
 import Fundraisers, { FundraiserDetail } from "./pages/Fundraisers";
+import CheckSetup from "./pages/CheckSetup";
+import Payments from "./pages/Payments";
 import Notifications, { REMINDERS_CHANGED } from "./pages/Notifications";
 import { AdminSecurityNotices, SignInNotices } from "./pages/Recovery";
 import { BackupFailedBanner } from "./pages/ScheduledBackups";
 import { UpdateBanner, UpdateIndicator, useUpdates } from "./pages/Updates";
+import { MaintenanceBanner } from "./pages/Maintenance";
+import { ReinitializedBanner } from "./pages/Reinitialize";
+import NamesGate from "./pages/NamesGate";
 
 export const ROLE_NAMES: Record<string, string> = {
   ADMINISTRATOR: "Administrator", BUDGET_MANAGER: "Budget Manager", BUDGET_USER: "Budget User",
@@ -43,13 +48,18 @@ export interface Me {
   dashboard_charts?: string[];
   dashboard_layout?: { key: string; visible: boolean }[]; // v1.5.0 CR-031
   dashboard_layout_customized?: boolean;
-  modules?: { fundraisers?: boolean }; // v1.6.0 CR-033
+  modules?: { fundraisers?: boolean; checks?: boolean }; // v1.6.0 CR-033; 2.0.0 (#156) Check Printing
   mfa_pending?: "VERIFY" | "ENROLL" | "PASSWORD" | "QUESTIONS" | null; // v1.4.1 CR-018; 1.8.0 (#113) setup steps
   sign_in_notices?: { kind: string; message: string }[]; // 1.8.0 (#113)
   csrf_token: string;
 }
 
-const MeCtx = createContext<{ me: Me; can: (p: string) => boolean; refresh: () => Promise<void>; setTheme: (t: "light" | "dark") => void; patchMe: (p: Partial<Me>) => void } | null>(null);
+const MeCtx = createContext<{ me: Me; can: (p: string) => boolean; paused: boolean; refresh: () => Promise<void>; setTheme: (t: "light" | "dark") => void; patchMe: (p: Partial<Me>) => void } | null>(null);
+
+/** 2.0.0 build 13: permissions that only let a user look things up. While maintenance mode is on, everyone but an
+ * Administrator keeps just these, so screens show what a read-only role sees (no New / Edit / Delete / ⋯ actions);
+ * the server refuses those changes anyway (503 MAINTENANCE, #130). */
+const READ_PERMISSIONS = /\.view(_[a-z_]+)?$|^bank_account\.reveal$/;
 
 export function useMe() {
   const c = useContext(MeCtx);
@@ -65,6 +75,14 @@ export default function App() {
   const { path, navigate } = useRouter();
   const [status, setStatus] = useState<any>(null);
   const [me, setMe] = useState<Me | null | undefined>(undefined);
+  // build 13: is maintenance mode in force now? Re-checked on every page change and when a change was refused for it
+  const [maintActive, setMaintActive] = useState(false);
+  useEffect(() => {
+    const load = () => api.get("/api/system/status").then((s) => setMaintActive(!!s.maintenance_mode?.active), () => undefined);
+    load();
+    window.addEventListener("pw:maintenance-changed", load);
+    return () => window.removeEventListener("pw:maintenance-changed", load);
+  }, [path]);
 
   const loadMe = async () => {
     try {
@@ -99,7 +117,10 @@ export default function App() {
       setMe(null);
     };
     window.addEventListener("fm:unauthenticated", on);
-    return () => window.removeEventListener("fm:unauthenticated", on);
+    // 2.0.0 (#126): the organization was renamed on System/About - the top bar follows at once
+    const renamed = (e: Event) => setStatus((s: any) => (s ? { ...s, workspace_name: (e as CustomEvent).detail } : s));
+    window.addEventListener("pw:workspace-renamed", renamed);
+    return () => { window.removeEventListener("fm:unauthenticated", on); window.removeEventListener("pw:workspace-renamed", renamed); };
   }, []);
 
   // v1.5.0: while signing in (login / two-step screens) the address is the dashboard, so a bookmarked page such as
@@ -114,9 +135,15 @@ export default function App() {
   if (!me) return <Login workspace={status.workspace_name} onLogin={loadMe} legal={status} />;
   if (me.mfa_pending) return <MfaGate me={me} workspace={status.workspace_name} onDone={loadMe} onLogout={() => { setCsrf(null); setMe(null); }} />;
 
+  // 2.0.0 (#134): an Administrator completes the missing real names first
+  if ((me as any).names_needed > 0) {
+    return <NamesGate onDone={loadMe} onLogout={async () => { try { await api.post("/api/auth/logout"); } finally { setCsrf(null); setMe(null); } }} />;
+  }
+  const paused = maintActive && !me.permissions.includes("system.manage");
   const ctx = {
     me,
-    can: (p: string) => me.permissions.includes(p),
+    can: (p: string) => me.permissions.includes(p) && (!paused || READ_PERMISSIONS.test(p)),
+    paused,
     refresh: loadMe,
     setTheme: (t: "light" | "dark") => {
       applyTheme(t);
@@ -142,12 +169,17 @@ function navFor(me: Me) {
     ["/reports", "Reports"],
   ];
   if (me.modules?.fundraisers) fin.splice(6, 0, ["/fundraisers", "Fundraisers"]); // v1.6.0 CR-033 (optional module)
-  if (me.security_domain === "ADMINISTRATOR") return [["/", "Dashboard"], ["/users", "Users"], ["/audit-log", "Audit Log"], ["/about", "System/About"]];
-  if (me.security_domain === "AUDITOR") return [...fin, ["/users", "Users"], ["/audit-log", "Audit Log"]];
+  // 2.0.0 (#164): Payments (Payments module) for Register Users, after Register
+  if (me.modules?.checks && me.permissions.includes("checks.print")) fin.splice(fin.findIndex((n) => n[0] === "/register") + 1, 0, ["/payments", "Payments"]);
+  // 2.0.0 (#156): Payments Setup (check printing) for Administrators when the Payments module is on
+  const checkSetup = me.modules?.checks && me.permissions.includes("checks.setup") ? [["/check-setup", "Payments Setup"]] : [];
+  if (me.security_domain === "ADMINISTRATOR") return [["/", "Dashboard"], ["/users", "Users"], ["/audit-log", "Audit Log"], ...checkSetup, ["/about", "System/About"]];
+  // 2.0.0 (#126, #127): Auditors see System/About read-only (effective settings, sessions)
+  if (me.security_domain === "AUDITOR") return [...fin, ["/users", "Users"], ["/audit-log", "Audit Log"], ...(me.permissions.includes("system.view") ? [["/about", "System/About"]] : [])];
   if (me.security_domain === "COMBINED") { // 1.9.0 (#54): one person, roles of several domains (local installs)
     const has = (p: string) => me.permissions.includes(p);
     return [...(has("financial.view") ? fin : [["/", "Dashboard"]]), ...(has("users.view") ? [["/users", "Users"]] : []),
-      ...(has("audit.view") ? [["/audit-log", "Audit Log"]] : []), ...(has("users.manage") ? [["/about", "System/About"]] : [])];
+      ...(has("audit.view") ? [["/audit-log", "Audit Log"]] : []), ...checkSetup, ...(has("users.manage") || has("system.view") ? [["/about", "System/About"]] : [])];
   }
   return fin;
 }
@@ -185,7 +217,7 @@ function Shell({ workspace, warning, mode, onLogout }: { workspace: string; warn
   else if (path === "/account") page = <Account updates={mode === "local" ? updates : null} />;
   else if (path === "/users") page = guard("/users", <Users />);
   else if (path === "/audit-log") page = guard("/audit-log", <AuditLog />);
-  else if (path === "/about") page = <About />;
+  else if (path === "/about" || path.startsWith("/about/")) page = <About />;   // #216: /about/<tab>
   else if (path === "/fiscal-years") page = guard("/fiscal-years", <FiscalYears />);
   else if ((m = match("/fiscal-years/:id", path))) page = guard("/fiscal-years", <FiscalYearDetail id={Number(m.id)} />);
   else if (path === "/budgets") page = guard("/budgets", <Budgets />);
@@ -195,6 +227,8 @@ function Shell({ workspace, warning, mode, onLogout }: { workspace: string; warn
   else if (path === "/reports") page = guard("/reports", <Reports />);
   else if (path === "/notifications") page = can("reminder.view") ? <Notifications /> : <NotAuthorized />;
   else if (path === "/fundraisers") page = guard("/fundraisers", <Fundraisers />);
+  else if (path === "/check-setup") page = guard("/check-setup", <CheckSetup />);
+  else if (path === "/payments") page = guard("/payments", <Payments />);
   else if ((m = match("/fundraisers/:id", path))) page = guard("/fundraisers", <FundraiserDetail id={Number(m.id)} />);
   else page = <p>Page not found.</p>;
 
@@ -217,6 +251,8 @@ function Shell({ workspace, warning, mode, onLogout }: { workspace: string; warn
         </div>
       </header>
       {warning ? <div className="alert warn banner" role="alert">Security warning: this server is exposed on a network without HTTPS configuration. Deploy behind an HTTPS reverse proxy.</div> : null}
+      <MaintenanceBanner path={path} />
+      <ReinitializedBanner path={path} />
       <SignInNotices notices={me.sign_in_notices || []} onDismissed={() => patchMe({ sign_in_notices: [] })} />
       {can("users.manage") ? <AdminSecurityNotices path={path} /> : null}
       {can("users.manage") ? <BackupFailedBanner path={path} /> : null}

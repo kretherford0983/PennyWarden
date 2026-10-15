@@ -37,7 +37,9 @@ def status(request: Request, response: Response, db: Session = Depends(get_db)):
     initialized = bootstrap.is_initialized(db)
     ws = bootstrap.current_workspace(db) if initialized else None
     s = request.app.state.settings
+    from ..services.maintenance import state as maintenance_state   # 2.0.0 (#130): shown on the sign-in page too
     return {"initialized": initialized, "workspace_name": ws.name if ws else None, "version": VERSION,
+            "maintenance_mode": maintenance_state(ws),
             "maintenance": request.app.state.maintenance,
             "mode": s.mode, "insecure_transport_warning": request.app.state.insecure_transport_warning,
             **legal_payload()}
@@ -52,14 +54,19 @@ def initialize(body: InitializeIn, request: Request, response: Response, db: Ses
     errs = policy_errors(body.password, body.admin_username)
     if errs:
         raise AppError(422, "PASSWORD_POLICY", " ".join(errs), errors=[{"field": "password", "message": e} for e in errs])
+    from ..services.users import clean_person_name   # 2.0.0 (#134): the first Administrator's names are required
+    first = clean_person_name(body.admin_first_name, "admin_first_name")
+    last = clean_person_name(body.admin_last_name, "admin_last_name")
     settings = request.app.state.settings
     with _init_lock:
         try:
             admin = bootstrap.initialize(db, settings, ctx, workspace_name=body.workspace_name,
-                                         username=body.admin_username, email=body.admin_email, password=body.password)
+                                         username=body.admin_username, email=body.admin_email, password=body.password,
+                                         first_name=first, last_name=last)
             # v1.4.1 CR-018: in server mode the first Administrator sets up MFA before using the application
             # 1.8.0 (#113): ... and chooses the security questions (after MFA when it is required)
-            token, sess = auth_svc.create_session(db, settings, admin, "ENROLL" if mfa_required(settings) else "QUESTIONS")
+            token, sess = auth_svc.create_session(db, settings, admin, "ENROLL" if mfa_required(settings) else "QUESTIONS",
+                                                  ctx.ip)
             db.commit()
         except Exception:
             db.rollback()
@@ -97,9 +104,9 @@ def about(request: Request, ctx: Ctx = Depends(auth_ctx)):
     admin = ADMINISTRATOR in ctx.roles
     return {**version_payload(request), "bind_host": s.host if admin else None, "port": s.port if admin else None,
             # v1.4.1 CR-023: backup/restore is built in (supersedes BR-092)
-            "backup_notice": "Create backups regularly (Backup / Restore below) and keep them off this machine, "
-                             "together with their passphrase. A backup contains the database, all attachments and "
-                             "the encryption key; config.toml is not included.",
+            "backup_notice": "Create backups regularly (System/About → Backups → Backup / Restore) and keep them off "
+                             "this machine, together with their passphrase. A backup contains the database, all "
+                             "attachments and the encryption key; config.toml is not included.",
             "restore_max_mb": s.restore_max_mb if ADMINISTRATOR in ctx.roles else None,
             "insecure_transport_warning": request.app.state.insecure_transport_warning}
 

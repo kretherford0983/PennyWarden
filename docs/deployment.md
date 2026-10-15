@@ -24,7 +24,8 @@ Native packages need no separately installed Python, Node.js, SQLite, Docker or 
   the app, so replacing the app with a newer one keeps it. To upgrade: quit PennyWarden, drag the new app onto
   Applications and choose *Replace*. Data folder, log, `config.toml` and options on a Mac:
   [configuration.md](configuration.md#on-a-mac). Server mode from Terminal:
-  `/Applications/PennyWarden.app/Contents/MacOS/PennyWarden --mode server`.
+  `/Applications/PennyWarden.app/Contents/MacOS/PennyWarden --mode server`. (On macOS 11 and 12 the Payments Setup
+  previews show as a PDF instead of a picture; everything else is the same.)
 - **Windows (portable folder)**: unzip `PennyWarden-windows-x64.zip` anywhere (e.g.
   `%LOCALAPPDATA%\Programs`), double-click `PennyWarden.cmd`.
 - **Linux**: `tar xzf PennyWarden-linux-x64.tar.gz && ./pennywarden/pennywarden`
@@ -32,18 +33,22 @@ Native packages need no separately installed Python, Node.js, SQLite, Docker or 
 Startup applies pending Alembic migrations, binds to `127.0.0.1:8765`, waits for `/api/health`, and opens the
 default browser when a desktop session is available. Plain HTTP is acceptable because traffic stays on loopback.
 
-> **Data protection:** create encrypted backups regularly (System/About → Backup / Restore, since 1.4.1 — see
+> **Data protection:** create encrypted backups regularly (System/About → Backups → Backup / Restore, since 1.4.1 — see
 > docs/backup-restore.md) and keep them off this machine together with their passphrase.
 > From 1.9.0 PennyWarden can also write them on a schedule (Backup / Restore → **Scheduled**) to a folder you
 > choose, such as an external drive. On a server the folder must be listed by the server owner with
-> `backup_folders` in `config.toml` (e.g. a mounted NAS share; in Docker, a volume mounted into the container), and
-> the service account must be able to write to it.
+> `backup_folders` in `config.toml` (a list: `backup_folders = ["/srv/pennywarden-backups"]`; e.g. a mounted NAS
+> share; in Docker, a volume mounted into the container), and the service account must be able to write to it. On the
+> Linux server install, run the installer again after changing `backup_folders`: the service is sandboxed and may
+> write only where the installer allows it (not under `/home`).
 
 ## Server installation (multiple users)
 
 On **Windows** (Windows 10/11 or Windows Server): step by step in [install-windows-server.md](install-windows-server.md)
-— the portable zip, a fixed data folder, HTTPS through Cloudflare Tunnel or Caddy, and Task Scheduler to start it
-with Windows.
+— the portable zip, a fixed data folder with its permissions, HTTPS through Caddy (or a Cloudflare Tunnel), and a
+Windows service (NSSM) that starts it with Windows. Since 2.0.0 the script `install-windows-server.ps1` from the release does all of it in
+one step (`-Domain books.example.org` for HTTPS through Caddy; without it, for a Cloudflare Tunnel) and upgrades the
+same way.
 
 ### Linux: one command (since 1.5.0)
 
@@ -63,6 +68,9 @@ the same command — see [upgrade.md](upgrade.md).
   `curl -fsSL https://github.com/kretherford0983/PennyWarden/releases/download/<tag>/install.sh | sudo bash -s -- --version <tag>`
 - **Port:** a new installation uses 8765 (`--port N` to change); an upgrade reads the port from the existing
   `config.toml`.
+- **Also set up (since 2.0.0):** the `pennywarden` command for the host commands (`sudo pennywarden restore …`), and
+  write access for the service to the scheduled-backup folders in `backup_folders` — run the installer again after
+  changing that list.
 - **Prefer to read it first?**
   `curl -fsSLO https://github.com/kretherford0983/PennyWarden/releases/download/<tag>/install.sh`, read it, then
   `sudo bash install.sh --version <tag>`.
@@ -118,13 +126,16 @@ server {
 ```
 
 Run as a service: systemd unit (`ExecStart=/opt/pennywarden/current/pennywarden --mode server --no-browser`,
-`Environment=FM_DATA_DIR=/var/lib/pennywarden`, dedicated user) or on Windows with Task Scheduler/NSSM running
-`PennyWarden-Server.cmd`. Run a single application process per data directory (SQLite + in-process
+`Environment=FM_DATA_DIR=/var/lib/pennywarden`, dedicated user) or on Windows as the service **PennyWarden** with
+NSSM ([install-windows-server.md](install-windows-server.md#5-run-it-as-a-service-with-nssm)). Run a single application process per data directory (SQLite + in-process
 login rate limiter; the per-account count of failed attempts is in the database).
 
-Host commands for a locked-out user, run on the server as the account that owns the data directory:
-`pennywarden reset-mfa --user NAME` (two-step verification set up again) and, from 1.8.0,
-`pennywarden reset-password --user NAME` (prints a temporary password that must be changed at the next sign-in).
+Host commands for a locked-out user, run on the server — on the Linux server install with `sudo` (the installer adds
+the `pennywarden` command since 2.0.0, and files the commands write are handed back to the service's account); on a
+Windows server as Administrator with `C:\PennyWarden\current\PennyWarden.cmd`; see also `restore` and `reinitialize` in
+[backup-restore.md](backup-restore.md):
+`sudo pennywarden reset-mfa --user NAME` (two-step verification set up again) and, from 1.8.0,
+`sudo pennywarden reset-password --user NAME` (prints a temporary password that must be changed at the next sign-in).
 Both also enable an account that was disabled after too many failed attempts.
 
 ## Docker (optional)
@@ -150,8 +161,9 @@ migrations run automatically; databases are never dropped or recreated.
 3. Install a compatible or newer version on the target (Windows or Linux) and point `FM_DATA_DIR`/`--data-dir` at the copy.
 4. Start: migrations run; encrypted account numbers decrypt with the portable key (plain JSON key file, no OS keystore).
 
-On Windows, keep the data directory under the user profile (default `%LOCALAPPDATA%`) or restrict its ACL to the
-service account, because POSIX `chmod 600` is not meaningful there.
+On Windows, keep the data directory under the user profile (default `%LOCALAPPDATA%`) or, on a server, restrict its
+ACL to Administrators, SYSTEM and the service account (`icacls`, [install-windows-server.md](install-windows-server.md#2-the-program-folder-and-the-data-folder)),
+because POSIX `chmod 600` is not meaningful there.
 
 ## License
 

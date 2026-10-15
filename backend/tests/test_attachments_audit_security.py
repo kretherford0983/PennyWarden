@@ -280,7 +280,7 @@ def test_ac_sec_013_mass_assignment(env, base):
         (env.bm, "patch", f"/api/bank-accounts/{acct['id']}", {"current_balance": "0.00"}),
         (env.bm, "patch", f"/api/bank-accounts/{acct['id']}", {"status": "CLOSED"}),
         (env.bm, "patch", f"/api/bank-accounts/{acct['id']}", {"is_primary": False}),
-        (env.admin, "post", "/api/users", {"username": "zz1", "email": "z@z.org", "password": "Abcdefgh12345",
+        (env.admin, "post", "/api/users", {"first_name": "Test", "last_name": "Person", "username": "zz1", "email": "z@z.org", "password": "Abcdefgh12345",
                                            "security_domain": "FINANCIAL", "roles": ["BUDGET_USER"], "is_admin": True}),
         (env.ru, "put", "/api/me/preferences", {"theme": "dark", "roles": ["ADMINISTRATOR"]}),
         (env.ru, "post", "/api/auth/change-password", {"current_password": PASSWORD, "new_password": "Xyzxyzxyz12345",
@@ -348,12 +348,23 @@ def test_ac_sec_023_no_shell_command_construction():
     """Static review: application code never invokes a shell or builds OS commands."""
     root = Path(__file__).resolve().parents[1] / "fmpoc"
     pattern = re.compile(r"\b(os\.system|os\.popen|subprocess|shell\s*=\s*True|pty\.spawn|commands\.getoutput|eval\(|exec\()")
+    # 2.0.0 (#124, #125): the one documented exception (BR-102 "if unavoidable"): the host commands `pennywarden
+    # restore` / `reinitialize` stop and start the service through its manager - fixed argument lists, no shell.
+    allowed = {"cli_restore.py": {"subprocess"}}
     offenders = []
     for p in root.rglob("*.py"):
         text = p.read_text(encoding="utf-8")
         for m in pattern.finditer(text):
-            offenders.append(f"{p.name}:{m.group(0)}")
+            if m.group(0) not in allowed.get(p.name, set()):
+                offenders.append(f"{p.name}:{m.group(0)}")
     assert offenders == []
+    cli = (root / "cli_restore.py").read_text(encoding="utf-8")
+    uses = re.findall(r"subprocess\.\w+(?:\([^)]*)?", cli)
+    assert sorted(set(uses)) == ["subprocess.SubprocessError", "subprocess.run(args, capture_output=True, text=True, "
+                                                                "timeout=60, check=False"], uses
+    calls = re.findall(r"_run\((\[[^\]]*\]|[^)]*)\)", cli)
+    assert calls and all(c.startswith("[") or c.startswith('["sc.exe"') or c.startswith('["systemctl"') or
+                         c.startswith("args: list") or c.startswith("[\"") for c in calls), calls
 
 
 def test_request_body_limit(env, txn):

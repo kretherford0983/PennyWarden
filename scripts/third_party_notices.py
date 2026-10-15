@@ -83,7 +83,10 @@ def python_components() -> list[dict]:
         lic = meta.get("License-Expression") or _classifier_license(meta) or (meta.get("License") or "").split("\n")[0]
         texts = []
         for f in dist.files or []:
-            if LICENSE_NAMES.search(str(f)) and ".dist-info/" in str(f) or str(f).endswith("bitstream-vera-license.txt"):
+            # 2.0.0 build 11: also every file in a PEP 639 licenses/ folder (pypdfium2 ships PDFium's dependency licenses
+            # there under their own names, e.g. BUILD_LICENSES/freetype.txt)
+            if (LICENSE_NAMES.search(str(f)) or ".dist-info/licenses/" in str(f)) and ".dist-info/" in str(f) \
+                    or str(f).endswith("bitstream-vera-license.txt"):
                 p = Path(dist.locate_file(f))
                 if p.is_file():
                     texts.append((str(f).split("/")[-1], p.read_text(errors="replace").strip()))
@@ -148,6 +151,17 @@ def runtime_component() -> dict:
             "url": "https://www.python.org/", "texts": [("LICENSE.txt", text)]}
 
 
+def font_components() -> list[dict]:
+    """2.0.0 (#157): the fonts shipped for check printing (backend/fmpoc/fonts), with their license files."""
+    d = ROOT / "backend" / "fmpoc" / "fonts"
+    lib = (d / "LICENSE-Liberation.txt").read_text().strip()
+    car = (d / "LICENSE-Carlito.txt").read_text().strip()
+    return [{"name": "Carlito", "version": "20230309", "license": "OFL-1.1",
+             "url": "https://github.com/googlefonts/carlito", "texts": [("LICENSE-Carlito.txt", car)]},
+            {"name": "Liberation Fonts (Sans, Serif, Mono)", "version": "2.1.5", "license": "OFL-1.1",
+             "url": "https://github.com/liberationfonts/liberation-fonts", "texts": [("LICENSE-Liberation.txt", lib)]}]
+
+
 def inventory(groups) -> list[str]:
     lines = []
     for title, comps in groups:
@@ -207,7 +221,8 @@ def _summary(lines: list[str]) -> None:
 
 def main() -> int:
     groups = [("Python runtime", [runtime_component()]), ("Python packages (server)", python_components()),
-              ("JavaScript packages (web interface)", npm_components())]
+              ("JavaScript packages (web interface)", npm_components()),
+              ("Fonts (check printing)", font_components())]
     loose = unpinned(groups[1][1])
     n = sum(len(c) for _, c in groups)
     if "--check" in sys.argv:

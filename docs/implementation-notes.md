@@ -3,6 +3,10 @@
 Authority order followed: business rules (03) → security (04) → acceptance criteria (08) → domain/workflow/
 architecture/database (02, 05, 06, 07) → product requirements (01, 09). No specification file was modified.
 
+**UI standards (2.0.0, #214):** every screen follows [ui-standards.md](ui-standards.md) — form rows that line up on
+their labels, one control height, buttons and inline checkboxes centred on the input line, solid sticky action bars.
+New screens use the shared `Field` component and CSS described there; the E2E test "#214" measures them.
+
 ## 1. Specification ambiguities and how they were resolved
 
 None of the items below blocked implementation, but each required a choice the documents do not make. They are
@@ -54,6 +58,369 @@ column therefore stays nullable in the schema. Top bar: `me.display_name` withou
 email and roles; the Users list gained a Display name column (not asked for in the issues, added so an
 Administrator can see which users still show a username).
 
+**2.0.0 Check Printing, test build 1 (issues #156–#162; parent #60; decided in chat 2026-10-10).** Migration `0025`:
+`workspace.checks_enabled` (off), `check_style` (name, preset, active, `config_json`), `check_signer` (name, title,
+active, AES-GCM-encrypted PNG with its own AAD `fmpoc:check_signature:v1`), `check_account` (per bank account: the
+style a Register User chose and the sheet counter), `check_printer_setting` (per user, style and feed mode: page
+option, guide, personal adjustment in thousandths of an inch). Package `services/checkprint/`:
+- `config.py` — the check style document (pydantic, `extra="forbid"`): stock (Letter only for now, check size, check
+  tops, `TEAR_TOP`/`POSITIONS`, one signature line, a preview-only outline), defaults (font, size, capitals), fields
+  (inches from the check's top-left; text fields with font/size/bold/capitals/align/shrink/min size; signature box),
+  amount-in-words and number styles, date format, default memo, signature limit, default signer, 1–6 feed modes
+  (`SHEET` position, or `SINGLE` lead `DATE_END`/`PAYTO_END`, page `LETTER`/`CHECK`, guide, offset ±0.5"). Rules:
+  every field inside the check and **above the bottom 5/8"** (MICR clear band); the minimum size ≤ the size; one sheet
+  feed mode at least.
+- `presets.py` — `STANDARD_3UP`, measured from the product owner's stock and Word templates (field boxes = the text
+  area; text baseline = box bottom + font descent, so the positions reproduce the Word text boxes plus their internal
+  margins; verified against pdftotext and a 225-dpi scan of the stock).
+- `fonts.py` — Liberation Sans/Serif/Mono 2.1.5 and Carlito (OFL 1.1, `fmpoc/fonts/`, regular + bold), registered
+  with ReportLab and embedded; served to the setup preview from `/api/checks/fonts/{key}/{weight}`.
+- `amounts.py` — words from whole cents up to 999,999,999.99: bank convention (AND only before cents, hyphens,
+  `NN/100`), options AND in hundreds, no hyphens, case, `NO/100`, trailing word; number with commas / `$` / lead fill.
+- `patterns.py` — literal text + `{NAME}` (case-insensitive, fixed table lookup), `{{`/`}}`, unknown name = error with
+  a difflib suggestion, `{CHECK_NUMBER}` refused on the check face, control characters refused, 200 characters; split
+  transactions give the first value + " and others".
+- `render.py` — check space = points from the check's bottom-left, after the page transform (sheet: translate to
+  the position; single: rotate 90° CCW for date end first, 90° CW for pay-to end first, on a check-sized page or a
+  Letter page at the guide position), then the feed offset + personal adjustment in check coordinates (dx right,
+  dy down). `layout()` fits each field (shrink in 0.5 pt steps to the minimum; payee and memo get a shortened
+  suggestion; date and amounts block). The fill is drawn at baseline + cap height / 2 between "AND" and the cents.
+  PDFs: check (signature image), test print, alignment test, calibration page, scale check, record copy (signature
+  replaced by text, no image). `PrintScaling /None` is set as a viewer preference.
+- `service.py` — module switch (shares `/api/system/modules`), styles, signers (PNG validated with Pillow and
+  re-encoded; only a 220-px SAMPLE preview is ever returned), per-account style and sheet counter, printer settings,
+  `prepare` (variables, memo, fit, signature choice and limit, warnings `EMPTY_VARIABLES` and `CLEARED`),
+  `print_check`, `spoil`.
+Printing rules: only ACTIVE withdrawals over zero outside a Closed Fiscal Year; a payee is required; the client
+never supplies amounts; the typed number must equal the transaction's check number (set at print time if missing,
+CR-011 uniqueness); a **reprint** is a print whose number equals the last printed number (from the
+`CHECK_PRINTED`/`CHECK_REPRINTED` audit events) and needs a reason and does not move the sheet counter; any other print
+uses a check; the record copy (document type `CHECK_COPY`, system generated, not removable) is attached when its
+content (deterministic PDF, sha256) differs from the last one; **spoil** moves the transaction to a new unused number
+and creates a zero-dollar VOID record on Budget 0 of the transaction's Fiscal Year with the old number (BR-072).
+Permissions `checks.setup` (Administrator) and `checks.print` (Register User); Budget Managers have no access.
+Because Administrators cannot see bank accounts or entities (BR-003), the style per bank account is chosen by a
+Register User and signers are typed names. Audit: `CHECK_STYLE_*`, `CHECK_SIGNER_*`, `CHECK_SIGNATURE_*` (SECURITY),
+`CHECK_TEST_PRINT`, `CHECK_ACCOUNT_SETTINGS`, `CHECK_PRINTED`, `CHECK_REPRINTED`, `CHECK_SPOILED`,
+`CHECK_ALIGNMENT_TEST`, `CHECK_PRINTER_SETTINGS(_RESET)`. API `routers/checks.py`. Frontend: `pages/CheckSetup.tsx`,
+`pages/CheckPrint.tsx` (print dialog, spoil dialog, sheet counter, printer setup assistant), `pages/checkShared.tsx`
+(SVG preview with the built-in fonts, `PatternInput` autocomplete, browser instructions). Tests:
+`tests/test_v200_checks.py` (positions read back with pypdf), E2E "#156-#162". Guide: `docs/check-printing.md`.
+
+**2.0.0 Payments, test build 2 (issue #164; decided in chat 2026-10-10).** Migration `0026`:
+`app_user.last_payment_account_id` (plain `add_column`; `app_user` has the 0017 triggers). The payment form is the
+register's `TxnForm` with `payment` set (withdrawal only, no clear date, "Invoice(s)" wording, `AmountPreview`, submit
+"Save and print check", `onSaved(saved)` receives the created transaction), so payments go through
+`POST /api/transactions` with all register rules, confirmations, the request key and the attachment uploads. Endpoints
+(`checks.print`): `GET /api/checks/payments/options`, `PUT /api/checks/payments/last-account`,
+`POST /api/checks/payments/amount-preview` (words and number as the account's style prints them; preset defaults
+before a style is chosen; nothing stored), `GET /api/checks/payments/recent` (from the `CHECK_COPY` record copies; the
+module keeps no payment list). Frontend `pages/Payments.tsx` (`/payments`, nav for `checks.print` with the module on;
+`/payments?txn=<id>` shows the transaction locked in a disabled fieldset). Register: *Create payment…* (detail);
+the register's *New payment* button was removed in build 13 (Payments in the menu is the one place to start one). The memo autocomplete sets the cursor in a layout effect (was an animation frame - typing
+could land in front of the inserted variable). Tests: `tests/test_v200_payments.py`, E2E "#164".
+
+**2.0.0 Cover letters and envelopes, test build 3 (issues #165, #166, #174; decided in chat 2026-10-10).** Migration
+`0027`: `transaction_allocation.invoice_date` (plain `add_column`; optional, withdrawals only, part of the allocation
+snapshot and change comparison), table `check_document` (kind `LETTER`/`ENVELOPE`, `config_json` validated by
+`LetterConfig`/`EnvelopeConfig` in `services/checkprint/documents.py`, one default per kind), and
+`check_printer_setting.document_id` with `check_style_id` optional (batch mode: the table has no triggers) for each
+user's envelope settings (`feed_key` "envelope"). Letters: platypus with the embedded fonts; the letterhead is typed
+lines (a logo is a later enhancement); signer by name from the check's signer or the template's fallback name/role;
+warnings `EMPTY_VARIABLES` and `NO_PAYEE_ADDRESS` (409 confirmation). Envelopes: #10 only (double-window envelopes are a
+later phase); rotation as the single-check feed (`STAMP_END` = 90° CCW); the attached copy is drawn without the user's
+offsets so it is deduplicated by SHA-256 like the letter (`CHECK_LETTER`, `CHECK_ENVELOPE` attachments). Handwritten
+checks: `POST /api/checks/transactions/{id}/handwritten` (number typed twice; refused for a number already printed
+unless it is the same), audit `CHECK_HANDWRITTEN`. Endpoints: `/api/checks/documents` (+ `/{id}`, `/{id}/flags`,
+`/{id}/test-print`, `checks.setup`), `/api/checks/transactions/{id}/documents|letter|envelope|envelope-test|handwritten`
+and `PUT /api/checks/my-printer/envelope` (`checks.print`). Frontend: `pages/CheckDocuments.tsx` (setup),
+`pages/CheckEnclosures.tsx` (print screen panel, handwritten mode), `PatternInput` gains `multiline`. #174 polish:
+default memo resolved with sample values, collapsible sections, `PdfViewer`, modal stack for Escape. Tests:
+`tests/test_v200_letters.py`, `tests/test_v200_polish.py`, E2E "#165-#166".
+
+**2.0.0 Voucher checks and two signature lines, test build 4 (issue #167; decided in chat 2026-10-10).** No
+migration: everything lives in the check style's settings document. `config.py`: `Stock.signature_lines` 1|2,
+`Fields.signature2` (required with two lines, dropped with one; must not overlap the first or reach the clear zone),
+`second_line_limit_cents` (< `signature_limit_cents`), `default_signer2_id` (≠ the first), `stubs` (≤ 2 `Stub`:
+`top`/`height` in page inches, `copy_kind` VENDOR|OFFICE, `title` pattern in the STUB context, `show_check_number`,
+`show_memo`, font/size/margin) and `stub_columns` (like the letter's). Stubs require one check per sheet and SHEET feed
+modes only, and may not overlap the check or each other. Preset `VOUCHER_TOP` (check 0–3.5", stubs 3.5–7" vendor,
+7–11" office; the face reuses the 3-up field positions). Stub items flow in a fixed order (title + CHECK # / OFFICE
+COPY, payee / date / amount, the line table, total, memo) rather than each being positioned - standard voucher stubs
+are blank, and the margins, font and size are adjustable. `render.py`: `StubData`, `stub_columns` (vendor drops
+BUDGET, office inserts it before AMOUNT), `stub_capacity`/`stub_rows` (overflow keeps capacity−1 rows plus the
+"…and N more" line), stubs drawn in page space after the check (feed offset applied); every signature function takes
+a box. `service.py`: `_second_choice` (SAME_SIGNER 409; over the second-line limit → "SECOND SIGNATURE BY HAND (OVER
+LIMIT)"; none chosen → "SECOND SIGNATURE BY HAND"), `stub_rows`, `stub_data(job)` built at print time after the number
+is confirmed, warning `STUB_OVERFLOW`, `sample_stub` for admin pages; audit adds `signer2_id`, `signature2`,
+`stub_lines`. API: `signer2_id` on prepare/print/alignment; options add `signature_lines`, `default_signer2_id`,
+`second_line_limit`; setup adds `signature2_default`, `stub_variables`. Frontend: `CheckSetup.tsx` (`StubsSection`,
+`setLines`, `MoneyIn`), `CheckPrint.tsx` (second signature select), `CheckPreview` draws the second line. Tests:
+`tests/test_v200_voucher.py`, E2E "#167".
+
+**2.0.0 rename (Kyle, 2026-10-10):** the optional module is shown as the **Payments module**; the Administrator's
+setup screen and menu item are **Payments Setup** (the Register Users' item stays **Payments**, so a combined local
+user sees two distinct entries). Only labels changed: the API (`/api/checks`), permissions (`checks.setup`,
+`checks.print`), `workspace.checks_enabled`, the `modules.checks` key, the route `/check-setup` and the guide's file
+name `docs/check-printing.md` stay as they are.
+
+**2.0.0 test build 5 (#183, #185, #186).** #183: `render.test_pdf` and `render.alignment_pdf` draw no
+`_check_outline` and their stubs have no perforation line (`outline=False`); only `calibration_pdf` (and the record
+copy, which is never fed through the printer) keep page markings. `test_pdf` draws one diagonal watermark under the
+fields and, with a test signature, `_signature_watermarks` (a small centred note per `_sig_boxes` box) instead of a
+second diagonal. `_border_note` sits `NOTE_INSET` (1/4") inside the check's top-right corner; the test print has
+none (the diagonal says it). Tests: `tests/test_v200_build5.py` (scans the content streams for a check-sized `re`).
+#185: `config.build_info()` adds `built_at_local` from `config.local_time_text()` (`datetime.astimezone()` with no
+argument, so the OS time zone of the machine running PennyWarden; no tzdata needed in the PyInstaller builds; Windows'
+full zone names are shortened to their initials). `BuildDetails` shows it with the UTC value as the tooltip and falls
+back to UTC.
+#186: `Section`, `viewState` (in-memory only, AC-SEC-006) and `LivePdfPreview` moved to / added in `checkShared.tsx`;
+the letter and envelope editors use them (scopes `pw-letter`, `pw-envelope`). `POST /api/checks/documents/{id}/preview`
+returns the sample-data PDF for unsaved settings (not audited: nothing is printed or stored; the test print stays
+audited); the envelope preview is drawn upright on an envelope-sized page with its edge (`envelope_pdf(preview=True)`)
+and follows the return-address setting. The preview iframe reloads 600 ms after the last change. `POST
+/api/checks/sample-stubs` returns `render.stub_drawing()`: `_draw_stub` run against `_StubRecorder`, which records text
+runs and lines in page inches, so `CheckPreview` draws the stubs exactly as `_draw_stub` prints them (offset from the
+check by the sheet's first check top and the centring).
+
+**2.0.0 test build 6 — letters (#176, #177).** Migration `0028`: `check_document.logo_png` (re-encoded PNG bytes; not
+encrypted - a logo isn't secret), `logo_sha256`, `logo_width`, `logo_height`. `service.normalize_logo` accepts PNG or
+JPEG by magic bytes and Pillow (`verify()`, then decode; 16-6000 px; decompression bombs refused), converts to RGBA and
+scales down to 1500 x 600 px; `set_logo` audits `CHECK_DOCUMENT_LOGO_SET` / `_REMOVED` with the fingerprint and size
+only. Routes: `POST /documents/{id}/logo` (multipart, 1 MB read limit), `POST /documents/{id}/logo/remove`,
+`GET /documents/{id}/logo` (setup only, `no-store`). `LetterConfig` adds `logo_position` (LEFT|CENTER),
+`preprinted` + `preprinted_margin` (1-4 in), `window` (NONE|LETTER|ADDRESS_PAGE), `window_return` and
+`return_dx/dy`, `payee_dx/dy` (±0.75 in) over `documents.WINDOW_PRESET` (text start and window box per window, page
+inches) with `FOLD_LINES` at 11/3 and 22/3 in. `letter_pdf(cfg, data, logo=, test=)`: the window addresses (return
+address = the letterhead lines, first in bold, up to 4; payee up to 5 lines) are drawn on the first page by an
+`onFirstPage` callback; in LETTER mode the flow starts with a spacer to just below the first fold, has no "To:" block
+and the logo moves to the top right; ADDRESS_PAGE starts with an empty first page (`Spacer` + `PageBreak`). Dashed
+window boxes and fold marks only with `test=True` (test print and live preview).
+
+**2.0.0 test build 6 — administration (#126).** Permissions `system.view` (Administrator, Auditor) and
+`system.manage` (Administrator). `config.setting_sources()` returns raw values and their source with the same
+precedence as `load_settings`, which now remembers its command-line overrides in `config.CLI_OVERRIDES`.
+`services/admin_settings.py`: `effective()` (the running value, the source, editable/locked, and `restart_required`
+when what the service would start with now differs from the running value), `save()` (allow-list `EDITABLE`, `RANGES`,
+`CHOICES`, combination checks, `SETTING_LOCKED`, password callback for `trusted_proxies`, one `SECURITY_WEAKENING`
+confirmation, `write_config()` then `SERVER_SETTINGS_CHANGED`), `rewrite_toml()` (line-based: replaces `key = …` lines
+inside `[server]`, adds missing keys at the end of the table, creates it if needed; an inline comment on a replaced line
+is dropped), `rename_organization()`, `backup_age()` (from the latest `BACKUP_CREATED` / `SCHEDULED_BACKUP_CREATED`,
+else `SYSTEM_RESTORED`, else the initialization) and `set_backup_warning_days()`. Migration `0029`:
+`workspace.backup_warning_days` (default 7). Routes in `routers/admin.py`: `GET/PUT /api/system/settings`,
+`PUT /api/system/organization`, `GET/PUT /api/system/backup-age`; `GET /api/system/backup-schedule/alert` adds `stale`
+and `stale_message` for the banner. Frontend `pages/AdminSettings.tsx`; Auditors get System/About in the menu.
+#127: migration `0030` adds `auth_session.client_ip`, set by `create_session(..., ip)` and refreshed by `deps._load`
+with `last_seen_at`. `services/sessions.py`: active = not revoked, not expired, idle timeout not passed, user of the
+workspace; `end_one` (not your own current session: `OWN_SESSION`), `end_user`, `end_everyone` (keeps the caller's).
+Routes `GET /api/system/sessions`, `POST /api/system/sessions/{ref}/end`, `/sessions/end-user`, `/sessions/end-all`.
+#128: `services/diagnostics.py` - `build()` returns the JSON file (`POST /api/system/diagnostics`, Administrators);
+`storage()` (database incl. WAL/SHM, attachments folder size and count, `shutil.disk_usage` of the data folder, Alembic
+current vs head) is shared with the health check; `recent_log_lines()` reads the rotated `fmpoc.log.N` files oldest
+first into a 1,000-line deque and `scrub()`s each line.
+#129: `diagnostics.health()` = `storage()` + `low_disk` (free < 1 GB or < 10 %); `integrity_check()` runs
+`PRAGMA integrity_check(20)` (one read transaction; WAL mode keeps writers going), logs the details and returns OK or a
+plain message. Routes `GET /api/system/health-check`, `POST /api/system/health-check/integrity`; the Administrators'
+banner endpoint (`/api/system/backup-schedule/alert`) adds `low_disk`.
+
+**2.0.0 test build 7 — maintenance mode (#130).** Migration `0031`: `workspace.maintenance_message`, `_starts_at`
+(UTC), `_set_by`, `_set_at`; on = a message is set, active once `starts_at` (if any) has passed.
+`services/maintenance.py` (`state`, `turn_on`, `turn_off`, `enforce`); global dependency `deps.enforce_maintenance`
+after `enforce_csrf`; `GET/PUT /api/system/maintenance`; `/api/system/status` adds `maintenance_mode` (sign-in page
+and the `MaintenanceBanner` for every signed-in user). The restore's existing `app.state.maintenance` is unchanged and
+covers restore (and reinitialize, #125).
+#124: `services/server_recovery.py` (server key, `write_recovery`, `passphrase_for` by file SHA-256, `list_backups`,
+`remove_recovery`), `services/restore_report.py` (`build`: the current database through the ORM against the backup's
+database by raw SQL on long-standing columns - `register_transaction.id/status/updated_at` and the allocations'
+`updated_at` - so older backups compare too; NEW / EDITED / VOIDED / DELETED; a backup whose `workspace.key_check`
+differs is compared by time only; the CSV plus a JSON summary in `restore-reports/`), `fmpoc/cli_restore.py`
+(`pennywarden restore`; `__main__` dispatches it). `BackupCreateIn.recoverable` (default true). The web restore
+writes the report before `swap_in` and adds `report` to `SYSTEM_RESTORED` and `report_summary` to the job result.
+Routes: `GET /api/system/server-backups`, `POST /api/system/server-backups/{id}/remove-recovery` (Administrator),
+`GET /api/system/restore-reports` (summary for Administrators, `can_download` for `financial.view`),
+`GET /api/system/restore-reports/{name}` (`financial.view`).
+#125: `services/reinitialize.py` (`WIPE` list children first, scoped deletes through the parents' ids; system entity
+kept; organization reminders deleted, personal ones kept with their links cleared; `app_user.last_payment_account_id`
+cleared; migration `0032` adds `workspace.reinitialized_at/_by`, `reinitialize_backup`, `reinitialize_ack_at/_by`).
+Web: `GET/POST /api/system/reinitialize` (job `reinitialize`, polled at `/api/system/reinitialize/jobs/{id}`, open during
+the pause), `GET /api/system/reinitialized` (banner), `POST /api/system/reinitialized/acknowledge`. CLI:
+`pennywarden reinitialize` in `cli_restore.py`. `test_ac_sec_023` allows `subprocess` only in `cli_restore.py` (fixed
+argument lists to `systemctl` / `sc.exe`, BR-102).
+
+**2.0.0 test build 8 — real names (#134).** Migration `0033`: `app_user.first_name`, `last_name`,
+`audit_event.actor_name` (plain `ADD COLUMN`: both tables carry the 0017 triggers). `services/users.py`:
+`clean_person_name`, `full_name`, `label` ("First Last - username"), `names_needed`, `complete_names` (all rows
+validated before any is saved); `update()` requires names when the account has none. `audit.actor_name(user)` is
+stored by `audit.record`. `InitializeIn.admin_first_name/admin_last_name`; `/api/auth/me` adds `first_name`,
+`last_name` and `names_needed` (Administrators only); `GET /api/users/names-needed`, `PUT /api/users/names`. Frontend:
+`pages/NamesGate.tsx` (shown by `App` before the shell while `names_needed > 0`), Users list columns, search and sort,
+"First Last - username" in the edit dialog title and the audit log. The backup list, the reinitialize banner and the
+restore report's "entered by" use the same label.
+#133: `services/audit_readable.py` - `action_label` (explicit `ACTION_LABELS`, else the code in words, so a new action
+never breaks the screen; a test scans the code for action codes), `object_label`, `field_label` (`FIELD_LABELS`, else
+words; `_cents` stripped), `fmt` (cents and `MONEY_KEYS` decimal strings as currency, Yes/No, codes in words, ISO
+times), `labels_for` (written by `audit.record` into `audit_event.labels`, migration `0034`, "kind:id" -> name for
+`ID_KINDS`), `readable()` (summary "who: what — target", kind create/update/remove/event/withheld, `changes()` with
+only changed fields for updates and sub-tables for lists of rows). `GET /api/audit-events` adds `readable` to every
+item; `GET /api/audit-events/meta` lists the codes present with readable names for the filters.
+#131: `services/security_overview.py` - `overview()` builds the items (`key`, `title`, `value`, `status`
+attention|ok|info, `note`) from the users, `UserMfa.enabled_at`, `recovery.is_locked`, `admin_settings.backup_age`,
+the running settings and the request's scheme; `GET /api/system/security-overview` (`system.view`). Frontend
+`SecurityOverviewPanel` in `pages/AdminSettings.tsx`.
+
+**2.0.0 test build 10 — Windows server installer (#187).** `packaging/windows/install-windows-server.ps1` (Windows
+PowerShell 5.1+, also pwsh): resolves the release like `install.sh` (`-Channel auto|production|test`, `-Version`;
+only releases that have the script), downloads `PennyWarden-windows-x64.zip`, `nssm.exe` and `SHA256SUMS.txt` and
+checks them, Caddy `$CaddyVersion` against `$CaddySha256`; stops the service; on an upgrade copies the data folder to
+`<DataDir>-upgrade-backups\<stamp>` (ACL: SYSTEM and Administrators only, set before the copy); moves the package
+into `<InstallDir>\<version>` and re-points the `current` junction; writes `config.toml` only if absent; creates or
+updates the NSSM service (python.exe `-I app\launch.py --mode server --no-browser --data-dir`, auto start, restart,
+stdout/stderr to `logs\service.log`, rotated), sets `obj= "NT SERVICE\PennyWarden"` with `sc.exe`, and re-sets the data
+folder ACL (`icacls /inheritance:r`, SYSTEM and Administrators full, the service modify); with `-Domain` installs Caddy
+into `<InstallDir>\caddy` (Caddyfile with `reverse_proxy 127.0.0.1:<port>`, `XDG_DATA_HOME` there so the certificates
+stay with it) as the NSSM service `Caddy` under LocalSystem and opens 80/443; waits for `/api/health` and on failure
+puts the previous junction target back; keeps one previous version. `build.yml`: the release includes the script; the
+Windows job downloads `nssm-2.24.zip` (SHA-1 check), attaches `nssm.exe` and runs
+`packaging/windows/test_server_installer.ps1` (install, upgrade, uninstall under Windows PowerShell 5.1).
+
+**2.0.0 test build 11 — Payments Setup templates (#217).** No migration. `service.create_document(kind, name, preset)`:
+without a name the template gets `free_document_name(kind, base)` — the first of `base`, `base 2`, … unused by any
+template of the kind, deactivated ones included (they are never deleted, BR-001); a typed name must still be unique
+(409 `DUPLICATE_NAME`). Preset `WINDOW` (letters only) = default letter config with `window = LETTER`, name *Window
+envelope letter*. `duplicate_document` (`POST /api/checks/documents/{id}/duplicate`, `checks.setup`) copies the config
+and logo into a new active template named `<name> copy[ N]` (the original name cut to 71 characters so the suffix
+fits 80), default only if its kind has no active default, within `MAX_DOCUMENTS`; audited as
+`CHECK_DOCUMENT_CREATED` with `duplicated_from` and `logo_sha256`. Previews: `services/checkprint/raster.py` renders
+the sample PDF with PDFium (`pypdfium2`, imported lazily under a lock; up to 3 pages stacked, longer side 1600 px) and
+`POST /api/checks/documents/{id}/preview-image` returns the PNG (`no-store`, `X-Page-Count`), or 501
+`PREVIEW_UNAVAILABLE` when PDFium can't load (the macOS wheel needs macOS 13+); the PDF endpoint `/preview` stays as
+the fallback. Frontend `LivePreview` (`checkShared.tsx`) shows the PNG in an `<img>` (Safari renders blob PDFs in an
+inline frame blank), and on `PREVIEW_UNAVAILABLE` the PDF frame plus an *Open preview* link. `CheckDocuments.tsx`:
+*Duplicate*, *New window-envelope letter*, the window-envelope pointer in the Envelopes section and the envelope
+editor (`onOpen(letter, "window")` opens the letter at its Window envelope section), name field focused and selected
+for new/duplicated templates. Packaging: the PyInstaller specs collect `pypdfium2_raw`'s library and data;
+`scripts/third_party_notices.py` now includes every file in a PEP 639 `licenses/` folder (PDFium's dependency
+licenses). Tests: `tests/test_v200_build11.py`, E2E "#217".
+
+**2.0.0 test build 11 — UI standards (#214).** No backend change. `styles.css`: `--control-h` (34 px),
+`--control-h-sm` (26 px) and `--label-h` (20 px = `.field-label` line-height 17 px + the 3 px `.field` gap) on
+`:root`; inputs (not checkbox/radio/file/range/colour) and single selects get `height: --control-h`, buttons (not
+`.small`/`.link`/`.linklike`/icon/nav buttons) `min-height: --control-h`, small controls `--control-h-sm`. Rows of
+fields (`.row`, `.filters`, `.page-head`, `.report-options` that have a `.field` child, also through a `GuardedForm`'s
+`fieldset.form-guard` with `display: contents`) use `align-items: flex-start`; their direct button / `.check` children
+get `margin-top: --label-h` (small ones `+ (--control-h - --control-h-sm) / 2`), checkboxes `min-height: --control-h`
+(replaces the old `.form-row` 19 px offsets). Rows with no fields centre their items. `.content` exposes its padding
+as `--pad-x` / `--pad-y`; `.sticky-actions` sticks at `bottom: -pad-y` with negative margins and matching padding so
+it covers the content area's padding (content used to show in the 16 px under and the 20 px beside the bar),
+`z-index: 7` (above a pinned preview), opaque `--bg`. The pattern input's `<label>` uses the field-label style. E2E
+"#214" (`layoutViolations`) measures every visible form row on 20 screens and forms and checks that the area under
+the editors' action bar is the bar; screenshots in `e2e-screenshots/forms/`. Reference: `docs/ui-standards.md`.
+
+**2.0.0 test build 11 — row actions menu (#215; icon ⋯ decided by Kyle 2026-10-13).** `RowMenu` (`components.tsx`):
+a `<button class="small row-menu-btn">` (⋯, `aria-label`/`title` "Actions for <name>", `aria-haspopup="menu"`,
+`aria-expanded`, `aria-controls` while open) and a `role="menu"` list portalled to `<body>` with `position: fixed` at the
+button (above it near the bottom of the window) so a scrolling `.table-wrap` can't clip it; items are
+`role="menuitem"` buttons with `tabIndex=-1` and roving focus. Escape stops propagation so a surrounding dialog stays
+open. Falsy actions are dropped and `danger` ones sorted last behind a divider. Applied to Users, Budgets
+(`BudgetTable`), Bank Accounts, Entities, Payments Setup (check styles, signers — the image upload is a hidden file input
+clicked from the menu — letters, envelopes), fundraiser buckets, reminders (`ReminderItem`: Edit visible; Resolve…,
+Reopen, Delete in the menu) and System/About sessions. E2E: `rowAction()` helper; test "#215" (keyboard, focus return,
+outside click, every Users row).
+
+**2.0.0 test build 11 — System/About tabs (#216).** `pages/About.tsx`: `ABOUT_TABS` (`about`, `general`,
+`settings`, `backups`, `security`, `health`, `advanced`), the open tab from the path (`/about` or `/about/<tab>`, App
+routes both to `About`); visibility — About everyone; General and System health `system.manage`; Settings and Security
+`system.view` (Administrator, Auditor; the panels stay read-only for Auditors as before); Backups and Advanced the
+Administrator (`restore_max_mb` present) / `system.manage`. A hidden or unknown tab is replaced by `/about`. `PageTabs`
+(WAI-ARIA tabs, automatic activation, ←/→/Home/End); panels unchanged, only regrouped. The backup-failed and
+backup-age banners link to `/about/backups`, low disk to `/about/health`; the About API's backup notice points to
+System/About → Backups. The server's SPA fallback already serves `/about/<tab>` on reload. Docs updated to the new
+locations. E2E: `aboutTab()` helper; test "#216" (addresses, reload, Back, keyboard, unknown tab, banner links via a
+mocked alert, Auditor tabs); the #214 audit covers every tab.
+
+**2.0.0 test build 12 — audit log export (#188; moved into 2.0.0 by Kyle 2026-10-14).** `routers/audit_log.py`: the
+list's filters became a `Filters` model and `_query` / `_ordered`, shared by `GET /api/audit-events` and the new
+`POST /api/audit-events/export` (`ExportIn`: filters + `format` csv|pdf + `time_zone`, `extra=forbid`). Every
+matching entry goes through `_out` (so `readable` and the Administrator withholding are identical to the screen);
+over `audit_export.MAX_EXPORT` (10,000) → 422 `EXPORT_TOO_LARGE`, nothing recorded. The export is audited before the
+file is built (`AUDIT_LOG_EXPORTED`, object `audit_log`, category SECURITY, `{format, entries, filters, time_zone}`).
+`services/audit_export.py`: `to_csv` (UTF-8 BOM; columns Event #, Local time (<zone>), UTC time, Actor, Category,
+Action, Object, Object #, Summary, What changed — an update as `Field: before → after (changed)`, a new record as
+`Field: value`, removed as `Field: value (before)`, empty fields left out, line tables as `Line n: Column: value; …`;
+every cell through `reports._csv_safe`) and `to_pdf` (reportlab, Letter landscape, Vera fonts: header with exported
+by/when/zone/filters/count, then per entry the action, summary, time · actor · category · event #, and the same
+Field/Before/After/changed table as the screen; footer with organization and page). Frontend `AuditLog.tsx`: *Export
+CSV* (downloads) and *Printable PDF* (`PdfViewer` with Print/Open/Download) send the current filters and the browser's
+time zone; the list reloads to show the export entry. Tests: `tests/test_v200_build12.py`, E2E "#188".
+The PDF never wraps an entry's change table in another table (a one-cell table can't split, so a long entry broke the
+layout): the table is indented with `hAlign`, repeats its header across pages, and a single cell is cut at 2,500
+characters with a pointer to the CSV, which holds everything.
+
+**2.0.0 test build 12 — dependencies (Dependabot #223, #224, folded in by Kyle's request 2026-10-14).** `requirements.txt`:
+fastapi 0.143.0, pydantic 2.14.0 + **pydantic_core 2.50.0** (Dependabot bumped pydantic but not its pinned core, so
+#224's install failed), SQLAlchemy 2.1.4, pypdf 6.20.0, pycparser 3.11 — resolved in a clean Python 3.12 environment
+(no new transitive packages; wheels for Windows x64, Linux x64/arm64 and macOS arm64 checked). Frontend dev tools:
+@playwright/test 1.64.0, vite 6.4.4 (lockfile identical to #223). Notices regenerated with Python 3.12.
+
+**2.0.0 test build 13 — release-candidate polish from testing (#230; only polish from build 11 on, Kyle
+2026-10-14).** No migration.
+- *Reinitialize:* System/About → Advanced's section is called *Reinitialize* (no second heading).
+- *Maintenance mode:* `services/maintenance.READ_ONLY_POSTS` lets POSTs that change nothing through for everyone
+  (Financial Flow Report review/PDF, audit log export, account number reveal, fundraiser filter preview). In the
+  frontend `App.tsx` `can()` keeps only `READ_PERMISSIONS` (`*.view*`, `bank_account.reveal`) while paused for a
+  non-Administrator, so screens drop their change actions (New payment on Payments, Print check…, reminder actions …); a 503
+  `MAINTENANCE` answer dispatches `pw:maintenance-changed` so the shell reloads the state at once. E2E checks pages
+  for change buttons while paused (`pausedActions`).
+- *Host commands:* `install-server.sh` writes `/usr/local/bin/pennywarden`, a wrapper that execs
+  `/opt/pennywarden/current/pennywarden` (not a symlink, so it always runs the current release; a file not written by
+  the installer is left alone). The portable launcher resolves a symlink to itself (`readlink -f`).
+  `cli_restore.host_command(settings)` / `restore_command()` give the command for the install type (Linux server
+  `sudo pennywarden`, Windows server `PennyWarden.cmd` as Administrator, local without sudo, container), used by the
+  undo text on Reinitialize and the restore hints. Run as root, `restore`/`reinitialize` already handed files back with
+  `match_ownership()`; `reset-password` and `reset-mfa` now do too (`__main__._own_again`, database and logs), so a
+  `sudo` run can't leave a root-owned SQLite journal the service can't write.
+- *Letters and envelopes as drafts:* *New letter / envelope / window-envelope letter* and *Duplicate* open the editor
+  on `GET /api/checks/documents/draft?kind=&preset=&duplicate_of=` (the config only, nothing stored); its previews and
+  test print go to `POST /api/checks/documents/draft/preview|preview-image|test-print` with `{kind, config,
+  logo_from}`; the first *Save* is `POST /api/checks/documents` with `{kind, name, config, duplicate_of}` (a duplicate's
+  logo is copied then). Leaving an unsaved draft asks first; nothing is created or audited until Save. The logo can be
+  added once the letter is saved.
+- *Over-scroll:* `.content { position: relative }` — absolutely positioned descendants (the hidden file inputs of the
+  editors) were measured against the page and stretched it below the last row.
+- *Scheduled-backup folders on the Linux server:* new installs write `backup_folders = []` to `config.toml`; the
+  installer reads the list (TOML list; a string is split on `:`) and writes the drop-in
+  `/etc/systemd/system/pennywarden.service.d/backup-folders.conf` with one quoted `ReadWritePaths="-<folder>"` per
+  folder (the service runs with `ProtectSystem=strict`; `-` = a missing folder doesn't stop it), skipping folders under
+  `/home`, `/root` or `/run/user` (`ProtectHome`) with a comment; the drop-in is removed when the list is empty. Run the
+  installer again after changing the list.
+- *Safari print previews:* Safari draws a PDF in an inline frame blank, so the print screens (check, alignment test,
+  cover letter, envelope, test prints) and the audit log PDF showed nothing. Every such response now keeps the PDF in
+  `services/pdf_preview.py` (memory, per user, 15 minutes, at most 40 / 40 MB) and names it in `X-Preview-Token`;
+  `GET /api/pdf-preview/{token}` (`routers/pdf_preview.py`) returns a PNG of it via `raster.pdf_to_png` (4 pages,
+  1400 px). Nothing is generated twice, so printing is still recorded once. Frontend: `api.requestBlob` /
+  `withPreviewToken` put the token on the Blob, `usePdf` keeps it, and `PdfViewer` in Safari (`detectBrowser()`)
+  shows the picture instead of the frame and makes **Print…** open the PDF in a new tab, where Safari shows and prints
+  it (printing a blank frame could waste a check); without a picture it falls back to the frame and the new-tab hint.
+  Other browsers are unchanged. E2E "#230" runs the print screen with Safari's user agent.
+- *Register (product owner, 2026-10-14):* no *New payment* button in the toolbar - a new payment starts on **Payments**.
+  A withdrawal's details had both *Print check…* (dialog over the register) and *Create payment…* (the
+  `/payments?txn=<id>` page with the details locked, then the same dialog); now there is one button, *Create payment…*,
+  or *Reprint check or letter…* once `check_printed`, opening `PrintCheckDialog` over the register. The `?txn=` page and
+  `LockedTxn` are gone (an old link shows the Payments page). For a printed check (`is_reprint`) with letter or
+  envelope templates (`has_documents`) `PrintCheckDialog` shows two closed `<details>` sections (*Reprint the check* →
+  `PrintForm`; *Reprint the letter or envelope* → `EnclosuresPanel`, no check printed or recorded), each mounted only
+  while open. `EnclosuresPanel` (first print and reprint): the letter list carries `window`; with a window-envelope
+  letter included the envelope part is replaced by a note (*Print an envelope anyway* shows it), a standard letter
+  shows it again.
+- *Wizard:* the first-name field's error said *Last name is required.* (`clean_person_name` now checks the field name's
+  ending).
+- *Docs and site:* the CHANGELOG's 13 test-build sections became one 2.0.0 entry by area; every document in `docs/`
+  checked against 2.0.0; `scripts/demo_data.py` updated for the security questions (1.8.0) and real names (2.0.0) and
+  sets up the Payments module (a voucher style with a made-up signature); `readme_screenshots.mjs` adds `payment.png`
+  and `check-print.png`, which the README and pennywarden.org (new *Payments* section) show.
+Tests: `tests/test_v200_build13.py`, `test_v200_maintenance.py`, `test_v200_real_names.py`; E2E "#130" (pages
+without change actions while paused) and "#217" (drafts kept only on Save).
+
 **1.10.0 Update notification (issue #58; channel decided 2026-10-09).** Migration `0024`: `update_check` (one row).
 `services/updates.py`: `channel(settings)` - setting `update_channel` (`auto` → from `build_info.json`: `main` →
 stable, `test` → test, anything else / no build info → none); `check(app, force)` - due after 24 h (6 h after an error),
@@ -77,7 +444,7 @@ runs once; the latest `onClose` is kept in a ref for Escape. E2E "#106" types th
 `site/` (static HTML/CSS/JS, CSP `default-src 'self'`, no third-party resources; `site.js` fills the download
 buttons from `releases.json` with `textContent`/attributes only and accepts only `https://github.com/` URLs),
 `scripts/release_data.py` (GitHub releases → `releases.json` / `releases-test.json`: tags `vX.Y.Z` non-prerelease =
-stable, `vX.Y.Z-test.N` prerelease = test; numeric version order; notes cut at the install footer the build adds;
+stable, `vX.Y.Z-test.N` prerelease = test; numeric version order; notes cut at the install footer the build adds (2.0.0 #207: test builds put that block first, before a rule - `HEADER` strips it);
 downloads classified by file name with SHA-256 from each release's `SHA256SUMS.txt`), `scripts/build_site.sh`,
 `.github/workflows/pages.yml` (always checks out `main`; `upload-pages-artifact` + `deploy-pages`). `build.yml` gains
 a `site` job after `publish` that runs `gh workflow run pages.yml --ref main` (a release created with the workflow

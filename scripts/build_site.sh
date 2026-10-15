@@ -12,7 +12,7 @@ rm -rf "$OUT"
 mkdir -p "$OUT/screenshots"
 cp "$ROOT"/site/index.html "$ROOT"/site/site.css "$ROOT"/site/site.js "$OUT/"
 cp "$ROOT/frontend/public/favicon.svg" "$OUT/favicon.svg"
-for s in dashboard budgets register audit-report-transaction fundraiser; do
+for s in dashboard budgets register audit-report-transaction fundraiser payment check-print; do
   cp "$ROOT/docs/screenshots/readme/$s.png" "$OUT/screenshots/"
 done
 if [ -z "$API" ]; then

@@ -88,6 +88,8 @@ async function request<T>(method: string, url: string, body?: unknown, isForm = 
   }
   if (!res.ok) {
     const err = new ApiError(res.status, data);
+    // build 13: maintenance mode came on while this page was open - the screens hide their change actions
+    if (res.status === 503 && data?.error?.code === "MAINTENANCE") window.dispatchEvent(new CustomEvent("pw:maintenance-changed"));
     if (res.status === 401 && !url.startsWith("/api/auth/login")) {
       // v1.5.0: MFA_REQUIRED means "signed in, second step outstanding" - the app shows the two-step screen
       window.dispatchEvent(new CustomEvent("fm:unauthenticated", { detail: { code: data?.error?.code } }));
@@ -98,7 +100,7 @@ async function request<T>(method: string, url: string, body?: unknown, isForm = 
 }
 
 /** 1.8.0 (#106): a POST that returns a file (e.g. a PDF made from a reviewed form); errors are thrown like api.post. */
-async function requestBlob(url: string, body: unknown): Promise<Blob> {
+async function requestBlob(url: string, body: unknown): Promise<PdfBlob> {
   const headers: Record<string, string> = { Accept: "application/pdf, application/json", "Content-Type": "application/json" };
   if (csrfToken) headers["X-CSRF-Token"] = csrfToken;
   const res = await fetch(url, { method: "POST", headers, body: JSON.stringify(body), credentials: "same-origin" });
@@ -109,7 +111,16 @@ async function requestBlob(url: string, body: unknown): Promise<Blob> {
     if (res.status === 401) window.dispatchEvent(new CustomEvent("fm:unauthenticated", { detail: { code: data?.error?.code } }));
     throw new ApiError(res.status, data);
   }
-  return res.blob();
+  return withPreviewToken(res, await res.blob());
+}
+
+/** 2.0.0 build 13 (#230): a PDF the server keeps a picture of for a few minutes (Safari shows an inline PDF blank);
+ * the token travels on the Blob so usePdf / PdfViewer can ask for the picture (`/api/pdf-preview/<token>`). */
+export type PdfBlob = Blob & { previewToken?: string };
+export function withPreviewToken(res: Response, blob: Blob): PdfBlob {
+  const token = res.headers.get("X-Preview-Token");
+  if (token && /^[A-Za-z0-9_-]{16,64}$/.test(token)) (blob as PdfBlob).previewToken = token;
+  return blob;
 }
 
 export const api = {
@@ -119,6 +130,7 @@ export const api = {
   patch: <T = any>(url: string, body?: unknown) => request<T>("PATCH", url, body ?? {}),
   put: <T = any>(url: string, body?: unknown) => request<T>("PUT", url, body ?? {}),
   delete: <T = any>(url: string) => request<T>("DELETE", url),
+  postForm: <T = any>(url: string, fd: FormData) => request<T>("POST", url, fd, true), // 2.0.0 (#159)
   upload: <T = any>(url: string, file: File) => {
     const fd = new FormData();
     fd.append("file", file);

@@ -58,6 +58,15 @@ PERMISSIONS: dict[str, set[str]] = {
     "budget.delete": {BUDGET_ADMIN},
     # 1.7.3 (#53): delete (status Deleted) an uncleared transaction instead of voiding it
     "transaction.delete": {REGISTER_ADMIN},
+    # 2.0.0 (#156): Payments module (optional). Administrators set up check styles, signers and limits and test
+    # print with dummy data only (BR-003). Only Register Users print checks (and, from build 2, create payments);
+    # Budget Managers and Auditors have no access to the module.
+    "checks.setup": {ADMINISTRATOR},
+    "checks.print": {REGISTER_USER},
+    # 2.0.0 (#126-#129): System/About administration. Auditors may view the effective settings and the sessions
+    # (read-only, BR-004); everything else is the Administrator's.
+    "system.view": {ADMINISTRATOR, AUDITOR},
+    "system.manage": {ADMINISTRATOR},
 }
 
 

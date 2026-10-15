@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api } from "../api";
-import { ErrorBox, Field, Loading, Modal, GuardedForm } from "../components";
+import { ErrorBox, Field, Loading, Modal, GuardedForm, RowMenu } from "../components";
 import { useMe } from "../App";
 
 const ROLES: Record<string, [string, string][]> = {
@@ -20,6 +20,8 @@ export default function Users() {
   const [mfaReset, setMfaReset] = useState<any | null>(null);
   const [qReset, setQReset] = useState<any | null>(null); // 1.8.0 (#113)
   const [err, setErr] = useState<unknown>(null);
+  const [q, setQ] = useState("");                       // 2.0.0 (#134): search
+  const [byName, setByName] = useState(false);          // sort by last name, then first name
   const load = () => api.get("/api/users").then(setUsers, setErr);
   useEffect(() => {
     load();
@@ -27,6 +29,10 @@ export default function Users() {
   }, []);
   if (!users) return <><ErrorBox error={err} /><Loading /></>;
   const manage = can("users.manage");
+  const needle = q.trim().toLowerCase();
+  const shown = users
+    .filter((u) => !needle || [u.first_name, u.last_name, u.username, u.display_name, u.email].some((v) => (v || "").toLowerCase().includes(needle)))
+    .sort((a, b) => (byName ? `${a.last_name || "\uffff"} ${a.first_name || ""}`.localeCompare(`${b.last_name || "\uffff"} ${b.first_name || ""}`, undefined, { sensitivity: "base" }) : 0));
   return (
     <div>
       <div className="page-head">
@@ -34,11 +40,17 @@ export default function Users() {
         {manage ? <button className="primary" onClick={() => setEdit({})}>New user</button> : null}
       </div>
       <ErrorBox error={err} />
+      <div className="row form-row">
+        <Field label="Search users"><input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Name, username or email" /></Field>
+        <label className="check"><input type="checkbox" checked={byName} onChange={(e) => setByName(e.target.checked)} /> Sort by last name</label>
+      </div>
       <table className="table">
-        <thead><tr><th>Username</th><th>Display name</th><th>Email</th><th>Security domain</th><th>Roles</th><th>Status</th><th>Two-step</th><th>Security questions</th>{manage ? <th /> : null}</tr></thead>
+        <thead><tr><th>Last name</th><th>First name</th><th>Username</th><th>Display name</th><th>Email</th><th>Security domain</th><th>Roles</th><th>Status</th><th>Two-step</th><th>Security questions</th>{manage ? <th /> : null}</tr></thead>
         <tbody>
-          {users.map((u) => (
+          {shown.map((u) => (
             <tr key={u.id}>
+              <td>{u.last_name || (u.name_needed ? <span className="badge red" title="An Administrator must enter this account's first and last name">name needed</span> : null)}</td>
+              <td>{u.first_name}</td>
               <td>{u.username}</td><td>{u.display_name}</td><td>{u.email}</td><td>{u.security_domain}{u.security_domain === "COMBINED" && mode === "server" ? <div className="badge red" title="Combined roles are for local installs. Choose roles of one security domain.">Local-only roles</div> : null}</td><td>{u.roles.join(", ")}</td>
               <td>
                 {u.active ? "Active" : "Disabled"}
@@ -50,9 +62,11 @@ export default function Users() {
               {manage ? (
                 <td className="actions-cell">
                   <button className="small" onClick={() => setEdit(u)}>Edit</button>
-                  <button className="small" onClick={() => setReset(u)}>Reset password</button>
-                  {u.mfa_enabled ? <button className="small" onClick={() => setMfaReset(u)}>Reset two-step</button> : null}
-                  {u.security_questions_set ? <button className="small" onClick={() => setQReset(u)}>Reset security questions</button> : null}
+                  <RowMenu name={u.username} actions={[
+                    { label: "Reset password", onClick: () => setReset(u) },
+                    u.mfa_enabled && { label: "Reset two-step", onClick: () => setMfaReset(u) },
+                    u.security_questions_set && { label: "Reset security questions", onClick: () => setQReset(u) },
+                  ]} />
                 </td>
               ) : null}
             </tr>
@@ -78,6 +92,7 @@ function UserForm({ user, ownRolesLocked = false, isSelf = false, local = false,
   const isNew = !user.id;
   const [f, setF] = useState({
     username: user.username || "", email: user.email || "", display_name: user.display_name || "", password: "",
+    first_name: user.first_name || "", last_name: user.last_name || "",
     security_domain: user.security_domain || "FINANCIAL", roles: (user.roles || []) as string[], active: user.active ?? true,
   });
   const [err, setErr] = useState<unknown>(null);
@@ -92,9 +107,11 @@ function UserForm({ user, ownRolesLocked = false, isSelf = false, local = false,
     try {
       if (isNew) {
         await api.post("/api/users", { username: f.username, email: f.email, display_name: f.display_name, password: f.password,
+          first_name: f.first_name, last_name: f.last_name,
           security_domain: f.security_domain, roles: f.roles });
       } else {
         await api.patch(`/api/users/${user.id}`, { email: f.email, display_name: f.display_name,
+          first_name: f.first_name, last_name: f.last_name,
           security_domain: f.security_domain, roles: f.roles, active: f.active });
       }
       onSaved();
@@ -103,10 +120,14 @@ function UserForm({ user, ownRolesLocked = false, isSelf = false, local = false,
     }
   };
   return (
-    <Modal title={isNew ? "New user" : `Edit ${user.username}`} onClose={onClose}>
+    <Modal title={isNew ? "New user" : `Edit ${user.label || user.username}`} onClose={onClose}>
       <GuardedForm onSubmit={submit}>
         <ErrorBox error={err} />
         {isNew ? <Field label="Username"><input required value={f.username} onChange={(e) => setF({ ...f, username: e.target.value })} /></Field> : null}
+        <div className="row fields">
+          <Field label="First name"><input required maxLength={60} value={f.first_name} onChange={(e) => setF({ ...f, first_name: e.target.value })} /></Field>
+          <Field label="Last name"><input required maxLength={60} value={f.last_name} onChange={(e) => setF({ ...f, last_name: e.target.value })} /></Field>
+        </div>
         <Field label="Email"><input required type="email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} /></Field>
         <Field label="Display name" hint="The name shown in the top bar for this user. At least 3 characters."><input value={f.display_name} onChange={(e) => setF({ ...f, display_name: e.target.value })} /></Field>
         {isNew ? <Field label="Initial password" hint="At least 12 characters including a letter and a digit."><input required type="password" autoComplete="new-password" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} /></Field> : null}

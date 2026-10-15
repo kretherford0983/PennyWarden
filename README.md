@@ -4,7 +4,7 @@
 organizations and similar bodies that keep a checkbook, a budget and an annual audit. PennyWarden runs on your own
 Windows PC, Mac or Linux server; your data stays in one folder you control. No subscription, no cloud account.
 
-Current release: **1.10.0** (called *Fundwarden* from 1.6.6 to 1.6.8) · [pennywarden.org](https://pennywarden.org) · [Download](https://github.com/kretherford0983/PennyWarden/releases/latest) ·
+Current release: **2.0.0** (called *Fundwarden* from 1.6.6 to 1.6.8) · [pennywarden.org](https://pennywarden.org) · [Download](https://github.com/kretherford0983/PennyWarden/releases/latest) ·
 [Install](#install) · [Documentation](#documentation) · [Changelog](CHANGELOG.md)
 
 <p align="center">
@@ -12,6 +12,13 @@ Current release: **1.10.0** (called *Fundwarden* from 1.6.6 to 1.6.8) · [pennyw
 </p>
 
 <sub>All screenshots show a made-up organization (`scripts/demo_data.py`).</sub>
+
+> **New in 2.0 — the Payments module.** Enter a bill once and PennyWarden records it in the register and prints its
+> check on your own printer, with a cover letter listing the invoices and a #10 envelope
+> ([more below](#payments-and-check-printing-optional-payments-module-200)). Also new: tools for the people who run
+> PennyWarden — System/About in tabs, a security overview, maintenance mode, restore from the server's command line,
+> a readable audit log you can export, and a one-step Windows server installer.
+> [What's new in 2.0](docs/user-guide-v2.0.md) · [Changelog](CHANGELOG.md)
 
 ## Why PennyWarden
 
@@ -73,6 +80,21 @@ result, a breakdown by offering (tickets, auction, food…), the cash float, a f
   <img src="docs/screenshots/readme/count-sheet-page.png" alt="The printable cash count sheet" width="270">
 </p>
 
+### Payments and check printing <sub>(optional Payments module, 2.0.0)</sub>
+
+Print checks on printable check stock: the payee, the amount in numbers and in words (always calculated from the
+transaction, with a protective fill), the date, a memo built from the transaction, and the signature. Each style is
+set up once with a preview drawn to scale and test prints on plain paper; a single last check can be fed through
+the manual feed. The number on the loaded check is confirmed before every print, spoiled checks are recorded as
+VOID, and a record copy is attached to the transaction. **Payments** enter a bill and print its check in one go,
+with an optional **cover letter** listing the invoices and a **#10 envelope**; **voucher checks** carry vendor and
+office stubs, and styles can have **two signature lines** ([docs/check-printing.md](docs/check-printing.md)).
+
+<p align="center">
+  <img src="docs/screenshots/readme/payment.png" alt="New payment: the payee, two invoices and the check amount spelled out in words as it is typed" width="420">
+  <img src="docs/screenshots/readme/check-print.png" alt="The print screen: a voucher check drawn to scale with the payee, the amount in words, the memo and the signature line" width="420">
+</p>
+
 ### Reminders
 
 Personal reminders and reminders for the whole organization, shown on the dashboard and behind the bell until
@@ -91,11 +113,13 @@ return every quarter, renew the insurance every year — so duties survive a cha
 | **Reports** | End of Year Audit PDF with signature page and account start/end pages; Fiscal Year Close report; Entity activity report with CSV export; fundraiser report; cash count sheet |
 | **Dashboard** | Bank balances, budget progress, items needing attention, charts; each user chooses and arranges their own sections; light and dark mode |
 | **Fundraisers** | Budgets, offerings ("buckets"), cash float, exclusions, documents, cancelled events, events spanning two Fiscal Years |
+| **Payments module** | Check styles from presets, field layout with a scale preview, built-in fonts, amounts in words with protective fill, memo patterns, encrypted signatures with an amount limit, two signature lines, voucher checks with stubs, sheet and single-check feed, reprint and spoiled checks, record copies, per-user printer adjustment; payments, cover letters, #10 envelopes, handwritten checks |
 | **Reminders** | Personal and organization reminders, show-before days, links to a Fiscal Year, budget or account, repeating organization reminders |
 | **People and vendors** | Entities for organizations and individuals, a person's position (offered as the title when they sign) |
 | **Roles** | Administrator, Budget Manager, Budget User, Register User and read-only Auditor; administration is kept strictly apart from financial work |
-| **Security** | Argon2id passwords, two-step verification (TOTP) with recovery codes, server-side sessions, CSRF protection, AES-256-GCM encrypted bank account numbers, an append-only audit log of every change |
-| **Your data** | One folder on your machine; encrypted backup and restore from inside the application; moves between Windows, Mac and Linux; upgrades never touch data or configuration |
+| **Administration** | System/About in tabs: settings with their sources (editable on a server), organization name, optional modules, signed-in sessions, security overview, system health and diagnostics, maintenance mode, reinitialize with a safety backup |
+| **Security** | Argon2id passwords, two-step verification (TOTP) with recovery codes, server-side sessions, CSRF protection, AES-256-GCM encrypted bank account numbers, an append-only audit log of every change that reads in plain words and exports to CSV and PDF |
+| **Your data** | One folder on your machine; encrypted backups by hand or on a schedule, restore from inside the application or the server's command line; moves between Windows, Mac and Linux; upgrades never touch data or configuration |
 | **Where it runs** | Single user on a Windows PC or a Mac (Apple Silicon); several users on a Linux or Windows server behind HTTPS, or in Docker |
 
 <p align="center"><img src="docs/screenshots/readme/dashboard-dark.png" alt="The dashboard in dark mode" width="600"></p>
@@ -107,12 +131,12 @@ return every quarter, renew the insurance every year — so duties survive a cha
 | **Mac with Apple Silicon (single user)** | Download `PennyWarden-<version>-macos-arm64.dmg` from the [latest release](https://github.com/kretherford0983/PennyWarden/releases/latest), drag PennyWarden to Applications and open it. First start: *System Settings → Privacy & Security → Open Anyway* — [step by step with pictures](docs/install-macos.md). |
 | **Windows (single user)** | Download `PennyWarden-<version>-windows-x64.exe` from the [latest release](https://github.com/kretherford0983/PennyWarden/releases/latest) and double-click it. |
 | **Linux server (multiple users)** | `curl -fsSL https://github.com/kretherford0983/PennyWarden/releases/latest/download/install.sh \| sudo bash` — installs or upgrades a systemd service; put an HTTPS reverse proxy in front of it. |
-| **Windows server (multiple users)** | `PennyWarden-windows-x64.zip` in server mode behind HTTPS, started with Windows by Task Scheduler — [step by step](docs/install-windows-server.md). |
+| **Windows server (multiple users)** | `install-windows-server.ps1` from the latest release (PowerShell as Administrator) installs or upgrades PennyWarden as a Windows service, with HTTPS through Caddy or behind a Cloudflare Tunnel — [Windows server guide](docs/install-windows-server.md). |
 
 The first start shows the **Initialization Wizard** (organization name, administrator account). There are no
 default credentials. Details, HTTPS, Docker and moving data between machines: [docs/deployment.md](docs/deployment.md).
 Upgrades never touch your data or configuration: [docs/upgrade.md](docs/upgrade.md). **Make encrypted backups
-regularly** (System/About → Backup / Restore) and keep them off the machine: [docs/backup-restore.md](docs/backup-restore.md).
+regularly** (System/About → Backups → Backup / Restore) and keep them off the machine: [docs/backup-restore.md](docs/backup-restore.md).
 
 PennyWarden is provided without warranty (see [License](#license)). It is a record-keeping tool, not accounting,
 tax or legal advice.
@@ -125,7 +149,8 @@ report) · [1.4](docs/user-guide-v1.4.md) (audit signatures, two-step verificati
 [1.5](docs/user-guide-v1.5.md) (dashboard layout, installers) · [1.6](docs/user-guide-v1.6.md) (fundraisers,
 reminders) · [1.7](docs/user-guide-v1.7.md) (the new name) · [1.8](docs/user-guide-v1.8.md) (budget history, Financial
 Flow Report, forgotten passwords) · [1.9](docs/user-guide-v1.9.md) (one person on a local install, automatic backups) ·
-[1.10](docs/user-guide-v1.10.md) (pennywarden.org, update notification).
+[1.10](docs/user-guide-v1.10.md) (pennywarden.org, update notification) · [2.0](docs/user-guide-v2.0.md) (check printing; full
+guide: [docs/check-printing.md](docs/check-printing.md)).
 
 **Running PennyWarden**
 - [docs/deployment.md](docs/deployment.md) — local and server installation, HTTPS reverse proxy, Docker, data portability
@@ -140,6 +165,7 @@ Flow Report, forgotten passwords) · [1.9](docs/user-guide-v1.9.md) (one person 
 - [docs/branching.md](docs/branching.md) — branches, builds, releases and versioning (`Breaking.Major.Minor`)
 - [docs/product-site.md](docs/product-site.md) — the product page at pennywarden.org and the release data files
 - [docs/implementation-notes.md](docs/implementation-notes.md) — design decisions, including every change request (§1a)
+- [docs/ui-standards.md](docs/ui-standards.md) — UI standards every screen follows: form rows, control heights, action bars
 - [CHANGELOG.md](CHANGELOG.md) — what changed in each version
 - `scripts/demo_data.py` and `scripts/readme_screenshots.mjs` — fill a new, empty installation with a made-up
   organization and retake the screenshots on this page; `scripts/macos_install_mockups.mjs` redraws the

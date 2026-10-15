@@ -26,6 +26,7 @@ PASSWORD = "Correct-Horse-9-Battery"
 # 1.8.0 (#113): the security questions every test user sets up at the first sign-in
 QUESTION_ANSWERS = [("FIRST_TEACHER", "Mrs. Lee"), ("FIRST_PET", "Rex"), ("FIRST_CAR", "Blue Civic")]
 ADMIN = {"workspace_name": "Acme Org", "admin_username": "admin", "admin_email": "admin@example.com",
+         "admin_first_name": "Pat", "admin_last_name": "Example",   # 2.0.0 (#134)
          "password": PASSWORD, "password_confirmation": PASSWORD}
 
 
@@ -133,7 +134,8 @@ class Env:
         self.auditor = self.user("auditor", "AUDITOR", ["AUDITOR"])
 
     def user(self, username, domain, roles) -> Api:
-        r = self.admin.post("/api/users", {"username": username, "email": f"{username}@example.com",
+        r = self.admin.post("/api/users", {"first_name": username.capitalize(), "last_name": "Person", "username": username,
+                                           "email": f"{username}@example.com",
                                            "display_name": f"{username.capitalize()} Person",
                                            "password": PASSWORD, "security_domain": domain, "roles": roles})
         assert r.status_code == 201, r.text

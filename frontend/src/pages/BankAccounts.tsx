@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api, money, todayIso } from "../api";
-import { ErrorBox, Field, Loading, Modal, GuardedForm } from "../components";
+import { ErrorBox, Field, Loading, Modal, GuardedForm, RowMenu } from "../components";
 import { useMe } from "../App";
 import { EntityForm } from "./Entities";
 
@@ -69,9 +69,11 @@ export default function BankAccounts() {
                   {a.status === "ACTIVE" ? (
                     <>
                       <button className="small" onClick={() => setModal({ kind: "edit", account: a })}>Edit</button>
-                      {a.register_enabled && !a.is_primary ? <button className="small" onClick={() => primary(a)}>Make primary</button> : null}
-                      {!a.register_enabled ? <button className="small" onClick={() => setModal({ kind: "balance", account: a })}>Update balance</button> : null}
-                      <button className="small" onClick={() => setModal({ kind: "close", account: a })}>Close…</button>
+                      <RowMenu name={a.account_name} actions={[
+                        a.register_enabled && !a.is_primary && { label: "Make primary", onClick: () => primary(a) },
+                        !a.register_enabled && { label: "Update balance", onClick: () => setModal({ kind: "balance", account: a }) },
+                        { label: "Close…", onClick: () => setModal({ kind: "close", account: a }), danger: true },
+                      ]} />
                     </>
                   ) : null}
                 </td>

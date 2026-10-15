@@ -10,11 +10,11 @@ def enable(env, on=True):
 
 def test_module_switch_and_access(env, base):
     # off by default: hidden from /me and the API
-    assert env.bm.get("/api/auth/me").json()["modules"] == {"fundraisers": False}
+    assert env.bm.get("/api/auth/me").json()["modules"] == {"fundraisers": False, "checks": False}
     assert env.bm.get("/api/fundraisers").json()["error"]["code"] == "MODULE_DISABLED"
     # only Administrators switch modules
     assert env.bm.put("/api/system/modules", {"fundraisers": True}).status_code == 403
-    assert enable(env) == {"fundraisers": True}
+    assert enable(env) == {"fundraisers": True, "checks": False}
     assert env.bu.get("/api/auth/me").json()["modules"]["fundraisers"] is True
     log = env.admin.get("/api/audit-events?action=MODULE_ENABLED").json()
     assert any(e["action"] == "MODULE_ENABLED" for e in log["items"])

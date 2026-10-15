@@ -131,9 +131,12 @@ def check_destination(settings, path: str | None) -> str:
         if not allowed:
             raise validation("No backup folders are configured on this server. The server owner lists them as "
                              "backup_folders in config.toml.", "destination")
-        if os.path.normpath(p) not in {os.path.normpath(a) for a in allowed}:
+        # Return the server owner's configured folder, never the submitted text: in server mode the destination is
+        # always a value from config.toml (CodeQL py/path-injection, #9-#6).
+        match = next((a for a in allowed if os.path.normpath(a) == os.path.normpath(p)), None)
+        if match is None:
             raise validation("Choose one of the backup folders configured on this server.", "destination")
-        return p
+        return match
     if not os.path.isabs(p):
         raise validation("Enter the full path of the folder (for example D:\\Backups or /Volumes/Backup).",
                          "destination")

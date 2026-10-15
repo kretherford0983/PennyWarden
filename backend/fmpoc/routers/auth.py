@@ -15,9 +15,11 @@ from ..schemas import (ChangePasswordIn, ForgotCompleteIn, ForgotStartIn, LoginI
 from ..services import auth as svc
 from ..services import mfa
 from ..services import recovery
+from ..services import users as users_svc
 from ..services.charts import charts_for
 from ..services.dashboard_layout import encode as encode_layout
 from ..services.dashboard_layout import is_customized, layout_for
+from ..services.checkprint.service import module_enabled as checks_enabled
 from ..services.fundraisers import module_enabled
 
 router = APIRouter(prefix="/api", tags=["auth"])
@@ -61,8 +63,13 @@ def me_payload(ctx: Ctx) -> dict:
             "security_domain": u.security_domain, "roles": sorted(ctx.roles), "permissions": sorted(ctx.perms),
             "theme": u.theme, "nav_collapsed": bool(u.nav_collapsed), "dashboard_charts": charts_for(u),
             "dashboard_layout": layout_for(u), "dashboard_layout_customized": is_customized(u),
-            "modules": {"fundraisers": module_enabled(object_session(u), u.workspace_id)},  # v1.6.0 CR-033
+            "modules": {"fundraisers": module_enabled(object_session(u), u.workspace_id),  # v1.6.0 CR-033
+                        "checks": checks_enabled(object_session(u), u.workspace_id)},  # 2.0.0 (#156)
             "sign_in_notices": recovery.sign_in_notices(u),  # 1.8.0 (#113)
+            "first_name": u.first_name, "last_name": u.last_name,   # 2.0.0 (#134)
+            # 2.0.0 (#134): an Administrator completes the missing names before continuing
+            "names_needed": len(users_svc.names_needed(object_session(u), u.workspace_id))
+            if "users.manage" in ctx.perms else 0,
             "csrf_token": ctx.session.csrf_token}
 
 

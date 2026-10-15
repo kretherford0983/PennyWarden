@@ -21,7 +21,7 @@ ANSWERS = dict(QUESTION_ANSWERS)
 
 
 def _new_user(env, username="pat", roles=("BUDGET_USER",), domain="FINANCIAL"):
-    r = env.admin.post("/api/users", {"username": username, "email": f"{username}@example.com", "display_name": "Pat Person",
+    r = env.admin.post("/api/users", {"first_name": "Test", "last_name": "Person", "username": username, "email": f"{username}@example.com", "display_name": "Pat Person",
                                       "password": PASSWORD, "security_domain": domain, "roles": list(roles)})
     assert r.status_code == 201, r.text
     return r.json()
