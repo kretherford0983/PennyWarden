@@ -1142,20 +1142,7 @@ def _check_room(db: Session, ctx) -> None:
         raise conflict("TOO_MANY", f"At most {MAX_DOCUMENTS} letter and envelope templates can be kept.")
 
 
-def create_document(db: Session, ctx, kind: str, name: str | None, preset: str | None = None) -> CheckDocument:
-    """A new template. Without a name it gets the kind's (or preset's) default name, numbered when taken (#217);
-    a name the user typed must be unique as before."""
-    if kind not in ("LETTER", "ENVELOPE"):
-        raise validation("Unknown template kind.", "kind")
-    if preset is not None and (preset not in DOC_PRESETS or DOC_PRESETS[preset][0] != kind):
-        raise validation("Unknown template preset.", "preset")
-    _check_room(db, ctx)
-    if name is not None and name.strip():
-        name = _name(name)
-        if any(x.name.lower() == name.lower() for x in list_documents(db, ctx, kind)):
-            raise conflict("DUPLICATE_NAME", f"A template named \"{name}\" already exists.")
-    else:
-        name = free_document_name(db, ctx, kind, DOC_PRESETS[preset][1] if preset else DOC_DEFAULT_NAMES[kind])
+def _starting_config(db: Session, ctx, kind: str, preset: str | None) -> dict:
     letterhead = None
     if kind == "ENVELOPE":   # the return address starts as the default letter's letterhead
         letter = next((x for x in list_documents(db, ctx, "LETTER", False) if x.is_default), None)
@@ -1164,12 +1151,68 @@ def create_document(db: Session, ctx, kind: str, name: str | None, preset: str |
     if preset == "WINDOW":   # #217: a letter for a #10 double-window envelope (addresses on the letter's top panel)
         config["window"] = "LETTER"
         config["include_by_default"] = True
-    return _new_document(db, ctx, kind, name, config)
+    return config
+
+
+def _check_kind(kind: str, preset: str | None) -> None:
+    if kind not in ("LETTER", "ENVELOPE"):
+        raise validation("Unknown template kind.", "kind")
+    if preset is not None and (preset not in DOC_PRESETS or DOC_PRESETS[preset][0] != kind):
+        raise validation("Unknown template preset.", "preset")
+
+
+def draft_document(db: Session, ctx, kind: str, preset: str | None = None,
+                   source: CheckDocument | None = None) -> dict:
+    """Build 13: what *New cover letter* / *New #10 envelope* / *Duplicate* open in the editor - nothing is stored
+    until the first Save (backing out keeps nothing, so BR-001 is not involved). A free name (#217), the starting
+    settings (or the source's, for a duplicate) and the source's logo, which is copied when the draft is saved."""
+    if source is not None:
+        kind, config = source.kind, doc_config(source).model_dump()
+        name = free_document_name(db, ctx, kind, f"{source.name[:71].rstrip()} copy")   # room for " copy 999"
+    else:
+        _check_kind(kind, preset)
+        config = _starting_config(db, ctx, kind, preset)
+        name = free_document_name(db, ctx, kind, DOC_PRESETS[preset][1] if preset else DOC_DEFAULT_NAMES[kind])
+    _check_room(db, ctx)
+    existing = list_documents(db, ctx, kind)
+    out = {"id": None, "draft": True, "kind": kind, "name": name, "active": True,
+           "is_default": not any(x.active and x.is_default for x in existing), "config": config,
+           "duplicate_of": source.id if source is not None else None}
+    if kind == "LETTER":
+        out["logo"] = ({"width": source.logo_width, "height": source.logo_height,
+                        "version": (source.logo_sha256 or "")[:12], "from": source.id}
+                       if source is not None and source.logo_png else None)
+    return out
+
+
+def create_document(db: Session, ctx, kind: str, name: str | None, preset: str | None = None,
+                    config: dict | None = None, source: CheckDocument | None = None) -> CheckDocument:
+    """A new template. Without a name it gets the kind's (or preset's) default name, numbered when taken (#217);
+    a name the user typed must be unique as before. Build 13: the editor saves a draft this way, with its settings
+    (`config`, validated) and, for a duplicate, the template it copies (`source`: its logo is copied too)."""
+    if source is not None:
+        kind = source.kind
+    _check_kind(kind, preset)
+    _check_room(db, ctx)
+    if name is not None and name.strip():
+        name = _name(name)
+        if any(x.name.lower() == name.lower() for x in list_documents(db, ctx, kind)):
+            raise conflict("DUPLICATE_NAME", f"A template named \"{name}\" already exists.")
+    else:
+        name = free_document_name(db, ctx, kind, DOC_PRESETS[preset][1] if preset else DOC_DEFAULT_NAMES[kind])
+    if config is not None:
+        cfg = _doc_config_or_422(kind, config).model_dump()
+    elif source is not None:
+        cfg = doc_config(source).model_dump()
+    else:
+        cfg = _starting_config(db, ctx, kind, preset)
+    return _new_document(db, ctx, kind, name, cfg, logo=source, source=source)
 
 
 def duplicate_document(db: Session, ctx, d: CheckDocument) -> CheckDocument:
-    """Build 11 (#217): a copy of a template with all its settings, the letter's logo included. The copy is active and
-    becomes the default only when its kind has no active default."""
+    """Build 11 (#217): a copy of a template with all its settings, the letter's logo included, stored at once (the
+    editor uses a draft instead since build 13; this stays for the API). The copy is active and becomes the default
+    only when its kind has no active default."""
     _check_room(db, ctx)
     name = free_document_name(db, ctx, d.kind, f"{d.name[:71].rstrip()} copy")   # room for " copy 999"
     return _new_document(db, ctx, d.kind, name, doc_config(d).model_dump(), logo=d, source=d)

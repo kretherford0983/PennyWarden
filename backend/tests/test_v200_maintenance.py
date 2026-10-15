@@ -87,3 +87,23 @@ def test_survives_a_restart(env, settings):
     with TestClient(app2) as c:
         st = c.get("/api/system/status").json()
     assert st["maintenance_mode"]["active"] and st["maintenance_mode"]["message"] == "Back soon."
+
+
+def test_looking_things_up_still_works_including_read_only_posts(env, base):
+    """Build 13: reports, exports and reveals that use POST only look things up, so maintenance lets them through;
+    everything near them that changes data stays blocked."""
+    acct = base["acct"]["id"]
+    assert on(env.admin).status_code == 200
+    r = env.auditor.post("/api/audit-events/export", {"format": "csv"})
+    assert r.status_code == 200 and r.headers["content-type"].startswith("text/csv")
+    assert env.bm.post(f"/api/bank-accounts/{acct}/reveal", {}).status_code != 503
+    assert env.bm.post("/api/reports/financial-flow/review", {}).status_code != 503
+    assert env.bm.post("/api/reports/financial-flow", {}).status_code != 503
+    assert env.bm.post("/api/fundraisers/preview", {}).status_code != 503
+    # changes right next to them are still refused, and look-alike paths don't slip through
+    assert env.bm.post(f"/api/bank-accounts/{acct}/balance", {}).status_code == 503
+    assert env.bm.post(f"/api/bank-accounts/{acct}/close", {}).status_code == 503
+    assert env.bm.post("/api/fundraisers", {}).status_code == 503
+    assert env.bm.post("/api/reports/signature-templates", {"text": "x"}).status_code == 503
+    assert env.auditor.post("/api/audit-events/export/x", {"format": "csv"}).status_code in (503, 404, 405)
+    assert env.bm.post(f"/api/bank-accounts/{acct}/reveal/x", {}).status_code in (503, 404, 405)

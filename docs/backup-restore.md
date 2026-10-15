@@ -27,7 +27,8 @@ restored from the web page.** Keep the passphrase in a password manager and the 
 When **Let this server recover the passphrase** is ticked (the default), the server also keeps a *recovery file*: the
 passphrase, encrypted with a random **server key** that never leaves this server. The backup file itself is unchanged.
 
-- Only the server's owner can use it, from the server's command line: `pennywarden restore FILE --use-server-key`.
+- Only the server's owner can use it, from the server's command line: `sudo pennywarden restore FILE --use-server-key`
+  on Linux (on Windows `C:\PennyWarden\current\PennyWarden.cmd restore …` in a terminal opened as Administrator).
   The web page **always** asks for the passphrase — a stolen Administrator sign-in can't restore without it.
 - It works only **on this server** and only **for this exact file** (the recovery file is bound to the file's
   fingerprint). A copy taken to another computer still needs the passphrase.
@@ -82,9 +83,12 @@ changed after the backup"): the report holds financial data. A backup from anoth
 ## Restoring from the server's command line (since 2.0.0)
 
 ```
-pennywarden restore FILE.fmbak [--use-server-key | --passphrase-file PATH] [--data-dir DIR] [--stop-service] [--yes]
-pennywarden restore --list [--data-dir DIR]
+sudo pennywarden restore FILE.fmbak [--use-server-key | --passphrase-file PATH] [--data-dir DIR] [--stop-service] [--yes]
+sudo pennywarden restore --list [--data-dir DIR]
 ```
+
+(Linux server shown. Windows: `C:\PennyWarden\current\PennyWarden.cmd restore …` as Administrator; a local install:
+the program itself, without `sudo`, with PennyWarden quit.)
 
 - **Rights.** On a server install (the systemd service or the Windows service `PennyWarden`, see
   [install-windows-server.md](install-windows-server.md#9-host-commands)) run it with `sudo` / from a terminal
@@ -114,7 +118,13 @@ pennywarden restore --list [--data-dir DIR]
 
   Add `--use-server-key` for a backup made by this container (the key is on the data volume), or
   `--passphrase-file /backups/passphrase.txt`. Without either, add `-it` to `run` to type the passphrase.
-- `--list` shows the backups this server can recover (date, size, who made it).
+- `--list` shows the backups this server can recover (date, size, who made it) and, for those kept on the server
+  (such as the `pre-reinitialize/` safety backups), their **full path** plus a ready-to-paste restore command. Use it instead of
+  typing the path: those folders are readable only by the service account and root (they hold backups the server can
+  decrypt), so a normal shell can't list them or complete their file names with Tab, even with `sudo` in front.
+- **The `pennywarden` command (Linux server, since 2.0.0).** The installer adds `/usr/local/bin/pennywarden`, which
+  runs the current release, so `sudo pennywarden …` works from any folder. An installation made before 2.0.0 gets it
+  with the next run of the installer; until then use `sudo /opt/pennywarden/current/pennywarden …`.
 
 ## Scheduled backups (since 1.9.0)
 
@@ -123,8 +133,13 @@ System/About → Backups → Backup / Restore → **Scheduled** writes backups o
 - **Schedule:** Daily at a time, or Weekly on a day at a time — the computer's (server's) local time.
 - **Folder:** one folder the operating system running PennyWarden can already see: a local folder, an external drive
   or a mounted network share. On a **server** the server owner lists the allowed folders in `config.toml`
-  (`backup_folders = ["/mnt/nas/pennywarden"]`, docs/configuration.md) and the Administrator picks one; the service
-  account (`pennywarden` on Linux) must be able to write there. On a **local install** any folder can be entered.
+  (`backup_folders = ["/mnt/nas/pennywarden", "/srv/pennywarden-backups"]` — a list in square brackets, one quoted
+  path each; docs/configuration.md) and the Administrator picks one; the service account (`pennywarden` on Linux) must
+  be able to write there. **Linux server:** the service runs sandboxed and may write only to its data folder and the
+  folders the installer adds for it — **run the installer again after changing `backup_folders`** (it reads the list
+  and lets the service write there; folders under `/home` can't be used). Without that, *Test* reports that the
+  folder can't be written even when its owner, group and permissions are right. On a **local install** any folder can
+  be entered.
   **Test** writes and removes a small file to check the folder. Copying backups offsite is done outside PennyWarden.
 - **Passphrase and key pair:** the Administrator sets a backup passphrase once (at least 12 characters; their own
   password confirms it). PennyWarden turns it into a key pair and keeps only the public key and the private key
@@ -172,12 +187,14 @@ Entity numbers continue from the last one, so a new entity never reuses a number
    used, which only the server's owner can use.
 2. The application pauses, makes the **safety backup** and checks it. If that fails, nothing is removed.
 3. The backup goes to `pre-reinitialize/` in the data folder — never downloadable or removable from the web, and every
-   one is kept. It is always recoverable by the server: the page shows the file and the command to undo it:
-   `pennywarden restore <data folder>/pre-reinitialize/<file>.fmbak --use-server-key`.
+   one is kept. It is always recoverable by the server: the page shows the file and the exact command to undo it for
+   this installation — on a Linux server
+   `sudo pennywarden restore "<data folder>/pre-reinitialize/<file>.fmbak" --use-server-key --data-dir "<data folder>"`,
+   on Windows the full path of `PennyWarden.cmd` in a terminal opened as Administrator.
 4. The removal happens in one database transaction (all or nothing); the attachment files are removed after it.
    Everyone else is signed out. Everyone who signs in sees a notice (who, when) until an Administrator acknowledges it.
 
-From the web it can be done once in 24 hours. On the server, `pennywarden reinitialize [--data-dir DIR]
+From the web it can be done once in 24 hours. On the server, `sudo pennywarden reinitialize [--data-dir DIR]
 [--passphrase-file PATH] [--stop-service] [--yes]` does the same with no time limit (a limit would only push people to
 delete the data folder, which leaves no backup); it asks for the word `reinitialize` unless `--yes` is given, handles
 the service like `pennywarden restore`, and is audited via `host_cli`.

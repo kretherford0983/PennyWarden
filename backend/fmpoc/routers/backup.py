@@ -518,9 +518,10 @@ def run_reinitialize(app, job, passphrase: str, own_passphrase: bool, actor: dic
                 raise
         job.advance("Removing the attachment files")
         reinit.remove_attachment_files(settings)
-        restore_cmd = (f"pennywarden restore \"{safety['path']}\" --use-server-key --data-dir \"{settings.data_dir}\"")
-        job.result = {"filename": safety["filename"], "folder": safety["folder"], "restore_command": restore_cmd,
-                      "own_passphrase": own_passphrase}
+        from ..cli_restore import host_command, restore_command   # build 13: the exact command for this install
+        job.result = {"filename": safety["filename"], "folder": safety["folder"],
+                      "restore_command": restore_command(settings, safety["path"]),
+                      "restore_where": host_command(settings)[1], "own_passphrase": own_passphrase}
         job.advance("")
         job.state = "done"
         log.info("reinitialize completed")

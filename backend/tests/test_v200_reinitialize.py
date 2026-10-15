@@ -61,6 +61,7 @@ def test_reinitialize_removes_financial_data_keeps_users(env, data):
     assert j["state"] == "done", j
     res = j["result"]
     assert res["filename"].startswith("pre-reinitialize-") and "--use-server-key" in res["restore_command"]
+    assert " restore \"" in res["restore_command"] and res["restore_where"]   # build 13: the exact command and where
     # other users were signed out; the Administrator stays
     assert env.ru.get("/api/auth/me").status_code == 401
     assert env.admin.get("/api/auth/me").status_code == 200

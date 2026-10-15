@@ -24,7 +24,8 @@ Native packages need no separately installed Python, Node.js, SQLite, Docker or 
   the app, so replacing the app with a newer one keeps it. To upgrade: quit PennyWarden, drag the new app onto
   Applications and choose *Replace*. Data folder, log, `config.toml` and options on a Mac:
   [configuration.md](configuration.md#on-a-mac). Server mode from Terminal:
-  `/Applications/PennyWarden.app/Contents/MacOS/PennyWarden --mode server`.
+  `/Applications/PennyWarden.app/Contents/MacOS/PennyWarden --mode server`. (On macOS 11 and 12 the Payments Setup
+  previews show as a PDF instead of a picture; everything else is the same.)
 - **Windows (portable folder)**: unzip `PennyWarden-windows-x64.zip` anywhere (e.g.
   `%LOCALAPPDATA%\Programs`), double-click `PennyWarden.cmd`.
 - **Linux**: `tar xzf PennyWarden-linux-x64.tar.gz && ./pennywarden/pennywarden`
@@ -36,8 +37,10 @@ default browser when a desktop session is available. Plain HTTP is acceptable be
 > docs/backup-restore.md) and keep them off this machine together with their passphrase.
 > From 1.9.0 PennyWarden can also write them on a schedule (Backup / Restore → **Scheduled**) to a folder you
 > choose, such as an external drive. On a server the folder must be listed by the server owner with
-> `backup_folders` in `config.toml` (e.g. a mounted NAS share; in Docker, a volume mounted into the container), and
-> the service account must be able to write to it.
+> `backup_folders` in `config.toml` (a list: `backup_folders = ["/srv/pennywarden-backups"]`; e.g. a mounted NAS
+> share; in Docker, a volume mounted into the container), and the service account must be able to write to it. On the
+> Linux server install, run the installer again after changing `backup_folders`: the service is sandboxed and may
+> write only where the installer allows it (not under `/home`).
 
 ## Server installation (multiple users)
 
@@ -65,6 +68,9 @@ the same command — see [upgrade.md](upgrade.md).
   `curl -fsSL https://github.com/kretherford0983/PennyWarden/releases/download/<tag>/install.sh | sudo bash -s -- --version <tag>`
 - **Port:** a new installation uses 8765 (`--port N` to change); an upgrade reads the port from the existing
   `config.toml`.
+- **Also set up (since 2.0.0):** the `pennywarden` command for the host commands (`sudo pennywarden restore …`), and
+  write access for the service to the scheduled-backup folders in `backup_folders` — run the installer again after
+  changing that list.
 - **Prefer to read it first?**
   `curl -fsSLO https://github.com/kretherford0983/PennyWarden/releases/download/<tag>/install.sh`, read it, then
   `sudo bash install.sh --version <tag>`.
@@ -124,9 +130,12 @@ Run as a service: systemd unit (`ExecStart=/opt/pennywarden/current/pennywarden 
 NSSM ([install-windows-server.md](install-windows-server.md#5-run-it-as-a-service-with-nssm)). Run a single application process per data directory (SQLite + in-process
 login rate limiter; the per-account count of failed attempts is in the database).
 
-Host commands for a locked-out user, run on the server as the account that owns the data directory:
-`pennywarden reset-mfa --user NAME` (two-step verification set up again) and, from 1.8.0,
-`pennywarden reset-password --user NAME` (prints a temporary password that must be changed at the next sign-in).
+Host commands for a locked-out user, run on the server — on the Linux server install with `sudo` (the installer adds
+the `pennywarden` command since 2.0.0, and files the commands write are handed back to the service's account); on a
+Windows server as Administrator with `C:\PennyWarden\current\PennyWarden.cmd`; see also `restore` and `reinitialize` in
+[backup-restore.md](backup-restore.md):
+`sudo pennywarden reset-mfa --user NAME` (two-step verification set up again) and, from 1.8.0,
+`sudo pennywarden reset-password --user NAME` (prints a temporary password that must be changed at the next sign-in).
 Both also enable an account that was disabled after too many failed attempts.
 
 ## Docker (optional)

@@ -1,110 +1,102 @@
 # What's new in 2.0 — quick guide
 
-*2.0.0: the Payments module (check printing, payments, cover letters and envelopes). 2.0.0 is tested in several test builds; this guide grows with each one. The full
-guide is [check-printing.md](check-printing.md).*
+*2.0.0: the optional Payments module (check printing, payments, cover letters and envelopes), and new tools for the
+people who run PennyWarden: System/About in tabs, maintenance mode, server-side restore and reinitialize, a security
+overview, and a readable audit log you can export. The full Payments guide is [check-printing.md](check-printing.md).*
 
-## Check printing (test build 1)
-PennyWarden can now print your checks on printable check stock that already carries the bank numbers.
+## Print checks (Payments module)
+PennyWarden can print your checks on printable check stock that already carries the bank numbers: the date, payee,
+amount in numbers and in words, memo and signature — never the check number or bank numbers.
 
-**Administrators** turn it on in **System/About → General → Optional modules → Payments module**, then open **Payments Setup** to:
-- create a **check style** from a preset (the first preset is a Letter sheet with three 3.5-inch checks) and adjust
-  where each field prints, with a preview drawn to scale;
-- choose fonts, how the amounts look, and a **default memo** such as `{BUDGET_CODE}, INVOICE {INVOICE}`;
-- add **signers** with a signature image, and optionally an amount above which no signature prints;
+**Administrators** turn it on in **System/About → General → Optional modules → Payments module**, then open
+**Payments Setup** to:
+- create a **check style** from a preset — **3 per page** laser checks, or a **voucher check** with a vendor stub and
+  an office stub — and adjust where each field prints, with a preview drawn to scale;
+- choose fonts, how the amounts look and a **default memo** such as `{BUDGET_CODE}, INVOICE {INVOICE}`;
+- add **signers** with a signature image (stored encrypted); a style can have **two signature lines**, and amounts
+  above which a signature is left off for signing by hand;
 - print a **test print** and a **calibration page** on plain paper.
 
-**Register Users** open a withdrawal in the **Register** and click **Print check…**:
-- check the preview, the feed mode (the last check on a sheet goes through the manual feed on its own) and the memo;
-- type the number printed on the check in the printer, then print at **actual size**;
-- afterwards choose **Yes – done**, **Reprint** (the check was not damaged) or **Mark spoiled** (its number becomes a
-  $0.00 VOID record and you print on the next check).
+**Register Users** pay bills and print checks:
+- **Payments → New payment** enters a bill once — pay from, date, payee (or a new one), one line per invoice with its
+  documents and invoice date — shows the amount in words as you type, records it in the register and opens the print
+  screen. **Create payment…** on a withdrawal already in the register prints its check.
+- **Print check…** on a withdrawal: check the preview and the feed mode, type the number printed on the check in the
+  printer, print at **actual size**. Afterwards choose **Yes – done**, **Reprint** (not damaged) or **Mark spoiled**
+  (its number becomes a $0.00 VOID record and you print on the next check).
+- For a check you write by hand, choose **I'm writing the check by hand** and record its number (typed twice).
+- A record copy of every printed check is attached to the transaction. If printing is shifted on your printer, the
+  **Printer setup assistant** on the print screen adjusts it for you only.
 
-A record copy of every printed check is attached to the transaction. If the printing is shifted on your printer, the
-**Printer setup assistant** on the print screen adjusts it for you without changing anyone else's settings.
+Details: [Check printing](check-printing.md).
 
-## Payments (test build 2)
-**Payments** in the menu (Register Users) enters a bill and prints its check in one go: pay from (your last account is
-remembered), date, payee (or a new one), one line per invoice with its documents — the check amount is shown in words
-as you type. **Save and print check** records it in the register and opens the print screen. **Create payment…** on a
-withdrawal already in the register shows its details locked and prints its check.
+## Cover letters and envelopes
+Administrators keep **cover letter** and **#10 envelope** templates in Payments Setup — as many as you need (for
+example invoices, a refund, a donation). A letter lists the invoices paid, can carry your **logo** or be printed on
+**pre-printed letterhead paper**, and can carry the addresses for a **#10 double-window envelope** (**New
+window-envelope letter**). Each editor shows a live preview of the printed page as you type. A new letter or envelope —
+or a copy made with **Duplicate** — is only kept once you click **Save**.
 
-## Cover letters and envelopes (test build 3)
-Administrators keep **cover letter** and **#10 envelope** templates in Payments Setup (letterhead, text with
-`{VARIABLES}`, the invoice table; envelope return address and feeding). After a check prints, the print screen offers
-the letter and the envelope; they are attached to the transaction. For a check written by hand, choose **I'm writing
-the check by hand**, record its number (typed twice), and print the letter and envelope. Withdrawal lines can carry an
-optional **invoice date**. Details: [Check printing](check-printing.md#cover-letters-and-envelopes).
+After a check prints, the print screen offers the letter and the envelope; both are attached to the transaction.
+Details: [Check printing](check-printing.md#cover-letters-and-envelopes).
 
-## Voucher checks and two signatures (test build 4)
-Administrators can create a **voucher check** style (one check per sheet with a vendor-copy and an office-copy stub
-listing the invoices paid, the total and the check number) and give any style **two signature lines**. Register Users
-then choose two different signers when printing; above an optional amount only the first signature prints. Details:
-[Check printing](check-printing.md#10-voucher-checks-check-with-stubs).
+## System/About, for Administrators
+System/About now has tabs, each with its own address you can bookmark:
 
-## Polish from testing (test build 5)
-- **Test prints** have no outline or page markings any more — only the **calibration page** draws the check's edges —
-  and one TEST – NOT A CHECK watermark (plus a small one across each signature line with a test signature).
-- The **cover letter** and **envelope** editors show a live **preview** with sample data as you type, and their
-  sections can be collapsed. The **check style** preview draws a voucher check's **stubs** under the check.
-- **My account** and **System/About** show when your version was built in **local time** (hover for UTC).
+- **About** — version, licence, the update check.
+- **General** — rename the **organization**; turn the optional modules on or off.
+- **Settings** — every setting in effect and where it comes from; on a server, the security and session settings can
+  be changed here (they take effect after a restart). Details:
+  [Configuration](configuration.md#changing-settings-in-the-application-200-126).
+- **Backups** — Backup / Restore, scheduled backups, and the **backup reminder** (a warning after a set number of
+  days without a backup).
+- **Security** — the **security overview** (HTTPS, two-step verification, the last backup, locked accounts — with
+  what needs attention) and the **signed-in sessions**, where you can end a forgotten sign-in or everyone else's.
+- **System health** — sizes, free disk space, a database integrity check, and **Download diagnostics** to share when
+  asking for help (it holds no financial data, passwords or keys).
+- **Advanced** — **maintenance mode** and **Reinitialize** (below).
 
-## Letter logo, window envelopes and administration (test build 6)
-- A **cover letter** can carry your **logo** (top left or centered), be printed on **pre-printed letterhead paper**
-  (the top of the page stays blank), and carry the addresses for a **#10 double-window envelope** — at the top of the
-  letter or on a separate address page. Details: [Check printing](check-printing.md#cover-letters-and-envelopes).
-- **System/About** has new sections for Administrators: rename the **organization**, a **backup reminder** (a warning
-  after a set number of days without a backup), and **Settings** — every setting in effect and where it comes from;
-  on a server, the security and session settings can be changed there (they take effect after a restart). Auditors
-  can see the settings too. Details: [Configuration](configuration.md#changing-settings-in-the-application-200-126).
-- **Signed-in sessions** on System/About: who is signed in, since when and from which address. An Administrator can
-  end a session (for example a forgotten sign-in on a shared computer) or end all other sessions.
-- **Download diagnostics** on System/About gives an Administrator a file to share when asking for help. It holds no
-  financial data, passwords or keys.
-- **Health** on System/About: database and attachment sizes, free disk space and an integrity check; a warning
-  appears for Administrators when the disk is nearly full.
+Auditors see About, Settings and Security.
 
-## Maintenance mode (test build 7)
-- An Administrator can switch on **maintenance mode** on System/About with a message for everyone, now or at a set
-  time (for example during the year-end close or before an upgrade). Everyone can still sign in and look things up;
-  only Administrators can change anything until it is turned off.
-- **Backups the server can recover:** a backup made with *Let this server recover the passphrase* (the default) can
-  be restored by the server's owner even if its passphrase is forgotten — from the server's command line, on that
-  server only. **`pennywarden restore`** restores a backup from the command line ([Backup and
-  restore](backup-restore.md)).
+## Maintenance mode and reinitialize
+- **Maintenance mode** (System/About → Advanced): an Administrator sets a message, now or at a set time. Everyone can
+  still sign in and look things up — reports and exports included — but only Administrators can change anything; the
+  others see the screens without any change buttons. The message shows on the sign-in page and at the top of every
+  page.
+- **Reinitialize** (System/About → Advanced → Reinitialize): start again with no financial data but the same users,
+  after a safety backup that the server's owner can always restore. The page shows the exact command to undo it.
+  Details: [Backup and restore](backup-restore.md#reinitialize-keeping-the-users-since-200).
+
+## Backups the server can recover
+- A backup made with **Let this server recover the passphrase** (the default) can be restored by the server's owner
+  even if its passphrase is forgotten — from the server's command line, on that server only. Restoring from the web
+  page always asks for the passphrase.
+- **`sudo pennywarden restore`** restores a backup from a Linux server's command line;
+  **`sudo pennywarden restore --list`** shows the backups it can recover, with their full paths. On a Windows server:
+  `C:\PennyWarden\current\PennyWarden.cmd restore …` as Administrator. Details: [Backup and restore](backup-restore.md).
 - After a restore, **Reports → Restore re-entry reports** lists what was entered or changed after the backup, so it
   can be entered again.
-- **Reinitialize** (System/About → Advanced): start again with no financial data but the same users, after a safety
-  backup the server can always restore ([Backup and restore](backup-restore.md#reinitialize-keeping-the-users-since-200)).
-- **Windows server:** the [Windows server guide](install-windows-server.md) now covers everything from the download
-  to HTTPS, a Windows service, backups, upgrades and troubleshooting.
 
-## Real names, readable audit log, security overview (test build 8)
-- Every user has a **first and last name** (Administrators set them under Users). The Users list can be searched and
-  sorted by last name, and the audit log shows people as *First Last - username*. After the upgrade, the first
-  Administrator to sign in is asked for the names of the existing accounts.
-- The **Audit Log** reads in plain words: each entry says who did what to which record, *Details* shows what changed
-  (with readable names and amounts), and the raw data is still there under *Show technical details*.
-- **Security overview** on System/About (Administrators and Auditors): HTTPS, two-step verification, the last backup,
-  locked accounts and the security settings at a glance, with what needs attention marked and what to do about it.
+## Users and the audit log
+- Every user has a **first and last name** (Administrators set them under Users). After the upgrade, the first
+  Administrator to sign in is asked for the names of the existing accounts. The Users list can be searched and sorted
+  by last name.
+- The **Audit Log** reads in plain words: each entry says who did what to which record; **Details** shows what
+  changed, with readable names and amounts.
+- **Export CSV** and **Printable PDF** on the Audit Log hold every entry matching your filters, for an audit review.
+  Administrators' exports leave out financial content, as the screen does.
 
-## Windows server installer (test build 10)
-On a Windows server, `install-windows-server.ps1` from the release installs or upgrades PennyWarden as a service in
-one step, with HTTPS through Caddy (`-Domain`) or behind your Cloudflare Tunnel. Details:
-[Windows server guide](install-windows-server.md#the-installer-script-recommended).
+## Easier to use
+- Form fields, dropdowns and buttons line up on every screen.
+- Tables show **Edit** and a **⋯** menu with the row's other actions (reset a password, make an account primary,
+  deactivate, duplicate …).
+- My account and System/About show when your version was built, in your time zone.
 
-## Payments Setup polish (test build 11)
-- Keep **several cover letters and envelopes**: a new one is numbered (*Invoice payment letter 2*) and opens with its
-  name ready to type over, and **Duplicate** copies one with all its settings.
-- **Window envelopes** are set up on a cover letter (**New window-envelope letter**); the Envelopes section points
-  there.
-- The letter and envelope **previews** are pictures of the printed page and show in every browser, Safari included.
-  Details: [Check printing](check-printing.md#cover-letters-and-envelopes).
-- **Tidier screens:** form fields, dropdowns and buttons line up; tables show **Edit** and a **⋯** menu with the other
-  actions of the row; **System/About** is split into tabs (About, General, Settings, Backups, Security, System health,
-  Advanced), each with its own address you can bookmark.
-
-## Audit log export (test build 12)
-On the **Audit Log**, set the filters (for example the Fiscal Year's dates), then **Export CSV** for a spreadsheet or
-**Printable PDF** to print or keep. Both hold every matching entry — not only the page on screen — with the same
-summaries and *What changed* details, times in your time zone. Administrators' exports leave out financial content,
-as the screen does. Each export is itself recorded in the audit log.
+## Running a server
+- **Windows server:** `install-windows-server.ps1` from the release installs or upgrades PennyWarden as a Windows
+  service in one step, with HTTPS through Caddy (`-Domain`) or behind your Cloudflare Tunnel. Details:
+  [Windows server guide](install-windows-server.md#the-installer-script-recommended).
+- **Linux server:** the installer now adds the `pennywarden` command for the host commands (`sudo pennywarden …`)
+  and lets the service write to your scheduled-backup folders — list them in `config.toml`
+  (`backup_folders = ["/srv/pennywarden-backups"]`) and run the installer again after changing the list. Details:
+  [Upgrading](upgrade.md#200-after-the-upgrade).

@@ -35,6 +35,16 @@ const shot = async (name, height = 850) => {
   await page.setViewportSize({ width: 1360, height: 850 });
   console.log("wrote", name);
 };
+// 2.0.0: just the dialog, without the dimmed page behind it
+const dialogShot = async (dialog, name, height) => {
+  await page.setViewportSize({ width: 1360, height: 1100 });
+  await page.waitForLoadState("networkidle");
+  await page.waitForTimeout(600);
+  const box = await dialog.boundingBox();
+  await page.screenshot({ path: join(OUT, `${name}.png`), clip: { x: box.x, y: box.y, width: box.width, height: Math.min(box.height, height) } });
+  await page.setViewportSize({ width: 1360, height: 850 });
+  console.log("wrote", name);
+};
 const go = async (link) => { await nav.getByRole("link", { name: link }).click(); await page.waitForLoadState("networkidle"); };
 
 await page.goto("/");
@@ -66,6 +76,30 @@ await go("Dashboard");
 await page.getByRole("button", { name: "Switch to dark mode" }).click();
 await shot("dashboard-dark", 1610);
 await page.getByRole("button", { name: "Switch to light mode" }).click();
+
+// 2.0.0: the Payments module - a bill entered once, then its check on the print screen (nothing is printed)
+await go("Payments");
+await page.getByRole("button", { name: "New payment" }).click();
+const pay = page.getByRole("dialog", { name: /^New payment – / });
+await pay.getByRole("combobox", { name: "Payee (entity)" }).fill("Harmony Music");
+await page.getByRole("option", { name: /Harmony Music Supply/ }).click();
+await pay.getByRole("button", { name: "More than one invoice" }).click();
+const repairs = await pay.getByLabel("Allocation 1 Budget").locator("option", { hasText: "5000" }).first().getAttribute("value");
+for (const [i, inv, desc, amt] of [[1, "H-2516", "Sousaphone dent repair", "385.00"], [2, "H-2521", "Reeds, valve oil, mouthpieces", "142.80"]]) {
+  await pay.getByLabel(`Allocation ${i} Budget`).selectOption(repairs);
+  await pay.getByLabel(`Allocation ${i} Amount`).fill(amt);
+  await pay.locator(".alloc").nth(i - 1).getByLabel("Invoice #").fill(inv);
+  await pay.locator(".alloc").nth(i - 1).getByLabel("Description").fill(desc);
+}
+await pay.getByLabel("Check #").fill("1068");
+await page.evaluate(() => document.activeElement?.blur());
+await pay.getByTestId("amount-preview").getByText(/FIVE HUNDRED TWENTY-SEVEN/).waitFor();
+await dialogShot(pay, "payment", 892);
+await pay.getByRole("button", { name: "Save and print check" }).click();
+const prt = page.getByRole("dialog", { name: /^Print check – transaction #\d+$/ });
+await prt.getByRole("img", { name: "Check preview drawn to scale" }).waitFor();
+await dialogShot(prt, "check-print", 760);
+await prt.getByRole("button", { name: "Close" }).first().click();
 
 // sample PDFs -> page images
 const pdf = async (url, name, pages) => {

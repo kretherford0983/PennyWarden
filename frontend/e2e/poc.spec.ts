@@ -56,6 +56,24 @@ async function aboutTab(page: Page, name: string) {
   await expect(page.getByRole("tab", { name, exact: true })).toHaveAttribute("aria-selected", "true");
 }
 
+/** Build 13: the buttons and links that would change something, still shown on these pages (none while maintenance mode
+ * is on for a non-Administrator). Returns "path: label" for each. */
+const CHANGE_ACTION = /^(New |\+ |Edit|✎|Actions for |Transfer|Zero-dollar|Delete|Close|Make |Update balance|Copy|Reopen|Resolve|Print check|Create |Record |Mark |Void|Correct |Upload|Add |Attach|Duplicate|Archive|Cancel fundraiser|Reinstate|Lock|Unlock|Reject|Approve|Save)/;
+async function pausedActions(page: Page, paths: string[]): Promise<string[]> {
+  const out: string[] = [];
+  for (const path of paths) {
+    await page.goto(path);
+    await expect(page.locator("h1").first()).toBeVisible();
+    await page.waitForLoadState("networkidle");
+    // (tabs such as "Resolved" switch views; they change nothing)
+    for (const el of await page.locator(".content :is(button, a.button):visible:not([role=tab])").all()) {
+      const name = ((await el.getAttribute("aria-label")) || (await el.innerText())).trim();
+      if (CHANGE_ACTION.test(name) && !(await el.isDisabled())) out.push(`${path}: ${name}`);
+    }
+  }
+  return [...new Set(out)];
+}
+
 async function logout(page: Page) {
   await page.getByRole("button", { name: "Sign out" }).click();
   await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
@@ -2228,6 +2246,12 @@ test("#165-#166: Administrator sets up a cover letter and an envelope; a Registe
   await page.getByRole("button", { name: "Signed by" }).click();
   await expect(page.getByLabel("Name when there is no signer")).toBeHidden();
   await page.getByRole("button", { name: "Signed by" }).click();
+  // build 13: a new letter is a draft until saved; a logo can be added once it is saved
+  await expect(page.getByTestId("draft-note")).toBeVisible();
+  await expect(page.getByLabel("Logo image")).toHaveCount(0);
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Saved." })).toBeVisible();
+  await expect(page.getByTestId("draft-note")).toHaveCount(0);
   // #176: a logo (a tiny PNG made here: synthetic) and #177: the address for a window envelope
   const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAADAAAAAYCAIAAAAzn+mLAAAAN0lEQVR4nO3OMQHAIADAMEDINCERqfv39GRHoiDz2Wf8ybod+BIqQkWoCBWhIlSEilARKkJFqLyoawE+y3CGBgAAAABJRU5ErkJggg==", "base64");
   await page.getByLabel("Logo image").setInputFiles({ name: "logo.png", mimeType: "image/png", buffer: png });
@@ -2251,6 +2275,8 @@ test("#165-#166: Administrator sets up a cover letter and an envelope; a Registe
   // the return address starts as the default letter's letterhead
   await expect(page.getByLabel("Return address line 2", { exact: true })).toHaveValue("100 Example Street, Sampletown");
   await expect(page.getByRole("img", { name: "Envelope preview" })).toBeVisible();
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Saved." })).toBeVisible();
   await page.getByRole("button", { name: "Back to Payments Setup" }).click();
   const letters = page.getByRole("region", { name: "Cover letters" });
   const envelopes = page.getByRole("region", { name: "Envelopes" });
@@ -2432,6 +2458,16 @@ test("#130: maintenance mode - Administrators keep working, the others see the m
   const csrf = (await (await page.request.get("/api/auth/me")).json()).csrf_token;
   const r = await page.request.post("/api/entities", { data: { entity_type: "ORGANIZATION", organization_name: "Blocked Org", confirmations: ["DUPLICATE_ENTITY"] }, headers: { "X-CSRF-Token": csrf } });
   expect(r.status()).toBe(503);
+  // build 13: no screen offers an action that would change something (they see what a read-only role sees)
+  const shown = await pausedActions(page, ["/", "/fiscal-years", "/budgets", "/bank-accounts", "/register?account=1", "/entities",
+                                           "/fundraisers", "/notifications", "/reports"]);
+  expect(shown).toEqual([]);
+  // looking things up still works, also when it is a POST (the Financial Flow Report review)
+  await page.goto("/reports");
+  await expect(page.getByRole("heading", { name: "Reports" })).toBeVisible();
+  await logout(page);
+  await login(page, "ru1", "Brand-New-Pass-99");
+  expect(await pausedActions(page, ["/", "/register?account=1", "/payments", "/entities", "/notifications"])).toEqual([]);
   await logout(page);
   await login(page, "admin");
   await page.getByRole("link", { name: "System/About" }).click();
@@ -2505,12 +2541,28 @@ test("#217: several cover letters and envelopes, Duplicate, the window-envelope 
   await rowAction(letters, "Refund letter", "Duplicate");
   await expect(page.getByRole("heading", { name: "Cover letter: Refund letter copy" })).toBeVisible();
   await expect(page.getByLabel("Name", { exact: true })).toBeFocused();
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Saved." })).toBeVisible();
   await page.getByRole("button", { name: "Back to Payments Setup" }).click();
   await expect(letters.getByRole("row", { name: /Refund letter copy/ })).toBeVisible();
+  // build 13: a new letter left without saving leaves nothing behind
+  const kept = await letters.getByRole("row").count();
+  await letters.getByRole("button", { name: "New cover letter" }).click();
+  await expect(page.getByTestId("draft-note")).toBeVisible();
+  await page.getByRole("button", { name: "Back to Payments Setup" }).click();      // untouched: no question asked
+  await expect(letters.getByRole("row")).toHaveCount(kept);
+  await letters.getByRole("button", { name: "New cover letter" }).click();
+  await page.getByLabel("Name", { exact: true }).fill("Changed but not kept");
+  page.once("dialog", (d) => d.accept());
+  await page.getByRole("button", { name: "Back to Payments Setup" }).click();
+  await expect(letters.getByRole("row")).toHaveCount(kept);
+  await expect(letters.getByRole("row", { name: /Changed but not kept/ })).toHaveCount(0);
   // a window-envelope letter from the preset
   await letters.getByRole("button", { name: "New window-envelope letter" }).click();
   await expect(page.getByRole("heading", { name: "Cover letter: Window envelope letter" })).toBeVisible();
   await expect(page.getByLabel("Address for a window envelope")).toHaveValue("LETTER");
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Saved." })).toBeVisible();
   await page.getByRole("button", { name: "Back to Payments Setup" }).click();
   // the Envelopes section points to the cover letter's Window envelope settings
   const pointer = envelopes.getByTestId("window-pointer");
@@ -2524,6 +2576,8 @@ test("#217: several cover letters and envelopes, Duplicate, the window-envelope 
   await expect(page.getByRole("heading", { name: /^Envelope: #10 envelope \d+$/ })).toBeVisible();
   const env = page.getByRole("img", { name: "Envelope preview" });
   await expect.poll(() => env.evaluate((i: HTMLImageElement) => i.complete && i.naturalWidth > 2 * i.naturalHeight)).toBe(true);
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Saved." })).toBeVisible();
   await page.getByTestId("window-pointer").getByRole("button", { name: /Open the window envelope settings of/ }).click();
   await expect(page.getByLabel("Address for a window envelope")).toBeFocused();
   await page.getByRole("button", { name: "Back to Payments Setup" }).click();
@@ -2732,7 +2786,60 @@ async function formCheck(page: Page, shot: string) {
   await page.waitForTimeout(150);
   await page.screenshot({ path: `e2e-screenshots/forms/${shot}.png`, fullPage: true });
   expect(await layoutViolations(page), shot).toEqual([]);
+  // build 13: only the content area scrolls - the page itself never runs on past the end (a long editor did)
+  expect(await page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight), `${shot}: the page scrolls`).toBeLessThanOrEqual(1);
 }
+
+test("#230: in Safari the check and test-print previews are pictures of the PDF, and Print… opens the PDF in a new tab", async ({ browser }) => {
+  // Safari draws a PDF in an inline frame blank; Chromium with Safari's user agent takes the same path in the app
+  const ctx = await browser.newContext({ baseURL: "http://127.0.0.1:8798",
+    userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.6 Safari/605.1.15" });
+  const page = await ctx.newPage();
+  await login(page, "ru1", "Brand-New-Pass-99");
+  const post = await apiAs(page);
+  const ents = await (await page.request.get("/api/entities?search=Sample%20Supply")).json();
+  const ent = (ents.items || ents).find((e: any) => /Sample Supply Company/.test(e.display_name || e.organization_name || ""));
+  const opts = await (await page.request.get("/api/budgets/selectable?fiscal_year_id=1&transaction_type=WITHDRAWAL")).json();
+  const tr = await post("/api/transactions", { bank_account_id: 1, transaction_type: "WITHDRAWAL", transaction_date: "2026-11-27",
+    entity_id: ent.id, check_number: "8391", allocations: [{ budget_id: opts.find((o: any) => o.label === "1000-01 Travel").id, amount: "42.00", invoice_number: "S-1", description: "Safari check" }] });
+  expect(tr.status(), await tr.text()).toBe(201);
+  const t = await tr.json();
+  await page.goto(`/register?account=1&txn=${t.id}`);
+  await expect(page.locator(`#txn-${t.id}`).getByRole("button", { name: `Details for transaction ${t.id}` })).toHaveAttribute("aria-expanded", "true");
+  await page.getByRole("button", { name: "Print check…" }).click();
+  const dlg = page.getByRole("dialog", { name: `Print check – transaction #${t.id}` });
+  // the plain-paper test: a picture, no PDF frame
+  await dlg.getByRole("button", { name: "Test print on plain paper" }).click();
+  const test = page.getByRole("dialog", { name: "Alignment test (plain paper)" });
+  await expect(test.getByTestId("pdf-picture")).toBeVisible();
+  expect(await test.getByTestId("pdf-picture").evaluate((i: HTMLImageElement) => i.naturalWidth)).toBeGreaterThan(500);
+  await expect(test.locator("iframe")).toHaveCount(0);
+  await expect(test.getByTestId("safari-print-note")).toBeVisible();
+  // Print… opens the PDF (a blob: link) in a new tab; the headless browser on GitHub's runners has no PDF viewer, so the
+  // tab may never show an address there - that the tab opens from the PDF's link is what is checked
+  await page.evaluate(() => {
+    const orig = HTMLAnchorElement.prototype.click;
+    HTMLAnchorElement.prototype.click = function (this: HTMLAnchorElement) {
+      HTMLAnchorElement.prototype.click = orig;
+      (window as any).__opened = `${this.target} ${this.href}`;
+      orig.call(this);
+    };
+  });
+  const [tab] = await Promise.all([ctx.waitForEvent("page"), test.getByRole("button", { name: "Print…" }).click()]);
+  expect(await page.evaluate(() => (window as any).__opened)).toMatch(/^_blank blob:/);
+  await tab.close();
+  await test.getByRole("button", { name: "Close" }).first().click();
+  // the check itself
+  await dlg.getByLabel("Type the number printed on the check that is in the printer").fill("8391");
+  await dlg.getByRole("button", { name: "Print check" }).click();
+  const chk = page.getByRole("dialog", { name: "Check #8391" });
+  await expect(chk.getByTestId("pdf-picture")).toBeVisible();
+  await expect(chk.locator("iframe")).toHaveCount(0);
+  await chk.getByRole("button", { name: "Close" }).first().click();
+  await expect(dlg.getByText("Check #8391 is ready.")).toBeVisible();
+  await dlg.getByRole("button", { name: "Yes – done" }).click();
+  await ctx.close();
+});
 
 test("#214: form rows line up - one control height, buttons and checkboxes centred, solid action bar (every form)", async ({ page }) => {
   test.setTimeout(180_000);
@@ -2807,7 +2914,8 @@ test("#125: an Administrator reinitializes (keeping the users); everyone sees th
   await login(page, "admin");
   await page.getByRole("link", { name: "System/About" }).click();
   await aboutTab(page, "Advanced");
-  await page.getByTestId("advanced").locator("summary").click();
+  await expect(page.getByRole("heading", { name: "Advanced", exact: true })).toHaveCount(0);   // build 13: not "Advanced" twice
+  await page.getByTestId("reinitialize").locator("summary", { hasText: "Reinitialize" }).click();
   await page.getByLabel('Type "reinitialize" to confirm').fill("reinitialize");
   await page.getByLabel("Your password").last().fill(PW);
   await page.getByRole("button", { name: "Reinitialize" }).click();

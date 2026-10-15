@@ -25,7 +25,7 @@ NAME_MAX = 60
 def clean_person_name(value: str | None, field: str) -> str:
     """2.0.0 (#134): first and last name - required, trimmed, at most 60 characters, at least one letter (any
     language), no control characters. Stored and shown as plain text."""
-    label = "First name" if field == "first_name" else "Last name"
+    label = "First name" if field.endswith("first_name") else "Last name"
     name = " ".join((value or "").split())
     if not name:
         raise validation(f"{label} is required.", field)

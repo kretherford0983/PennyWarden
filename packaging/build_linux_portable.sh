@@ -32,7 +32,9 @@ PY
 cat > "$OUT/pennywarden" <<'SH'
 #!/bin/sh
 # Self-contained launcher. Local mode by default; use --mode server for servers.
-case "$0" in */*) HERE="${0%/*}" ;; *) HERE="." ;; esac
+SELF="$0"   # 2.0.0 build 13: also works when started through a symlink to it
+if [ -L "$SELF" ]; then SELF="$(readlink -f "$SELF" 2>/dev/null || echo "$SELF")"; fi
+case "$SELF" in */*) HERE="${SELF%/*}" ;; *) HERE="." ;; esac
 HERE="$(cd "$HERE" && pwd)"
 export PYTHONNOUSERSITE=1 PYTHONDONTWRITEBYTECODE=1
 exec "$HERE/python/bin/python3" -I "$HERE/app/launch.py" "$@"

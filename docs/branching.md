@@ -58,8 +58,8 @@ pipeline are unchanged):
 - **Breaking** (1.x → 2.0) — a line in the sand: a change that may break the app (e.g. moving the data to a
   different database server — users decide deliberately whether to upgrade), **or** the start of something new: a
   big new area of functionality rather than support for existing features, or the app becoming publicly available
-  through its product page. Planned: 2.0.0 with the check printing module (#60), developed over several test builds
-  (product owner, 2026-10-08).
+  through its product page. 2.0.0 is such a release: the Payments module (check printing, #60), developed over 13
+  test builds (product owner, 2026-10-08).
 - **Major** (1.5 → 1.6) — one or more large new features within the current Breaking line.
 - **Minor** (1.6.0 → 1.6.1) — fixes, polish and performance; occasionally one planned feature of a Major line is
   released on its own so beta feedback can come in before the next one.
