@@ -20,10 +20,12 @@ amount in numbers and in words, memo and signature — never the check number or
 **Register Users** pay bills and print checks:
 - **Payments → New payment** enters a bill once — pay from, date, payee (or a new one), one line per invoice with its
   documents and invoice date — shows the amount in words as you type, records it in the register and opens the print
-  screen. **Create payment…** on a withdrawal already in the register prints its check.
-- **Print check…** on a withdrawal: check the preview and the feed mode, type the number printed on the check in the
-  printer, print at **actual size**. Afterwards choose **Yes – done**, **Reprint** (not damaged) or **Mark spoiled**
-  (its number becomes a $0.00 VOID record and you print on the next check).
+  screen. A withdrawal already in the register is paid with **Create payment…** in its details.
+- **Create payment…** on a withdrawal: check the preview and the feed mode, type the number printed on the check in
+  the printer, print at **actual size**. Afterwards choose **Yes – done**, **Reprint** (not damaged) or **Mark
+  spoiled** (its number becomes a $0.00 VOID record and you print on the next check).
+- Once the check is printed the button reads **Reprint check or letter…**: reprint the check, or only a damaged
+  cover letter or envelope.
 - For a check you write by hand, choose **I'm writing the check by hand** and record its number (typed twice).
 - A record copy of every printed check is attached to the transaction. If printing is shifted on your printer, the
   **Printer setup assistant** on the print screen adjusts it for you only.

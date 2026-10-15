@@ -16,7 +16,7 @@ write to your scheduled-backup folders.
 
 ### Payments module (optional)
 - **Turn it on** in System/About → General → Optional modules. Administrators set it up in **Payments Setup**;
-  Register Users get **Payments** in the menu and **Print check…** on withdrawals. Budget Managers have no access
+  Register Users get **Payments** in the menu and **Create payment…** on withdrawals in the register. Budget Managers have no access
   (docs/check-printing.md). (#60)
 - **Prints on blank check stock that already carries the bank numbers:** the date, payee, the amount in numbers and
   in words (bank style, with a protective fill), the memo and the signature — never the check number or the bank
@@ -38,7 +38,9 @@ write to your scheduled-backup folders.
 - **Printing a check.** You type the number printed on the loaded check before every print. **Reprint** needs a
   reason; **Mark spoiled** records the number as a $0.00 VOID record and moves the payment to the next check. A record
   copy (marked COPY – NOT NEGOTIABLE, never with the signature image) is attached to the transaction. For a check
-  written by hand, **I'm writing the check by hand** records its number (typed twice) without printing. (#161, #165)
+  written by hand, **I'm writing the check by hand** records its number (typed twice) without printing. In the
+  register a withdrawal shows **Create payment…**, and once its check is printed **Reprint check or letter…**, where
+  the check, or only a damaged letter or envelope, can be printed again. (#161, #165, #230)
 - **Works without printer setup:** Letter pages by default, instructions for your browser, a plain-paper test of the
   actual check, and a printer setup assistant that saves each user's own small adjustment without changing the
   Administrator's layout. Test prints say TEST – NOT A CHECK and carry a 5-inch line to check the print scale. (#158,

@@ -1011,6 +1011,7 @@ def doc_out(d: CheckDocument, full: bool = True) -> dict:
         out["note"] = getattr(cfg, "note", None)
         out["page"] = getattr(cfg, "page", None)
         out["guide"] = getattr(cfg, "guide", None)
+        out["window"] = getattr(cfg, "window", None)   # build 13 (#230): a window-envelope letter needs no envelope
     return out
 
 
