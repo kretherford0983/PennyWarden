@@ -2815,8 +2815,18 @@ test("#230: in Safari the check and test-print previews are pictures of the PDF,
   expect(await test.getByTestId("pdf-picture").evaluate((i: HTMLImageElement) => i.naturalWidth)).toBeGreaterThan(500);
   await expect(test.locator("iframe")).toHaveCount(0);
   await expect(test.getByTestId("safari-print-note")).toBeVisible();
+  // Print… opens the PDF (a blob: link) in a new tab; the headless browser on GitHub's runners has no PDF viewer, so the
+  // tab may never show an address there - that the tab opens from the PDF's link is what is checked
+  await page.evaluate(() => {
+    const orig = HTMLAnchorElement.prototype.click;
+    HTMLAnchorElement.prototype.click = function (this: HTMLAnchorElement) {
+      HTMLAnchorElement.prototype.click = orig;
+      (window as any).__opened = `${this.target} ${this.href}`;
+      orig.call(this);
+    };
+  });
   const [tab] = await Promise.all([ctx.waitForEvent("page"), test.getByRole("button", { name: "Print…" }).click()]);
-  await expect.poll(() => tab.url()).toMatch(/^blob:/);     // the new tab has no address until it starts loading
+  expect(await page.evaluate(() => (window as any).__opened)).toMatch(/^_blank blob:/);
   await tab.close();
   await test.getByRole("button", { name: "Close" }).first().click();
   // the check itself
