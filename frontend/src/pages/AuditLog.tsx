@@ -65,8 +65,13 @@ export default function AuditLog() {
   const limit = 50;
   useEffect(() => { api.get("/api/audit-events/meta").then(setMeta, () => undefined); }, []);
   useEffect(() => {
+    // build 13: only the answer for the current filters is shown - a slower answer for the previous ones (e.g. the
+    // first load, when a filter is changed at once) used to arrive last and replace it
+    let live = true;
     setErr(null);
-    api.get(`/api/audit-events${qs({ ...f, limit, offset: page * limit })}`).then(setData, setErr);
+    api.get(`/api/audit-events${qs({ ...f, limit, offset: page * limit })}`)
+      .then((d) => { if (live) setData(d); }, (x) => { if (live) setErr(x); });
+    return () => { live = false; };
   }, [f, page]);
   const set = (k: keyof typeof f) => (e: any) => { setPage(0); setF({ ...f, [k]: e.target.value }); };
   // 2.0.0 build 12 (#188): export the filtered list (all pages) as CSV or a printable PDF - same entries and wording as

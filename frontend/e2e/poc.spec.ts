@@ -2816,7 +2816,7 @@ test("#230: in Safari the check and test-print previews are pictures of the PDF,
   await expect(test.locator("iframe")).toHaveCount(0);
   await expect(test.getByTestId("safari-print-note")).toBeVisible();
   const [tab] = await Promise.all([ctx.waitForEvent("page"), test.getByRole("button", { name: "Print…" }).click()]);
-  expect(tab.url()).toMatch(/^blob:/);
+  await expect.poll(() => tab.url()).toMatch(/^blob:/);     // the new tab has no address until it starts loading
   await tab.close();
   await test.getByRole("button", { name: "Close" }).first().click();
   // the check itself
