@@ -32,9 +32,10 @@ ACTION_LABELS = {
     "SESSION_ENDED_BY_ADMIN": "Session ended by an Administrator", "ACCOUNT_NUMBER_REVEALED": "Account number shown",
     "UPDATE_CHECK_SETTING_CHANGED": "Update check setting changed", "REPORT_GENERATED": "Report generated",
     "AUDIT_LOG_EXPORTED": "Audit log exported",
+    "CONFIG_APPLIED": "Server settings applied (pennywarden apply-config)",
 }
 OBJECT_LABELS = {
-    "user": "User", "workspace": "Organization", "fiscal_year": "Fiscal Year", "budget": "Budget", "entity": "Entity",
+    "user": "User", "workspace": "Organization", "server_config": "Server settings", "fiscal_year": "Fiscal Year", "budget": "Budget", "entity": "Entity",
     "bank_account": "Bank account", "register_transaction": "Transaction", "attachment": "Attachment",
     "fiscal_year_review": "Fiscal Year review", "transaction_allocation": "Transaction line", "fundraiser": "Fundraiser",
     "reminder": "Reminder", "check_style": "Check style", "check_signer": "Signer", "check_document": "Letter/envelope template",
