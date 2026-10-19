@@ -31,7 +31,11 @@ permanent copy), so Actions artifact storage stays well within the GitHub Pro al
   `test`/`main`). `dependabot/*` branches are accepted into develop only.
 - Pull requests into **test** come from `develop` (or `hotfix/*`, or a back-merge from `main`).
 - Pull requests into **main** come from `test` or `hotfix/*`, **and** the version must not be released yet and must
-  have a `## <version>` section in `CHANGELOG.md`.
+  have a `## <version>` section in `CHANGELOG.md`. The heading may still say `## <version> — unreleased` (2.1.0, #240):
+  the release date is only known when the pull request is merged, so the pipeline dates the release itself (see
+  *Release dates* below).
+- Pull requests into **test** and **main** are refused while an **earlier, already released** version's heading still
+  says `unreleased`: the next version's first feature branch dates it (*Release dates*).
 - The version in `backend/fmpoc/config.py` and `frontend/package.json` must always match.
 - A version is released only once; a test pre-release is not created for a version that is already released.
 
@@ -65,7 +69,23 @@ pipeline are unchanged):
   released on its own so beta feedback can come in before the next one.
 
 The first feature of a new release bumps the version on its feature branch (e.g. 1.5.0 → 1.6.0) and adds the
-CHANGELOG section; later features of the same release add to that section.
+CHANGELOG section (`## <version> — unreleased`); later features of the same release add to that section. **The same
+first branch also dates the previous release** (next section).
+
+### Release dates (2.1.0, #240)
+A version's CHANGELOG heading says `## <version> — unreleased` all the way to `main`; nobody types a release date.
+- **Users always see the date:** the GitHub release, pennywarden.org (`releases.json`) and the in-app *What's new*
+  show the release's publish date. Their text is the section *below* the heading (`scripts/release_notes.sh` never
+  prints the heading), so "unreleased" doesn't reach them. Test pre-releases are the same.
+- **CHANGELOG.md gets the real date as the first commit of the next version.** On the next version's first feature
+  branch, after bumping the version, run `bash scripts/date_changelog.sh <previous version>` (e.g.
+  `bash scripts/date_changelog.sh 2.1.0`). It reads the publish date of GitHub release `v<previous version>` and
+  rewrites the heading to `## <previous version> — <date>`. Offline, pass the date yourself:
+  `--date 2026-10-23`. Pull requests into test and main fail until this is done.
+- README no longer names the current version: it links to the latest release, so it can't go stale.
+
+Before 2.1.0 the date had to be typed into the heading on develop and promoted before the test → main pull request
+(rule from 1.7.3), which cost an extra develop → test → main round for every release.
 
 **Production releases started with 1.6.6** (the release that renamed the application to Fundwarden; it is PennyWarden since 1.7.0). Before that (beta) every version existed only as a test pre-release and
 fixes simply went into the next version. From 1.6.6 on, `main` is what people run:
@@ -85,10 +105,11 @@ repository activity — it emails first, and **Enable workflow** on the Actions 
 Python (`backend/`), JavaScript (`frontend/`) and GitHub Actions dependencies: routine minor and patch updates as
 one pull request per group, at most 5 open per group. **Major versions are not proposed** (since 1.7.1): an upgrade
 such as React 18 → 19 or TypeScript 5 → 7 needs planning and testing, so file it as an issue and it is done on a
-feature branch like any other change. **`pydantic` and `pydantic_core` are not proposed either** (2.0.0): pydantic
-needs one exact `pydantic_core`, and Dependabot changes the pinned lines of `requirements.txt` one at a time without
-re-resolving them, so a pydantic update on its own fails to install (#224). Update the two together by hand on a
-`feature/` branch — ask me to do it. Security updates are not held back by either rule: they arrive separately as soon as an
+feature branch like any other change. **Python updates are re-resolved** (2.1.0, #226): `backend/requirements.in`
+lists the direct dependencies and `backend/requirements.txt` is compiled from it with pip-compile, so Dependabot
+updates `requirements.in` and re-compiles the whole pinned list — packages that must move together (pydantic and its
+exact `pydantic_core`) arrive together. (Before 2.1.0 Dependabot changed the pinned lines one by one, so pydantic was
+held back and updated by hand, #224.) Security updates are not held back by the major-version rule: they arrive separately as soon as an
 advisory is published, also when the fix is a major version, once *Dependabot security updates* is turned on
 (Settings → Advanced Security). Dependabot reads its settings from `main`, so a change to
 `.github/dependabot.yml` takes effect when it is released. Its branches are named `dependabot/...`:
@@ -109,6 +130,19 @@ advisory is published, also when the fix is a major version, once *Dependabot se
    for good, add an `ignore` rule naming `update-types`). Already taken in by another pull request? Close it too —
    once the versions are on develop there is nothing left to propose. (Avoid the comment
    `@dependabot ignore this dependency`: it also stops security fixes for that dependency.)
+
+## Python dependencies (2.1.0, #226)
+- **`backend/requirements.in`** — the packages PennyWarden imports itself, pinned exactly. Edit only this file.
+- **`backend/requirements.txt`** — generated by pip-compile from it: every package, transitive ones included, pinned,
+  with a `# via` note saying who needs it. Every build, the tests, the Docker image, `pip-audit` and the notices check
+  read this file, so the packages ship exactly what `THIRD-PARTY-NOTICES.txt` lists.
+- **Add or update a dependency:** on a `feature/` branch, change the line in `requirements.in`, then with **Python
+  3.12** (the version the packages ship):
+  `pip install pip-tools && cd backend && pip-compile requirements.in` (re-resolves only what the change needs; add
+  `--upgrade-package NAME` to move a transitive package). Install it, run the tests, then
+  `python scripts/third_party_notices.py` and review the licenses of new packages. Commit all three files.
+- Windows-only packages (`colorama`, needed by click/uvicorn on Windows) are not in the Linux-compiled list; the
+  Windows build adds `colorama` itself and the notices list it separately.
 
 ## One-time GitHub settings (Settings tab of the repository)
 1. **General → Default branch**: `main` — visitors then see the README and docs of the production release (choose

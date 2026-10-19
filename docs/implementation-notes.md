@@ -48,6 +48,31 @@ could not otherwise be corrected. Scope and safeguards:
 - Audited as `TRANSACTION_VOID_DATE_CORRECTED` with before/after snapshots and the reason.
 - Tests: `backend/tests/test_cr001_void_date.py` (5 tests) and E2E "CR-001".
 
+**2.1.0 test build 1 — pipeline and installer (#240, #236, #237, #226; decided in chat 2026-10-19).** No migration.
+- *#240 release dates:* `check_promotion.sh` no longer refuses `## <version> — unreleased` into main (the 1.7.3 rule);
+  it still needs the section and refuses a tagged version, and pull requests into test/main fail while an *earlier*
+  tagged version still says `unreleased`. `scripts/release_notes.sh` never printed the heading, so the published
+  notes (GitHub release, `releases.json`, *What's new*) already carry only the publish date — nothing to rewrite in the
+  build. `scripts/date_changelog.sh <version>` reads `published_at` of release `v<version>` from the GitHub API
+  (`PENNYWARDEN_GITHUB_API`/`PENNYWARDEN_REPO` for tests, `--date` offline) and rewrites only that heading; it is the
+  first commit of the next version. README links to the latest release instead of naming it. Tests:
+  `test_v210_release_dates.py` (the real scripts in a throw-away repo with a bare `origin` carrying tags).
+- *#237 `pennywarden apply-config`:* `cli_apply_config.py`. Order: parse and check `config.toml` (backup folders
+  absolute, outside `/home`, `/root`, `/run/user`; mode, host, port, `trusted_proxies`, `secure_cookies`; every other
+  value coerced like `load_settings`) → refuse to replace a `backup-folders.conf` without a PennyWarden header → write
+  or remove the drop-in (2.0.0 format, new header) → unless `--no-restart`: `daemon-reload`, `restart`, wait up to
+  60 s for `/api/health` on the configured address; on failure the previous drop-in is written back and the service
+  restarted. `override.conf` is only read (a note when it lists `ReadWritePaths`). Audited as `CONFIG_APPLIED`
+  (Security, object `server_config`) when a database exists, then `match_ownership` hands database/logs back to the
+  data folder's owner. The data folder defaults to the installed unit's `--data-dir`. Without a systemd unit it only
+  checks. Read-only `--show-url` / `--show-endpoints` serve the installer. `install-server.sh` runs `--dry-run`
+  right after unpacking (before anything is stopped or migrated), `--no-restart --installer` where its inline
+  Python/shell writer was, then `--show-url` for the health and status calls and `--show-endpoints` for the last
+  lines. Verified end-to-end in a container with a fake `systemctl` (fresh install, upgrade with `0.0.0.0` and two
+  folders, a specific address, the standalone command through the `/usr/local/bin` wrapper, a broken `config.toml`).
+- *#236 Bind Address:* `connect_host` maps `0.0.0.0` → `127.0.0.1`, `::` → `[::1]`, IPv6 in brackets, anything else
+  as is; `endpoints` lists `hostname -I` addresses (no loopback/link-local) for all-interfaces bindings.
+
 **1.7.1 Display name required and shown in the top bar (issues #47, #46, #50).** `services/users.clean_display_name`
 (trimmed, at least 3 characters, messages as agreed in #47) on create and on every update that sends the field;
 `bootstrap` gives the first Administrator the username. Migration `0017` copies the username where the name is
