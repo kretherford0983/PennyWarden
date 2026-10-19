@@ -31,6 +31,7 @@ def register_view(
     search: str | None = Query(None, max_length=200),
     # 1.6.7; 2.1.0 (#258): yes | missing (what the documentation review warns about) | marked; "no" = missing
     attachments: Literal["yes", "missing", "marked", "no"] | None = None,
+    payment: Literal["check", "electronic", "none"] | None = None,  # 2.1.0 (#260): withdrawals by payment method
     budget_id: int | None = None,  # 1.7.3 (#104): only transactions with an allocation to this budget (or its sub-budgets)
     sort: Literal["transaction_date", "entry_timestamp", "amount", "check_number", "clear_date"] = "transaction_date",
     direction: Literal["asc", "desc"] = "asc",
@@ -56,7 +57,8 @@ def register_view(
     budget = get_scoped(db, Budget, budget_id, ctx, "Budget") if budget_id else None
     return svc.register_view(db, ctx, acct, fiscal_year=fy, txn_type=transaction_type, status=status,
                              date_from=date_from, date_to=date_to, search=search, sort=sort, direction=direction,
-                             attachments=attachments, budget=budget, include_deleted="AUDITOR" in ctx.roles)
+                             attachments=attachments, budget=budget, include_deleted="AUDITOR" in ctx.roles,
+                             payment=payment)
 
 
 @router.get("/transactions/{txn_id}")

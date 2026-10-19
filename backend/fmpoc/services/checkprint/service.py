@@ -525,7 +525,7 @@ def address_lines(e) -> list[str]:
     return lines
 
 
-def get_printable(db: Session, ctx, txn_id: int) -> RegisterTransaction:
+def get_printable(db: Session, ctx, txn_id: int, for_check: bool = True) -> RegisterTransaction:
     """BR-065-072, BR-057: only an active withdrawal over zero, not in a Closed Fiscal Year, can be printed."""
     t = get_scoped(db, RegisterTransaction, txn_id, ctx, "Transaction")
     if t.status != "ACTIVE":
@@ -534,6 +534,9 @@ def get_printable(db: Session, ctx, txn_id: int) -> RegisterTransaction:
         raise conflict("NOT_PRINTABLE", "Only withdrawals can be printed as checks.")
     if t.total_cents <= 0:
         raise conflict("NOT_PRINTABLE", "A check must be for more than zero.")
+    if t.electronic_payment and for_check:   # 2.1.0 (#260): letters and envelopes are still allowed
+        raise conflict("NOT_PRINTABLE", "This payment was made electronically - no check is printed for it. Untick "
+                                        "Electronic payment first if a check is written after all.")
     if reg.is_closed_protected(db, t):
         raise conflict("FISCAL_YEAR_CLOSED", "The transaction belongs to a Closed Fiscal Year and cannot be printed.")
     return t

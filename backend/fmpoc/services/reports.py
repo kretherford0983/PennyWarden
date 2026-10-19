@@ -43,6 +43,7 @@ from ..money import fmt
 from . import bank_accounts as bank
 from . import budgets as bsvc
 from . import fundraisers as fsvc
+from . import register as reg
 from .attachments import path_for
 from .common import budget_label
 from .documentation import review as documentation_review
@@ -673,7 +674,9 @@ def build_audit_report(db: Session, ctx, settings, fy: FiscalYear, account_id: i
             ("Description", _txn_description(t)),
             ("Clear Date", t.clear_date or "Uncleared"),
             ("Notes", t.notes or "—")]))
-        extra = [("Status", t.status), ("Check number", t.check_number or "—"),
+        # 2.1.0 (#260): an electronic payment shows "Electronic (method)" where the check number would be
+        extra = [("Status", t.status),
+                 ("Payment", reg.payment_text(t)) if t.electronic_payment else ("Check number", t.check_number or "—"),
                  ("Entered", f"{t.entry_timestamp:%Y-%m-%d %H:%M} UTC by {users.get(t.created_by_user_id, '?')}")]
         if void:
             extra.append(("Void", f"{t.void_reason} — {t.voided_at:%Y-%m-%d %H:%M} UTC by "
@@ -995,7 +998,7 @@ def entity_activity(db: Session, ctx, *, account_id: int | None, date_from: dt.d
             g["lines"].append({"transaction_id": t.id, "transaction_date": t.transaction_date.isoformat(),
                                "account": f"{a.account_name} - {bank.masked(a)}", "type": t.transaction_type,
                                "description": al.description, "invoice_number": al.invoice_number,
-                               "check_number": t.check_number, "amount": fmt(al.amount_cents),
+                               "check_number": reg.payment_text(t), "amount": fmt(al.amount_cents),
                                "cleared": t.clear_date is not None})
     rows = []
     for g in groups.values():
@@ -1044,7 +1047,7 @@ def entity_activity_csv(report: dict) -> str:
                     report["date_from"], report["date_to"]])
     if any(r["lines"] for r in report["rows"]):
         w.writerow([])
-        w.writerow(["Entity", "Transaction #", "Date", "Account", "Type", "Description", "Invoice #", "Check #", "Amount"])
+        w.writerow(["Entity", "Transaction #", "Date", "Account", "Type", "Description", "Invoice #", "Check # / payment", "Amount"])
         for r in report["rows"]:
             for ln in r["lines"] or []:
                 w.writerow([_csv_safe(r["label"]), ln["transaction_id"], ln["transaction_date"], _csv_safe(ln["account"]),

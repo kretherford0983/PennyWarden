@@ -544,3 +544,7 @@ button.small, label.button { display: inline-flex; align-items: center; justify-
 .table th .sort-head:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
 .table th .sort-arrow.idle { opacity: 0.45; }
 .sort-note { margin: 4px 0 6px; }
+/* 2.1.0 (#260): electronic payment - the kind of number and the number side by side */
+.number-kind { display: flex; gap: 8px; }
+.number-kind select { flex: 0 0 auto; width: auto !important; }
+.number-kind input { flex: 1 1 8em; min-width: 6em; }

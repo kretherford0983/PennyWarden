@@ -324,7 +324,7 @@ def _job(db, ctx, txn_id: int, body: JobIn):
 
 @router.get("/transactions/{txn_id}/options")
 def print_options(txn_id: int, db: Session = Depends(get_db), ctx: Ctx = Depends(print_ctx)):
-    t = svc.get_printable(db, ctx, txn_id)
+    t = svc.get_printable(db, ctx, txn_id, for_check=False)
     acct = db.get(BankAccount, t.bank_account_id)
     styles = svc.list_styles(db, ctx, include_inactive=False)
     row = svc.account_row(db, ctx, acct.id)
@@ -333,6 +333,7 @@ def print_options(txn_id: int, db: Session = Depends(get_db), ctx: Ctx = Depends
                            "amount": f"{t.total_cents // 100}.{t.total_cents % 100:02d}",
                            "transaction_date": t.transaction_date.isoformat(), "check_number": t.check_number,
                            "cleared": t.clear_date is not None, "bank_account_id": acct.id,
+                           "electronic_payment": bool(t.electronic_payment),   # 2.1.0 (#260): letters/envelopes only
                            "bank_account_name": acct.account_name},
            "styles": [svc.style_out(s, full=False) for s in styles],
            "check_style_id": chosen.id if chosen else None,
@@ -676,7 +677,7 @@ def document_preview_image(doc_id: int, body: DocTestIn, db: Session = Depends(g
 @router.get("/transactions/{txn_id}/documents")
 def transaction_documents(txn_id: int, db: Session = Depends(get_db), ctx: Ctx = Depends(print_ctx)):
     """Letter and envelope templates for the print screen, with the user's envelope printer settings."""
-    svc.get_printable(db, ctx, txn_id)
+    svc.get_printable(db, ctx, txn_id, for_check=False)
     letters = [svc.doc_out(d, full=False) for d in svc.list_documents(db, ctx, "LETTER", False)]
     envs = []
     for d in svc.list_documents(db, ctx, "ENVELOPE", False):
@@ -687,7 +688,7 @@ def transaction_documents(txn_id: int, db: Session = Depends(get_db), ctx: Ctx =
 @router.post("/transactions/{txn_id}/letter")
 def print_letter(txn_id: int, body: LetterIn, request: Request, db: Session = Depends(get_db),
                  ctx: Ctx = Depends(print_ctx)):
-    t = svc.get_printable(db, ctx, txn_id)
+    t = svc.get_printable(db, ctx, txn_id, for_check=False)
     d = svc.get_document(db, ctx, body.document_id, "LETTER")
     pdf = svc.print_letter(db, ctx, request.app.state.settings, t, d, body.signer_id, body.confirmations)
     return _pdf(ctx, pdf, f"letter-{t.check_number or t.id}.pdf")
@@ -696,7 +697,7 @@ def print_letter(txn_id: int, body: LetterIn, request: Request, db: Session = De
 @router.post("/transactions/{txn_id}/envelope")
 def print_envelope(txn_id: int, body: EnvelopeIn, request: Request, db: Session = Depends(get_db),
                    ctx: Ctx = Depends(print_ctx)):
-    t = svc.get_printable(db, ctx, txn_id)
+    t = svc.get_printable(db, ctx, txn_id, for_check=False)
     d = svc.get_document(db, ctx, body.document_id, "ENVELOPE")
     pdf = svc.print_envelope(db, ctx, request.app.state.settings, t, d, return_address=body.return_address,
                              page=body.page, guide=body.guide, test=False, confirmations=body.confirmations)
@@ -706,7 +707,7 @@ def print_envelope(txn_id: int, body: EnvelopeIn, request: Request, db: Session 
 @router.post("/transactions/{txn_id}/envelope-test")
 def envelope_test(txn_id: int, body: EnvelopeIn, request: Request, db: Session = Depends(get_db),
                   ctx: Ctx = Depends(print_ctx)):
-    t = svc.get_printable(db, ctx, txn_id)
+    t = svc.get_printable(db, ctx, txn_id, for_check=False)
     d = svc.get_document(db, ctx, body.document_id, "ENVELOPE")
     pdf = svc.print_envelope(db, ctx, request.app.state.settings, t, d, return_address=body.return_address,
                              page=body.page, guide=body.guide, test=True, confirmations=[])

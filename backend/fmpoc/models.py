@@ -334,6 +334,13 @@ class RegisterTransaction(Base):
     deleted_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     deleted_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     delete_reason: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    # 2.1.0 (#260): a withdrawal paid electronically (no physical check). The optional number is either a check number
+    # from the organization's own sequence (check_number, CR-011/CR-012) or a bank/vendor reference (never in the
+    # check sequence).
+    electronic_payment: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
+    payment_method: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    payment_method_other: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    payment_reference: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
     allocations: Mapped[list["TransactionAllocation"]] = relationship(
         back_populates="transaction", lazy="selectin", order_by="TransactionAllocation.id"

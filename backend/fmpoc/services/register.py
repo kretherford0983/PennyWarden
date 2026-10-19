@@ -37,7 +37,89 @@ def snapshot(t: RegisterTransaction) -> dict:
             "notes": t.notes, "void_reason": t.void_reason, "delete_reason": t.delete_reason, "total": fmt(t.total_cents),
             "transfer_group": t.transfer_group, "no_attachment": bool(t.no_attachment),
             "no_attachment_reason": t.no_attachment_reason,
+            "electronic_payment": bool(t.electronic_payment), "payment_method": t.payment_method,   # 2.1.0 (#260)
+            "payment_method_other": t.payment_method_other, "payment_reference": t.payment_reference,
             "allocations": [alloc_snapshot(a) for a in t.live_allocations]}
+
+
+# 2.1.0 (#260): electronic payments (withdrawals)
+PAYMENT_METHOD_LABELS = {"ACH": "ACH / bill pay", "DEBIT_CARD": "Debit card", "WIRE": "Wire",
+                         "ONLINE_PORTAL": "Online portal", "OTHER": "Other"}
+ELECTRONIC_FIELDS = {"electronic_payment", "payment_method", "payment_method_other", "payment_reference"}
+
+
+def payment_method_label(t: RegisterTransaction) -> str | None:
+    if not t.electronic_payment:
+        return None
+    if t.payment_method == "OTHER" and t.payment_method_other:
+        return t.payment_method_other
+    return PAYMENT_METHOD_LABELS.get(t.payment_method or "", "Electronic")
+
+
+def payment_text(t: RegisterTransaction) -> str | None:
+    """What reports show where the check number would be: "Electronic (ACH / bill pay)", plus the number or
+    reference when there is one; the check number for a check; None otherwise."""
+    if t.electronic_payment:
+        text = f"Electronic ({payment_method_label(t)})"
+        if t.check_number:
+            text += f", check #{t.check_number}"
+        if t.payment_reference:
+            text += f", ref. {t.payment_reference}"
+        return text
+    return t.check_number or None
+
+
+def _reference_key(ref: str | None) -> str:
+    return (ref or "").strip().lower()
+
+
+def assert_reference_unused(db: Session, ws_id: int, account_id: int, ref: str | None,
+                            exclude_id: int | None = None) -> None:
+    """A payment reference is used once per bank account (case-insensitive), apart from check numbers."""
+    key = _reference_key(ref)
+    if not key:
+        return
+    q = select(RegisterTransaction).where(RegisterTransaction.workspace_id == ws_id,
+                                          RegisterTransaction.bank_account_id == account_id,
+                                          RegisterTransaction.payment_reference.is_not(None))
+    for other in db.scalars(q):
+        if other.id != exclude_id and _reference_key(other.payment_reference) == key:
+            raise conflict("DUPLICATE_PAYMENT_REFERENCE",
+                           f"Payment reference {ref} is already used in this account by transaction #{other.id}.")
+
+
+def electronic_values(data, fields: set[str], t: RegisterTransaction | None, txn_type: str,
+                      check_number: str | None) -> tuple[bool, str | None, str | None, str | None]:
+    """The electronic-payment fields after this create/edit, validated (#260)."""
+    cur = (bool(t.electronic_payment), t.payment_method, t.payment_method_other, t.payment_reference) if t \
+        else (False, None, None, None)
+    flag = bool(data.electronic_payment) if "electronic_payment" in fields and data.electronic_payment is not None \
+        else cur[0]
+    method = data.payment_method if "payment_method" in fields else cur[1]
+    other = (data.payment_method_other or None) if "payment_method_other" in fields else cur[2]
+    ref = (data.payment_reference or None) if "payment_reference" in fields else cur[3]
+    if not flag:   # not (or no longer) electronic: the details go with it
+        if any(k in fields and getattr(data, k, None) for k in ("payment_method", "payment_method_other",
+                                                                "payment_reference")):
+            raise validation("Payment method and reference apply to electronic payments only - tick "
+                             "Electronic payment.", "electronic_payment")
+        return False, None, None, None
+    if txn_type != "WITHDRAWAL":
+        raise validation("Electronic payment applies to Withdrawals only.", "electronic_payment")
+    if not method:
+        raise validation("Choose how it was paid (ACH / bill pay, debit card, wire, online portal or other).",
+                         "payment_method")
+    if method == "OTHER":
+        other = (other or "").strip() or None
+        if not other:
+            raise validation("Describe the payment method (up to 60 characters).", "payment_method_other")
+    else:
+        other = None
+    if ref and check_number:
+        raise validation("Enter either a check number from your own check sequence or a payment reference, not "
+                         "both.", "payment_reference")
+    return True, method, other, ref
+
 
 
 def _budget_info(db: Session, b: Budget) -> dict:
@@ -93,6 +175,7 @@ def out(db: Session, t: RegisterTransaction, running_balance: int | None = None)
         "has_pending_review": any(r["status"] == "PENDING" for rs in reviews.values() for r in rs),
         "invoice_numbers": sorted({a.invoice_number for a in t.live_allocations if a.invoice_number}),
         "check_printed": check_printed,
+        "payment_method_label": payment_method_label(t),   # 2.1.0 (#260)
     }
 
 
@@ -332,6 +415,10 @@ def create(db: Session, ctx, data) -> RegisterTransaction:
     if data.check_number and data.transaction_type != "WITHDRAWAL":
         raise validation("Check Number applies to Withdrawals only.", "check_number")
     checks.assert_unused(db, ctx.workspace_id, acct.id, data.check_number)  # v1.3 CR-011 hard block
+    epay = electronic_values(data, data.model_fields_set, None, data.transaction_type, data.check_number or None)
+    if epay[0] and data.create_as_void:
+        raise validation("A zero-dollar VOID record is not an electronic payment.", "electronic_payment")
+    assert_reference_unused(db, ctx.workspace_id, acct.id, epay[3])
     parent_entity = _entity(db, ctx, data.entity_id, set())
     t = RegisterTransaction(workspace_id=ctx.workspace_id, bank_account_id=acct.id,
                             transaction_type=data.transaction_type, transaction_date=txn_date,
@@ -339,6 +426,7 @@ def create(db: Session, ctx, data) -> RegisterTransaction:
                             parent_entity_id=parent_entity.id if parent_entity else None,
                             check_number=data.check_number or None, notes=data.notes, status="ACTIVE",
                             created_by_user_id=ctx.user.id, updated_by_user_id=ctx.user.id)
+    t.electronic_payment, t.payment_method, t.payment_method_other, t.payment_reference = epay
     if data.no_attachment:
         _apply_no_attachment(t, ctx, True, data.no_attachment_reason)
     if data.create_as_void:
@@ -475,6 +563,17 @@ def update(db: Session, ctx, t: RegisterTransaction, data) -> RegisterTransactio
         raise validation("Check Number applies to Withdrawals only; clear it before changing to Deposit.", "check_number")
     if "check_number" in f and checks.check_key(new_check) != checks.check_key(t.check_number):
         checks.assert_unused(db, ctx.workspace_id, t.bank_account_id, new_check, exclude_id=t.id)
+    # 2.1.0 (#260): electronic payment - validated against the new type and check number
+    epay = electronic_values(data, f, t, new_type, new_check)
+    if f & ELECTRONIC_FIELDS:
+        if _reference_key(epay[3]) != _reference_key(t.payment_reference):
+            assert_reference_unused(db, ctx.workspace_id, t.bank_account_id, epay[3], exclude_id=t.id)
+        if epay[0] and not t.electronic_payment:
+            from .checkprint import service as checkprint
+            if t.check_number and checkprint.is_reprint(db, t):
+                raise conflict("CHECK_PRINTED", f"Check #{t.check_number} was printed for this payment. If it was "
+                                                "never sent, mark it spoiled first (Reprint check…), then mark the "
+                                                "payment electronic.")
     keep_ids = {x for x in [t.parent_entity_id, *[a.entity_id for a in t.live_allocations]] if x}
     if "entity_id" in f and new_entity_id is not None:
         e = _entity(db, ctx, new_entity_id, keep_ids)
@@ -516,6 +615,7 @@ def update(db: Session, ctx, t: RegisterTransaction, data) -> RegisterTransactio
     require_confirmations(warnings, data.confirmations)
     # ---- apply
     t.transaction_type, t.transaction_date, t.clear_date, t.check_number = new_type, new_date, new_clear, new_check
+    t.electronic_payment, t.payment_method, t.payment_method_other, t.payment_reference = epay
     if "notes" in f:
         t.notes = data.notes
     if f & NO_ATTACHMENT_FIELDS:
@@ -741,7 +841,7 @@ DEFAULT_REGISTER_SORT = "transaction_date:asc"
 def register_view(db: Session, ctx, acct: BankAccount, *, fiscal_year: FiscalYear | None, txn_type: str | None,
                   status: str | None, date_from: dt.date | None, date_to: dt.date | None, search: str | None,
                   sort: str, direction: str, attachments: str | None = None, budget: Budget | None = None,
-                  include_deleted: bool = False) -> dict:
+                  include_deleted: bool = False, payment: str | None = None) -> dict:
     """attachments (1.6.7; 2.1.0, #258):
       "yes"     - the transactions with an attachment, counted exactly like the paperclip in the row (the
                   transaction's own attachments plus those of its allocations);
@@ -790,13 +890,20 @@ def register_view(db: Session, ctx, acct: BankAccount, *, fiscal_year: FiscalYea
             continue
         if status == "active" and t.status != "ACTIVE":
             continue
+        # 2.1.0 (#260): Payment method filter - check / electronic / none (withdrawals only)
+        if payment == "electronic" and not t.electronic_payment:
+            continue
+        if payment == "check" and (t.transaction_type != "WITHDRAWAL" or t.electronic_payment or not t.check_number):
+            continue
+        if payment == "none" and (t.transaction_type != "WITHDRAWAL" or t.electronic_payment or t.check_number):
+            continue
         if bids is not None:
             part = [a.amount_cents for a in t.live_allocations if a.budget_id in bids]
             if not part:
                 continue
             share[t.id] = sum(part)
         if needle:
-            hay = [t.check_number or "", t.notes or "", fmt(t.total_cents) or "",
+            hay = [t.check_number or "", t.payment_reference or "", t.notes or "", fmt(t.total_cents) or "",
                    t.parent_entity.display_name if t.parent_entity else ""]
             for a in t.live_allocations:
                 hay += [a.description or "", a.invoice_number or "", a.entity.display_name if a.entity else ""]
