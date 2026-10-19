@@ -69,7 +69,7 @@ the same command — see [upgrade.md](upgrade.md).
   `curl -fsSL https://github.com/kretherford0983/PennyWarden/releases/download/<tag>/install.sh | sudo bash -s -- --version <tag>`
 - **Port:** a new installation uses 8765 (`--port N` to change); an upgrade reads the port from the existing
   `config.toml`.
-- **Also set up (since 2.0.0):** the `pennywarden` command for the host commands (`sudo pennywarden restore …`), and
+- **Also set up (since 2.0.0):** the `pennywarden` command for the host commands (`sudo pennywarden restore … --data-dir /var/lib/pennywarden`), and
   write access for the service to the scheduled-backup folders in `backup_folders`. After changing that list (or any
   other setting in `config.toml`), run `sudo pennywarden apply-config` (2.1.0) instead of the whole installer.
 - **Where it listens (2.1.0):** the installer's health check and its last message use the configured **Bind
@@ -140,8 +140,10 @@ Host commands for a locked-out user, run on the server — on the Linux server i
 the `pennywarden` command since 2.0.0, and files the commands write are handed back to the service's account); on a
 Windows server as Administrator with `C:\PennyWarden\current\PennyWarden.cmd`; see also `restore` and `reinitialize` in
 [backup-restore.md](backup-restore.md):
-`sudo pennywarden reset-mfa --user NAME` (two-step verification set up again) and, from 1.8.0,
-`sudo pennywarden reset-password --user NAME` (prints a temporary password that must be changed at the next sign-in).
+`sudo pennywarden reset-mfa --user NAME --data-dir /var/lib/pennywarden` (two-step verification set up again) and,
+from 1.8.0, `sudo pennywarden reset-password --user NAME --data-dir /var/lib/pennywarden` (prints a temporary password
+that must be changed at the next sign-in). On a server always add `--data-dir`
+([why](backup-restore.md#the-data-folder---data-dir)).
 Both also enable an account that was disabled after too many failed attempts.
 
 ## Docker (optional)

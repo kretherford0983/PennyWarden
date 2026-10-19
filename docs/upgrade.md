@@ -422,5 +422,5 @@ sudo pennywarden reset-mfa --user <username> --data-dir /var/lib/pennywarden
 ```
 
 (since 2.0.0; files it writes are handed back to the service account afterwards. On an older installation without the
-`pennywarden` command: `sudo -u pennywarden /opt/pennywarden/current/pennywarden reset-mfa …`). The reset is
+`pennywarden` command: `sudo -u pennywarden /opt/pennywarden/current/pennywarden reset-mfa --user <username> --data-dir /var/lib/pennywarden`). The reset is
 recorded in the audit log; the user sets up two-step verification again at the next sign-in.

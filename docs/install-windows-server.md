@@ -292,7 +292,10 @@ C:\PennyWarden\current\PennyWarden.cmd reinitialize --data-dir C:\ProgramData\Pe
 `reset-mfa` makes a user set up two-step verification again; `reset-password` prints a temporary password that must
 be changed at the next sign-in (both also enable an account disabled after too many failed attempts). `restore` and
 `reinitialize` stop the service first (they ask) — see [backup-restore.md](backup-restore.md). Files these commands
-create keep the folder's permissions from step 2, so the service account can still read them.
+create keep the folder's permissions from step 2, so the service account can still read them. Always add `--data-dir`:
+without it the commands look in the Administrator's own folder
+([why](backup-restore.md#the-data-folder---data-dir)). A restore of the wrong file can be undone from
+`pre-restore\` ([Undoing a restore](backup-restore.md#undoing-a-restore-pre-restore)).
 
 ## 10. Troubleshooting
 
