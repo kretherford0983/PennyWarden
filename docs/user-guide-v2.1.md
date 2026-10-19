@@ -2,6 +2,45 @@
 
 *2.1.0 (in progress): this guide grows with each test build.*
 
+## Register
+
+### Sort by Date or Cleared
+Click the **Date** or **Cleared** heading to sort the register by it; click it again to reverse (▲ oldest first,
+▼ newest first). PennyWarden remembers your choice, in any browser — other users keep their own.
+- **Sorted by Cleared**, transactions that haven't cleared yet come after the cleared ones (first when newest first),
+  and the balance column becomes the **Cleared balance**: the bank balance after each cleared item, which is what your
+  bank statement shows. It is blank on uncleared rows.
+- Transactions with the same date stay in the order they were entered.
+- **Reset to default** (shown under the filters when you have changed the sort) goes back to Date, oldest first.
+
+### Attachments filter: Yes, Missing, Marked
+- **Yes** — transactions with at least one attachment (as before).
+- **Missing** — exactly what the Fiscal Year documentation review (and the closing warnings) will flag: no attachment
+  and no mark, or *No attachment will be provided* without a reason. A badge says which. Bank interest or a direct
+  deposit marked *No attachment will be provided* **with a reason** is not missing any more.
+- **Marked** — everything marked *No attachment will be provided*, with or without a reason (without a reason it is
+  under Missing too).
+
+### Electronic payments
+For a bill paid by **ACH / bill pay, debit card, wire or a vendor's online portal**, tick **Electronic payment (no
+physical check)** on the withdrawal and choose how it was paid. If there is a number, say which kind:
+- **Check # from our sequence** — when a bill-pay service uses a number from your checkbook. It counts in the
+  missing-check review, so the gap it fills isn't reported as a missing check.
+- **Payment reference** — the bank's or vendor's confirmation number. It never counts as a check number, so it can't
+  create false "missing check" warnings.
+
+The register shows an **Electronic** badge, and the **Payment** filter lists checks, electronic payments, or
+withdrawals with no check number. The Audit and Close reports show *Electronic (method)* where the check number would
+be. With the Payments module, an electronic payment is saved without printing a check — see
+[check-printing.md](check-printing.md#for-register-users-payments).
+
+### Reorder attachments
+On a transaction, each allocation of a split, a fundraiser, or a Fiscal Year's **Other documents**, click
+**Reorder…**, drag the files by their handle (or use ▲ ▼) and **Save order**. That order is used on screen and in the
+Audit, Close and fundraiser reports — put the invoice first, then the receipt, then the approval, for example. New
+files go to the end. The order of a closed Fiscal Year can't be changed. Register Users reorder transaction
+attachments, Budget Managers the Fiscal Year documents, and whoever manages a fundraiser its documents.
+
 ## For whoever runs a Linux server
 
 ### Changed `config.toml`? Run `sudo pennywarden apply-config`

@@ -134,8 +134,8 @@ export default function Register() {
             {budgetChoices.map((b) => <option key={b.id} value={b.id}>{b.label}</option>)}
           </select>
         </Field>
-        <Field label="Payment"><select aria-label="Register Payment method filter" value={f.payment} onChange={set("payment")}><option value="">All</option><option value="check">Check</option><option value="electronic">Electronic</option><option value="none">No check # (withdrawals)</option></select></Field>
-        <Field label="Attachments"><select aria-label="Register Attachments filter" value={f.attachments} onChange={set("attachments")} title="Missing = what the Fiscal Year documentation review warns about; Marked = 'no attachment will be provided'"><option value="">All</option><option value="yes">Yes</option><option value="missing">Missing</option><option value="marked">Marked</option></select></Field>
+        <Field label="Payment"><select value={f.payment} onChange={set("payment")}><option value="">All</option><option value="check">Check</option><option value="electronic">Electronic</option><option value="none">No check # (withdrawals)</option></select></Field>
+        <Field label="Attachments"><select value={f.attachments} onChange={set("attachments")} title="Missing = what the Fiscal Year documentation review warns about; Marked = 'no attachment will be provided'"><option value="">All</option><option value="yes">Yes</option><option value="missing">Missing</option><option value="marked">Marked</option></select></Field>
         <Field label="From"><input type="date" value={f.date_from} onChange={set("date_from")} /></Field>
         <Field label="To"><input type="date" value={f.date_to} onChange={set("date_to")} /></Field>
         <Field label="Search"><input value={f.search} onChange={set("search")} placeholder="Entity, description, invoice, check #, amount" /></Field>
