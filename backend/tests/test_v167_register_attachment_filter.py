@@ -1,4 +1,4 @@
-"""1.6.7: register filter "Attachments" - all (default), yes, no."""
+"""1.6.7: register filter "Attachments" - all (default), yes, no (2.1.0, #258: no = missing; plus marked)."""
 from test_v12_reports import make_pdf, up
 
 
@@ -25,9 +25,12 @@ def test_filter_by_attachments(env, base):
     everything = [own["id"], child["id"], none["id"], marked["id"], gone["id"]]
     assert ids(env, base) == everything
     assert ids(env, base, "&attachments=yes") == [own["id"], child["id"]]
-    assert ids(env, base, "&attachments=no") == [none["id"], marked["id"], gone["id"]]
+    # 2.1.0 (#258): "no" now means "missing" - a mark WITH a reason is documented, so it is not listed
+    assert ids(env, base, "&attachments=no") == [none["id"], gone["id"]]
+    assert ids(env, base, "&attachments=marked") == [marked["id"]]
     # combines with the other filters; balances are those of the whole register, not of the filtered rows
-    assert ids(env, base, "&attachments=no&transaction_type=DEPOSIT") == [marked["id"]]
+    assert ids(env, base, "&attachments=marked&transaction_type=DEPOSIT") == [marked["id"]]
+    assert ids(env, base, "&attachments=no&transaction_type=DEPOSIT") == []
     assert ids(env, base, "&attachments=yes&date_from=2026-08-02") == [child["id"]]
     full = env.bu.get(f"/api/register?bank_account_id={a}").json()
     part = env.bu.get(f"/api/register?bank_account_id={a}&attachments=yes").json()

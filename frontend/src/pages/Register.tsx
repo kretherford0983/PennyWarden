@@ -134,7 +134,7 @@ export default function Register() {
             {budgetChoices.map((b) => <option key={b.id} value={b.id}>{b.label}</option>)}
           </select>
         </Field>
-        <Field label="Attachments"><select value={f.attachments} onChange={set("attachments")}><option value="">All</option><option value="yes">Yes</option><option value="no">No</option></select></Field>
+        <Field label="Attachments"><select aria-label="Register Attachments filter" value={f.attachments} onChange={set("attachments")} title="Missing = what the Fiscal Year documentation review warns about; Marked = 'no attachment will be provided'"><option value="">All</option><option value="yes">Yes</option><option value="missing">Missing</option><option value="marked">Marked</option></select></Field>
         <Field label="From"><input type="date" value={f.date_from} onChange={set("date_from")} /></Field>
         <Field label="To"><input type="date" value={f.date_to} onChange={set("date_to")} /></Field>
         <Field label="Search"><input value={f.search} onChange={set("search")} placeholder="Entity, description, invoice, check #, amount" /></Field>
@@ -179,7 +179,7 @@ export default function Register() {
                       <td className="num">{t.deposit ? (byBudget ? <Share part={t.budget_share} total={t.deposit} /> : money(t.deposit)) : ""}</td>
                       <td className="num">{t.withdrawal ? (byBudget ? <Share part={t.budget_share} total={t.withdrawal} /> : money(t.withdrawal)) : ""}</td>
                       <td className="num">{t.running_balance == null ? "" : money(t.running_balance)}</td>
-                      <td>{t.status === "DELETED" ? <span className="badge grey">Deleted</span> : t.status === "VOID" ? <span className="badge red">VOID</span> : t.cleared ? "Cleared" : "Uncleared"}{t.has_pending_review ? <span className="badge yellow">Review</span> : null}{t.transfer ? <span className="badge blue">Transfer</span> : null}{t.check_printed ? <span className="badge green" title="A check was printed for this transaction (record copy attached)">Check printed</span> : null}{t.no_attachment ? <span className="badge grey" title={t.no_attachment_reason || ""}>No attachment</span> : null}</td>
+                      <td>{t.status === "DELETED" ? <span className="badge grey">Deleted</span> : t.status === "VOID" ? <span className="badge red">VOID</span> : t.cleared ? "Cleared" : "Uncleared"}{t.has_pending_review ? <span className="badge yellow">Review</span> : null}{t.transfer ? <span className="badge blue">Transfer</span> : null}{t.check_printed ? <span className="badge green" title="A check was printed for this transaction (record copy attached)">Check printed</span> : null}{t.no_attachment ? <span className="badge grey" title={t.no_attachment_reason || ""}>No attachment</span> : null}{f.attachments === "missing" && t.documentation ? <span className="badge yellow" title="Listed in the Fiscal Year documentation review">{t.documentation === "NO_ATTACHMENT_MARKED" ? "Marked: no reason" : "Missing attachment"}</span> : null}</td>
                       <td>{t.attachment_count ? <span aria-label={`${t.attachment_count} attachments`}>📎{t.attachment_count}</span> : ""}</td>
                     </tr>
                     {open === t.id ? (

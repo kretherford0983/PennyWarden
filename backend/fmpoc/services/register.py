@@ -742,8 +742,14 @@ def register_view(db: Session, ctx, acct: BankAccount, *, fiscal_year: FiscalYea
                   status: str | None, date_from: dt.date | None, date_to: dt.date | None, search: str | None,
                   sort: str, direction: str, attachments: str | None = None, budget: Budget | None = None,
                   include_deleted: bool = False) -> dict:
-    """attachments (1.6.7): "yes" / "no" keeps the transactions with / without an attachment - counted exactly like
-    the paperclip in the register row (the transaction's own attachments plus those of its allocations)."""
+    """attachments (1.6.7; 2.1.0, #258):
+      "yes"     - the transactions with an attachment, counted exactly like the paperclip in the row (the
+                  transaction's own attachments plus those of its allocations);
+      "missing" - exactly what the Fiscal Year documentation review warns about (services/documentation.classify):
+                  no documentation, or a "no attachment will be provided" mark without a reason; ACTIVE only.
+                  "no" (1.6.7) is accepted as the same thing, so old links keep working;
+      "marked"  - every transaction with a "no attachment will be provided" mark (transaction or allocation), with or
+                  without a reason (without one it is also under "missing")."""
     txns = list(db.scalars(select(RegisterTransaction).where(RegisterTransaction.bank_account_id == acct.id)
                            .order_by(RegisterTransaction.transaction_date, RegisterTransaction.entry_timestamp,
                                      RegisterTransaction.id)))
@@ -826,8 +832,17 @@ def register_view(db: Session, ctx, acct: BankAccount, *, fiscal_year: FiscalYea
     if bids is not None:
         for x in shown:
             x["budget_share"] = fmt(share[x["id"]])
-    if attachments in ("yes", "no"):
-        shown = [x for x in shown if (x["attachment_count"] > 0) == (attachments == "yes")]
+    from .documentation import categories, is_marked
+    doc = categories(db, rows)
+    by_id = {t.id: t for t in rows}
+    for x in shown:   # 2.1.0 (#258): why a row is under "Missing" (None when the review has nothing to say)
+        x["documentation"] = doc.get(x["id"])
+    if attachments == "yes":
+        shown = [x for x in shown if x["attachment_count"] > 0]
+    elif attachments in ("missing", "no"):
+        shown = [x for x in shown if x["documentation"] is not None]
+    elif attachments == "marked":
+        shown = [x for x in shown if is_marked(by_id[x["id"]])]
     return {
         "bank_account": bank.out(db, acct),
         "fiscal_year": fy_brief(fiscal_year),

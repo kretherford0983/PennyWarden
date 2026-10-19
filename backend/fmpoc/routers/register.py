@@ -29,7 +29,8 @@ def register_view(
     date_from: dt.date | None = None,
     date_to: dt.date | None = None,
     search: str | None = Query(None, max_length=200),
-    attachments: Literal["yes", "no"] | None = None,  # 1.6.7: only transactions with / without attachments
+    # 1.6.7; 2.1.0 (#258): yes | missing (what the documentation review warns about) | marked; "no" = missing
+    attachments: Literal["yes", "missing", "marked", "no"] | None = None,
     budget_id: int | None = None,  # 1.7.3 (#104): only transactions with an allocation to this budget (or its sub-budgets)
     sort: Literal["transaction_date", "entry_timestamp", "amount", "check_number", "clear_date"] = "transaction_date",
     direction: Literal["asc", "desc"] = "asc",
