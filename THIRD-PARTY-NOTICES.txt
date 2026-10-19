@@ -39,7 +39,7 @@ Python packages (server):
   pydantic 2.14.0 - MIT
   pydantic_core 2.50.0 - MIT
   PyOTP 2.10.0 - MIT
-  pypdf 6.20.0 - BSD-3-Clause
+  pypdf 6.20.1 - BSD-3-Clause
   pypdfium2 5.14.0 - BSD-3-Clause, Apache-2.0, dependency licenses
   python-multipart 0.0.32 - Apache-2.0
   reportlab 5.0.1 - BSD License
@@ -3021,7 +3021,7 @@ THE SOFTWARE.
 
 ----------------------------------------------------------------------------------------------------
 
-pypdf 6.20.0
+pypdf 6.20.1
 License: BSD-3-Clause
 Source: https://github.com/py-pdf/pypdf
 

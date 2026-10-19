@@ -15,6 +15,13 @@ PennyWarden 2.1.0 (in progress).
 - **The Linux installer follows the Bind Address.** With `host = "0.0.0.0"` (tunnel or proxy on another machine) its
   last lines list the server's network addresses to point the tunnel at; with one specific address the install no
   longer fails its health check. (#236)
+### Behind the scenes
+- **Release dates are set by the pipeline.** The release is dated when it is published (GitHub, pennywarden.org,
+  *What's new*); `CHANGELOG.md` gets the date with the next version's first change. No extra round before each
+  release. README links to the latest release instead of naming a version. (#240)
+- **Python dependencies are compiled with pip-tools** (`backend/requirements.in` → `requirements.txt`, same versions as
+  2.0.0), so automatic dependency updates move related packages together. (#226)
+
 ## 2.0.0 — 2026-10-15
 PennyWarden 2.0.0 adds the optional **Payments module** — print checks, cover letters and envelopes from the
 register — and a large set of tools for whoever runs the server: a tidier System/About in tabs, maintenance mode,
