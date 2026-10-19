@@ -154,7 +154,7 @@ def main(argv: list[str] | None = None, window: bool = False) -> int:
     """window=True (1.6.7, the macOS app): local mode runs behind a small status window instead of a console."""
     argv = sys.argv[1:] if argv is None else argv
     if len(argv) > 1 and argv[0] == "--no-browser" and argv[1] in ("reset-mfa", "reset-password", "restore",
-                                                               "reinitialize"):
+                                                               "reinitialize", "apply-config"):
         argv = argv[1:]   # 2.0.0: the Docker image's entrypoint adds --no-browser before a command
     if argv and argv[0] == "reset-mfa":
         return reset_mfa_cli(argv[1:])
@@ -163,6 +163,9 @@ def main(argv: list[str] | None = None, window: bool = False) -> int:
     if argv and argv[0] == "restore":   # 2.0.0 (#124)
         from .cli_restore import main as restore_cli
         return restore_cli(argv[1:])
+    if argv and argv[0] == "apply-config":   # 2.1.0 (#237)
+        from .cli_apply_config import main as apply_config_main
+        return apply_config_main(argv[1:])
     if argv and argv[0] == "reinitialize":   # 2.0.0 (#125)
         from .cli_restore import reinit_main
         return reinit_main(argv[1:])

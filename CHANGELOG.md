@@ -7,6 +7,14 @@ PennyWarden 2.1.0 (in progress).
 
 ### For whoever runs the server
 
+- **`sudo pennywarden apply-config`** applies `config.toml` on a Linux server without running the whole installer:
+  after changing `backup_folders` (or another setting), it checks the file first and changes nothing if there is a
+  problem, lets the service write to the listed backup folders, restarts the service and waits until it answers —
+  putting the previous settings back if it doesn't. `--dry-run` shows what it would do. Recorded in the audit log. The
+  installer uses the same command, and now checks `config.toml` before it stops anything. (#237)
+- **The Linux installer follows the Bind Address.** With `host = "0.0.0.0"` (tunnel or proxy on another machine) its
+  last lines list the server's network addresses to point the tunnel at; with one specific address the install no
+  longer fails its health check. (#236)
 ## 2.0.0 — 2026-10-15
 PennyWarden 2.0.0 adds the optional **Payments module** — print checks, cover letters and envelopes from the
 register — and a large set of tools for whoever runs the server: a tidier System/About in tabs, maintenance mode,
