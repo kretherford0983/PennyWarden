@@ -734,6 +734,8 @@ def resolve_review(db: Session, ctx, r: FiscalYearReview, note: str | None) -> F
 
 # ------------------------------------------------------------------ register view
 SORT_FIELDS = {"transaction_date", "entry_timestamp", "amount", "check_number", "clear_date"}
+# 2.1.0 (#262): the register opens sorted the way each user left it (app_user.register_sort); this is the default
+DEFAULT_REGISTER_SORT = "transaction_date:asc"
 
 
 def register_view(db: Session, ctx, acct: BankAccount, *, fiscal_year: FiscalYear | None, txn_type: str | None,
@@ -795,15 +797,32 @@ def register_view(db: Session, ctx, acct: BankAccount, *, fiscal_year: FiscalYea
             if not any(needle in h.lower() for h in hay):
                 continue
         rows.append(t)
+    # 2.1.0 (#262): rows with the same date keep the order they were entered (entry timestamp, then id). An uncleared
+    # transaction counts as "not yet cleared": after every cleared one ascending, first descending, by its Date.
     keyf = {
         "transaction_date": lambda t: (t.transaction_date, t.entry_timestamp, t.id),
         "entry_timestamp": lambda t: (t.entry_timestamp, t.id),
         "amount": lambda t: (t.total_cents, t.id),
         "check_number": lambda t: (t.check_number or "", t.id),
-        "clear_date": lambda t: (t.clear_date or dt.date.min, t.id),
+        "clear_date": lambda t: (t.clear_date is None, t.clear_date or dt.date.max, t.transaction_date,
+                                 t.entry_timestamp, t.id),
     }[sort]
-    rows.sort(key=keyf, reverse=direction == "desc")
-    shown = [out(db, t, rb[t.id]) for t in rows]
+    rows.sort(key=keyf)
+    if direction == "desc":   # reverse the whole order, so ties also read newest-entered first
+        rows.reverse()
+    if sort == "clear_date":
+        # 2.1.0 (#262): sorted by Cleared, the running balance is the bank (cleared) balance after each cleared item,
+        # in clear order - blank on uncleared rows. Same continuous register (BR-042), cleared items only.
+        cleared = sorted((t for t in txns if t.status == "ACTIVE" and t.clear_date is not None),
+                         key=lambda t: (t.clear_date, t.transaction_date, t.entry_timestamp, t.id))
+        bank_running = acct.opening_balance_cents or 0
+        crb: dict[int, int] = {}
+        for t in cleared:
+            bank_running += t.total_cents if t.transaction_type == "DEPOSIT" else -t.total_cents
+            crb[t.id] = bank_running
+        shown = [out(db, t, crb.get(t.id)) for t in rows]
+    else:
+        shown = [out(db, t, rb[t.id]) for t in rows]
     if bids is not None:
         for x in shown:
             x["budget_share"] = fmt(share[x["id"]])
@@ -822,6 +841,9 @@ def register_view(db: Session, ctx, acct: BankAccount, *, fiscal_year: FiscalYea
         "opening_reconciliation": reconciliation(db, acct, lo - dt.timedelta(days=1)) if lo is not None else None,
         "ending_reconciliation": reconciliation(db, acct, hi) if hi is not None else None,
         "transactions": shown,
+        "sort": sort, "direction": direction,
+        # 2.1.0 (#262): what the running-balance column shows for this sort
+        "running_balance_kind": "cleared" if sort == "clear_date" else "register",
         "budget": _budget_brief(db, budget) if budget is not None else None,
     }
 

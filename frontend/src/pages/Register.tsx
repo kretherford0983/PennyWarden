@@ -6,8 +6,20 @@ import { EntityForm } from "./Entities";
 import { PrintCheckDialog } from "./CheckPrint";
 import { AmountPreview } from "./checkShared";
 
+// 2.1.0 (#262): the register sorts by Date or Cleared, ascending or descending, remembered per user
+const DEFAULT_SORT = "transaction_date:asc";
+
 export default function Register() {
-  const { me, can } = useMe();
+  const { me, can, patchMe } = useMe();
+  const [sortKey, setSortKey] = useState<string>(me.register_sort || DEFAULT_SORT);
+  const [sortCol, sortDir] = sortKey.split(":") as ["transaction_date" | "clear_date", "asc" | "desc"];
+  const chooseSort = (next: string) => {
+    setSortKey(next);
+    patchMe({ register_sort: next });
+    api.put("/api/me/preferences", next === DEFAULT_SORT ? { reset_register_sort: true } : { register_sort: next }).catch(() => undefined);
+  };
+  const clickSort = (col: "transaction_date" | "clear_date") =>
+    chooseSort(`${col}:${col === sortCol ? (sortDir === "asc" ? "desc" : "asc") : "asc"}`);
   const isAuditor = me.roles.includes("AUDITOR"); // 1.7.3 (#53): only Auditors can list deleted transactions
   const [accounts, setAccounts] = useState<any[] | null>(null);
   const [fys, setFys] = useState<any[]>([]);
@@ -58,9 +70,9 @@ export default function Register() {
   }, []);
   const load = () => {
     if (!f.bank_account_id) return;
-    api.get(`/api/register${qs(f)}`).then(setData, setErr);
+    api.get(`/api/register${qs({ ...f, sort: sortCol, direction: sortDir })}`).then(setData, setErr);
   };
-  useEffect(() => { load(); }, [f]);
+  useEffect(() => { load(); }, [f, sortKey]);
   useEffect(() => {
     if (!accounts) return;
     api.get(`/api/budgets/filter-options${qs({ fiscal_year_id: f.fiscal_year_id })}`).then(setBudgetOpts, setErr);
@@ -142,10 +154,17 @@ export default function Register() {
       ) : null}
       {data && acct ? (
         <>
+          {sortKey !== DEFAULT_SORT ? (
+            <p className="muted sort-note">
+              Sorted by {sortCol === "clear_date" ? "Cleared" : "Date"}, {sortDir === "asc" ? "oldest first" : "newest first"}
+              {sortCol === "clear_date" ? " (uncleared transactions " + (sortDir === "asc" ? "last" : "first") + "; the balance column is the bank balance)" : ""}.{" "}
+              <button type="button" className="link" onClick={() => chooseSort(DEFAULT_SORT)}>Reset to default</button>
+            </p>
+          ) : null}
           <div className="table-wrap">
             <table className="table register">
               <thead>
-                <tr><th /><th>Date</th><th>Cleared</th><th>Entity</th><th>Check #</th><th>Invoice #</th><th>Description</th><th className="num">Deposit</th><th className="num">Withdrawal</th><th className="num">Balance</th><th>Status</th><th title="Attachments">📎</th></tr>
+                <tr><th /><SortTh col="transaction_date" label="Date" sortCol={sortCol} sortDir={sortDir} onSort={clickSort} /><SortTh col="clear_date" label="Cleared" sortCol={sortCol} sortDir={sortDir} onSort={clickSort} /><th>Entity</th><th>Check #</th><th>Invoice #</th><th>Description</th><th className="num">Deposit</th><th className="num">Withdrawal</th><th className="num" title={data.running_balance_kind === "cleared" ? "Sorted by Cleared: the bank (cleared) balance after each cleared item; blank while uncleared" : "Running balance in Date order (everything written or deposited)"}>{data.running_balance_kind === "cleared" ? "Cleared balance" : "Balance"}</th><th>Status</th><th title="Attachments">📎</th></tr>
               </thead>
               <tbody>
                 {data.transactions.length === 0 ? <tr><td colSpan={12} className="muted">No transactions match.</td></tr> : null}
@@ -159,7 +178,7 @@ export default function Register() {
                       {/* 1.7.3 (#104): with the Budget filter, the budget's share of the transaction ("$40.00 of $100.00") */}
                       <td className="num">{t.deposit ? (byBudget ? <Share part={t.budget_share} total={t.deposit} /> : money(t.deposit)) : ""}</td>
                       <td className="num">{t.withdrawal ? (byBudget ? <Share part={t.budget_share} total={t.withdrawal} /> : money(t.withdrawal)) : ""}</td>
-                      <td className="num">{money(t.running_balance)}</td>
+                      <td className="num">{t.running_balance == null ? "" : money(t.running_balance)}</td>
                       <td>{t.status === "DELETED" ? <span className="badge grey">Deleted</span> : t.status === "VOID" ? <span className="badge red">VOID</span> : t.cleared ? "Cleared" : "Uncleared"}{t.has_pending_review ? <span className="badge yellow">Review</span> : null}{t.transfer ? <span className="badge blue">Transfer</span> : null}{t.check_printed ? <span className="badge green" title="A check was printed for this transaction (record copy attached)">Check printed</span> : null}{t.no_attachment ? <span className="badge grey" title={t.no_attachment_reason || ""}>No attachment</span> : null}</td>
                       <td>{t.attachment_count ? <span aria-label={`${t.attachment_count} attachments`}>📎{t.attachment_count}</span> : ""}</td>
                     </tr>
@@ -900,6 +919,20 @@ function ReconModal({ title, recon, label, onClose }: { title: string; recon: an
   );
 }
 
+
+/** 2.1.0 (#262): a sortable register column heading - a button (keyboard and screen readers) with aria-sort. */
+function SortTh({ col, label, sortCol, sortDir, onSort }: { col: "transaction_date" | "clear_date"; label: string;
+  sortCol: string; sortDir: "asc" | "desc"; onSort: (c: "transaction_date" | "clear_date") => void }) {
+  const active = sortCol === col;
+  const next = active && sortDir === "asc" ? "newest first" : "oldest first";
+  return (
+    <th aria-sort={active ? (sortDir === "asc" ? "ascending" : "descending") : "none"}>
+      <button type="button" className="sort-head" onClick={() => onSort(col)} title={`Sort by ${label}, ${next}`}>
+        {label}<span aria-hidden="true" className={active ? "sort-arrow" : "sort-arrow idle"}>{active ? (sortDir === "asc" ? " ▲" : " ▼") : " ↕"}</span>
+      </button>
+    </th>
+  );
+}
 
 function Share({ part, total }: { part: string; total: string }) {
   return Number(part) === Number(total) ? <>{money(total)}</> : (

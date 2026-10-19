@@ -93,6 +93,9 @@ class PreferencesIn(In):
     # v1.5.0 CR-031: dashboard sections in display order with visibility; reset_dashboard_layout -> default
     dashboard_layout: list[DashboardSectionIn] | None = Field(None, max_length=7)
     reset_dashboard_layout: bool | None = None
+    # 2.1.0 (#262): the register's sort, remembered per user; reset_register_sort -> Date, oldest first
+    register_sort: Literal["transaction_date:asc", "transaction_date:desc", "clear_date:asc", "clear_date:desc"] | None = None
+    reset_register_sort: bool | None = None
 
 
 Domain = Literal["ADMINISTRATOR", "FINANCIAL", "AUDITOR", "COMBINED"]  # 1.9.0 (#54): COMBINED on local installs

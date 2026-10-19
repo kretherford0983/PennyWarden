@@ -100,6 +100,8 @@ class User(Base):
     dashboard_layout: Mapped[str | None] = mapped_column(String(200), nullable=True)  # v1.5.0 CR-031 (comma list)
     # 2.0.0 (#164): the bank account of this user's last payment (Payments module), preselected next time
     last_payment_account_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 2.1.0 (#262): the user's register sort, "<column>:<asc|desc>" (None = Date, oldest first)
+    register_sort: Mapped[str | None] = mapped_column(String(40), nullable=True)
     password_changed_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
     created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("app_user.id"), nullable=True)
