@@ -111,10 +111,12 @@ def test_endpoints_specific_address():
 
 
 def test_lan_addresses_skip_loopback_and_link_local(monkeypatch):
-    class R:
-        stdout = "192.168.1.40 127.0.0.1 fe80::1 172.17.0.1 fd00::5 \n"
-    monkeypatch.setattr(ac.subprocess, "run", lambda *a, **k: R())
+    from fmpoc import cli_restore
+    seen = []
+    monkeypatch.setattr(cli_restore, "_run", lambda args: seen.append(args) or
+                        "192.168.1.40 127.0.0.1 fe80::1 172.17.0.1 fd00::5 \n")
     assert ac.lan_addresses() == ["192.168.1.40", "172.17.0.1", "[fd00::5]"]
+    assert seen == [["hostname", "-I"]]
 
 
 def test_show_url_and_endpoints(tmp_path, sysd, capsys):

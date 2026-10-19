@@ -19,7 +19,7 @@
 
 install-server.sh uses the same command (`--no-restart`, then `--show-url` / `--show-endpoints`), so the installer and
 the command always produce the same result from the same config.toml. Service managers and `hostname` are called with
-fixed argument lists (no shell, BR-102).
+fixed argument lists through cli_restore's runner (no shell, BR-102).
 """
 from __future__ import annotations
 
@@ -27,7 +27,6 @@ import argparse
 import ipaddress
 import os
 import re
-import subprocess
 import sys
 import time
 import tomllib
@@ -218,11 +217,8 @@ def connect_url(server: dict) -> str:
 
 
 def lan_addresses() -> list[str]:
-    try:
-        out = subprocess.run(["hostname", "-I"], capture_output=True, text=True, timeout=5,  # noqa: S603,S607
-                             check=False).stdout
-    except (OSError, subprocess.SubprocessError):
-        return []
+    from .cli_restore import _run   # the one place that starts OS programs: fixed argument lists, no shell (BR-102)
+    out = _run(["hostname", "-I"]) or ""
     found = []
     for a in out.split():
         try:
@@ -295,12 +291,8 @@ def _write(path: Path, text: str | None) -> None:
 
 # ------------------------------------------------------------------ service control (monkeypatched in tests)
 def systemctl(*args: str) -> bool:
-    try:
-        r = subprocess.run(["systemctl", *args], capture_output=True, text=True, timeout=90,  # noqa: S603,S607
-                           check=False)
-    except (OSError, subprocess.SubprocessError):
-        return False
-    return r.returncode == 0
+    from .cli_restore import _run   # fixed argument lists, no shell (BR-102)
+    return _run(["systemctl", *args]) is not None
 
 
 def healthy(url: str, wait: int = HEALTH_WAIT_SECONDS) -> bool:
