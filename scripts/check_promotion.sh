@@ -17,15 +17,25 @@ case "$BASE" in
 esac
 VERSION=$(bash "$ROOT/scripts/version.sh")
 bash "$ROOT/scripts/version.sh" --check
+case "$BASE" in main|test) git fetch --tags --quiet origin 2>/dev/null || true ;; esac
+released() { git rev-parse -q --verify "refs/tags/v$1" >/dev/null; }
 if [ "$BASE" = "main" ]; then
-  git fetch --tags --quiet origin || true
-  if git rev-parse -q --verify "refs/tags/v$VERSION" >/dev/null; then
+  if released "$VERSION"; then
     fail "v$VERSION is already released. Bump the version (backend/fmpoc/config.py + frontend/package.json) and add a CHANGELOG entry before merging into main."
   fi
-  grep -q "^## $VERSION " "$ROOT/CHANGELOG.md" || fail "CHANGELOG.md has no '## $VERSION' section."
-  # 1.7.3: the section must carry its release date before it reaches main (it said "unreleased" in 1.7.2 and 1.7.3)
-  if grep -qiE "^## $VERSION .*unreleased" "$ROOT/CHANGELOG.md"; then
-    fail "CHANGELOG.md still says '## $VERSION — unreleased'. Put the release date in the heading (e.g. '## $VERSION — $(date +%Y-%m-%d)') on develop and promote it before merging into main."
-  fi
+  grep -q "^## $VERSION\( \|$\)" "$ROOT/CHANGELOG.md" || fail "CHANGELOG.md has no '## $VERSION' section."
+  # 2.1.0 (#240): '## <version> — unreleased' may reach main - the release is dated when it is published (the GitHub
+  # release, releases.json and What's new carry the date) and in CHANGELOG.md by the first commit of the next version
+  # (scripts/date_changelog.sh). The 1.7.3 rule that refused 'unreleased' here is gone.
+fi
+if [ "$BASE" = "main" ] || [ "$BASE" = "test" ]; then
+  # 2.1.0 (#240): an earlier, already released version must not still say 'unreleased' - the next version's first
+  # feature branch dates it with: bash scripts/date_changelog.sh <that version>
+  while read -r v; do
+    [ "$v" = "$VERSION" ] && continue
+    if released "$v"; then
+      fail "CHANGELOG.md still says '## $v — unreleased', but v$v is released. Date it on a feature branch: bash scripts/date_changelog.sh $v"
+    fi
+  done < <(sed -n 's/^## \([0-9][0-9.]*\) .*unreleased.*$/\1/Ip' "$ROOT/CHANGELOG.md")
 fi
 echo "OK: $HEAD -> $BASE (version $VERSION)"

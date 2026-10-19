@@ -31,7 +31,11 @@ permanent copy), so Actions artifact storage stays well within the GitHub Pro al
   `test`/`main`). `dependabot/*` branches are accepted into develop only.
 - Pull requests into **test** come from `develop` (or `hotfix/*`, or a back-merge from `main`).
 - Pull requests into **main** come from `test` or `hotfix/*`, **and** the version must not be released yet and must
-  have a `## <version>` section in `CHANGELOG.md`.
+  have a `## <version>` section in `CHANGELOG.md`. The heading may still say `## <version> — unreleased` (2.1.0, #240):
+  the release date is only known when the pull request is merged, so the pipeline dates the release itself (see
+  *Release dates* below).
+- Pull requests into **test** and **main** are refused while an **earlier, already released** version's heading still
+  says `unreleased`: the next version's first feature branch dates it (*Release dates*).
 - The version in `backend/fmpoc/config.py` and `frontend/package.json` must always match.
 - A version is released only once; a test pre-release is not created for a version that is already released.
 
@@ -65,7 +69,23 @@ pipeline are unchanged):
   released on its own so beta feedback can come in before the next one.
 
 The first feature of a new release bumps the version on its feature branch (e.g. 1.5.0 → 1.6.0) and adds the
-CHANGELOG section; later features of the same release add to that section.
+CHANGELOG section (`## <version> — unreleased`); later features of the same release add to that section. **The same
+first branch also dates the previous release** (next section).
+
+### Release dates (2.1.0, #240)
+A version's CHANGELOG heading says `## <version> — unreleased` all the way to `main`; nobody types a release date.
+- **Users always see the date:** the GitHub release, pennywarden.org (`releases.json`) and the in-app *What's new*
+  show the release's publish date. Their text is the section *below* the heading (`scripts/release_notes.sh` never
+  prints the heading), so "unreleased" doesn't reach them. Test pre-releases are the same.
+- **CHANGELOG.md gets the real date as the first commit of the next version.** On the next version's first feature
+  branch, after bumping the version, run `bash scripts/date_changelog.sh <previous version>` (e.g.
+  `bash scripts/date_changelog.sh 2.1.0`). It reads the publish date of GitHub release `v<previous version>` and
+  rewrites the heading to `## <previous version> — <date>`. Offline, pass the date yourself:
+  `--date 2026-10-23`. Pull requests into test and main fail until this is done.
+- README no longer names the current version: it links to the latest release, so it can't go stale.
+
+Before 2.1.0 the date had to be typed into the heading on develop and promoted before the test → main pull request
+(rule from 1.7.3), which cost an extra develop → test → main round for every release.
 
 **Production releases started with 1.6.6** (the release that renamed the application to Fundwarden; it is PennyWarden since 1.7.0). Before that (beta) every version existed only as a test pre-release and
 fixes simply went into the next version. From 1.6.6 on, `main` is what people run:
