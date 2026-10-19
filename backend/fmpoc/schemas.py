@@ -182,6 +182,13 @@ class AttachmentTypeIn(In):
     document_type: Literal["APPROVAL", "AUDIT_SIGNOFF", "UNSPECIFIED"]
 
 
+class AttachmentOrderIn(In):
+    """2.1.0 (#259): the new order of an owner's attachments (every active one shown there, exactly once)."""
+    owner_type: Literal["fiscal_year", "transaction", "allocation", "fundraiser"]
+    owner_id: int
+    attachment_ids: Annotated[list[int], Field(min_length=1, max_length=500)]
+
+
 class ApprovalNoAttachmentIn(In):
     """v1.3 CR-007: the organization produces no approval document (strong warning in the UI)."""
     no_attachment: bool

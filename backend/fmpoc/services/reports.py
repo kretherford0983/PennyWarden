@@ -44,7 +44,7 @@ from . import bank_accounts as bank
 from . import budgets as bsvc
 from . import fundraisers as fsvc
 from . import register as reg
-from .attachments import path_for
+from .attachments import DISPLAY_ORDER, path_for
 from .common import budget_label
 from .documentation import review as documentation_review
 from .fiscal_years import closure_check
@@ -391,7 +391,7 @@ def _attachments_for(db: Session, t: RegisterTransaction) -> tuple[list[Attachme
     alloc_ids = [a.id for a in t.allocations]
     rows = list(db.scalars(select(Attachment).where(or_(Attachment.transaction_id == t.id,
                                                         Attachment.allocation_id.in_(alloc_ids or [-1])))
-                           .order_by(Attachment.id)))
+                           .order_by(*DISPLAY_ORDER)))
     parent = [a for a in rows if a.transaction_id == t.id and a.active]
     by_alloc: dict[int, list[Attachment]] = {}
     for a in rows:
@@ -509,7 +509,7 @@ def build_audit_report(db: Session, ctx, settings, fy: FiscalYear, account_id: i
     doc_items = {i["transaction_id"]: i for i in doc_review}
     fy_atts = list(db.scalars(select(Attachment).where(Attachment.fiscal_year_id == fy.id, Attachment.active.is_(True),
                                                        Attachment.system_generated.is_(False))
-                              .order_by(Attachment.id)))
+                              .order_by(*DISPLAY_ORDER)))
     order = {"APPROVAL": 0, "AUDIT_SIGNOFF": 1}
     fy_atts.sort(key=lambda a: (order.get(a.document_type or "UNSPECIFIED", 2), a.id))
     att_cache = {t.id: _attachments_for(db, t) for t in txns}
@@ -901,7 +901,7 @@ def _fundraiser_section(db: Session, ctx, settings, doc: _AuditDoc, fr: Fundrais
 
     # ---- attachments: fundraiser documents, then the transactions' attachments
     docs = list(db.scalars(select(Attachment).where(Attachment.fundraiser_id == fr.id, Attachment.active.is_(True))
-                           .order_by(Attachment.id)))
+                           .order_by(*DISPLAY_ORDER)))
     for i, a in enumerate(docs):
         f += _attachment_flowables(doc, settings, a, f"Fundraiser document {i + 1} of {len(docs)}", users)
     seen: set[int] = set()

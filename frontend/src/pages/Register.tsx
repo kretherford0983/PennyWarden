@@ -257,9 +257,9 @@ function TxnDetail({ t, manage, canPrintChecks, onPrintCheck, onEdit, onVoid, on
         {manage && t.status === "VOID" && !t.closed_fiscal_year_protected ? <button onClick={onVoidDate}>Correct date…</button> : null}
         {manage && t.status === "VOID" && t.transaction_type === "WITHDRAWAL" && !t.transfer && !t.closed_fiscal_year_protected ? <button onClick={onVoidCheck}>Correct check number…</button> : null}
       </div>
-      <Attachments ownerType="transaction" ownerId={t.id} canUpload={manage} canRemove={editable} title="Transaction attachments" />
+      <Attachments ownerType="transaction" ownerId={t.id} canUpload={manage} canRemove={editable} canReorder={manage && !t.closed_fiscal_year_protected && t.status !== "DELETED"} title="Transaction attachments" />
       {t.allocations.length > 1 ? t.allocations.map((a: any) => (
-        <Attachments key={a.id} ownerType="allocation" ownerId={a.id} canUpload={manage} canRemove={editable} title={allocationLabel(t, a)} />
+        <Attachments key={a.id} ownerType="allocation" ownerId={a.id} canUpload={manage} canRemove={editable} canReorder={manage && !t.closed_fiscal_year_protected && t.status !== "DELETED"} title={allocationLabel(t, a)} />
       )) : null}
       {manage ? (
         <GuardedForm onSubmit={addNote} className="row">

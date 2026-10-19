@@ -33,6 +33,7 @@ ACTION_LABELS = {
     "UPDATE_CHECK_SETTING_CHANGED": "Update check setting changed", "REPORT_GENERATED": "Report generated",
     "AUDIT_LOG_EXPORTED": "Audit log exported",
     "CONFIG_APPLIED": "Server settings applied (pennywarden apply-config)",
+    "ATTACHMENTS_REORDERED": "Attachments reordered",
 }
 OBJECT_LABELS = {
     "user": "User", "workspace": "Organization", "server_config": "Server settings", "fiscal_year": "Fiscal Year", "budget": "Budget", "entity": "Entity",

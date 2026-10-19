@@ -427,6 +427,8 @@ class Attachment(Base):
     # v1.3 CR-007: APPROVAL | AUDIT_SIGNOFF | UNSPECIFIED for Fiscal Year attachments (None otherwise)
     document_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
     system_generated: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
+    # 2.1.0 (#259): position among its owner's attachments; None = upload order (listed by COALESCE(sort_order, id))
+    sort_order: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class RequestKey(Base):

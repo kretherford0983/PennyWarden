@@ -548,3 +548,11 @@ button.small, label.button { display: inline-flex; align-items: center; justify-
 .number-kind { display: flex; gap: 8px; }
 .number-kind select { flex: 0 0 auto; width: auto !important; }
 .number-kind input { flex: 1 1 8em; min-width: 6em; }
+/* 2.1.0 (#259): reordering attachments */
+.attachments h3 .att-reorder { margin-left: 10px; vertical-align: middle; font-weight: normal; }
+.att-order li { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border: 1px solid var(--border);
+  border-radius: 6px; margin-bottom: 4px; background: var(--bg); }
+.att-order li.dragging { opacity: 0.6; }
+.att-order .drag-handle { cursor: grab; user-select: none; color: var(--muted, #888); }
+.att-order .att-name { flex: 1 1 auto; overflow-wrap: anywhere; }
+.att-order .att-move { display: inline-flex; gap: 4px; }

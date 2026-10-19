@@ -853,7 +853,8 @@ def store_transaction_document(db: Session, ctx, settings, t: RegisterTransactio
     att = Attachment(workspace_id=ctx.workspace_id, original_filename=att_svc.sanitize_filename(filename),
                      storage_key=key, mime_type="application/pdf", size_bytes=len(data),
                      sha256=hashlib.sha256(data).hexdigest(), uploaded_by_user_id=ctx.user.id, active=True,
-                     transaction_id=t.id, document_type=CHECK_COPY, system_generated=True)
+                     transaction_id=t.id, document_type=CHECK_COPY, system_generated=True,
+                     sort_order=att_svc._next_position(db, "transaction", t.id))   # #259: after reordered ones
     db.add(att)
     db.flush()
     audit.record(db, ctx, "ATTACHMENT_ADDED", "attachment", att.id, None, att_svc.snapshot(att))
@@ -1300,7 +1301,7 @@ def _store_doc_copy(db: Session, ctx, settings, t: RegisterTransaction, kind_typ
     att = Attachment(workspace_id=ctx.workspace_id, original_filename=att_svc.sanitize_filename(filename),
                      storage_key=key, mime_type="application/pdf", size_bytes=len(pdf), sha256=sha,
                      uploaded_by_user_id=ctx.user.id, active=True, transaction_id=t.id, document_type=kind_type,
-                     system_generated=True)
+                     system_generated=True, sort_order=att_svc._next_position(db, "transaction", t.id))
     db.add(att)
     db.flush()
     audit.record(db, ctx, "ATTACHMENT_ADDED", "attachment", att.id, None, att_svc.snapshot(att))

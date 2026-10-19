@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from ..deps import Ctx, get_db, require
 from ..errors import AppError
-from ..schemas import AttachmentTypeIn
+from ..schemas import AttachmentOrderIn, AttachmentTypeIn
 from ..services import attachments as svc
 
 router = APIRouter(prefix="/api", tags=["attachments"])
@@ -30,6 +30,14 @@ async def upload(request: Request, owner_type: Owner, owner_id: int, file: Uploa
     data = await svc.read_limited(file)
     a = svc.store(db, ctx, request.app.state.settings, owner_type, owner_id, file.filename, data, document_type)
     return svc.out(a)
+
+
+@router.put("/attachments/order")
+def reorder(body: AttachmentOrderIn, db: Session = Depends(get_db), ctx: Ctx = Depends(require("financial.view"))):
+    """2.1.0 (#259): save the order of an owner's attachments (used by every list, report and download)."""
+    items = svc.reorder(db, ctx, body.owner_type, body.owner_id, body.attachment_ids)
+    db.commit()
+    return [svc.out(a) for a in items]
 
 
 @router.get("/attachments/{att_id}")

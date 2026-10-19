@@ -253,7 +253,7 @@ export function FundraiserDetail({ id }: { id: number }) {
       </section>
 
       <section className="card">
-        <Attachments ownerType="fundraiser" ownerId={id} canUpload={canLines} canRemove={canLines} title="Fundraiser documents"
+        <Attachments ownerType="fundraiser" ownerId={id} canUpload={canLines} canRemove={canLines} canReorder={canLines} title="Fundraiser documents"
           hint={<p className="hint">Documents about the fundraiser itself — flyers, permits, tally sheets.</p>} />
       </section>
 
