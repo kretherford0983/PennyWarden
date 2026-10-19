@@ -2,6 +2,11 @@
 
 Versions are `Breaking.Major.Minor` from 1.6.0 (docs/branching.md).
 
+## 2.1.0 — unreleased
+PennyWarden 2.1.0 (in progress).
+
+### For whoever runs the server
+
 ## 2.0.0 — 2026-10-15
 PennyWarden 2.0.0 adds the optional **Payments module** — print checks, cover letters and envelopes from the
 register — and a large set of tools for whoever runs the server: a tidier System/About in tabs, maintenance mode,
