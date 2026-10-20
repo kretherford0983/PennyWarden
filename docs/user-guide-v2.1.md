@@ -105,6 +105,15 @@ the fundraiser's page; they print under the takeaways.
 The report leaves out what is audit detail: transaction numbers, bank accounts, budgets, excluded lines and
 attachments. That detail is under **Reports → Fundraiser detail (audit)**.
 
+### The fundraiser presentation
+**Presentation** in the same dialog downloads the report as a slide deck (`.pptx`, 16:9) for a meeting. Open it in
+**PowerPoint**, import it into **Google Slides**, or open it in **Keynote**. It uses the same figures and the same two
+options (itemized revenue, contributor names). Charts are native, so you can restyle them in PowerPoint; Keynote
+converts them to its own charts, and Google Slides shows them as pictures. The **speaker notes** of every slide give
+the exact figures and how each one is worked out, for example "Net margin = net proceeds ÷ net revenue". Slides with
+nothing to show are left out — a fundraiser without buckets gets no category slides. The *Top contributors* slides
+appear only with itemized revenue and contributor names both on.
+
 ### Bucket categories
 On a fundraiser's page, **New category** adds a heading such as *Sponsorships* or *Day-of event*. In a bucket's
 **Edit**, choose its **Category** (or *No category*). The Buckets table then shows each category with its buckets

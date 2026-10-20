@@ -17,6 +17,7 @@ from ..errors import validation
 from ..schemas import (ReasonIn, FundraiserBucketIn, FundraiserCategoryIn, FundraiserFinalIn, FundraiserIn, FundraiserLineIn,
                        FundraiserNotesIn, FundraiserOrderIn,
                        FundraiserPreviewIn, ModulesIn)
+from ..services import fundraiser_deck as deck  # 2.1.0 (#276); imports python-pptx at start-up
 from ..services import fundraiser_summary as fs  # 2.1.0 (#275); imports python-docx at start-up
 from ..services import fundraisers as svc
 from ..services.checkprint import service as checks_svc
@@ -275,6 +276,21 @@ def summary_report(fid: int, format: Literal["pdf", "docx"] = "pdf", itemized: b
                "Content-Security-Policy": "default-src 'none'; frame-ancestors 'self'"}
     return FileResponse(path, media_type="application/pdf", headers=headers,
                         background=BackgroundTask(lambda: os.path.exists(path) and os.unlink(path)))
+
+
+@router.get("/fundraisers/{fid}/presentation")
+def presentation(fid: int, itemized: bool = True, names: bool = True, db: Session = Depends(get_db),
+                 ctx: Ctx = Depends(viewer)):
+    """2.1.0 (#276): the stakeholder report as a 16:9 .pptx (PowerPoint, Google Slides, Keynote); always downloaded."""
+    f = svc.get(db, ctx, fid)
+    s = fs.summary(db, ctx, f, itemized=itemized, names=names)
+    data = deck.build(s)
+    audit.record(db, ctx, "REPORT_GENERATED", "fundraiser", f.id, None,
+                 {"report": "FUNDRAISER_PRESENTATION", "format": "PPTX", "options": {"itemized": itemized, "names": names}})
+    db.commit()
+    return Response(data, media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                    headers={"Content-Disposition": f'attachment; filename="{deck.file_name(s)}"',
+                             "Cache-Control": "private, no-store"})
 
 
 @router.put("/fundraisers/{fid}/summary-notes")

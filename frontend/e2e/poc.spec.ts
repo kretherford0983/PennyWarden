@@ -1739,6 +1739,11 @@ test("CR-035: fundraiser report PDF; Audit and Close reports can include fundrai
   const word = await page.request.get((await rd.getByRole("link", { name: "Report (Word)" }).getAttribute("href"))!);
   expect(word.status()).toBe(200);
   expect(word.headers()["content-type"]).toContain("wordprocessingml");
+  // 2.1.0 (#276): the presentation, same options
+  const deck = await page.request.get((await rd.getByRole("link", { name: "Presentation" }).getAttribute("href"))!);
+  expect(deck.status()).toBe(200);
+  expect(deck.headers()["content-type"]).toContain("presentationml");
+  expect(deck.headers()["content-disposition"]).toContain("-presentation.pptx");
   await rd.getByRole("button", { name: "Done" }).click();
   // Budget Manager: summary notes and Mark results final
   const card = page.locator("section").filter({ has: page.getByRole("heading", { name: "Stakeholder report" }) });

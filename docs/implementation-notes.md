@@ -48,6 +48,36 @@ could not otherwise be corrected. Scope and safeguards:
 - Audited as `TRANSACTION_VOID_DATE_CORRECTED` with before/after snapshots and the reason.
 - Tests: `backend/tests/test_cr001_void_date.py` (5 tests) and E2E "CR-001".
 
+**2.1.0 test build 6 — fundraiser presentation (#276).** No migration. New dependencies `python-pptx` 1.0.2 (MIT) and
+`XlsxWriter` 3.2.9 (BSD, the embedded chart workbooks). They are pinned, in THIRD-PARTY-NOTICES, pip-audit clean, and
+in the PyInstaller specs (`collect_data_files("pptx")` for the default template). The router imports
+`services/fundraiser_deck.py` at start-up.
+- `fundraiser_deck.build(summary)` works from `fundraiser_summary.summary()`, so the figures equal the report. The
+  summary gained `cumulative` (income and net by transaction date).
+- The deck is 16:9 (12192000 × 6858000 EMU), on the blank layout, Arial everywhere.
+  - Charts: column (revenue → proceeds), doughnut (revenue share; the legend labels carry the amount and percent),
+    clustered bar (net by category; expenses), and line with markers (cumulative).
+  - Every chart has data labels and no chart title.
+  - Tables are capped at 12 rows per slide; top contributors at 10, with "and N more".
+  - Every slide has speaker notes.
+  - `_strip_template_extras()` drops the default template's printer settings (a `.bin` part) and thumbnail picture,
+    so the package holds only XML, the chart workbooks and no media.
+- Slides left out:
+  - without buckets: revenue by category, category detail, net, top contributors and expenses;
+  - without names or itemized revenue: top contributors;
+  - revenue over time when there is only one date.
+- The gold coin is drawn with two ovals, not an image. Organization branding is #280.
+- `GET /api/fundraisers/{id}/presentation?itemized&names` (`fundraiser.view`; always `attachment`; audit
+  `REPORT_GENERATED {report: FUNDRAISER_PRESENTATION, format: PPTX, options}`).
+- Tests: `test_v210_fundraiser_deck.py`:
+  - slide titles, chart types and data labels, chart data equal to the figures, notes on every slide, 16:9;
+  - no media, binaries, embedded fonts, external relationships, transitions or animations;
+  - no Entity name anywhere with names off;
+  - markup kept as plain text.
+
+  The CR-035 E2E downloads the deck. Manual checks in PowerPoint (Windows and Mac), Google Slides and Keynote are
+  Kyle's, per build.
+
 **2.1.0 test build 5 — fundraiser stakeholder report (#275).** Migration `0040`: `fundraiser.summary_notes`,
 `results_final_at`, `results_final_by_user_id`. New dependency `python-docx` 1.2.0 (+ `lxml`), pinned through
 `requirements.in`, in THIRD-PARTY-NOTICES, pip-audit clean, and in the three PyInstaller specs
