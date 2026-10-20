@@ -44,7 +44,7 @@ markupsafe==3.0.4
     # via mako
 opentelemetry-api==1.45.1
     # via fastapi
-pillow==12.3.0
+pillow==13.0.0
     # via
     #   -r requirements.in
     #   python-pptx
