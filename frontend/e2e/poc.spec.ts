@@ -809,14 +809,22 @@ test("2.1.0 (#262, #260, #259): register sort, electronic payment, reorder attac
   await expect(t.getByLabel("Check #", { exact: true })).toHaveCount(0);
   await t.getByLabel("Electronic payment method").selectOption("ACH");
   await t.getByLabel("Kind of number").selectOption("reference");
-  await t.getByLabel("Payment reference").fill("ACH-20261120");
+  await t.getByLabel("Payment reference").fill("ACH-20261120-CONF-0048213377");
+  // build 2 feedback: the number has the full width of its column, on the row under "Paid by"
+  const ref = await t.getByLabel("Payment reference").boundingBox();
+  const kind = await t.getByLabel("Kind of number").boundingBox();
+  const paid = await t.getByLabel("Electronic payment method").boundingBox();
+  expect(ref!.width).toBeGreaterThan(200);
+  expect(Math.abs(ref!.y - kind!.y)).toBeLessThan(4);
+  expect(ref!.y).toBeGreaterThan(paid!.y + paid!.height);
+  await t.screenshot({ path: "e2e-screenshots/light-electronic-payment-form.png" });
   await pickTravel(t);
   await t.getByLabel("Allocation 1 Amount").fill("41.17");
   await t.getByRole("button", { name: "Save" }).click();
   await expect(t).toHaveCount(0);
   const row = page.getByRole("row", { name: /2026-11-20/ });
   await expect(row).toContainText("Electronic");
-  await expect(row).toContainText("ACH-20261120");
+  await expect(row).toContainText("ACH-20261120-CONF-0048213377");
   await page.getByRole("combobox", { name: "Payment" }).selectOption("electronic");
   await expect(page.locator("table.register tbody tr")).toHaveCount(1);
   await page.screenshot({ path: "e2e-screenshots/light-register-electronic-payment.png" });
