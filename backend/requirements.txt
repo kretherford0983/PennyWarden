@@ -26,7 +26,7 @@ click==8.5.0
     # via uvicorn
 cryptography==50.0.2
     # via -r requirements.in
-fastapi==0.143.0
+fastapi==0.143.3
     # via -r requirements.in
 google-re2==1.1.20251105
     # via -r requirements.in
@@ -54,7 +54,7 @@ pydantic-core==2.50.0
     # via pydantic
 pyotp==2.10.0
     # via -r requirements.in
-pypdf==6.20.1
+pypdf==6.21.0
     # via -r requirements.in
 pypdfium2==5.14.0
     # via -r requirements.in
@@ -64,11 +64,11 @@ reportlab==5.0.1
     # via -r requirements.in
 segno==1.6.6
     # via -r requirements.in
-sqlalchemy==2.1.4
+sqlalchemy==2.1.5
     # via
     #   -r requirements.in
     #   alembic
-starlette==1.7.0
+starlette==1.8.0
     # via
     #   -r requirements.in
     #   fastapi
