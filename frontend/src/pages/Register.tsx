@@ -939,33 +939,43 @@ function ReconModal({ title, recon, label, onClose }: { title: string; recon: an
  * check number from the organization's own sequence (counts in the missing-check review) or a payment reference. */
 const PAYMENT_METHODS: [string, string][] = [["ACH", "ACH / bill pay"], ["DEBIT_CARD", "Debit card"], ["WIRE", "Wire"], ["ONLINE_PORTAL", "Online portal"], ["OTHER", "Other…"]];
 function ElectronicFields({ h, setH }: { h: any; setH: (v: any) => void }) {
+  // 2.1.0 build 2 feedback (Kyle, 2026-10-20): the checkbox spans two rows; "Paid by" fills the first row, the kind of
+  // number and the number itself the second - so a long reference has the full width and can be checked at a glance.
+  const on = h.electronic_payment;
   return (
-    <div className="row electronic-payment">
-      <label className="check">
-        <input type="checkbox" checked={h.electronic_payment}
+    <div className={`electronic-payment${on ? " on" : ""}`}>
+      <label className="check ep-toggle">
+        <input type="checkbox" checked={on}
           onChange={(e) => setH({ ...h, electronic_payment: e.target.checked, ...(e.target.checked ? {} : { payment_method: "", payment_method_other: "", payment_reference: "", number_kind: "check" }) })} />
         Electronic payment (no physical check)
       </label>
-      {h.electronic_payment ? (
+      {on ? (
         <>
-          <Field label="Paid by">
-            <select required aria-label="Electronic payment method" value={h.payment_method} onChange={(e) => setH({ ...h, payment_method: e.target.value })}>
-              <option value="">Choose…</option>
-              {PAYMENT_METHODS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
-            </select>
-          </Field>
-          {h.payment_method === "OTHER" ? <Field label="Describe"><input required maxLength={60} value={h.payment_method_other} onChange={(e) => setH({ ...h, payment_method_other: e.target.value })} /></Field> : null}
-          <Field label="Number (optional)" hint={h.number_kind === "check" ? "A number from your own checkbook sequence (some bill-pay services ask for one); it counts in the missing-check review." : "A bank or vendor confirmation number; never part of the check sequence."}>
-            <div className="number-kind">
+          <div className={`ep-method${h.payment_method === "OTHER" ? " with-other" : ""}`}>
+            <Field label="Paid by">
+              <select required aria-label="Electronic payment method" value={h.payment_method} onChange={(e) => setH({ ...h, payment_method: e.target.value })}>
+                <option value="">Choose…</option>
+                {PAYMENT_METHODS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+            </Field>
+          </div>
+          {h.payment_method === "OTHER" ? <div className="ep-other"><Field label="Describe"><input required maxLength={60} value={h.payment_method_other} onChange={(e) => setH({ ...h, payment_method_other: e.target.value })} /></Field></div> : null}
+          <div className="ep-kind">
+            <Field label="Number (optional)">
               <select aria-label="Kind of number" value={h.number_kind} onChange={(e) => setH({ ...h, number_kind: e.target.value })}>
                 <option value="check">Check # from our sequence</option>
                 <option value="reference">Payment reference</option>
               </select>
+            </Field>
+          </div>
+          <div className="ep-number">
+            <Field label={h.number_kind === "check" ? "Check #" : "Payment reference"}
+              hint={h.number_kind === "check" ? "A number from your own checkbook sequence (some bill-pay services ask for one); it counts in the missing-check review." : "A bank or vendor confirmation number; never part of the check sequence."}>
               {h.number_kind === "check"
                 ? <input aria-label="Check number" maxLength={20} value={h.check_number} onChange={(e) => setH({ ...h, check_number: e.target.value })} />
                 : <input aria-label="Payment reference" maxLength={40} value={h.payment_reference} onChange={(e) => setH({ ...h, payment_reference: e.target.value })} />}
-            </div>
-          </Field>
+            </Field>
+          </div>
         </>
       ) : null}
     </div>

@@ -612,3 +612,15 @@ class BackupFolderTestIn(In):
 # ------------------------------------------------------------------ 1.10.0 (#58) update notification
 class UpdateSettingsIn(In):
     enabled: bool
+
+
+# ------------------------------------------------------------------ 2.1.0 (#257, #261) budget planning
+class ProjectionChoiceIn(In):
+    budget_id: int
+    project: bool
+
+
+class ProjectionChoicesIn(In):
+    fiscal_year_id: int
+    choices: list[ProjectionChoiceIn] = Field(default_factory=list, max_length=2000)
+    reset: bool = False      # forget this user's choices for the year (back to the defaults)

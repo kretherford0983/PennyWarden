@@ -545,9 +545,22 @@ button.small, label.button { display: inline-flex; align-items: center; justify-
 .table th .sort-arrow.idle { opacity: 0.45; }
 .sort-note { margin: 4px 0 6px; }
 /* 2.1.0 (#260): electronic payment - the kind of number and the number side by side */
-.number-kind { display: flex; gap: 8px; }
-.number-kind select { flex: 0 0 auto; width: auto !important; }
-.number-kind input { flex: 1 1 8em; min-width: 6em; }
+/* 2.1.0 (#260, build 2 feedback): checkbox spanning two rows | Paid by (across) / kind of number | the number */
+.electronic-payment { margin: 4px 0 8px; }
+.electronic-payment.on { display: grid; grid-template-columns: auto minmax(13em, 16em) minmax(12em, 1fr);
+  column-gap: 16px; align-items: start; }
+.electronic-payment.on .ep-toggle { grid-row: 1 / span 2; grid-column: 1; align-self: center; }
+.electronic-payment .ep-method { grid-row: 1; grid-column: 2 / span 2; }
+.electronic-payment .ep-method.with-other { grid-column: 2; }
+.electronic-payment .ep-other { grid-row: 1; grid-column: 3; }
+.electronic-payment .ep-kind { grid-row: 2; grid-column: 2; }
+.electronic-payment .ep-number { grid-row: 2; grid-column: 3; }
+.electronic-payment .ep-method select, .electronic-payment .ep-kind select, .electronic-payment .ep-number input,
+.electronic-payment .ep-other input { width: 100%; }
+@media (max-width: 720px) {
+  .electronic-payment.on { grid-template-columns: 1fr; }
+  .electronic-payment.on > * { grid-row: auto !important; grid-column: 1 !important; }
+}
 /* 2.1.0 (#259): reordering attachments */
 .attachments h3 .att-reorder { margin-left: 10px; vertical-align: middle; font-weight: normal; }
 .att-order li { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border: 1px solid var(--border);
@@ -556,3 +569,13 @@ button.small, label.button { display: inline-flex; align-items: center; justify-
 .att-order .drag-handle { cursor: grab; user-select: none; color: var(--muted, #888); }
 .att-order .att-name { flex: 1 1 auto; overflow-wrap: anywhere; }
 .att-order .att-move { display: inline-flex; gap: 4px; }
+
+/* 2.1.0 (#257, #261) Budget Prep report and projection choices */
+.budget-prep td.indent, .projection-choices td.indent { padding-left: 24px; }
+.budget-prep tr.section-row th, .projection-choices tr.section-row th { text-align: left; background: var(--surface-2, #eef1f5); }
+.budget-prep tr.parent-row td { background: var(--surface-2, #f6f8fa); }
+.budget-prep td { vertical-align: top; }
+.budget-prep .cmp { white-space: nowrap; line-height: 1.35; }
+.budget-prep .small, .projection-choices .small { font-size: 0.8em; }
+.projection-choices { border: 1px solid var(--border, #d0d7de); border-radius: 6px; padding: 8px 12px; margin: 10px 0; }
+.projection-choices table { max-width: 720px; }

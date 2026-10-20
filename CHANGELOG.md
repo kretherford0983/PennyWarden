@@ -24,6 +24,29 @@ PennyWarden 2.1.0 (in progress).
   documents sets the order they are shown and printed in the Audit, Close and fundraiser reports — for example
   invoice, receipt, approval email. New files go to the end; a closed Fiscal Year can't be reordered. (#259)
 
+### Budget planning (Budget Managers)
+- **Budget Prep report** (Reports → Budget Prep). Every budget of a Fiscal Year with its history over earlier years —
+  budgeted, actual and the difference in dollars and percent, marked *over* or *under* — following the budget
+  continuation links, so a renumbered budget stays on one line. Choose how many earlier years to show (or all). The
+  current year shows the actual **year-to-date**, dated. Optional columns:
+  - **Projected** — the average monthly activity so far carried to the Fiscal Year end. Untick a budget known to be
+    complete (a finished fundraiser, say); it then shows *Complete: no projection*. Budgets of fundraisers that have
+    ended start unticked, and your choices are remembered for the year.
+  - **Next year** — the next Fiscal Year's budget that continues each one, with the change.
+
+  It can be limited to one parent budget or one budget (with a chart of budgeted and actual per year). On screen, as a
+  landscape PDF, or CSV. (#257)
+- **Fiscal Year Planning Sheet** (Fiscal Year screen → *Planning sheet…*). A portrait form for the budget meeting:
+  - this year's Income and Expense budgets with the previous budgeted amount, the actual year-to-date and the
+    projection, and a blank *Proposed Budget* column;
+  - blank rows, and a second page of blank tables, for new budgets;
+  - lines for the new Fiscal Year, the attendees and the meeting date.
+
+  When a Draft next Fiscal Year exists, its name and dates are filled in. The draft amounts appear as *Proposed*,
+  with a blank *Proposed Revision* column; new draft budgets are listed, and budgets not carried into the draft are
+  marked *not in draft*. The scanned sheet can be attached to the new Fiscal Year; it is not a required document.
+  (#261)
+
 ### For whoever runs the server
 
 - **`sudo pennywarden apply-config`** applies `config.toml` on a Linux server without running the whole installer:

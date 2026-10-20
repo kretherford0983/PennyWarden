@@ -48,6 +48,50 @@ could not otherwise be corrected. Scope and safeguards:
 - Audited as `TRANSACTION_VOID_DATE_CORRECTED` with before/after snapshots and the reason.
 - Tests: `backend/tests/test_cr001_void_date.py` (5 tests) and E2E "CR-001".
 
+**2.1.0 test build 3 — budget planning (#257, #261; Budget Managers only, proposed items approved 2026-10-20).**
+Migration `0038` adds the table `budget_projection_choice` (`user_id`, `budget_id`, `project`; unique per user and
+budget, so per Fiscal Year). Reinitialize wipes it with the budgets.
+- `services/budget_planning.py` holds both. Projection: `months_between(start, stop)` counts whole months from the
+  Fiscal Year's start day (`add_months`, clamped) plus the partial month as days / days in that month.
+  - `basis()` counts the report date as elapsed (`as_of + 1 day`); under one month the state is `TOO_EARLY`, and on
+    or after the last day `YEAR_ENDED` (projected = actual).
+  - `project()` = YTD × months / elapsed, rounded half away from zero to the cent.
+- YTD = ACTIVE allocations dated on or before `as_of`, with no lower bound, so with today's date it equals the Budgets
+  page actual (which includes allocations dated outside the year).
+- Choices are made on rows that carry activity: a parent without sub-budgets, or each sub-budget, Other included. A
+  parent with sub-budgets projects as the sum of its sub-budgets (projected or YTD) plus any unlisted remainder.
+  - The default is *project*, except when every fundraiser linked to the budget (or to its parent) is ENDED,
+    CANCELLED or ARCHIVED (`fundraisers.status_of`).
+  - `PUT /api/reports/budget-prep/projection-choices` saves `{budget_id, project}` items; `reset` forgets them. It is
+    not audited, like the register sort preference. The REPORT_GENERATED summary lists the unprojected ids.
+- History: `_predecessors()` walks `continues_budget_id` back (deleted budgets skipped).
+  - A sub-budget without its own link has no line (`history on parent`).
+  - Other has no link of its own (BR-017), so it takes the Other of each earlier parent on its parent's line.
+  - Next year: `_continued_by()` in the next Fiscal Year (by start date). For Other, only when that parent has
+    explicit sub-budgets; otherwise the amount is on the parent's row, and the Planning Sheet doesn't mark that Other
+    *not in draft*.
+- Structure comes from `budgets.tree()` (Budget 0 excluded; zero Other hidden unless it has activity, BR-019).
+  - The report keeps rejected and inactive budgets, labelled.
+  - The Planning Sheet leaves them off, and their children with them.
+  - A draft budget that continues nothing is listed after the current rows: under its parent's row when its draft
+    parent continues a current parent, otherwise at the end of the section.
+- Endpoints, all `require("budget.manage")`:
+  - `GET /api/reports/budget-prep` (`format=json|pdf|csv`, `years` with -1 = all, `projected`, `include_next`,
+    `budget_id` or `parent_budget_id`, `as_of`);
+  - `GET`/`PUT /api/reports/budget-prep/projection-choices`;
+  - `GET /api/reports/planning-sheet`.
+
+  Each report is audited `REPORT_GENERATED` on the Fiscal Year.
+- PDF output:
+  - `_AuditDoc` takes a `pagesize`, so the Budget Prep report is landscape Letter; year columns split into bands when
+    they don't fit.
+  - The footer title carries the organization and print date.
+  - The single-budget chart is a reportlab `VerticalBarChart`, with the legend in words.
+- Frontend: `pages/BudgetPrep.tsx` holds the report tab (shown only with `budget.manage`), the shared
+  `ProjectionChoices` checklist and `PlanningSheetDialog` (Fiscal Year screen, not on a Closed year).
+- Tests: `test_v210_budget_prep.py`, `test_v210_planning_sheet.py` (negative role tests for Budget User, Register
+  User, Auditor and Administrator) and the E2E "2.1.0 (#257, #261)".
+
 **2.1.0 test build 2 — register (#262, #258, #260, #259; proposed items approved 2026-10-19).** Migrations
 `0035`–`0037`, additions only.
 - *#262 sort:* `app_user.register_sort` (`"<column>:<asc|desc>"`, `None` = `transaction_date:asc`), set through
