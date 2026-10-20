@@ -48,6 +48,29 @@ could not otherwise be corrected. Scope and safeguards:
 - Audited as `TRANSACTION_VOID_DATE_CORRECTED` with before/after snapshots and the reason.
 - Tests: `backend/tests/test_cr001_void_date.py` (5 tests) and E2E "CR-001".
 
+**2.1.0 test build 4 — fundraiser buckets (#278; all questions resolved 2026-10-20).** Migration `0039`: table
+`fundraiser_bucket_category` (`name`, `description`, `display_order`); `fundraiser_bucket.category_id` (no DB-level
+FK, like `continues_budget_id`) and `display_order` (existing buckets numbered by `(name, id)` — the old listing
+order); `fundraiser_bucket_line.charge_cents` (= `amount_cents`), `less_cents` (0), `less_description`.
+- `amount_cents` stays the **net** (charge − less), so `_lines()`, totals, ROI, bucket nets and every report are
+  unchanged; `charge_cents`/`less_cents` are detail only (`bucket_line_out()`; a `None` charge = the amount).
+- `set_line()` bucket items take `amount` (as before: charge = amount, less = 0) or `charge` + `less` +
+  `less_description` (`_bucket_amounts()`): charge > 0, 0 ≤ less ≤ charge, description required when less > 0; the
+  nets must not exceed the counted amount. The audit snapshot carries charge, less and description per bucket.
+- Categories: `create/update/delete_category()`, audited `FUNDRAISER_CATEGORY_CREATED/UPDATED/DELETED` (delete
+  lists the bucket ids that became uncategorized). `reorder(what, ids)` needs every id exactly once and audits
+  `FUNDRAISER_CATEGORIES_REORDERED` / `FUNDRAISER_BUCKETS_REORDERED` (no-op when unchanged). Categories, a bucket's
+  category and the order are presentation only: allowed in a closed year (`update_bucket` applies `_require_open`
+  only when the name or description changes). Permission `fundraiser.lines`; categories count as management data (a
+  fundraiser with categories can't be deleted, only archived) and are wiped by Reinitialize.
+- `_bucket_summary()` returns `items` in display order (with `category_id`, `credits_income/expense` = sum of Less),
+  `categories` (in order, with `bucket_ids` and subtotals) and `uncategorized_ids`. Uncategorized buckets are listed
+  after the categories. The Audit/Close fundraiser section prints the same grouping and "(charge less amount
+  description)" on bucket assignments.
+- Frontend: `BucketTable`, `CategoryDialog`, `OrderDialog` and the *Charge less a credit* toggle in `LineDialog`
+  (`Fundraisers.tsx`).
+- Tests: `test_v210_bucket_categories.py` (incl. the migration keeping figures) and the E2E "2.1.0 (#278)".
+
 **2.1.0 test build 3 — budget planning (#257, #261; Budget Managers only, proposed items approved 2026-10-20).**
 Migration `0038` adds the table `budget_projection_choice` (`user_id`, `budget_id`, `project`; unique per user and
 budget, so per Fiscal Year). Reinitialize wipes it with the budgets.

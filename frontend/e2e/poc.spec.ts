@@ -1677,6 +1677,51 @@ test("CR-034: buckets, cash float, exclusion and fundraiser documents", async ({
   await logout(page);
 });
 
+test("2.1.0 (#278): bucket categories with subtotals, reorder, and Charge / Less on a line", async ({ page }) => {
+  await login(page, "ru1", "Brand-New-Pass-99");
+  await page.getByRole("link", { name: "Fundraisers" }).click();
+  await page.getByRole("link", { name: "Harvest Dinner" }).click();
+  await page.getByRole("button", { name: "New category" }).click();
+  let dlg = page.getByRole("dialog", { name: "New category" });
+  await dlg.getByLabel("Category name").fill("Day-of event");
+  await dlg.getByRole("button", { name: "Save" }).click();
+  await page.getByRole("button", { name: "New bucket" }).click();
+  dlg = page.getByRole("dialog", { name: "New bucket" });
+  await dlg.getByLabel("Bucket name").fill("Raffle");
+  await dlg.getByLabel("Category (optional)").selectOption({ label: "Day-of event" });
+  await dlg.getByRole("button", { name: "Save" }).click();
+  const table = page.getByTestId("fr-buckets");
+  await expect(table.locator("tr.category-row")).toContainText("Day-of event");
+  await expect(table).toContainText("Day-of event subtotal");
+  // reorder: Raffle before Food sales
+  await page.getByRole("button", { name: "Reorder…" }).click();
+  dlg = page.getByRole("dialog", { name: "Reorder categories and buckets" });
+  await dlg.getByRole("button", { name: "Move Raffle up" }).click();
+  await dlg.getByRole("button", { name: "Save order" }).click();
+  await expect(dlg).toHaveCount(0);
+  // Charge less a credit on a line (line 2 has a $1.00 cash float)
+  await page.getByTestId("fr-lines").getByRole("button", { name: /^Manage line/ }).nth(1).click();
+  dlg = page.getByRole("dialog", { name: "Manage transaction line" });
+  const raffle = dlg.locator(".fr-bucket-row").filter({ hasText: "Raffle" });
+  await raffle.getByLabel("Charge less a credit for Raffle").check();
+  await raffle.getByRole("button", { name: "All remaining" }).click();
+  await raffle.getByLabel("Less for Raffle").fill("0.50");
+  await raffle.getByLabel("Less description for Raffle").fill("Card fee");
+  await expect(dlg.getByTestId("fr-line-remaining")).toContainText("unassigned $0.50");
+  await page.screenshot({ path: "e2e-screenshots/light-fundraiser-charge-less.png" });
+  await dlg.getByRole("button", { name: "Save" }).click();
+  await expect(dlg).toHaveCount(0);
+  await expect(page.getByTestId("fr-lines").locator(".fr-bucket").filter({ hasText: "Raffle" })).toContainText("less $0.50 Card fee");
+  await page.screenshot({ path: "e2e-screenshots/light-fundraiser-categories.png", fullPage: true });
+  // delete the category: Raffle stays, uncategorized
+  page.once("dialog", (d) => d.accept());
+  await table.getByRole("button", { name: "Actions for category Day-of event" }).click();
+  await page.getByRole("menuitem", { name: "Delete" }).click();
+  await expect(table.locator("tr.category-row")).toHaveCount(0);
+  await expect(table).toContainText("Raffle");
+  await logout(page);
+});
+
 // ---------------------------------------------------------------- v1.6.2 CR-035: fundraiser report
 test("CR-035: fundraiser report PDF; Audit and Close reports can include fundraisers", async ({ page }) => {
   await login(page, "bm1");
