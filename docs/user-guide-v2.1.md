@@ -79,6 +79,27 @@ draft code with the previous code under it. A new draft budget is marked *new in
 isn't in the draft is marked *not in draft*. After the meeting, scan the sheet and attach it to the new Fiscal Year as
 an Other document — it is not required for closing a year.
 
+## Fundraisers
+
+### Bucket categories
+On a fundraiser's page, **New category** adds a heading such as *Sponsorships* or *Day-of event*. In a bucket's
+**Edit**, choose its **Category** (or *No category*). The Buckets table then shows each category with its buckets
+indented beneath it and a **subtotal** (income, expenses, net); buckets without a category come after the categories.
+Deleting a category keeps its buckets — they just become uncategorized. A bucket can hold both income and expenses, so
+*Food Sales* can show its sales, its supply costs and its profit.
+
+**Reorder…** sets the order of the categories and of the buckets (▲ ▼, then **Save order**). That order is used on
+the page and in the reports. Existing buckets stay in alphabetical order until you reorder them; new ones go to the
+end. Categories, a bucket's category and the order can be changed even after the Fiscal Year is closed — they only
+change how things are grouped, never a figure.
+
+### Charge less a credit
+Sometimes a bill is a full charge less a credit: a $1,500 venue invoice less $500 that teams pre-paid, paid with a
+$1,000 check. In **Manage** on the line, tick **Charge less a credit** next to the bucket and enter the **Charge**
+($1,500), the **Less** amount ($500) and a **Less description** ("Pre-paid team credit"). The **net** ($1,000) is what
+counts for the line, so the fundraiser's totals still match the register. It works the same on income — a $200
+sponsorship less a $6 card fee. The Less amount can equal the charge (a fully comped item, net $0) but not exceed it.
+
 ## For whoever runs a Linux server
 
 ### Changed `config.toml`? Run `sudo pennywarden apply-config`

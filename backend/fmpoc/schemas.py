@@ -491,6 +491,16 @@ class ModulesIn(In):
 class FundraiserBucketIn(In):
     name: Str(80)
     description: OptStr(500) = None
+    category_id: int | None = None      # 2.1.0 (#278): one category or none
+
+
+class FundraiserCategoryIn(In):         # 2.1.0 (#278)
+    name: Str(80)
+    description: OptStr(500) = None
+
+
+class FundraiserOrderIn(In):            # 2.1.0 (#278): every category (or bucket) of the fundraiser, in the new order
+    ids: list[int] = Field(min_length=1, max_length=60)
 
 
 class FundraiserClassificationIn(In):
@@ -500,8 +510,13 @@ class FundraiserClassificationIn(In):
 
 
 class FundraiserBucketAmountIn(In):
+    """A bucket's part of a line. Either `amount` (as before 2.1.0), or 2.1.0 (#278) `charge` with an optional `less`
+    and `less_description`: the net (charge - less) is what counts toward the line."""
     bucket_id: int
-    amount: Amount
+    amount: Amount | None = None
+    charge: Amount | None = None
+    less: Amount | None = None
+    less_description: OptStr(200) = None
 
 
 class FundraiserLineIn(In):

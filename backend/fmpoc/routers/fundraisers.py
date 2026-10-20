@@ -13,7 +13,8 @@ from sqlalchemy.orm import Session
 from .. import audit
 from ..deps import Ctx, get_db, require
 from ..errors import validation
-from ..schemas import ReasonIn, FundraiserBucketIn, FundraiserIn, FundraiserLineIn, FundraiserPreviewIn, ModulesIn
+from ..schemas import (ReasonIn, FundraiserBucketIn, FundraiserCategoryIn, FundraiserIn, FundraiserLineIn, FundraiserOrderIn,
+                       FundraiserPreviewIn, ModulesIn)
 from ..services import fundraisers as svc
 from ..services.checkprint import service as checks_svc
 
@@ -116,6 +117,49 @@ def line_manager(db: Session = Depends(get_db), ctx: Ctx = Depends(require("fund
 def create_bucket(fid: int, body: FundraiserBucketIn, db: Session = Depends(get_db), ctx: Ctx = Depends(line_manager)):
     f = svc.get(db, ctx, fid)
     svc.create_bucket(db, ctx, f, body)
+    db.commit()
+    return svc.detail(db, ctx, f)
+
+
+@router.put("/fundraisers/{fid}/buckets/order")
+def order_buckets(fid: int, body: FundraiserOrderIn, db: Session = Depends(get_db), ctx: Ctx = Depends(line_manager)):
+    """2.1.0 (#278): the display order of the buckets (presentation only; allowed in a closed year)."""
+    f = svc.get(db, ctx, fid)
+    svc.reorder(db, ctx, f, "buckets", body.ids)
+    db.commit()
+    return svc.detail(db, ctx, f)
+
+
+# 2.1.0 (#278): bucket categories (presentation only, so they can change in a closed year too)
+@router.post("/fundraisers/{fid}/categories", status_code=201)
+def create_category(fid: int, body: FundraiserCategoryIn, db: Session = Depends(get_db), ctx: Ctx = Depends(line_manager)):
+    f = svc.get(db, ctx, fid)
+    svc.create_category(db, ctx, f, body)
+    db.commit()
+    return svc.detail(db, ctx, f)
+
+
+@router.put("/fundraisers/{fid}/categories/order")
+def order_categories(fid: int, body: FundraiserOrderIn, db: Session = Depends(get_db), ctx: Ctx = Depends(line_manager)):
+    f = svc.get(db, ctx, fid)
+    svc.reorder(db, ctx, f, "categories", body.ids)
+    db.commit()
+    return svc.detail(db, ctx, f)
+
+
+@router.put("/fundraisers/{fid}/categories/{category_id}")
+def update_category(fid: int, category_id: int, body: FundraiserCategoryIn, db: Session = Depends(get_db),
+                    ctx: Ctx = Depends(line_manager)):
+    f = svc.get(db, ctx, fid)
+    svc.update_category(db, ctx, f, svc.get_category(db, f, category_id), body)
+    db.commit()
+    return svc.detail(db, ctx, f)
+
+
+@router.delete("/fundraisers/{fid}/categories/{category_id}")
+def delete_category(fid: int, category_id: int, db: Session = Depends(get_db), ctx: Ctx = Depends(line_manager)):
+    f = svc.get(db, ctx, fid)
+    svc.delete_category(db, ctx, f, svc.get_category(db, f, category_id))
     db.commit()
     return svc.detail(db, ctx, f)
 

@@ -47,6 +47,20 @@ PennyWarden 2.1.0 (in progress).
   marked *not in draft*. The scanned sheet can be attached to the new Fiscal Year; it is not a required document.
   (#261)
 
+### Fundraisers
+- **Bucket categories.** Group a fundraiser's buckets under optional categories (for example *Sponsorships*,
+  *Registrations*, *Day-of event*), one category per bucket or none. The Buckets table shows each category with its
+  buckets beneath and a subtotal of income, expenses and net, and so does the fundraiser section of the Audit and
+  Close reports. Deleting a category leaves its buckets uncategorized; no figure changes. A bucket can still hold both
+  income and expenses (*Food Sales* with its sales and its supplies). (#278)
+- **Reorder categories and buckets** with *Reorder…*. The order is used on the page and in the reports. Existing
+  buckets keep their alphabetical order until reordered; new ones go to the end. Categories and order are presentation
+  only, so they can be changed in a closed Fiscal Year too. (#278)
+- **Charge less a credit.** When assigning part of a line to a bucket, tick *Charge less a credit* to record the full
+  charge, the amount taken off and why — a $1,500 venue invoice less a $500 pre-paid team credit, or a $200 sponsorship
+  less a $6 card fee. The net (charge − less) is what counts, so every total still matches the register; the charge
+  and the credit show as detail on the line and in the reports. A fully credited item (net $0) is allowed. (#278)
+
 ### For whoever runs the server
 
 - **`sudo pennywarden apply-config`** applies `config.toml` on a Linux server without running the whole installer:
