@@ -705,6 +705,21 @@ class BackupSchedule(Base):
     updated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
+class BudgetProjectionChoice(Base):
+    """2.1.0 (#257, #261): whether a user projects a current-year budget to the Fiscal Year end (Budget Prep report,
+    Planning Sheet). No row = the default (projected, unless the budget belongs to an ended or cancelled
+    fundraiser). Remembered per user; a budget belongs to one Fiscal Year, so this is per Fiscal Year too."""
+    __tablename__ = "budget_projection_choice"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("app_user.id"), index=True)
+    budget_id: Mapped[int] = mapped_column(ForeignKey("budget.id"), index=True)
+    project: Mapped[bool] = mapped_column(Boolean)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+    __table_args__ = (UniqueConstraint("user_id", "budget_id", name="uq_projection_choice_user_budget"),)
+
+
 class BackupRun(Base):
     """1.9.0 (#62): one scheduled-style backup run (scheduled, retry, missed at start, or Run now). The file names of
     successful runs are what retention may delete - never any other file in the folder."""

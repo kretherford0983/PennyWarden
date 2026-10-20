@@ -556,3 +556,13 @@ button.small, label.button { display: inline-flex; align-items: center; justify-
 .att-order .drag-handle { cursor: grab; user-select: none; color: var(--muted, #888); }
 .att-order .att-name { flex: 1 1 auto; overflow-wrap: anywhere; }
 .att-order .att-move { display: inline-flex; gap: 4px; }
+
+/* 2.1.0 (#257, #261) Budget Prep report and projection choices */
+.budget-prep td.indent, .projection-choices td.indent { padding-left: 24px; }
+.budget-prep tr.section-row th, .projection-choices tr.section-row th { text-align: left; background: var(--surface-2, #eef1f5); }
+.budget-prep tr.parent-row td { background: var(--surface-2, #f6f8fa); }
+.budget-prep td { vertical-align: top; }
+.budget-prep .cmp { white-space: nowrap; line-height: 1.35; }
+.budget-prep .small, .projection-choices .small { font-size: 0.8em; }
+.projection-choices { border: 1px solid var(--border, #d0d7de); border-radius: 6px; padding: 8px 12px; margin: 10px 0; }
+.projection-choices table { max-width: 720px; }

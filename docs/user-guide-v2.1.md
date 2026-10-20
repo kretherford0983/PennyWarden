@@ -41,6 +41,44 @@ Audit, Close and fundraiser reports — put the invoice first, then the receipt,
 files go to the end. The order of a closed Fiscal Year can't be changed. Register Users reorder transaction
 attachments, Budget Managers the Fiscal Year documents, and whoever manages a fundraiser its documents.
 
+## Budget planning (Budget Managers)
+
+### Budget Prep report
+**Reports → Budget Prep.** Choose the Fiscal Year and how many earlier years to show (or *All linked years*), then
+**Run report**. For each budget you see, per year: what was budgeted, the actual, and the difference — in dollars and
+percent, with *over* or *under* in words (*n/a* when nothing was budgeted).
+- **History follows the budget links** (*Continues* on a budget, set when a budget is copied into the next year or by
+  hand). A budget that was renumbered stays on one line; its earlier code is shown in that year. A year with no linked
+  budget shows —. A sub-budget without a link of its own says *history on parent*; *Other* follows its parent.
+- **The current year** shows the actual **year-to-date** as of the date you choose (today by default).
+- **Projected column** (optional): the average monthly activity so far, carried to the end of the Fiscal Year. For
+  example, $300 spent in the first three months projects to $1,200. With less than a month gone it says *too early to
+  project*.
+  - Untick a budget that is **complete** — a fundraiser that is over and will receive nothing more — and it shows
+    *Complete: no projection* (its YTD figure).
+  - Budgets of fundraisers that have ended, were cancelled or archived start unticked.
+  - Your choices are remembered for that Fiscal Year (other Budget Managers have their own) and are also used by the
+    Planning Sheet.
+- **Next year's budget** (optional): the budget of the next Fiscal Year that continues each one, its status and the
+  change.
+- **Budgets:** all, one parent budget with its sub-budgets, or a single budget (the PDF then adds a chart of budgeted
+  and actual per year).
+- **Open PDF** (landscape), **Download PDF** or **Download CSV**.
+
+### Fiscal Year Planning Sheet
+On the Fiscal Year screen, **Planning sheet…** prints the form for the budget planning meeting. It is in portrait, on
+as few pages as possible:
+- **page 1:** the organization, the current and the new Fiscal Year, attendee lines, and the meeting date (top right).
+  Then the **Income** and **Expense** tables: Budget Code, Budget Description, Previous Budgeted, Actual YTD (dated),
+  Projected, and a blank **Proposed Budget**, plus four blank rows for new budgets;
+- **the last page:** more blank Income and Expense tables.
+
+If the next Fiscal Year already exists as a **Draft**, the sheet fills in its name and dates and shows each draft
+amount as *Proposed*, with a blank **Proposed Revision** column to write changes in. A renumbered budget shows the
+draft code with the previous code under it. A new draft budget is marked *new in draft*, and a current budget that
+isn't in the draft is marked *not in draft*. After the meeting, scan the sheet and attach it to the new Fiscal Year as
+an Other document — it is not required for closing a year.
+
 ## For whoever runs a Linux server
 
 ### Changed `config.toml`? Run `sudo pennywarden apply-config`

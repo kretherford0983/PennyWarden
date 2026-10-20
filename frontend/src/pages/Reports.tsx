@@ -3,11 +3,13 @@ import { Fragment, useEffect, useState } from "react";
 import { api, money, qs } from "../api";
 import { EntityPicker, ErrorBox, Field, Loading } from "../components";
 import { useMe } from "../App";
+import BudgetPrep from "./BudgetPrep";
 import FlowReport from "./FlowReport";
 import { SIG_EMPTY, SignatureOptions, signatureProblem, type SigState } from "./SignatureOptions";
 
 export default function Reports() {
-  const [tab, setTab] = useState<"audit" | "close" | "entity" | "flow">("audit");
+  const [tab, setTab] = useState<"audit" | "close" | "entity" | "flow" | "prep">("audit");
+  const { can } = useMe();
   const [fys, setFys] = useState<any[] | null>(null);
   const [accounts, setAccounts] = useState<any[]>([]);
   const [err, setErr] = useState<unknown>(null);
@@ -27,12 +29,14 @@ export default function Reports() {
           <button role="tab" aria-selected={tab === "close"} className={tab === "close" ? "primary" : ""} onClick={() => setTab("close")}>Fiscal Year Close</button>
           <button role="tab" aria-selected={tab === "entity"} className={tab === "entity" ? "primary" : ""} onClick={() => setTab("entity")}>Entity activity</button>
           <button role="tab" aria-selected={tab === "flow"} className={tab === "flow" ? "primary" : ""} onClick={() => setTab("flow")}>Financial Flow</button>
+          {can("budget.manage") ? <button role="tab" aria-selected={tab === "prep"} className={tab === "prep" ? "primary" : ""} onClick={() => setTab("prep")}>Budget Prep</button> : null}
         </div>
       </div>
       {tab === "audit" ? <AuditReport fys={fys} accounts={accounts} /> : null}
       {tab === "close" ? <CloseReport fys={fys} /> : null}
       {tab === "entity" ? <EntityReport fys={fys} accounts={accounts} /> : null}
       {tab === "flow" ? <FlowReport accounts={accounts} /> : null}
+      {tab === "prep" && can("budget.manage") ? <BudgetPrep fys={fys} /> : null}
       <RestoreReports />
     </div>
   );

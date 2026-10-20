@@ -233,8 +233,8 @@ def _signature_page(doc: "_AuditDoc", sp) -> list:
 
 
 class _AuditDoc(SimpleDocTemplate):
-    def __init__(self, buf, **kw):
-        super().__init__(buf, pagesize=letter, leftMargin=MARGIN, rightMargin=MARGIN, topMargin=MARGIN,
+    def __init__(self, buf, pagesize=letter, **kw):   # 2.1.0 (#257): landscape for the Budget Prep report
+        super().__init__(buf, pagesize=pagesize, leftMargin=MARGIN, rightMargin=MARGIN, topMargin=MARGIN,
                          bottomMargin=MARGIN + 0.25 * inch, **kw)
         self.current_label = ""
         self.page_labels: dict[int, str] = {}
