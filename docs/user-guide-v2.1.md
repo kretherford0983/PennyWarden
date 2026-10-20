@@ -75,17 +75,22 @@ percent, with *over* or *under* in words (*n/a* when nothing was budgeted).
 - **Open PDF** (landscape), **Download PDF** or **Download CSV**.
 
 ### Fiscal Year Planning Sheet
-On the Fiscal Year screen, **Planning sheet…** prints the form for the budget planning meeting. It is in portrait, on
-as few pages as possible:
+On the **Fiscal Years** page, **Planning sheet…** prints the form for the budget planning meeting — usually before
+next year's Fiscal Year is even created. PennyWarden works out which year is being planned (one at a time): if a
+**Draft** Fiscal Year exists, it plans that year from the year before it; otherwise it plans the year after the
+current one, with the new year's name and the Proposed column left blank. The dialog says which. The sheet is in
+portrait, on as few pages as possible:
 - **page 1:** the organization, the current and the new Fiscal Year, attendee lines, and the meeting date (top right).
   Then the **Income** and **Expense** tables: Budget Code, Budget Description, Previous Budgeted, Actual YTD (dated),
   Projected, and a blank **Proposed Budget**, plus four blank rows for new budgets;
 - **the last page:** more blank Income and Expense tables.
 
 If the next Fiscal Year already exists as a **Draft**, the sheet fills in its name and dates and shows each draft
-amount as *Proposed*, with a blank **Proposed Revision** column to write changes in. A renumbered budget shows the
+amount as *Proposed* — on the row of the budget it continues, or of the budget with the same code if it was entered
+by hand — with a blank **Proposed Revision** column to write changes in. A renumbered budget shows the
 draft code with the previous code under it. A new draft budget is marked *new in draft*, and a current budget that
-isn't in the draft is marked *not in draft*. After the meeting, scan the sheet and attach it to the new Fiscal Year as
+isn't in the draft is marked *not in draft*. If the Income table ends low on a page, the Expense table starts on the
+next page. After the meeting, scan the sheet and attach it to the new Fiscal Year as
 an Other document — it is not required for closing a year.
 
 ## Fundraisers

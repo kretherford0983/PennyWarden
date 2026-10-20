@@ -34,7 +34,7 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import landscape, letter
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import inch
-from reportlab.platypus import KeepTogether, PageBreak, Paragraph, Spacer, Table, TableStyle
+from reportlab.platypus import CondPageBreak, KeepTogether, PageBreak, Paragraph, Spacer, Table, TableStyle
 from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
@@ -44,7 +44,7 @@ from ..money import fmt
 from . import budgets as bsvc
 from . import fundraisers as fsvc
 from .common import active_allocation_totals, add_months, budget_display_code, fy_brief
-from .reports import _FONT, MARGIN, PM, P, S, _AuditDoc, _csv_safe, _Mark, _stamp_and_write, money
+from .reports import _FONT, BODY_H, MARGIN, PM, P, S, _AuditDoc, _csv_safe, _Mark, _stamp_and_write, money
 
 COMPLETE_FUNDRAISER = {"ENDED", "CANCELLED", "ARCHIVED"}
 STATUS_TEXT = {"APPROVED": "Approved", "DRAFT": "Draft", "REJECTED": "Rejected", "INACTIVE": "Inactive",
@@ -268,16 +268,34 @@ def _line(db: Session, b: Budget) -> tuple[dict[int, Budget], str | None]:
 
 
 def _successor(db: Session, b: Budget, next_fy: FiscalYear | None) -> Budget | None:
+    """The next year's budget on this budget's line: the #89 continuation link, else (build 3 feedback, 2026-10-20)
+    a next-year budget with the same code, type and level that continues nothing - so a draft entered by hand or
+    copied without links still lines up with the budget it replaces instead of being listed twice."""
     if next_fy is None:
         return None
     if b.is_other and b.parent_budget_id:
         # Other follows its parent; a next-year parent without sub-budgets has no separate Other line
-        p = bsvc._continued_by(db, b.parent_budget_id)
-        if p is None or p.fiscal_year_id != next_fy.id or not bsvc.children_of(db, p)[0]:
+        p = _successor(db, db.get(Budget, b.parent_budget_id), next_fy)
+        if p is None or not bsvc.children_of(db, p)[0]:
             return None
         return _other_of(db, p)
     nxt = bsvc._continued_by(db, b.id)
-    return nxt if nxt is not None and nxt.fiscal_year_id == next_fy.id else None
+    if nxt is not None:
+        return nxt if nxt.fiscal_year_id == next_fy.id else None
+    return _same_code(db, b, next_fy)
+
+
+def _same_code(db: Session, b: Budget, next_fy: FiscalYear) -> Budget | None:
+    q = select(Budget).where(Budget.fiscal_year_id == next_fy.id, Budget.budget_type == b.budget_type,
+                             Budget.status != "DELETED", Budget.continues_budget_id.is_(None),
+                             Budget.system_managed.is_(False))
+    if b.parent_budget_id is None:
+        return db.scalar(q.where(Budget.parent_budget_id.is_(None), Budget.parent_code == b.parent_code).limit(1))
+    parent = db.get(Budget, b.parent_budget_id)
+    np = _successor(db, parent, next_fy)
+    if np is None:
+        return None
+    return db.scalar(q.where(Budget.parent_budget_id == np.id, Budget.child_code == b.child_code).limit(1))
 
 
 def _actual_all(db: Session, b: Budget, totals_cache: dict[int, int]) -> int:
@@ -643,7 +661,34 @@ def _draft_next(db: Session, ws_id: int, fy: FiscalYear) -> FiscalYear | None:
     return nxt if nxt is not None and nxt.status == "DRAFT" else None
 
 
-def planning_rows(db: Session, ctx, fy: FiscalYear, as_of: dt.date) -> dict:
+def planning_context(db: Session, ws_id: int) -> tuple[FiscalYear, FiscalYear | None]:
+    """Build 3 feedback (2026-10-20): the sheet is printed from the Fiscal Years page, often before next year exists.
+    One planning at a time:
+    - a Draft Fiscal Year with an earlier year -> plan that draft from the year before it (the latest such draft);
+    - otherwise the year covering today (not a draft), else the latest year that isn't a draft, else the latest year.
+    """
+    fys = list(db.scalars(select(FiscalYear).where(FiscalYear.workspace_id == ws_id).order_by(FiscalYear.start_date)))
+    if not fys:
+        raise validation("Create a Fiscal Year first: the sheet lists its budgets.", "fiscal_year_id")
+    for d in reversed([f for f in fys if f.status == "DRAFT"]):
+        earlier = [f for f in fys if f.start_date < d.start_date]
+        if earlier:
+            return earlier[-1], d
+    today = dt.date.today()
+    cover = [f for f in fys if f.start_date <= today <= f.end_date and f.status != "DRAFT"]
+    if cover:
+        return cover[-1], None
+    settled = [f for f in fys if f.status != "DRAFT"]
+    return (settled or fys)[-1], None
+
+
+def planning_context_out(db: Session, ws_id: int) -> dict:
+    base, draft = planning_context(db, ws_id)
+    return {"fiscal_year": fy_brief(base), "draft_fiscal_year": fy_brief(draft) if draft else None}
+
+
+def planning_rows(db: Session, ctx, fy: FiscalYear, as_of: dt.date, draft: FiscalYear | None = None,
+                  auto: bool = False) -> dict:
     """The rows of the sheet: {"income": [...], "expense": [...], "draft": FiscalYear|None}. A row: code, previous_code
     (when the draft renumbered it), name, level, status, budgeted/ytd/projection (None for a new draft budget),
     proposed (draft amount or None), not_in_draft."""
@@ -652,7 +697,8 @@ def planning_rows(db: Session, ctx, fy: FiscalYear, as_of: dt.date) -> dict:
     bas = basis(fy, as_of)
     all_ids = [b.id for b in db.scalars(select(Budget).where(Budget.fiscal_year_id == fy.id))]
     ytd = active_allocation_totals(db, all_ids, None, as_of)
-    draft = _draft_next(db, ctx.workspace_id, fy)
+    if not auto:
+        draft = _draft_next(db, ctx.workspace_id, fy)
     dstruct = structure(db, draft) if draft else {"INCOME": [], "EXPENSE": []}
     matched: set[int] = set()
 
@@ -778,10 +824,14 @@ def _plan_table(rows: list[dict], heads: list[str], widths: list[float], blank: 
     return t
 
 
-def planning_sheet(db: Session, ctx, fy: FiscalYear, as_of: dt.date | None = None) -> tuple[str, str, dict]:
+def planning_sheet(db: Session, ctx, fy: FiscalYear | None, as_of: dt.date | None = None) -> tuple[str, str, dict]:
+    """fy None: the year being planned is worked out (planning_context)."""
+    auto_draft, auto = None, fy is None
+    if fy is None:
+        fy, auto_draft = planning_context(db, ctx.workspace_id)
     as_of = as_of or dt.date.today()
     ws = db.get(Workspace, ctx.workspace_id)
-    data = planning_rows(db, ctx, fy, as_of)
+    data = planning_rows(db, ctx, fy, as_of, auto_draft, auto)
     draft = data["draft"]
     revision = draft is not None
     printed = _us(dt.date.today())
@@ -820,7 +870,9 @@ def planning_sheet(db: Session, ctx, fy: FiscalYear, as_of: dt.date | None = Non
     f: list = [_Mark(doc, "Budgets"), head, Spacer(1, 2), PM(cur, "metav"), PM(new, "metav"), Spacer(1, 2), att,
                Spacer(1, 4), P(proj_note + proposed_note + " Previous columns are the current Fiscal Year.", "small"),
                Spacer(1, 4)]
-    for key in ("income", "expense"):
+    for i, key in enumerate(("income", "expense")):
+        if i:   # a table that would start in the bottom 35% of the page starts on a new page (Kyle, 2026-10-20)
+            f.append(CondPageBreak(0.35 * BODY_H))
         f += [PM(key.title(), "h2"),
               _plan_table(data[key], heads, widths, PLAN_BLANK_ROWS, revision, ytd_head), Spacer(1, 8)]
     f.append(P("After the meeting the filled-in sheet can be scanned and attached to the new Fiscal Year as an Other "

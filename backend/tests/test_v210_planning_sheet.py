@@ -141,3 +141,61 @@ def test_scanned_sheet_is_not_required_for_closure(env, base):
 @pytest.mark.parametrize("who", ["bu", "ru", "auditor", "admin"])
 def test_budget_managers_only(env, base, who):
     assert sheet(env, base, client=getattr(env, who)).status_code == 403
+
+
+# ------------------------------------------------------------------ build 3 feedback (Kyle, 2026-10-20)
+def test_context_from_the_fiscal_years_page(env, base):
+    ctx = env.bm.get("/api/reports/planning-sheet/context").json()
+    assert ctx["fiscal_year"]["id"] == base["fy"]["id"] and ctx["draft_fiscal_year"] is None
+    f28 = env.fy("2028", "2027-07-01", "2028-06-30")
+    ctx = env.bm.get("/api/reports/planning-sheet/context").json()
+    assert ctx["fiscal_year"]["id"] == base["fy"]["id"] and ctx["draft_fiscal_year"]["id"] == f28["id"]
+    # without a Fiscal Year id the sheet plans that draft
+    r = env.bm.get("/api/reports/planning-sheet", params={"as_of": "2026-09-30"})
+    assert r.status_code == 200
+    _rd, t = pages(r)
+    assert "New Fiscal Year: FY2028" in t[0] and "Proposed Revision" in t[0]
+    for c in (env.bu, env.ru, env.auditor, env.admin):
+        assert c.get("/api/reports/planning-sheet/context").status_code == 403
+
+
+def test_unlinked_draft_budgets_with_the_same_code_are_not_listed_twice(env, base, cur):
+    f28 = env.fy("2028", "2027-07-01", "2028-06-30")
+    # entered by hand (no continuation link), same codes
+    ops = env.budget(f28["id"], "1000", "Operations", "EXPENSE", "90000.00")
+    env.budget(f28["id"], "01", "Travel", amount="450.00", parent=ops["id"])
+    env.budget(f28["id"], "2000", "Uniforms", "EXPENSE", "275.00")
+    env.budget(f28["id"], "4000", "Donations", "INCOME", "5500.00")
+    _rd, t = pages(sheet(env, base))
+    p1 = t[0]
+    assert "new in draft" not in p1 and "not in draft" not in p1
+    assert p1.count("Uniforms") == 1 and p1.count("Travel") == 1
+    for amount in ("$90,000.00", "$450.00", "$275.00", "$5,500.00"):
+        assert amount in p1, amount
+
+
+def _heading_y(content: bytes, word: str) -> list[tuple[int, float]]:
+    found = []
+    for i, pg in enumerate(PdfReader(io.BytesIO(content)).pages):
+        def visit(text, cm, tm, fd, fs, i=i):
+            if text.strip() == word:
+                found.append((i, tm[4] * cm[1] + tm[5] * cm[3] + cm[5]))
+        pg.extract_text(visitor_text=visit)
+    return found
+
+
+def test_expense_table_starts_a_new_page_when_income_ends_low(env, base):
+    from fmpoc.services.reports import BODY_H, MARGIN
+    bottom = MARGIN + 0.25 * 72
+    starts_new = 0
+    for i in range(22):
+        env.budget(base["fy"]["id"], f"{4100 + i}", f"Income line {i}", "INCOME", "10.00")
+        if i < 8 or i % 2:
+            continue
+        r = sheet(env, base)
+        for page, y in _heading_y(r.content, "Expense"):
+            # never in the bottom 35% of the page: either high enough, or at the top of a new page
+            assert y - bottom >= 0.35 * BODY_H - 30, (i, page, y)
+            if page > 0 and y > 600:
+                starts_new += 1
+    assert starts_new >= 1
