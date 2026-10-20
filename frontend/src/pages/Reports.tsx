@@ -8,8 +8,8 @@ import FlowReport from "./FlowReport";
 import { SIG_EMPTY, SignatureOptions, signatureProblem, type SigState } from "./SignatureOptions";
 
 export default function Reports() {
-  const [tab, setTab] = useState<"audit" | "close" | "entity" | "flow" | "prep">("audit");
-  const { can } = useMe();
+  const [tab, setTab] = useState<"audit" | "close" | "entity" | "flow" | "prep" | "frdetail">("audit");
+  const { can, me } = useMe();
   const [fys, setFys] = useState<any[] | null>(null);
   const [accounts, setAccounts] = useState<any[]>([]);
   const [err, setErr] = useState<unknown>(null);
@@ -29,6 +29,7 @@ export default function Reports() {
           <button role="tab" aria-selected={tab === "close"} className={tab === "close" ? "primary" : ""} onClick={() => setTab("close")}>Fiscal Year Close</button>
           <button role="tab" aria-selected={tab === "entity"} className={tab === "entity" ? "primary" : ""} onClick={() => setTab("entity")}>Entity activity</button>
           <button role="tab" aria-selected={tab === "flow"} className={tab === "flow" ? "primary" : ""} onClick={() => setTab("flow")}>Financial Flow</button>
+          {me.modules?.fundraisers ? <button role="tab" aria-selected={tab === "frdetail"} className={tab === "frdetail" ? "primary" : ""} onClick={() => setTab("frdetail")}>Fundraiser detail (audit)</button> : null}
           {can("budget.manage") ? <button role="tab" aria-selected={tab === "prep"} className={tab === "prep" ? "primary" : ""} onClick={() => setTab("prep")}>Budget Prep</button> : null}
         </div>
       </div>
@@ -37,6 +38,7 @@ export default function Reports() {
       {tab === "entity" ? <EntityReport fys={fys} accounts={accounts} /> : null}
       {tab === "flow" ? <FlowReport accounts={accounts} /> : null}
       {tab === "prep" && can("budget.manage") ? <BudgetPrep fys={fys} /> : null}
+      {tab === "frdetail" ? <FundraiserDetailReport fys={fys} /> : null}
       <RestoreReports />
     </div>
   );
@@ -241,6 +243,44 @@ function EntityReport({ fys, accounts }: { fys: any[]; accounts: any[] }) {
           <p className="hint">Generated {data.generated_at.replace("T", " ").slice(0, 16)} UTC</p>
         </div>
       ) : null}
+    </section>
+  );
+}
+
+/** 2.1.0 (#275): the fundraiser's audit detail (lines, excluded lines, documents and attachments) - what the
+ * fundraiser page's report button produced before the stakeholder report. */
+function FundraiserDetailReport({ fys }: { fys: any[] }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const cur = fys.find((f) => f.start_date <= today && f.end_date >= today) || fys[fys.length - 1];
+  const [fy, setFy] = useState(cur ? String(cur.id) : "");
+  const [list, setList] = useState<any[]>([]);
+  const [fid, setFid] = useState("");
+  useEffect(() => {
+    if (!fy) return;
+    api.get(`/api/fundraisers?fiscal_year_id=${fy}&include_archived=true`).then((r) => { setList(r); setFid(r[0] ? String(r[0].id) : ""); }, () => setList([]));
+  }, [fy]);
+  return (
+    <section className="card">
+      <h2>Fundraiser detail (audit)</h2>
+      <p>One fundraiser's audit detail: its summary, buckets, every transaction line with its budget and transaction number, excluded lines with their reasons, and the fundraiser documents and attachments reproduced. The stakeholder report (without audit detail) is on the fundraiser's page.</p>
+      <div className="report-options">
+        <Field label="Fiscal Year">
+          <select aria-label="Fundraiser detail Fiscal Year" value={fy} onChange={(e) => setFy(e.target.value)}>
+            {fys.map((y) => <option key={y.id} value={y.id}>{y.label}</option>)}
+          </select>
+        </Field>
+        <Field label="Fundraiser">
+          <select value={fid} onChange={(e) => setFid(e.target.value)}>
+            {list.length ? null : <option value="">No fundraisers in this Fiscal Year</option>}
+            {list.map((f) => <option key={f.id} value={f.id}>{f.name}{f.archived ? " (archived)" : ""}</option>)}
+          </select>
+        </Field>
+      </div>
+      <div className="actions left">
+        {fid ? <><a className="button primary" href={`/api/fundraisers/${fid}/report`} target="_blank" rel="noopener">Open detail PDF</a>
+          <a className="button" href={`/api/fundraisers/${fid}/report?download=true`}>Download PDF</a></>
+          : <button className="primary" disabled>Open detail PDF</button>}
+      </div>
     </section>
   );
 }

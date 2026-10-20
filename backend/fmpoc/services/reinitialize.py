@@ -32,7 +32,8 @@ from sqlalchemy.orm import Session
 from .. import audit
 from ..models import (Attachment, AuditEvent, BankAccount, BankAccountBalance, Budget, BudgetProjectionChoice, CheckAccount,
                       CheckDocument, CheckNumberAcknowledgement, CheckPrinterSetting, CheckSigner, CheckStyle, Entity,
-                      FiscalYear, FiscalYearReview, Fundraiser, FundraiserBucket, FundraiserBucketLine, FundraiserBudget,
+                      FiscalYear, FiscalYearReview, Fundraiser, FundraiserBucket, FundraiserBucketCategory, FundraiserBucketLine, FundraiserBudget,
+                      FundraiserFyReportNote, FundraiserSeries, FundraiserSeriesResult,
                       FundraiserClassification, FundraiserExclusion, RegisterTransaction, Reminder, RequestKey,
                       TransactionAllocation, User, Workspace, utcnow)
 from . import backup as bk
@@ -45,7 +46,8 @@ COOLDOWN = dt.timedelta(hours=24)
 # children first
 WIPE = (FundraiserBucketLine, FundraiserClassification, FundraiserExclusion, FiscalYearReview, Attachment,
         TransactionAllocation, RegisterTransaction, CheckNumberAcknowledgement, CheckAccount, CheckPrinterSetting,
-        BankAccountBalance, BankAccount, FundraiserBucket, FundraiserBudget, Fundraiser, BudgetProjectionChoice, Budget, FiscalYear,
+        BankAccountBalance, BankAccount, FundraiserBucket, FundraiserBucketCategory, FundraiserBudget, Fundraiser, FundraiserSeriesResult,
+        FundraiserSeries, FundraiserFyReportNote, BudgetProjectionChoice, Budget, FiscalYear,
         CheckDocument, CheckSigner, CheckStyle, RequestKey)
 
 
@@ -138,6 +140,9 @@ def wipe(db: Session, ws_id: int, ctx, by: str, backup_name: str, via: str, befo
         FundraiserExclusion: FundraiserExclusion.fundraiser_id.in_(fr_ids),
         TransactionAllocation: TransactionAllocation.id.in_(alloc_ids),
         FundraiserBucket: FundraiserBucket.id.in_(bucket_ids),
+        FundraiserBucketCategory: FundraiserBucketCategory.fundraiser_id.in_(fr_ids),
+        FundraiserSeriesResult: FundraiserSeriesResult.series_id.in_(
+            select(FundraiserSeries.id).where(FundraiserSeries.workspace_id == ws_id)),
         FundraiserBudget: FundraiserBudget.fundraiser_id.in_(fr_ids),
         CheckAccount: CheckAccount.check_style_id.in_(style_ids),
     }

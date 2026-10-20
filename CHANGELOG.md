@@ -55,6 +55,65 @@ PennyWarden 2.1.0 (in progress).
   marked *not in draft*. The scanned sheet can be attached to the new Fiscal Year; it is not a required document.
   (#261)
 
+### Fundraisers
+- **Stakeholder report.** *Report…* on a fundraiser's page now produces a clean **Financial & Proceeds Statement** for
+  the committee and stakeholders, as a **PDF or an editable Word document**:
+  - three headline figures (net revenue, expenses, net proceeds with the net margin) and a financial summary from
+    gross deposits to net proceeds;
+  - revenue and expense breakdowns by category and bucket, with *Other (not in a bucket)* so they add up, itemized
+    revenue, charge-less-credit detail and a net-by-category table;
+  - key takeaways worked out from the figures and optional summary notes.
+
+  Options: summary only (no itemized revenue), hide contributor names ("Contributor 1, 2…") for reports that go
+  outside the organization, and a plain line list for a fundraiser without buckets. A section heading never sits
+  alone at the bottom of a page; long itemized lists run on across pages in two columns. It has no transaction numbers,
+  accounts, budgets or attachments. Budget Managers can write the **summary notes** and **Mark results final**; the
+  report reads *Interim*, *Post-event*, *Final* or *Cancelled*. The previous detailed report (lines, excluded lines,
+  documents and attachments) is now **Reports → Fundraiser detail (audit)**. (#275)
+- **Fundraiser presentation.** *Presentation* in the same dialog gives the report as a 16:9 slide deck (`.pptx`)
+  that opens in PowerPoint, Google Slides and Keynote. It has highlights, a revenue-to-proceeds column chart, revenue
+  by category (doughnut), category detail, net by category, revenue over time, top contributors, expenses with
+  charge-less-credit detail, key takeaways and summary notes. The charts are native and editable, with amounts on
+  them (whole-dollar axes with round steps, so labels don't run into each other), and every slide's speaker notes give
+  the exact figures and how they are worked out. Slides with nothing to
+  show are left out; with contributor names off, no name appears anywhere in the file. (#276)
+- **Fundraisers across years.** *Continues from (previous fundraiser)* on the fundraiser form links it with the same
+  event in an earlier year — a skipped year still links — and *Create next year's…* on a fundraiser pre-fills next
+  year's: the name with the year moved on, description, filter, the continuing budgets, the buckets and categories
+  (without amounts) and the link, all editable. **Fundraiser series** (Budget Managers) lists each event across years:
+  rename it, group it as *Other* in the charts, enter results of years before PennyWarden (*Entered*; retired, never
+  deleted) and merge two series started separately. The link can be changed even in a closed year. (#277)
+- **Fiscal Year fundraising report and presentation.** On *Fundraisers*, tick the fundraisers of a Fiscal Year (all
+  of that year's, cancelled ones unticked, by default) and choose *Fiscal Year report…*. It covers:
+  - this year by fundraiser, with net revenue, expenses, net proceeds, margin and share;
+  - growth versus last year and the first year shown, the top fundraiser, the cumulative total and the peak year;
+  - the annual trend (with an optional *targeted* estimate for events still to come), share by series (small ones
+    as *Other*), the average per active year, and the history marked *Recorded* or *Entered*.
+
+  Notes are remembered per year. Available as a PDF and a `.pptx` deck with charts and speaker notes. No contributor
+  names. (#277)
+- **Year over year.** When earlier years are known (linked fundraisers or entered results), the fundraiser's report
+  and presentation add a *Year over year* section: each year's net revenue, expenses, net proceeds and margin, and
+  the change on the year before. The Fiscal Year report and deck add *Year over year by series*, with a line per
+  event and the change on the year before, to help decide which fundraisers to keep offering. (#277)
+- **Bucket categories.** Group a fundraiser's buckets under optional categories (for example *Sponsorships*,
+  *Registrations*, *Day-of event*), one category per bucket or none. The Buckets table shows each category with its
+  buckets beneath and a subtotal of income, expenses and net, and so does the fundraiser section of the Audit and
+  Close reports. Deleting a category leaves its buckets uncategorized; no figure changes. A bucket can still hold both
+  income and expenses (*Food Sales* with its sales and its supplies). (#278)
+- **Contributor shown on the reports.** When assigning part of a line to a bucket, *Different contributor on
+  reports* replaces the line's Entity on the fundraiser reports and presentations. Use it for lump cash the
+  organization collected ("Cash", so it doesn't look as if the organization gave to itself), for the name people
+  know a business by, or when someone handed in money collected from others. It is set per bucket part and recorded
+  in the audit log. (#278)
+- **Reorder categories and buckets** with *Reorder…*. The order is used on the page and in the reports. Existing
+  buckets keep their alphabetical order until reordered; new ones go to the end. Categories and order are presentation
+  only, so they can be changed in a closed Fiscal Year too. (#278)
+- **Charge less a credit.** When assigning part of a line to a bucket, tick *Charge less a credit* to record the full
+  charge, the amount taken off and why — a $1,500 venue invoice less a $500 pre-paid team credit, or a $200 sponsorship
+  less a $6 card fee. The net (charge − less) is what counts, so every total still matches the register; the charge
+  and the credit show as detail on the line and in the reports. A fully credited item (net $0) is allowed. (#278)
+
 ### For whoever runs the server
 
 - **`sudo pennywarden apply-config`** applies `config.toml` on a Linux server without running the whole installer:
@@ -69,6 +128,7 @@ PennyWarden 2.1.0 (in progress).
 - **Release dates are set by the pipeline.** The release is dated when it is published (GitHub, pennywarden.org,
   *What's new*); `CHANGELOG.md` gets the date with the next version's first change. No extra round before each
   release. README links to the latest release instead of naming a version. (#240)
+- **New dependencies:** `python-docx` (MIT, with `lxml`, BSD) writes the Word version of the fundraiser report (#275); `python-pptx` (MIT) and `XlsxWriter` (BSD) write the presentation and its chart data (#276). All are in THIRD-PARTY-NOTICES and every package.
 - **Python dependencies are compiled with pip-tools** (`backend/requirements.in` → `requirements.txt`, same versions as
   2.0.0), so automatic dependency updates move related packages together. (#226)
 

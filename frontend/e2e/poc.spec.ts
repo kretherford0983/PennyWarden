@@ -1677,16 +1677,135 @@ test("CR-034: buckets, cash float, exclusion and fundraiser documents", async ({
   await logout(page);
 });
 
+test("2.1.0 (#278): bucket categories with subtotals, reorder, and Charge / Less on a line", async ({ page }) => {
+  await login(page, "ru1", "Brand-New-Pass-99");
+  await page.getByRole("link", { name: "Fundraisers" }).click();
+  await page.getByRole("link", { name: "Harvest Dinner" }).click();
+  await page.getByRole("button", { name: "New category" }).click();
+  let dlg = page.getByRole("dialog", { name: "New category" });
+  await dlg.getByLabel("Category name").fill("Day-of event");
+  await dlg.getByRole("button", { name: "Save" }).click();
+  await page.getByRole("button", { name: "New bucket" }).click();
+  dlg = page.getByRole("dialog", { name: "New bucket" });
+  await dlg.getByLabel("Bucket name").fill("Raffle");
+  await dlg.getByLabel("Category (optional)").selectOption({ label: "Day-of event" });
+  await dlg.getByRole("button", { name: "Save" }).click();
+  const table = page.getByTestId("fr-buckets");
+  await expect(table.locator("tr.category-row")).toContainText("Day-of event");
+  await expect(table).toContainText("Day-of event subtotal");
+  // reorder: Raffle before Food sales
+  await page.getByRole("button", { name: "Reorder…" }).click();
+  dlg = page.getByRole("dialog", { name: "Reorder categories and buckets" });
+  await dlg.getByRole("button", { name: "Move Raffle up" }).click();
+  await dlg.getByRole("button", { name: "Save order" }).click();
+  await expect(dlg).toHaveCount(0);
+  // Charge less a credit on a line (line 2 has a $1.00 cash float)
+  await page.getByTestId("fr-lines").getByRole("button", { name: /^Manage line/ }).nth(1).click();
+  dlg = page.getByRole("dialog", { name: "Manage transaction line" });
+  const raffle = dlg.locator(".fr-bucket-row").filter({ hasText: "Raffle" });
+  await raffle.getByLabel("Charge less a credit for Raffle").check();
+  await raffle.getByRole("button", { name: "All remaining" }).click();
+  await raffle.getByLabel("Less for Raffle").fill("0.50");
+  await raffle.getByLabel("Less description for Raffle").fill("Card fee");
+  // build 4-6 feedback: lump cash shows as "Cash" on the reports
+  await raffle.getByLabel("Show a different contributor for Raffle").check();
+  await raffle.getByLabel("Contributor shown for Raffle").fill("Cash");
+  await expect(dlg.getByTestId("fr-line-remaining")).toContainText("unassigned $0.50");
+  await page.screenshot({ path: "e2e-screenshots/light-fundraiser-charge-less.png" });
+  await dlg.getByRole("button", { name: "Save" }).click();
+  await expect(dlg).toHaveCount(0);
+  await expect(page.getByTestId("fr-lines").locator(".fr-bucket").filter({ hasText: "Raffle" })).toContainText("less $0.50 Card fee");
+  await expect(page.getByTestId("fr-lines").locator(".fr-bucket").filter({ hasText: "Raffle" })).toContainText("shown as “Cash”");
+  await page.screenshot({ path: "e2e-screenshots/light-fundraiser-categories.png", fullPage: true });
+  // delete the category: Raffle stays, uncategorized
+  page.once("dialog", (d) => d.accept());
+  await table.getByRole("button", { name: "Actions for category Day-of event" }).click();
+  await page.getByRole("menuitem", { name: "Delete" }).click();
+  await expect(table.locator("tr.category-row")).toHaveCount(0);
+  await expect(table).toContainText("Raffle");
+  await logout(page);
+});
+
+test("2.1.0 (#277): next year's fundraiser continues the series, prior years entered, Fiscal Year report and deck", async ({ page }) => {
+  await login(page, "bm1");
+  await page.getByRole("link", { name: "Fundraisers" }).click();
+  await page.getByRole("link", { name: "Harvest Dinner" }).click();
+  await page.getByRole("button", { name: "Create next year's…" }).click();
+  let dlg = page.getByRole("dialog", { name: "New fundraiser (next year)" });
+  await expect(dlg.getByLabel("Name")).not.toHaveValue("");
+  await expect(dlg.getByLabel("Continues from (previous fundraiser)")).not.toHaveValue("");
+  await dlg.getByLabel("Name").fill("Harvest Dinner next year");
+  await dlg.getByRole("button", { name: "Create fundraiser" }).click();
+  await expect(page.getByTestId("fr-series")).toContainText("continues Harvest Dinner");
+  // the series list: enter a year before PennyWarden
+  await page.getByRole("link", { name: "Fundraisers" }).first().click();
+  await page.getByRole("link", { name: "Fundraiser series" }).click();
+  await page.getByRole("button", { name: "Enter a prior year…" }).first().click();
+  dlg = page.getByRole("dialog", { name: /Enter a prior year/ });
+  await dlg.getByLabel("Fiscal Year (include the year)").fill("FY2019");
+  await dlg.getByLabel("Amount raised (net)").fill("640.00");
+  await dlg.getByRole("button", { name: "Save" }).click();
+  await expect(page.locator("section.card").first()).toContainText("FY2019");
+  await page.screenshot({ path: "e2e-screenshots/light-fundraiser-series.png", fullPage: true });
+  // the Fiscal Year report for the ticked fundraisers
+  await page.getByRole("link", { name: "← Fundraisers" }).click();
+  await expect(page.getByTestId("fundraiser-list")).toBeVisible();
+  await page.getByRole("button", { name: "Fiscal Year report…" }).click();
+  dlg = page.getByRole("dialog", { name: "Fiscal Year fundraising report" });
+  await dlg.getByLabel("Include targeted total").check();
+  await dlg.getByLabel(/Notes \(printed/).fill("Matching gifts expected.");
+  await dlg.getByRole("button", { name: "Save notes" }).click();
+  await expect(dlg.getByRole("button", { name: "Save notes" })).toBeDisabled();
+  const pdf = await page.request.get((await dlg.getByRole("link", { name: "Report (PDF)" }).getAttribute("href"))!);
+  expect(pdf.status()).toBe(200);
+  expect(pdf.headers()["content-type"]).toBe("application/pdf");
+  const deck = await page.request.get((await dlg.getByRole("link", { name: "Presentation" }).getAttribute("href"))!);
+  expect(deck.status()).toBe(200);
+  expect(deck.headers()["content-type"]).toContain("presentationml");
+  await dlg.getByRole("button", { name: "Done" }).click();
+  await logout(page);
+});
+
 // ---------------------------------------------------------------- v1.6.2 CR-035: fundraiser report
 test("CR-035: fundraiser report PDF; Audit and Close reports can include fundraisers", async ({ page }) => {
   await login(page, "bm1");
   await page.getByRole("link", { name: "Fundraisers" }).click();
   await page.getByRole("link", { name: "Harvest Dinner" }).click();
-  const href = await page.getByRole("link", { name: "Report (PDF)" }).getAttribute("href");
+  // 2.1.0 (#275): the page's Report… is the stakeholder report (PDF or Word), with options
+  await page.getByRole("button", { name: "Report…" }).first().click();
+  const rd = page.getByRole("dialog", { name: "Fundraiser report" });
+  await rd.getByLabel(/Show contributor names/).uncheck();
+  const href = await rd.getByRole("link", { name: "Report (PDF)" }).getAttribute("href");
+  expect(href).toContain("names=false");
   const pdf = await page.request.get(href!);
   expect(pdf.status()).toBe(200);
   expect(pdf.headers()["content-type"]).toBe("application/pdf");
+  const word = await page.request.get((await rd.getByRole("link", { name: "Report (Word)" }).getAttribute("href"))!);
+  expect(word.status()).toBe(200);
+  expect(word.headers()["content-type"]).toContain("wordprocessingml");
+  // 2.1.0 (#276): the presentation, same options
+  const deck = await page.request.get((await rd.getByRole("link", { name: "Presentation" }).getAttribute("href"))!);
+  expect(deck.status()).toBe(200);
+  expect(deck.headers()["content-type"]).toContain("presentationml");
+  expect(deck.headers()["content-disposition"]).toContain("-presentation.pptx");
+  await rd.getByRole("button", { name: "Done" }).click();
+  // Budget Manager: summary notes and Mark results final
+  const card = page.locator("section").filter({ has: page.getByRole("heading", { name: "Stakeholder report" }) });
+  await card.getByLabel(/Summary notes/).fill("Thanks to every volunteer.");
+  await card.getByRole("button", { name: "Save notes" }).click();
+  await expect(card.getByRole("status")).toHaveText("Saved.");
+  await card.getByRole("button", { name: "Mark results final" }).click();
+  await expect(page.getByTestId("fr-report-status")).toContainText("Final (marked final)");
+  await page.screenshot({ path: "e2e-screenshots/light-fundraiser-stakeholder-report.png", fullPage: true });
+  await card.getByRole("button", { name: "Undo final" }).click();
+  await expect(page.getByTestId("fr-report-status")).not.toContainText("marked final");
+  // the audit detail moved to Reports -> Fundraiser detail (audit)
   await page.getByRole("link", { name: "Reports" }).click();
+  await page.getByRole("tab", { name: "Fundraiser detail (audit)" }).click();
+  const det = await page.getByRole("link", { name: "Open detail PDF" }).getAttribute("href");
+  expect(det).toMatch(/\/api\/fundraisers\/\d+\/report$/);
+  expect((await page.request.get(det!)).status()).toBe(200);
+  await page.getByRole("tab", { name: "End of Year Audit" }).click();
   await expect(page.getByLabel("Include fundraisers")).toBeChecked();
   const audit = await page.getByRole("link", { name: "Open printable PDF" }).getAttribute("href");
   expect(audit).toContain("include_fundraisers=true");

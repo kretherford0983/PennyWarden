@@ -85,6 +85,106 @@ draft code with the previous code under it. A new draft budget is marked *new in
 isn't in the draft is marked *not in draft*. After the meeting, scan the sheet and attach it to the new Fiscal Year as
 an Other document — it is not required for closing a year.
 
+## Fundraisers
+
+### The stakeholder report (Financial & Proceeds Statement)
+**Report…** on a fundraiser's page opens the report options:
+- **Itemized revenue** (on): every income line under its category or bucket. Off gives a one-to-two-page summary.
+- **Show contributor names** (on): off shows "Contributor 1, 2…" instead of names, for a report that goes outside the
+  organization.
+- **Plain line list** (only for a fundraiser without buckets): adds a simple list of its income and expense lines.
+
+Then **Report (PDF)** to print or email it, or **Report (Word)** to adjust the wording before sending. The report
+starts with the organization, the fundraiser, its dates and its status:
+- *Interim, figures may change* before or during the event;
+- *Post-event* once it is over;
+- *Final* when a Budget Manager uses **Mark results final** (it can be undone) or when every Fiscal Year it uses is
+  closed;
+- *Cancelled*, with the reason.
+
+It continues with three headline figures — net revenue, expenses and net proceeds with the net margin — and a summary
+from gross deposits to net proceeds (the cash float is never counted as income or expense). With buckets there are
+breakdowns by category and bucket, and lines that are in no bucket appear as *Other (not in a bucket)*, so the
+figures always add up. *Key takeaways* are worked out from the figures. A Budget Manager can add **Summary notes** on
+the fundraiser's page; they print under the takeaways.
+
+The report leaves out what is audit detail: transaction numbers, bank accounts, budgets, excluded lines and
+attachments. That detail is under **Reports → Fundraiser detail (audit)**.
+
+### The fundraiser presentation
+**Presentation** in the same dialog downloads the report as a slide deck (`.pptx`, 16:9) for a meeting. Open it in
+**PowerPoint**, import it into **Google Slides**, or open it in **Keynote**. It uses the same figures and the same two
+options (itemized revenue, contributor names). Charts are native, so you can restyle them in PowerPoint; Keynote
+converts them to its own charts, and Google Slides shows them as pictures. The **speaker notes** of every slide give
+the exact figures and how each one is worked out, for example "Net margin = net proceeds ÷ net revenue". Slides with
+nothing to show are left out — a fundraiser without buckets gets no category slides. The *Top contributors* slides
+appear only with itemized revenue and contributor names both on.
+
+### Fundraisers across years
+- **Link a fundraiser with last year's.** On the fundraiser form, **Continues from (previous fundraiser)** lists the
+  latest fundraiser of each event (and fundraisers not linked yet) from earlier Fiscal Years. Picking one puts both in
+  the same *series* (e.g. "Golf Outing" — the year is taken out of the name). The link only matters for reporting,
+  so **Change…** next to *Series* on the fundraiser's page works even when the year is closed.
+- **Create next year's…** (Budget Managers) opens a new fundraiser already filled in from this one: the name with
+  the year moved on (2026 → 2027), the description, the filter, next year's continuing budgets, the buckets and
+  categories without amounts, and the link. Change anything before saving.
+- **Fundraiser series** (button on *Fundraisers*): rename a series, **Group as Other** (it is then combined with
+  the small ones in the share charts), **Enter a prior year…** for years before PennyWarden (Fiscal Year label with
+  the year, amount raised, optionally income, expenses and a note; shown as *Entered*), **Retire…** an entry (it
+  stays listed, struck through), and **Merge into…** when the same event was started twice. A year in which the
+  series already has a fundraiser in PennyWarden can't be entered.
+
+### The Fiscal Year fundraising report
+On **Fundraisers**, choose the Fiscal Year: each fundraiser has a checkbox, and every fundraiser of that year is
+ticked except cancelled ones (*All* / *None* change that). **Fiscal Year report…** then offers:
+- **Years of history** (5 by default, or all) and **Include targeted total**. The targeted total adds, for each
+  event that hasn't taken place yet this year, the average of its last 5 active years (you can change the number),
+  shown separately as an estimate.
+- **Notes** (Budget Managers), printed on the report and the deck, and remembered for that Fiscal Year.
+- **Report (PDF)** or **Presentation** (`.pptx`, like the fundraiser presentation).
+
+It shows the year's total raised and each fundraiser's share, growth versus last year, the top fundraiser, the annual
+trend, each event's share and its average per active year, and every year's result marked *Recorded* (from
+PennyWarden) or *Entered*. Two fundraisers of one series in the same year add together. A fundraiser that spans two
+Fiscal Years counts in the year its event starts (a footnote says so). With nothing linked yet, the history sections
+say "No earlier years linked yet".
+
+**Year over year.** Once a fundraiser is linked with earlier years (or results of earlier years are entered), its own
+report and presentation get a *Year over year* section, and the Fiscal Year report and deck a *Year over year by
+series* section. Each year's figures are shown with the change on the year before (up or down, in dollars and
+percent), so the committee can see how an event is trending when deciding whether to keep it. A year entered by hand
+with only the amount raised shows — for income, expenses and margin.
+
+### Bucket categories
+On a fundraiser's page, **New category** adds a heading such as *Sponsorships* or *Day-of event*. In a bucket's
+**Edit**, choose its **Category** (or *No category*). The Buckets table then shows each category with its buckets
+indented beneath it and a **subtotal** (income, expenses, net); buckets without a category come after the categories.
+Deleting a category keeps its buckets — they just become uncategorized. A bucket can hold both income and expenses, so
+*Food Sales* can show its sales, its supply costs and its profit.
+
+**Reorder…** sets the order of the categories and of the buckets (▲ ▼, then **Save order**). That order is used on
+the page and in the reports. Existing buckets stay in alphabetical order until you reorder them; new ones go to the
+end. Categories, a bucket's category and the order can be changed even after the Fiscal Year is closed — they only
+change how things are grouped, never a figure.
+
+### Different contributor on reports
+The fundraiser reports name the line's Entity as the contributor. When that isn't right, tick **Different contributor
+on reports** next to the bucket in **Manage** and type what should show instead:
+- lump cash the organization itself collected (food, raffle…) → "Cash", so the organization doesn't appear to have
+  given to itself;
+- a business everyone knows by a shorter name than its legal name → that name;
+- someone who handed in money collected from others → the actual contributor.
+
+It applies to that bucket's part of the line, so a deposit split between two buckets can show a different name for
+each. With *Show contributor names* off, the report still shows "Contributor 1, 2…".
+
+### Charge less a credit
+Sometimes a bill is a full charge less a credit: a $1,500 venue invoice less $500 that teams pre-paid, paid with a
+$1,000 check. In **Manage** on the line, tick **Charge less a credit** next to the bucket and enter the **Charge**
+($1,500), the **Less** amount ($500) and a **Less description** ("Pre-paid team credit"). The **net** ($1,000) is what
+counts for the line, so the fundraiser's totals still match the register. It works the same on income — a $200
+sponsorship less a $6 card fee. The Less amount can equal the charge (a fully comped item, net $0) but not exceed it.
+
 ## For whoever runs a Linux server
 
 ### Changed `config.toml`? Run `sudo pennywarden apply-config`
