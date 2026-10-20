@@ -2,18 +2,23 @@
 from __future__ import annotations
 
 import datetime as dt
+from typing import Literal
 
 import os
 
 from fastapi import APIRouter, Depends, Query, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from starlette.background import BackgroundTask
 from sqlalchemy.orm import Session
 
 from .. import audit
 from ..deps import Ctx, get_db, require
 from ..errors import validation
-from ..schemas import ReasonIn, FundraiserBucketIn, FundraiserIn, FundraiserLineIn, FundraiserPreviewIn, ModulesIn
+from ..schemas import (ReasonIn, FundraiserBucketIn, FundraiserCategoryIn, FundraiserFinalIn, FundraiserIn, FundraiserLineIn,
+                       FundraiserNotesIn, FundraiserOrderIn,
+                       FundraiserPreviewIn, ModulesIn)
+from ..services import fundraiser_deck as deck  # 2.1.0 (#276); imports python-pptx at start-up
+from ..services import fundraiser_summary as fs  # 2.1.0 (#275); imports python-docx at start-up
 from ..services import fundraisers as svc
 from ..services.checkprint import service as checks_svc
 
@@ -120,6 +125,49 @@ def create_bucket(fid: int, body: FundraiserBucketIn, db: Session = Depends(get_
     return svc.detail(db, ctx, f)
 
 
+@router.put("/fundraisers/{fid}/buckets/order")
+def order_buckets(fid: int, body: FundraiserOrderIn, db: Session = Depends(get_db), ctx: Ctx = Depends(line_manager)):
+    """2.1.0 (#278): the display order of the buckets (presentation only; allowed in a closed year)."""
+    f = svc.get(db, ctx, fid)
+    svc.reorder(db, ctx, f, "buckets", body.ids)
+    db.commit()
+    return svc.detail(db, ctx, f)
+
+
+# 2.1.0 (#278): bucket categories (presentation only, so they can change in a closed year too)
+@router.post("/fundraisers/{fid}/categories", status_code=201)
+def create_category(fid: int, body: FundraiserCategoryIn, db: Session = Depends(get_db), ctx: Ctx = Depends(line_manager)):
+    f = svc.get(db, ctx, fid)
+    svc.create_category(db, ctx, f, body)
+    db.commit()
+    return svc.detail(db, ctx, f)
+
+
+@router.put("/fundraisers/{fid}/categories/order")
+def order_categories(fid: int, body: FundraiserOrderIn, db: Session = Depends(get_db), ctx: Ctx = Depends(line_manager)):
+    f = svc.get(db, ctx, fid)
+    svc.reorder(db, ctx, f, "categories", body.ids)
+    db.commit()
+    return svc.detail(db, ctx, f)
+
+
+@router.put("/fundraisers/{fid}/categories/{category_id}")
+def update_category(fid: int, category_id: int, body: FundraiserCategoryIn, db: Session = Depends(get_db),
+                    ctx: Ctx = Depends(line_manager)):
+    f = svc.get(db, ctx, fid)
+    svc.update_category(db, ctx, f, svc.get_category(db, f, category_id), body)
+    db.commit()
+    return svc.detail(db, ctx, f)
+
+
+@router.delete("/fundraisers/{fid}/categories/{category_id}")
+def delete_category(fid: int, category_id: int, db: Session = Depends(get_db), ctx: Ctx = Depends(line_manager)):
+    f = svc.get(db, ctx, fid)
+    svc.delete_category(db, ctx, f, svc.get_category(db, f, category_id))
+    db.commit()
+    return svc.detail(db, ctx, f)
+
+
 @router.put("/fundraisers/{fid}/buckets/{bucket_id}")
 def update_bucket(fid: int, bucket_id: int, body: FundraiserBucketIn, db: Session = Depends(get_db),
                   ctx: Ctx = Depends(line_manager)):
@@ -200,3 +248,60 @@ def count_sheet(fid: int, signer_id: list[int] = Query([]), signer_title: list[s
                "Content-Security-Policy": "default-src 'none'; frame-ancestors 'self'"}
     return FileResponse(path, media_type="application/pdf", headers=headers,
                         background=BackgroundTask(lambda: os.path.exists(path) and os.unlink(path)))
+
+
+# ------------------------------------------------------------------ 2.1.0 (#275): stakeholder report
+@router.get("/fundraisers/{fid}/summary-report")
+def summary_report(fid: int, format: Literal["pdf", "docx"] = "pdf", itemized: bool = True, names: bool = True,
+                   plain_lines: bool = False, download: bool = False, db: Session = Depends(get_db),
+                   ctx: Ctx = Depends(viewer)):
+    """The Financial & Proceeds Statement for committee and stakeholders (no audit detail)."""
+    f = svc.get(db, ctx, fid)
+    s = fs.summary(db, ctx, f, itemized=itemized, names=names, plain_lines=plain_lines)
+    opts = {"itemized": itemized, "names": names, "plain_lines": plain_lines}
+    if format == "docx":
+        data = fs.build_docx(s)
+        audit.record(db, ctx, "REPORT_GENERATED", "fundraiser", f.id, None,
+                     {"report": "FUNDRAISER_SUMMARY", "format": "DOCX", "options": opts})
+        db.commit()
+        return Response(data, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        headers={"Content-Disposition": f'attachment; filename="{fs.docx_name(s)}"',
+                                 "Cache-Control": "private, no-store"})
+    path, fname, pages = fs.pdf_file(db, ctx, s)
+    audit.record(db, ctx, "REPORT_GENERATED", "fundraiser", f.id, None,
+                 {"report": "FUNDRAISER_SUMMARY", "format": "PDF", "options": opts, "pages": pages})
+    db.commit()
+    headers = {"Content-Disposition": f'{"attachment" if download else "inline"}; filename="{fname}"',
+               "Cache-Control": "private, no-store", "X-Frame-Options": "SAMEORIGIN",
+               "Content-Security-Policy": "default-src 'none'; frame-ancestors 'self'"}
+    return FileResponse(path, media_type="application/pdf", headers=headers,
+                        background=BackgroundTask(lambda: os.path.exists(path) and os.unlink(path)))
+
+
+@router.get("/fundraisers/{fid}/presentation")
+def presentation(fid: int, itemized: bool = True, names: bool = True, db: Session = Depends(get_db),
+                 ctx: Ctx = Depends(viewer)):
+    """2.1.0 (#276): the stakeholder report as a 16:9 .pptx (PowerPoint, Google Slides, Keynote); always downloaded."""
+    f = svc.get(db, ctx, fid)
+    s = fs.summary(db, ctx, f, itemized=itemized, names=names)
+    data = deck.build(s)
+    audit.record(db, ctx, "REPORT_GENERATED", "fundraiser", f.id, None,
+                 {"report": "FUNDRAISER_PRESENTATION", "format": "PPTX", "options": {"itemized": itemized, "names": names}})
+    db.commit()
+    return Response(data, media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                    headers={"Content-Disposition": f'attachment; filename="{deck.file_name(s)}"',
+                             "Cache-Control": "private, no-store"})
+
+
+@router.put("/fundraisers/{fid}/summary-notes")
+def summary_notes(fid: int, body: FundraiserNotesIn, db: Session = Depends(get_db), ctx: Ctx = Depends(manager)):
+    f = svc.set_summary_notes(db, ctx, svc.get(db, ctx, fid), body.summary_notes)
+    db.commit()
+    return svc.detail(db, ctx, f)
+
+
+@router.put("/fundraisers/{fid}/results-final")
+def results_final(fid: int, body: FundraiserFinalIn, db: Session = Depends(get_db), ctx: Ctx = Depends(manager)):
+    f = svc.set_results_final(db, ctx, svc.get(db, ctx, fid), body.final)
+    db.commit()
+    return svc.detail(db, ctx, f)

@@ -48,6 +48,96 @@ could not otherwise be corrected. Scope and safeguards:
 - Audited as `TRANSACTION_VOID_DATE_CORRECTED` with before/after snapshots and the reason.
 - Tests: `backend/tests/test_cr001_void_date.py` (5 tests) and E2E "CR-001".
 
+**2.1.0 test build 6 — fundraiser presentation (#276).** No migration. New dependencies `python-pptx` 1.0.2 (MIT) and
+`XlsxWriter` 3.2.9 (BSD, the embedded chart workbooks). They are pinned, in THIRD-PARTY-NOTICES, pip-audit clean, and
+in the PyInstaller specs (`collect_data_files("pptx")` for the default template). The router imports
+`services/fundraiser_deck.py` at start-up.
+- `fundraiser_deck.build(summary)` works from `fundraiser_summary.summary()`, so the figures equal the report. The
+  summary gained `cumulative` (income and net by transaction date).
+- The deck is 16:9 (12192000 × 6858000 EMU), on the blank layout, Arial everywhere.
+  - Charts: column (revenue → proceeds), doughnut (revenue share; the legend labels carry the amount and percent),
+    clustered bar (net by category; expenses), and line with markers (cumulative).
+  - Every chart has data labels and no chart title.
+  - Tables are capped at 12 rows per slide; top contributors at 10, with "and N more".
+  - Every slide has speaker notes.
+  - `_strip_template_extras()` drops the default template's printer settings (a `.bin` part) and thumbnail picture,
+    so the package holds only XML, the chart workbooks and no media.
+- Slides left out:
+  - without buckets: revenue by category, category detail, net, top contributors and expenses;
+  - without names or itemized revenue: top contributors;
+  - revenue over time when there is only one date.
+- The gold coin is drawn with two ovals, not an image. Organization branding is #280.
+- `GET /api/fundraisers/{id}/presentation?itemized&names` (`fundraiser.view`; always `attachment`; audit
+  `REPORT_GENERATED {report: FUNDRAISER_PRESENTATION, format: PPTX, options}`).
+- Tests: `test_v210_fundraiser_deck.py`:
+  - slide titles, chart types and data labels, chart data equal to the figures, notes on every slide, 16:9;
+  - no media, binaries, embedded fonts, external relationships, transitions or animations;
+  - no Entity name anywhere with names off;
+  - markup kept as plain text.
+
+  The CR-035 E2E downloads the deck. Manual checks in PowerPoint (Windows and Mac), Google Slides and Keynote are
+  Kyle's, per build.
+
+**2.1.0 test build 5 — fundraiser stakeholder report (#275).** Migration `0040`: `fundraiser.summary_notes`,
+`results_final_at`, `results_final_by_user_id`. New dependency `python-docx` 1.2.0 (+ `lxml`), pinned through
+`requirements.in`, in THIRD-PARTY-NOTICES, pip-audit clean, and in the three PyInstaller specs
+(`collect_data_files("docx")` for its default template, `collect_submodules("docx"/"lxml")`).
+`routers/fundraisers.py` imports `services/fundraiser_summary.py`, which imports `docx`, at start-up, so a package
+built without it fails its smoke test.
+- `fundraiser_summary.summary()` computes everything once from `fundraisers._lines()`, without excluded lines:
+  - totals: gross deposits, float returned/out, net revenue (counted income), expenses, net, margin
+    (net ÷ revenue), ROI (as on the page) and credits (sum of Less on expenses);
+  - groups: categories in order, then uncategorized buckets, each with its buckets' income and expense lines (bucket
+    nets; Charge / Less as detail);
+  - `other` = the unassigned part of each line;
+  - per-Fiscal-Year rows, takeaways and the plain line list.
+
+  #276 and #277 are to use the same function.
+- Contributor: the Entity (not system ones), else the line description. With names off, income lines become
+  "Contributor n" (numbered in date order, one number per Entity), and expenses show the line description only.
+- `report_status()`:
+  - CANCELLED wins;
+  - then FINAL (marked, or every Fiscal Year of the fundraiser Closed);
+  - then INTERIM (planned / in progress) or POST_EVENT.
+
+  The fundraiser detail returns it as `report_status`.
+- Endpoints:
+  - `GET /api/fundraisers/{id}/summary-report?format=pdf|docx&itemized&names&plain_lines` (`fundraiser.view`; audit
+    `REPORT_GENERATED {report: FUNDRAISER_SUMMARY, format, options}`);
+  - `PUT …/summary-notes` and `PUT …/results-final` (`fundraiser.manage`; audited
+    `FUNDRAISER_SUMMARY_NOTES_UPDATED` and `FUNDRAISER_RESULTS_FINAL_MARKED/UNMARKED`). Both are allowed in a closed
+    year, since they are reporting only;
+  - the former `GET …/report` (audit section) is unchanged and is linked from Reports → *Fundraiser detail (audit)*.
+- PDF: portrait, `_AuditDoc`. The footer is "Prepared for committee & stakeholders · Generated … · status ·
+  Transaction-level evidence is in the Audit report". Itemized lists of more than 12 lines use two side-by-side
+  tables.
+- DOCX: Letter, Arial, a shaded title band, tiles and tables. The footer has PAGE/NUMPAGES fields. User text goes in
+  as plain runs (BR-096). No pictures, macros or external links. The tests read it back with python-docx.
+- Tests: `test_v210_fundraiser_summary.py` and the CR-035 E2E (dialog, Word, notes, final, Fundraiser detail).
+
+**2.1.0 test build 4 — fundraiser buckets (#278; all questions resolved 2026-10-20).** Migration `0039`: table
+`fundraiser_bucket_category` (`name`, `description`, `display_order`); `fundraiser_bucket.category_id` (no DB-level
+FK, like `continues_budget_id`) and `display_order` (existing buckets numbered by `(name, id)` — the old listing
+order); `fundraiser_bucket_line.charge_cents` (= `amount_cents`), `less_cents` (0), `less_description`.
+- `amount_cents` stays the **net** (charge − less), so `_lines()`, totals, ROI, bucket nets and every report are
+  unchanged; `charge_cents`/`less_cents` are detail only (`bucket_line_out()`; a `None` charge = the amount).
+- `set_line()` bucket items take `amount` (as before: charge = amount, less = 0) or `charge` + `less` +
+  `less_description` (`_bucket_amounts()`): charge > 0, 0 ≤ less ≤ charge, description required when less > 0; the
+  nets must not exceed the counted amount. The audit snapshot carries charge, less and description per bucket.
+- Categories: `create/update/delete_category()`, audited `FUNDRAISER_CATEGORY_CREATED/UPDATED/DELETED` (delete
+  lists the bucket ids that became uncategorized). `reorder(what, ids)` needs every id exactly once and audits
+  `FUNDRAISER_CATEGORIES_REORDERED` / `FUNDRAISER_BUCKETS_REORDERED` (no-op when unchanged). Categories, a bucket's
+  category and the order are presentation only: allowed in a closed year (`update_bucket` applies `_require_open`
+  only when the name or description changes). Permission `fundraiser.lines`; categories count as management data (a
+  fundraiser with categories can't be deleted, only archived) and are wiped by Reinitialize.
+- `_bucket_summary()` returns `items` in display order (with `category_id`, `credits_income/expense` = sum of Less),
+  `categories` (in order, with `bucket_ids` and subtotals) and `uncategorized_ids`. Uncategorized buckets are listed
+  after the categories. The Audit/Close fundraiser section prints the same grouping and "(charge less amount
+  description)" on bucket assignments.
+- Frontend: `BucketTable`, `CategoryDialog`, `OrderDialog` and the *Charge less a credit* toggle in `LineDialog`
+  (`Fundraisers.tsx`).
+- Tests: `test_v210_bucket_categories.py` (incl. the migration keeping figures) and the E2E "2.1.0 (#278)".
+
 **2.1.0 test build 3 — budget planning (#257, #261; Budget Managers only, proposed items approved 2026-10-20).**
 Migration `0038` adds the table `budget_projection_choice` (`user_id`, `budget_id`, `project`; unique per user and
 budget, so per Fiscal Year). Reinitialize wipes it with the budgets.

@@ -579,3 +579,13 @@ button.small, label.button { display: inline-flex; align-items: center; justify-
 .budget-prep .small, .projection-choices .small { font-size: 0.8em; }
 .projection-choices { border: 1px solid var(--border, #d0d7de); border-radius: 6px; padding: 8px 12px; margin: 10px 0; }
 .projection-choices table { max-width: 720px; }
+
+/* 2.1.0 (#278): bucket categories and Charge / Less */
+.fr-bucket-table tr.category-row th { text-align: left; background: var(--surface-2); font-size: 13px; color: var(--text); }
+.fr-bucket-table td.indent { padding-left: 24px; }
+.fr-bucket-row .fr-bucket-buttons { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.fr-bucket-row.with-credit { align-items: flex-start; border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; }
+.fr-bucket-row .fr-credit { flex: 1; }
+.fr-bucket-row .fr-credit .row.fields { flex-wrap: wrap; }
+label.check.small { font-size: 12px; }
+.fr-final-btn { margin-left: 10px; }

@@ -79,6 +79,60 @@ draft code with the previous code under it. A new draft budget is marked *new in
 isn't in the draft is marked *not in draft*. After the meeting, scan the sheet and attach it to the new Fiscal Year as
 an Other document — it is not required for closing a year.
 
+## Fundraisers
+
+### The stakeholder report (Financial & Proceeds Statement)
+**Report…** on a fundraiser's page opens the report options:
+- **Itemized revenue** (on): every income line under its category or bucket. Off gives a one-to-two-page summary.
+- **Show contributor names** (on): off shows "Contributor 1, 2…" instead of names, for a report that goes outside the
+  organization.
+- **Plain line list** (only for a fundraiser without buckets): adds a simple list of its income and expense lines.
+
+Then **Report (PDF)** to print or email it, or **Report (Word)** to adjust the wording before sending. The report
+starts with the organization, the fundraiser, its dates and its status:
+- *Interim, figures may change* before or during the event;
+- *Post-event* once it is over;
+- *Final* when a Budget Manager uses **Mark results final** (it can be undone) or when every Fiscal Year it uses is
+  closed;
+- *Cancelled*, with the reason.
+
+It continues with three headline figures — net revenue, expenses and net proceeds with the net margin — and a summary
+from gross deposits to net proceeds (the cash float is never counted as income or expense). With buckets there are
+breakdowns by category and bucket, and lines that are in no bucket appear as *Other (not in a bucket)*, so the
+figures always add up. *Key takeaways* are worked out from the figures. A Budget Manager can add **Summary notes** on
+the fundraiser's page; they print under the takeaways.
+
+The report leaves out what is audit detail: transaction numbers, bank accounts, budgets, excluded lines and
+attachments. That detail is under **Reports → Fundraiser detail (audit)**.
+
+### The fundraiser presentation
+**Presentation** in the same dialog downloads the report as a slide deck (`.pptx`, 16:9) for a meeting. Open it in
+**PowerPoint**, import it into **Google Slides**, or open it in **Keynote**. It uses the same figures and the same two
+options (itemized revenue, contributor names). Charts are native, so you can restyle them in PowerPoint; Keynote
+converts them to its own charts, and Google Slides shows them as pictures. The **speaker notes** of every slide give
+the exact figures and how each one is worked out, for example "Net margin = net proceeds ÷ net revenue". Slides with
+nothing to show are left out — a fundraiser without buckets gets no category slides. The *Top contributors* slides
+appear only with itemized revenue and contributor names both on.
+
+### Bucket categories
+On a fundraiser's page, **New category** adds a heading such as *Sponsorships* or *Day-of event*. In a bucket's
+**Edit**, choose its **Category** (or *No category*). The Buckets table then shows each category with its buckets
+indented beneath it and a **subtotal** (income, expenses, net); buckets without a category come after the categories.
+Deleting a category keeps its buckets — they just become uncategorized. A bucket can hold both income and expenses, so
+*Food Sales* can show its sales, its supply costs and its profit.
+
+**Reorder…** sets the order of the categories and of the buckets (▲ ▼, then **Save order**). That order is used on
+the page and in the reports. Existing buckets stay in alphabetical order until you reorder them; new ones go to the
+end. Categories, a bucket's category and the order can be changed even after the Fiscal Year is closed — they only
+change how things are grouped, never a figure.
+
+### Charge less a credit
+Sometimes a bill is a full charge less a credit: a $1,500 venue invoice less $500 that teams pre-paid, paid with a
+$1,000 check. In **Manage** on the line, tick **Charge less a credit** next to the bucket and enter the **Charge**
+($1,500), the **Less** amount ($500) and a **Less description** ("Pre-paid team credit"). The **net** ($1,000) is what
+counts for the line, so the fundraiser's totals still match the register. It works the same on income — a $200
+sponsorship less a $6 card fee. The Less amount can equal the charge (a fully comped item, net $0) but not exceed it.
+
 ## For whoever runs a Linux server
 
 ### Changed `config.toml`? Run `sudo pennywarden apply-config`

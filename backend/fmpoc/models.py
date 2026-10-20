@@ -544,6 +544,10 @@ class Fundraiser(Base):
     cancelled_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     cancelled_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     cancel_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # 2.1.0 (#275): stakeholder report - narrative notes (Budget Managers) and "Mark results final"
+    summary_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    results_final_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    results_final_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
     created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
@@ -570,6 +574,18 @@ class FundraiserBudget(Base):
 
 
 # ---------------------------------------------------------------- v1.6.1 CR-034 fundraiser management
+class FundraiserBucketCategory(Base):
+    """2.1.0 (#278): an optional heading that groups buckets of one fundraiser (presentation only)."""
+    __tablename__ = "fundraiser_bucket_category"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    fundraiser_id: Mapped[int] = mapped_column(ForeignKey("fundraiser.id"), index=True)
+    name: Mapped[str] = mapped_column(String(80))
+    description: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    display_order: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
 class FundraiserBucket(Base):
     """A sub-category of a fundraiser (e.g. food sales, raffle); holds income and expense lines by amount."""
     __tablename__ = "fundraiser_bucket"
@@ -577,6 +593,9 @@ class FundraiserBucket(Base):
     fundraiser_id: Mapped[int] = mapped_column(ForeignKey("fundraiser.id"), index=True)
     name: Mapped[str] = mapped_column(String(80))
     description: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # 2.1.0 (#278): one category or none; display order (buckets numbered in name order by migration 0039)
+    category_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    display_order: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
     created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
@@ -613,7 +632,11 @@ class FundraiserBucketLine(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     bucket_id: Mapped[int] = mapped_column(ForeignKey("fundraiser_bucket.id"), index=True)
     allocation_id: Mapped[int] = mapped_column(ForeignKey("transaction_allocation.id"))
-    amount_cents: Mapped[int] = mapped_column(BigInteger)
+    amount_cents: Mapped[int] = mapped_column(BigInteger)   # the net (charge - less): what counts toward the line
+    # 2.1.0 (#278): the full charge and a credit taken off it ("Less: pre-paid team credit"); detail only
+    charge_cents: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    less_cents: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
+    less_description: Mapped[str | None] = mapped_column(String(200), nullable=True)
     __table_args__ = (UniqueConstraint("bucket_id", "allocation_id", name="uq_fundraiser_bucket_line"),)
 
 

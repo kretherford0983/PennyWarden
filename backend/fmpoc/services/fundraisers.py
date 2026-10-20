@@ -25,7 +25,8 @@ from sqlalchemy.orm import Session
 
 from .. import audit
 from ..errors import AppError, not_found, validation
-from ..models import (Attachment, BankAccount, Budget, FiscalYear, Fundraiser, FundraiserBucket, FundraiserBucketLine,
+from ..models import (Attachment, BankAccount, Budget, FiscalYear, Fundraiser, FundraiserBucket, FundraiserBucketCategory,
+                      FundraiserBucketLine,
                       FundraiserBudget, FundraiserClassification, FundraiserExclusion, RegisterTransaction,
                       TransactionAllocation, Workspace, utcnow)
 from ..money import fmt, parse_amount
@@ -41,6 +42,7 @@ KINDS = ("INCOME", "EXPENSE")
 # (expense side); float returned = that cash coming back inside a deposit (income side).
 CLASSIFICATIONS = {"CASH_FLOAT_OUT": ("EXPENSE", "Cash float out"), "CASH_FLOAT_RETURNED": ("INCOME", "Cash float returned")}
 MAX_BUCKETS = 30
+MAX_CATEGORIES = 30
 
 
 # ------------------------------------------------------------------ module switch
@@ -220,7 +222,8 @@ def snapshot(f: Fundraiser) -> dict:
             "end_date": f.end_date.isoformat(), "filter_text": f.filter_text, "filter_regex": bool(f.filter_regex),
             "budget_ids": [fb.budget_id for fb in f.budgets], "archived": f.archived_at is not None,
             "cancelled": f.cancelled_at is not None, "cancel_reason": f.cancel_reason,
-            "cancelled_at": f.cancelled_at.isoformat() + "Z" if f.cancelled_at else None}
+            "cancelled_at": f.cancelled_at.isoformat() + "Z" if f.cancelled_at else None,
+            "summary_notes": f.summary_notes, "results_final": f.results_final_at is not None}
 
 
 def _apply(db: Session, ctx, f: Fundraiser, body, creating: bool) -> None:
@@ -311,7 +314,7 @@ def delete(db: Session, ctx, f: Fundraiser) -> None:
     if any(fy.status == "CLOSED" for fy in _fys_of(db, f)):
         raise AppError(409, "FISCAL_YEAR_CLOSED", "A fundraiser using a closed Fiscal Year cannot be deleted; archive it.")
     if has_management_data(db, f):
-        raise AppError(409, "FUNDRAISER_IN_USE", "This fundraiser has buckets, special classifications, exclusions or "
+        raise AppError(409, "FUNDRAISER_IN_USE", "This fundraiser has buckets or categories, special classifications, exclusions or "
                        "documents. Archive it instead (or remove those first).")
     audit.record(db, ctx, "FUNDRAISER_DELETED", "fundraiser", f.id, snapshot(f), None)
     db.delete(f)
@@ -385,7 +388,7 @@ def _lines(db: Session, f: Fundraiser) -> tuple[list[dict], int]:
 
 
 def has_management_data(db: Session, f: Fundraiser) -> bool:
-    for model in (FundraiserExclusion, FundraiserClassification, FundraiserBucket):
+    for model in (FundraiserExclusion, FundraiserClassification, FundraiserBucket, FundraiserBucketCategory):
         if db.scalar(select(model.id).where(model.fundraiser_id == f.id).limit(1)) is not None:
             return True
     return db.scalar(select(Attachment.id).where(Attachment.fundraiser_id == f.id, Attachment.active.is_(True)).limit(1)) is not None
@@ -574,7 +577,7 @@ def detail(db: Session, ctx, f: Fundraiser) -> dict:
                 "kind": r["classification"].kind, "label": CLASSIFICATIONS[r["classification"].kind][1],
                 "amount": fmt(r["classified"]), "note": r["classification"].note},
             "counted": fmt(r["eff"]),
-            "buckets": [{"bucket_id": b.bucket_id, "amount": fmt(b.amount_cents)} for b in r["buckets"]],
+            "buckets": [bucket_line_out(b) for b in r["buckets"]],
             "unassigned": fmt(r["unassigned"]),
             "over_assigned": sum(b.amount_cents for b in r["buckets"]) > r["eff"],
             "read_only": closed_fy.get(r["fiscal_year_id"], False),
@@ -611,6 +614,7 @@ def detail(db: Session, ctx, f: Fundraiser) -> dict:
                    "excluded_expense": fmt(sum(r["a"].amount_cents for r in rows if r["excluded"] and r["kind"] == "EXPENSE")),
                    "excluded_lines": sum(1 for r in rows if r["excluded"])},
         "buckets": _bucket_summary(db, f, rows),
+        "report_status": _report_status(db, f),
         "classification_types": [{"kind": k, "applies_to": v[0], "label": v[1]} for k, v in CLASSIFICATIONS.items()],
         "per_fiscal_year": per_fy,
         "lines": lines, "filtered_out_lines": skipped,
@@ -619,10 +623,29 @@ def detail(db: Session, ctx, f: Fundraiser) -> dict:
 
 
 # ------------------------------------------------------------------ v1.6.1 CR-034: buckets, classifications, exclusions
+def bucket_line_out(b: FundraiserBucketLine) -> dict:
+    """A bucket's part of a line: the net (amount) and, 2.1.0 (#278), the charge and the credit taken off it."""
+    charge = b.charge_cents if b.charge_cents is not None else b.amount_cents
+    return {"bucket_id": b.bucket_id, "amount": fmt(b.amount_cents), "charge": fmt(charge),
+            "less": fmt(b.less_cents or 0), "less_description": b.less_description}
+
+
+def ordered_buckets(db: Session, f: Fundraiser) -> list[FundraiserBucket]:
+    """Display order (2.1.0 #278); buckets without one (none after migration 0039) after them by name."""
+    bs = list(db.scalars(select(FundraiserBucket).where(FundraiserBucket.fundraiser_id == f.id)))
+    return sorted(bs, key=lambda b: (b.display_order is None, b.display_order or 0, b.name, b.id))
+
+
+def ordered_categories(db: Session, f: Fundraiser) -> list[FundraiserBucketCategory]:
+    return list(db.scalars(select(FundraiserBucketCategory).where(FundraiserBucketCategory.fundraiser_id == f.id)
+                           .order_by(FundraiserBucketCategory.display_order, FundraiserBucketCategory.id)))
+
+
 def _bucket_summary(db: Session, f: Fundraiser, rows: list[dict]) -> dict:
-    buckets = list(db.scalars(select(FundraiserBucket).where(FundraiserBucket.fundraiser_id == f.id)
-                              .order_by(FundraiserBucket.name, FundraiserBucket.id)))
-    agg = {b.id: {"INCOME": 0, "EXPENSE": 0, "lines": 0} for b in buckets}
+    """Buckets in display order with their income, expense and net; 2.1.0 (#278) also the categories (in order, each
+    with its buckets and subtotals). Uncategorized buckets are listed after the categories."""
+    buckets = ordered_buckets(db, f)
+    agg = {b.id: {"INCOME": 0, "EXPENSE": 0, "lines": 0, "less_INCOME": 0, "less_EXPENSE": 0} for b in buckets}
     un = {"INCOME": 0, "EXPENSE": 0}
     for r in rows:
         if r["excluded"]:
@@ -632,15 +655,45 @@ def _bucket_summary(db: Session, f: Fundraiser, rows: list[dict]) -> dict:
             if bl.bucket_id in agg:
                 agg[bl.bucket_id][r["kind"]] += bl.amount_cents
                 agg[bl.bucket_id]["lines"] += 1
-    items = [{"id": b.id, "name": b.name, "description": b.description, "income": fmt(agg[b.id]["INCOME"]),
-              "expense": fmt(agg[b.id]["EXPENSE"]), "net": fmt(agg[b.id]["INCOME"] - agg[b.id]["EXPENSE"]),
-              "lines": agg[b.id]["lines"]} for b in buckets]
-    return {"items": items, "unassigned": {"income": fmt(un["INCOME"]), "expense": fmt(un["EXPENSE"]),
-                                           "net": fmt(un["INCOME"] - un["EXPENSE"])}}
+                agg[bl.bucket_id]["less_" + r["kind"]] += bl.less_cents or 0
+    cats = ordered_categories(db, f)
+    cat_ids = {c.id for c in cats}
+
+    def item(b: FundraiserBucket) -> dict:
+        g = agg[b.id]
+        return {"id": b.id, "name": b.name, "description": b.description, "income": fmt(g["INCOME"]),
+                "expense": fmt(g["EXPENSE"]), "net": fmt(g["INCOME"] - g["EXPENSE"]), "lines": g["lines"],
+                "credits_income": fmt(g["less_INCOME"]), "credits_expense": fmt(g["less_EXPENSE"]),
+                "category_id": b.category_id if b.category_id in cat_ids else None,
+                "display_order": b.display_order}
+
+    items = [item(b) for b in buckets]
+    categories = []
+    for c in cats:
+        mine = [x for x in items if x["category_id"] == c.id]
+        inc = sum(agg[x["id"]]["INCOME"] for x in mine)
+        exp = sum(agg[x["id"]]["EXPENSE"] for x in mine)
+        categories.append({"id": c.id, "name": c.name, "description": c.description, "display_order": c.display_order,
+                           "bucket_ids": [x["id"] for x in mine], "income": fmt(inc), "expense": fmt(exp),
+                           "net": fmt(inc - exp), "lines": sum(x["lines"] for x in mine)})
+    return {"items": items, "categories": categories,
+            "uncategorized_ids": [x["id"] for x in items if x["category_id"] is None],
+            "unassigned": {"income": fmt(un["INCOME"]), "expense": fmt(un["EXPENSE"]),
+                           "net": fmt(un["INCOME"] - un["EXPENSE"])}}
 
 
 def _bucket_snapshot(b: FundraiserBucket) -> dict:
-    return {"id": b.id, "fundraiser_id": b.fundraiser_id, "name": b.name, "description": b.description}
+    return {"id": b.id, "fundraiser_id": b.fundraiser_id, "name": b.name, "description": b.description,
+            "category_id": b.category_id, "display_order": b.display_order}
+
+
+def _check_category(db: Session, f: Fundraiser, category_id: int | None) -> None:
+    if category_id is not None:
+        get_category(db, f, category_id)
+
+
+def _next_bucket_order(db: Session, f: Fundraiser) -> int:
+    return max([b.display_order or 0 for b in ordered_buckets(db, f)] or [0]) + 1
 
 
 def _check_bucket_name(db: Session, f: Fundraiser, name: str, exclude_id: int | None) -> None:
@@ -661,7 +714,9 @@ def create_bucket(db: Session, ctx, f: Fundraiser, body) -> FundraiserBucket:
     if n >= MAX_BUCKETS:
         raise validation(f"A fundraiser can have at most {MAX_BUCKETS} buckets.", "name")
     _check_bucket_name(db, f, body.name, None)
+    _check_category(db, f, body.category_id)
     b = FundraiserBucket(fundraiser_id=f.id, name=body.name, description=body.description or None,
+                         category_id=body.category_id, display_order=_next_bucket_order(db, f),
                          created_by_user_id=ctx.user.id)
     db.add(b)
     db.flush()
@@ -677,10 +732,13 @@ def get_bucket(db: Session, f: Fundraiser, bucket_id: int) -> FundraiserBucket:
 
 
 def update_bucket(db: Session, ctx, f: Fundraiser, b: FundraiserBucket, body) -> FundraiserBucket:
-    _require_open(db, ctx, f)
+    """Name and description follow the closed-year rule; the category (presentation only, #278) can always change."""
+    if (body.name, body.description or None) != (b.name, b.description):
+        _require_open(db, ctx, f)
     _check_bucket_name(db, f, body.name, b.id)
+    _check_category(db, f, body.category_id)
     before = _bucket_snapshot(b)
-    b.name, b.description = body.name, body.description or None
+    b.name, b.description, b.category_id = body.name, body.description or None, body.category_id
     db.flush()
     if _bucket_snapshot(b) != before:
         audit.record(db, ctx, "FUNDRAISER_BUCKET_UPDATED", "fundraiser_bucket", b.id, before, _bucket_snapshot(b))
@@ -718,7 +776,7 @@ def _line_snapshot(st: dict) -> dict:
     return {"excluded": st["ex"] is not None, "exclusion_reason": st["ex"].reason if st["ex"] else None,
             "classification": None if st["c"] is None else {"kind": st["c"].kind, "amount": fmt(st["c"].amount_cents),
                                                            "note": st["c"].note},
-            "buckets": [{"bucket_id": x.bucket_id, "amount": fmt(x.amount_cents)} for x in st["bls"]]}
+            "buckets": [bucket_line_out(x) for x in st["bls"]]}
 
 
 def set_line(db: Session, ctx, f: Fundraiser, allocation_id: int, body) -> None:
@@ -777,27 +835,167 @@ def set_line(db: Session, ctx, f: Fundraiser, allocation_id: int, body) -> None:
                                                 amount_cents=classified, note=note, created_by_user_id=ctx.user.id))
             else:
                 st["c"].kind, st["c"].amount_cents, st["c"].note = kind, classified, note
-        want: dict[int, int] = {}
+        want: dict[int, tuple[int, int, int, str | None]] = {}   # bucket -> (net, charge, less, less description)
         for item in body.buckets:
             get_bucket(db, f, item.bucket_id)
             if item.bucket_id in want:
                 raise validation("A bucket can be listed only once per line.", "buckets")
-            want[item.bucket_id] = cents(item.amount, "buckets")
-        if sum(want.values()) > amount - classified:
+            want[item.bucket_id] = _bucket_amounts(item, cents)
+        if sum(v[0] for v in want.values()) > amount - classified:
             raise validation("The bucket amounts add up to more than the amount that counts for this line "
                              f"({fmt(amount - classified)}).", "buckets")
         for bl in st["bls"]:
             if bl.bucket_id in want:
-                bl.amount_cents = want.pop(bl.bucket_id)
+                bl.amount_cents, bl.charge_cents, bl.less_cents, bl.less_description = want.pop(bl.bucket_id)
             else:
                 db.delete(bl)
-        for bucket_id, c in want.items():
-            db.add(FundraiserBucketLine(bucket_id=bucket_id, allocation_id=allocation_id, amount_cents=c))
+        for bucket_id, (net, charge, less, desc) in want.items():
+            db.add(FundraiserBucketLine(bucket_id=bucket_id, allocation_id=allocation_id, amount_cents=net,
+                                        charge_cents=charge, less_cents=less, less_description=desc))
     db.flush()
     after = _line_snapshot(_line_state(db, f, allocation_id))
     if after != before:
         audit.record(db, ctx, "FUNDRAISER_LINE_UPDATED", "fundraiser", f.id,
                      {"allocation_id": allocation_id, **before}, {"allocation_id": allocation_id, **after})
+
+
+def _bucket_amounts(item, cents) -> tuple[int, int, int, str | None]:
+    """2.1.0 (#278): (net, charge, less, less description). `amount` alone (as before) = a charge with no credit.
+    Charge > 0; 0 <= Less <= Charge (a fully credited item nets $0); a Less needs its description."""
+    if item.charge is None:
+        if item.less is not None or item.less_description:
+            raise validation("Enter the Charge when a Less amount is given.", "buckets")
+        if item.amount is None:
+            raise validation("Enter the amount (or the Charge) for each bucket.", "buckets")
+        c = cents(item.amount, "buckets")
+        return c, c, 0, None
+    charge = cents(item.charge, "buckets")
+    try:
+        less = parse_amount(item.less, allow_zero=True) if item.less not in (None, "") else 0
+    except ValueError as e:
+        raise validation(str(e).capitalize() + ".", "buckets") from None
+    if less < 0:
+        raise validation("The Less amount cannot be negative.", "buckets")
+    if less > charge:
+        raise validation("The Less amount cannot be more than the Charge.", "buckets")
+    desc = (item.less_description or "").strip() or None
+    if less > 0 and not desc:
+        raise validation("Describe the Less amount (for example “Pre-paid team credit”).", "less_description")
+    if less == 0:
+        desc = None
+    net = charge - less
+    if item.amount is not None and cents(item.amount, "buckets") != net:
+        raise validation("The amount must equal the Charge less the Less amount.", "buckets")
+    return net, charge, less, desc
+
+
+# ------------------------------------------------------------------ 2.1.0 (#278): bucket categories and display order
+def _category_snapshot(c: FundraiserBucketCategory) -> dict:
+    return {"id": c.id, "fundraiser_id": c.fundraiser_id, "name": c.name, "description": c.description,
+            "display_order": c.display_order}
+
+
+def get_category(db: Session, f: Fundraiser, category_id: int) -> FundraiserBucketCategory:
+    c = db.get(FundraiserBucketCategory, category_id)
+    if c is None or c.fundraiser_id != f.id:
+        raise not_found("Category")
+    return c
+
+
+def _check_category_name(db: Session, f: Fundraiser, name: str, exclude_id: int | None) -> None:
+    for c in ordered_categories(db, f):
+        if c.id != exclude_id and c.name.casefold() == name.casefold():
+            raise validation("This fundraiser already has a category with that name.", "name")
+
+
+def create_category(db: Session, ctx, f: Fundraiser, body) -> FundraiserBucketCategory:
+    """Categories only arrange buckets on the page and in the reports, so they can change in a closed year too."""
+    cats = ordered_categories(db, f)
+    if len(cats) >= MAX_CATEGORIES:
+        raise validation(f"A fundraiser can have at most {MAX_CATEGORIES} categories.", "name")
+    _check_category_name(db, f, body.name, None)
+    c = FundraiserBucketCategory(fundraiser_id=f.id, name=body.name, description=body.description or None,
+                                 display_order=max([x.display_order for x in cats] or [0]) + 1,
+                                 created_by_user_id=ctx.user.id)
+    db.add(c)
+    db.flush()
+    audit.record(db, ctx, "FUNDRAISER_CATEGORY_CREATED", "fundraiser_bucket_category", c.id, None, _category_snapshot(c))
+    return c
+
+
+def update_category(db: Session, ctx, f: Fundraiser, c: FundraiserBucketCategory, body) -> FundraiserBucketCategory:
+    _check_category_name(db, f, body.name, c.id)
+    before = _category_snapshot(c)
+    c.name, c.description = body.name, body.description or None
+    db.flush()
+    if _category_snapshot(c) != before:
+        audit.record(db, ctx, "FUNDRAISER_CATEGORY_UPDATED", "fundraiser_bucket_category", c.id, before,
+                     _category_snapshot(c))
+    return c
+
+
+def delete_category(db: Session, ctx, f: Fundraiser, c: FundraiserBucketCategory) -> None:
+    """Its buckets become uncategorized; no figure changes."""
+    moved = list(db.scalars(select(FundraiserBucket).where(FundraiserBucket.fundraiser_id == f.id,
+                                                           FundraiserBucket.category_id == c.id)))
+    audit.record(db, ctx, "FUNDRAISER_CATEGORY_DELETED", "fundraiser_bucket_category", c.id,
+                 {**_category_snapshot(c), "bucket_ids": [b.id for b in moved]}, None)
+    for b in moved:
+        b.category_id = None
+    db.flush()
+    db.delete(c)
+
+
+def reorder(db: Session, ctx, f: Fundraiser, what: str, ids: list[int]) -> None:
+    """Sets the display order of every category (what="categories") or bucket (what="buckets") of the fundraiser."""
+    items = ordered_categories(db, f) if what == "categories" else ordered_buckets(db, f)
+    have = [x.id for x in items]
+    if len(ids) != len(set(ids)) or sorted(ids) != sorted(have):
+        raise validation(f"List every {what[:-1]} of this fundraiser exactly once.", "ids")
+    if ids == have:
+        return
+    by = {x.id: x for x in items}
+    before = [{"id": x.id, "name": x.name} for x in items]
+    for i, x_id in enumerate(ids, start=1):
+        by[x_id].display_order = i
+    db.flush()
+    audit.record(db, ctx, f"FUNDRAISER_{what.upper()}_REORDERED", "fundraiser", f.id, {"order": before},
+                 {"order": [{"id": i, "name": by[i].name} for i in ids]})
+
+
+# ------------------------------------------------------------------ 2.1.0 (#275): stakeholder report settings
+def _report_status(db: Session, f: Fundraiser) -> dict:
+    from .fundraiser_summary import report_status
+    return report_status(db, f)
+
+
+def set_summary_notes(db: Session, ctx, f: Fundraiser, notes: str | None) -> Fundraiser:
+    """Budget Managers only (fundraiser.manage); printed under the key takeaways. Reporting text, so allowed in a
+    closed year too."""
+    notes = (notes or "").strip() or None
+    if notes != f.summary_notes:
+        before = f.summary_notes
+        f.summary_notes = notes
+        f.updated_by_user_id = ctx.user.id
+        db.flush()
+        audit.record(db, ctx, "FUNDRAISER_SUMMARY_NOTES_UPDATED", "fundraiser", f.id, {"summary_notes": before},
+                     {"summary_notes": notes})
+    return f
+
+
+def set_results_final(db: Session, ctx, f: Fundraiser, final: bool) -> Fundraiser:
+    """Mark results final (reversible). The report reads Final when marked, or when every Fiscal Year is Closed."""
+    if final == (f.results_final_at is not None):
+        return f
+    before = {"results_final": f.results_final_at is not None,
+              "results_final_at": f.results_final_at.isoformat() + "Z" if f.results_final_at else None}
+    f.results_final_at = utcnow() if final else None
+    f.results_final_by_user_id = ctx.user.id if final else None
+    db.flush()
+    audit.record(db, ctx, "FUNDRAISER_RESULTS_FINAL_MARKED" if final else "FUNDRAISER_RESULTS_FINAL_UNMARKED",
+                 "fundraiser", f.id, before,
+                 {"results_final": final, "results_final_at": f.results_final_at.isoformat() + "Z" if final else None})
+    return f
 
 
 # ------------------------------------------------------------------ v1.6.2 CR-035: report selection

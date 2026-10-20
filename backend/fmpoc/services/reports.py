@@ -855,9 +855,21 @@ def _fundraiser_section(db: Session, ctx, settings, doc: _AuditDoc, fr: Fundrais
     names = {b["id"]: b["name"] for b in d["buckets"]["items"]}
     if d["buckets"]["items"]:
         rows = [[PM(f"<b>{h}</b>", "cell") for h in ("Bucket", "Income", "Expenses", "Net")]]
-        for b in d["buckets"]["items"]:
-            rows.append([P(b["name"] + (f" — {b['description']}" if b["description"] else ""), "cell"),
+        by_id = {b["id"]: b for b in d["buckets"]["items"]}
+
+        def bucket_row(b, indent=False):
+            label = b["name"] + (f" — {b['description']}" if b["description"] else "")
+            rows.append([PM(("&nbsp;" * 4 if indent else "") + escape(label), "cell"),
                          P(money(b["income"]), "cellr"), P(money(b["expense"]), "cellr"), P(money(b["net"]), "cellr")])
+        # 2.1.0 (#278): categories (in order) with their buckets beneath and a subtotal; then uncategorized buckets
+        for c in d["buckets"].get("categories", []):
+            rows.append([PM(f"<b>{escape(c['name'])}</b>", "cell"), "", "", ""])
+            for bid in c["bucket_ids"]:
+                bucket_row(by_id[bid], indent=True)
+            rows.append([PM(f"<i>{escape(c['name'])} subtotal</i>", "cell"), P(money(c["income"]), "cellr"),
+                         P(money(c["expense"]), "cellr"), P(money(c["net"]), "cellr")])
+        for bid in d["buckets"].get("uncategorized_ids", [b["id"] for b in d["buckets"]["items"]]):
+            bucket_row(by_id[bid])
         u = d["buckets"]["unassigned"]
         rows.append([PM("<b>Unassigned</b>", "cell"), P(money(u["income"]), "cellr"), P(money(u["expense"]), "cellr"), P(money(u["net"]), "cellr")])
         f += [Spacer(1, 6), PM("Buckets", "h2"), _grid(rows, [2.4 * inch, 1.4 * inch, 1.4 * inch, 1.4 * inch])]
@@ -874,7 +886,9 @@ def _fundraiser_section(db: Session, ctx, settings, doc: _AuditDoc, fr: Fundrais
             if x["classification"]:
                 c = x["classification"]
                 desc += f"\n{c['label']} {money(c['amount'])}" + (f" ({c['note']})" if c["note"] else "")
-            bk = "; ".join(f"{names.get(b['bucket_id'], '?')} {money(b['amount'])}" for b in x["buckets"])
+            bk = "; ".join(f"{names.get(b['bucket_id'], '?')} {money(b['amount'])}"
+                           + (f" ({money(b['charge'])} less {money(b['less'])} {b['less_description'] or ''})".replace(" )", ")")
+                              if b.get("less") not in (None, "0.00") else "") for b in x["buckets"])
             rows.append([P(x["transaction_date"], "cell"), P(fy_name.get(x["fiscal_year_id"], ""), "cell"),
                          P(str(x["transaction_id"]), "cell"), P("Income" if x["kind"] == "INCOME" else "Expense", "cell"),
                          P(desc, "cell"), P(x["budget"], "cell"), P(money(x["amount"]), "cellr"),
