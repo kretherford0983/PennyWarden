@@ -14,13 +14,18 @@ from sqlalchemy.orm import Session
 from .. import audit
 from ..deps import Ctx, get_db, require
 from ..errors import validation
-from ..schemas import (ReasonIn, FundraiserBucketIn, FundraiserCategoryIn, FundraiserFinalIn, FundraiserIn, FundraiserLineIn,
+from ..schemas import (ReasonIn, FundraiserBucketIn, FundraiserCategoryIn, FundraiserFinalIn, FundraiserFyNotesIn, FundraiserIn,
+                       FundraiserLineIn, FundraiserLinkIn, FundraiserSeriesIn, FundraiserSeriesMergeIn, FundraiserSeriesResultIn,
                        FundraiserNotesIn, FundraiserOrderIn,
                        FundraiserPreviewIn, ModulesIn)
 from ..services import fundraiser_deck as deck  # 2.1.0 (#276); imports python-pptx at start-up
 from ..services import fundraiser_summary as fs  # 2.1.0 (#275); imports python-docx at start-up
+from ..services import fundraiser_fy_report as fyrep
+from ..services import fundraiser_series as series
 from ..services import fundraisers as svc
 from ..services.checkprint import service as checks_svc
+from ..services.common import get_scoped
+from ..models import FiscalYear
 
 router = APIRouter(prefix="/api", tags=["fundraisers"])
 
@@ -76,6 +81,96 @@ def create(body: FundraiserIn, db: Session = Depends(get_db), ctx: Ctx = Depends
     f = svc.create(db, ctx, body)
     db.commit()
     return svc.detail(db, ctx, f)
+
+
+# ------------------------------------------------------------------ 2.1.0 (#277): across years
+@router.get("/fundraisers/continue-options")
+def continue_options(start_date: dt.date = Query(...), fundraiser_id: int | None = None, db: Session = Depends(get_db),
+                     ctx: Ctx = Depends(manager)):
+    """For "Continues from": the latest fundraiser of each series plus unlinked ones, from earlier Fiscal Years."""
+    return series.continue_options(db, ctx, start_date, fundraiser_id)
+
+
+@router.get("/fundraisers/fy-report/selection")
+def fy_report_selection(fiscal_year_id: int = Query(...), db: Session = Depends(get_db), ctx: Ctx = Depends(viewer)):
+    fy = get_scoped(db, FiscalYear, fiscal_year_id, ctx, "Fiscal Year")
+    return {"default_ids": series.default_selection(db, ctx, fy), "notes": series.get_notes(db, ctx, fy),
+            "year": series.fy_year(fy)}
+
+
+@router.put("/fundraisers/fy-report/notes")
+def fy_report_notes(body: FundraiserFyNotesIn, db: Session = Depends(get_db), ctx: Ctx = Depends(manager)):
+    fy = get_scoped(db, FiscalYear, body.fiscal_year_id, ctx, "Fiscal Year")
+    notes = series.set_notes(db, ctx, fy, body.notes)
+    db.commit()
+    return {"notes": notes}
+
+
+@router.get("/fundraisers/fy-report")
+def fy_report(fiscal_year_id: int = Query(...), ids: list[int] = Query(...), years: int = Query(5, ge=-1, le=50),
+              targeted: bool = False, avg_years: int = Query(5, ge=1, le=20),
+              format: Literal["json", "pdf", "pptx"] = "pdf", download: bool = False,
+              db: Session = Depends(get_db), ctx: Ctx = Depends(viewer)):
+    """The Fiscal Year fundraising report (PDF) or presentation (.pptx) for the chosen fundraisers."""
+    from ..models import Workspace
+    fy = get_scoped(db, FiscalYear, fiscal_year_id, ctx, "Fiscal Year")
+    rep = series.fy_report(db, ctx, fy, ids, years=years, targeted=targeted, avg_years=avg_years,
+                           notes=series.get_notes(db, ctx, fy))
+    org = db.get(Workspace, ctx.workspace_id).name
+    kind = "FUNDRAISER_FY_PRESENTATION" if format == "pptx" else "FUNDRAISER_FY_SUMMARY"
+    summary = {"report": kind, "fiscal_year_id": fy.id, "fundraiser_ids": rep["selected_ids"],
+               "options": {"years": years, "targeted": targeted, "avg_years": avg_years}, "format": format.upper()}
+    if format == "json":
+        db.rollback()
+        return rep
+    if format == "pptx":
+        data = fyrep.build_pptx(org, rep)
+        audit.record(db, ctx, "REPORT_GENERATED", "fiscal_year", fy.id, None, summary)
+        db.commit()
+        return Response(data, media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                        headers={"Content-Disposition": f'attachment; filename="{fyrep.file_stem(org, rep)}-presentation.pptx"',
+                                 "Cache-Control": "private, no-store"})
+    path, fname, pages = fyrep.pdf_file(org, rep)
+    audit.record(db, ctx, "REPORT_GENERATED", "fiscal_year", fy.id, None, {**summary, "pages": pages})
+    db.commit()
+    headers = {"Content-Disposition": f'{"attachment" if download else "inline"}; filename="{fname}"',
+               "Cache-Control": "private, no-store", "X-Frame-Options": "SAMEORIGIN",
+               "Content-Security-Policy": "default-src 'none'; frame-ancestors 'self'"}
+    return FileResponse(path, media_type="application/pdf", headers=headers,
+                        background=BackgroundTask(lambda: os.path.exists(path) and os.unlink(path)))
+
+
+@router.get("/fundraiser-series")
+def series_list(db: Session = Depends(get_db), ctx: Ctx = Depends(manager)):
+    return series.series_list(db, ctx)
+
+
+@router.patch("/fundraiser-series/{sid}")
+def update_series(sid: int, body: FundraiserSeriesIn, db: Session = Depends(get_db), ctx: Ctx = Depends(manager)):
+    series.update_series(db, ctx, series._series(db, ctx, sid), body.name, body.group_as_other)
+    db.commit()
+    return series.series_list(db, ctx)
+
+
+@router.post("/fundraiser-series/{sid}/results", status_code=201)
+def add_result(sid: int, body: FundraiserSeriesResultIn, db: Session = Depends(get_db), ctx: Ctx = Depends(manager)):
+    series.add_result(db, ctx, series._series(db, ctx, sid), body)
+    db.commit()
+    return series.series_list(db, ctx)
+
+
+@router.post("/fundraiser-series/{sid}/results/{rid}/retire")
+def retire_result(sid: int, rid: int, body: ReasonIn, db: Session = Depends(get_db), ctx: Ctx = Depends(manager)):
+    series.retire_result(db, ctx, series._series(db, ctx, sid), rid, body.reason)
+    db.commit()
+    return series.series_list(db, ctx)
+
+
+@router.post("/fundraiser-series/{sid}/merge")
+def merge_series(sid: int, body: FundraiserSeriesMergeIn, db: Session = Depends(get_db), ctx: Ctx = Depends(manager)):
+    series.merge(db, ctx, series._series(db, ctx, sid), series._series(db, ctx, body.into_series_id))
+    db.commit()
+    return series.series_list(db, ctx)
 
 
 @router.get("/fundraisers/{fid}")
@@ -305,3 +400,17 @@ def results_final(fid: int, body: FundraiserFinalIn, db: Session = Depends(get_d
     f = svc.set_results_final(db, ctx, svc.get(db, ctx, fid), body.final)
     db.commit()
     return svc.detail(db, ctx, f)
+
+
+@router.put("/fundraisers/{fid}/series-link")
+def series_link(fid: int, body: FundraiserLinkIn, db: Session = Depends(get_db), ctx: Ctx = Depends(manager)):
+    """2.1.0 (#277): change or remove "Continues from" - allowed in any Fiscal Year (reporting only)."""
+    f = series.set_link(db, ctx, svc.get(db, ctx, fid), body.continues_from_id)
+    db.commit()
+    return svc.detail(db, ctx, f)
+
+
+@router.get("/fundraisers/{fid}/next-year")
+def next_year(fid: int, db: Session = Depends(get_db), ctx: Ctx = Depends(manager)):
+    """2.1.0 (#277): pre-filled values for "Create next year's from this one"."""
+    return series.next_year_draft(db, ctx, svc.get(db, ctx, fid))

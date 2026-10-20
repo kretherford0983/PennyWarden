@@ -28,6 +28,8 @@ export default function Fundraisers() {
   const [rows, setRows] = useState<any[] | null>(null);
   const [err, setErr] = useState<unknown>(null);
   const [creating, setCreating] = useState(false);
+  const [picked, setPicked] = useState<Set<number>>(new Set());   // 2.1.0 (#277): the Fiscal Year report's fundraisers
+  const [fyReport, setFyReport] = useState(false);
 
   useEffect(() => {
     Promise.all([api.get("/api/fiscal-years"), api.get(`/api/fiscal-years/natural?date=${todayIso()}`)]).then(([y, nat]) => {
@@ -40,7 +42,10 @@ export default function Fundraisers() {
     setRows(null);
     const q = fy === UPCOMING ? "upcoming=true" : `fiscal_year_id=${fy}`;
     api.get(`/api/fundraisers?${q}${archived ? "&include_archived=true" : ""}`).then(setRows, setErr);
+    if (fy !== UPCOMING) api.get(`/api/fundraisers/fy-report/selection?fiscal_year_id=${fy}`).then((x) => setPicked(new Set(x.default_ids)), () => setPicked(new Set()));
   }, [fy, archived]);
+  const toggle = (id: number) => { const n = new Set(picked); if (n.has(id)) n.delete(id); else n.add(id); setPicked(n); };
+  const shown = (rows || []).filter((r) => picked.has(r.id));
 
   if (!fys) return <><ErrorBox error={err} /><Loading /></>;
   return (
@@ -54,6 +59,8 @@ export default function Fundraisers() {
           </select>
         </Field>
         <label className="check"><input type="checkbox" checked={archived} onChange={(e) => setArchived(e.target.checked)} /> Show archived</label>
+        {fy !== UPCOMING && rows?.length ? <button onClick={() => setFyReport(true)} disabled={!shown.length}>Fiscal Year report…</button> : null}
+        {can("fundraiser.manage") ? <Link className="button" to="/fundraiser-series">Fundraiser series</Link> : null}
         {can("fundraiser.manage") ? <button className="primary" onClick={() => setCreating(true)}>New fundraiser</button> : null}
       </div>
       <ErrorBox error={err} />
@@ -61,10 +68,12 @@ export default function Fundraisers() {
         <p className="muted">{fy === UPCOMING ? "No fundraisers for events beyond the Fiscal Years set up so far." : "No fundraisers in this Fiscal Year."}</p>
       ) : (
         <table className="table" data-testid="fundraiser-list">
-          <thead><tr><th>Fundraiser</th><th>Event</th><th>Status</th><th>Fiscal Years</th><th className="num">Income</th><th className="num">Expenses</th><th className="num">Net</th></tr></thead>
+          <thead><tr>{fy !== UPCOMING ? <th><span className="sr-only">In the report</span>
+            <button className="small" onClick={() => setPicked(new Set(rows.map((r) => r.id)))}>All</button> <button className="small" onClick={() => setPicked(new Set())}>None</button></th> : null}<th>Fundraiser</th><th>Event</th><th>Status</th><th>Fiscal Years</th><th className="num">Income</th><th className="num">Expenses</th><th className="num">Net</th></tr></thead>
           <tbody>
             {rows.map((f) => (
               <tr key={f.id}>
+                {fy !== UPCOMING ? <td><input type="checkbox" aria-label={`Include ${f.name} in the Fiscal Year report`} checked={picked.has(f.id)} onChange={() => toggle(f.id)} /></td> : null}
                 <td><Link to={`/fundraisers/${f.id}`}>{f.name}</Link></td>
                 <td>{eventDates(f)}</td>
                 <td><FundraiserStatus status={f.status} /></td>
@@ -78,7 +87,56 @@ export default function Fundraisers() {
         </table>
       )}
       {creating ? <FundraiserForm onClose={() => setCreating(false)} onSaved={(f) => navigate(`/fundraisers/${f.id}`)} /> : null}
+      {fyReport ? <FyReportDialog fy={fys.find((y) => String(y.id) === fy)} ids={shown.map((r) => r.id)} manage={can("fundraiser.manage")} onClose={() => setFyReport(false)} /> : null}
     </div>
+  );
+}
+
+// 2.1.0 (#277): the Fiscal Year fundraising report and presentation for the ticked fundraisers
+function FyReportDialog({ fy, ids, manage, onClose }: { fy: any; ids: number[]; manage: boolean; onClose: () => void }) {
+  const [o, setO] = useState({ years: "5", targeted: false, avg_years: "5" });
+  const [notes, setNotes] = useState("");
+  const [savedNotes, setSavedNotes] = useState("");
+  const [err, setErr] = useState<unknown>(null);
+  useEffect(() => { api.get(`/api/fundraisers/fy-report/selection?fiscal_year_id=${fy.id}`).then((x) => { setNotes(x.notes || ""); setSavedNotes(x.notes || ""); }, setErr); }, [fy.id]);
+  const href = (format: string) => {
+    const p = new URLSearchParams({ fiscal_year_id: String(fy.id), years: o.years, targeted: String(o.targeted), avg_years: o.avg_years, format });
+    ids.forEach((i) => p.append("ids", String(i)));
+    return `/api/fundraisers/fy-report?${p.toString()}`;
+  };
+  const saveNotes = async () => {
+    setErr(null);
+    try { const r = await api.put("/api/fundraisers/fy-report/notes", { fiscal_year_id: fy.id, notes }); setNotes(r.notes || ""); setSavedNotes(r.notes || ""); } catch (x) { setErr(x); }
+  };
+  return (
+    <Modal title="Fiscal Year fundraising report" onClose={onClose} wide>
+      <p>{ids.length} fundraiser{ids.length === 1 ? "" : "s"} of <b>{fy.display_name}</b>, with the history of their series (linked with <i>Continues from</i>, plus results entered for earlier years). No contributor names.</p>
+      <ErrorBox error={err} />
+      <div className="row fields">
+        <Field label="Years of history">
+          <select value={o.years} onChange={(e) => setO({ ...o, years: e.target.value })}>
+            {[2, 3, 4, 5, 7, 10].map((n) => <option key={n} value={n}>{n}</option>)}
+            <option value="-1">All available</option>
+          </select>
+        </Field>
+        <label className="check"><input type="checkbox" checked={o.targeted} onChange={(e) => setO({ ...o, targeted: e.target.checked })} /> Include targeted total</label>
+        {o.targeted ? <Field label="Average of the last … active years"><input type="number" min={1} max={20} value={o.avg_years} onChange={(e) => setO({ ...o, avg_years: e.target.value })} /></Field> : null}
+      </div>
+      {o.targeted ? <p className="hint">The targeted total adds, for each series that has not held its event yet this year, the average of its last {o.avg_years} active years — shown as a separate estimate.</p> : null}
+      {manage ? (
+        <>
+          <Field label="Notes (printed on the report and deck; remembered for this Fiscal Year)">
+            <textarea rows={3} maxLength={10000} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="e.g. Additional revenue expected from a matching-gift program" />
+          </Field>
+          <div className="actions left"><button disabled={notes === savedNotes} onClick={saveNotes}>Save notes</button></div>
+        </>
+      ) : savedNotes ? <p className="pre-wrap"><b>Notes:</b> {savedNotes}</p> : null}
+      <div className="actions">
+        <button onClick={onClose}>Done</button>
+        <a className="button" href={href("pptx")}>Presentation</a>
+        <a className="button primary" href={href("pdf")} target="_blank" rel="noopener">Report (PDF)</a>
+      </div>
+    </Modal>
   );
 }
 
@@ -95,6 +153,8 @@ export function FundraiserDetail({ id }: { id: number }) {
   const [categoryEdit, setCategoryEdit] = useState<any>(null);   // 2.1.0 (#278)
   const [ordering, setOrdering] = useState(false);
   const [reporting, setReporting] = useState(false);   // 2.1.0 (#275)
+  const [nextYear, setNextYear] = useState<any>(null);  // 2.1.0 (#277)
+  const [linking, setLinking] = useState(false);
   const [cancelling, setCancelling] = useState(false); // v1.6.4 CR-037
   const [countSheet, setCountSheet] = useState(false); // v1.6.4 CR-038
   const load = () => api.get(`/api/fundraisers/${id}`).then(setF, setErr);
@@ -126,6 +186,7 @@ export function FundraiserDetail({ id }: { id: number }) {
             {f.read_only ? null : f.cancelled
               ? <button onClick={() => act(async () => setF(await api.post(`/api/fundraisers/${id}/reinstate`)))}>Reinstate</button>
               : <button onClick={() => setCancelling(true)}>Mark as cancelled…</button>}
+            <button onClick={() => act(async () => setNextYear({ ...(await api.get(`/api/fundraisers/${id}/next-year`)), from_name: f.name }))}>Create next year's…</button>
             <button className="danger" onClick={() => setConfirmDelete(true)}>Delete…</button>
           </div>
         ) : null}
@@ -133,6 +194,10 @@ export function FundraiserDetail({ id }: { id: number }) {
       <dl className="dl">
         <dt>Event</dt><dd data-testid="fr-event">{eventDates(f)}</dd>
         <dt>Fiscal Years</dt><dd>{f.fiscal_years.length ? f.fiscal_years.map((y: any) => y.display_name).join(" – ") : "—"}</dd>
+        <dt>Series</dt><dd data-testid="fr-series">{f.series_link.series
+          ? <>{f.series_link.series.name}{f.series_link.continues_from ? <> — continues <Link to={`/fundraisers/${f.series_link.continues_from.id}`}>{f.series_link.continues_from.name}</Link></> : null}</>
+          : <span className="muted">Not linked to an earlier year</span>}
+          {manage ? <button className="small fr-final-btn" onClick={() => setLinking(true)}>Change…</button> : null}</dd>
         {f.description ? <><dt>Description</dt><dd className="pre-wrap">{f.description}</dd></> : null}
         {f.filter_text ? <><dt>Description filter</dt><dd><code>{f.filter_text}</code>{f.filter_regex ? " (regular expression)" : " (contains, any case)"}</dd></> : null}
       </dl>
@@ -269,6 +334,8 @@ export function FundraiserDetail({ id }: { id: number }) {
       {bucketEdit ? <BucketDialog f={f} bucket={bucketEdit} onClose={() => setBucketEdit(null)} onSaved={(x) => { setF(x); setBucketEdit(null); }} /> : null}
       {categoryEdit ? <CategoryDialog f={f} category={categoryEdit} onClose={() => setCategoryEdit(null)} onSaved={(x) => { setF(x); setCategoryEdit(null); }} /> : null}
       {reporting ? <ReportDialog f={f} onClose={() => setReporting(false)} /> : null}
+      {nextYear ? <FundraiserForm prefill={nextYear} onClose={() => setNextYear(null)} onSaved={(x) => { setNextYear(null); navigate(`/fundraisers/${x.id}`); }} /> : null}
+      {linking ? <SeriesLinkDialog f={f} onClose={() => setLinking(false)} onSaved={(x) => { setF(x); setLinking(false); }} /> : null}
       {ordering ? <OrderDialog f={f} onClose={() => setOrdering(false)} onSaved={(x) => { setF(x); setOrdering(false); }} /> : null}
       {editing ? <FundraiserForm current={f} onClose={() => setEditing(false)} onSaved={(x) => { setF(x); setEditing(false); }} /> : null}
       {confirmDelete ? (
@@ -285,12 +352,16 @@ export function FundraiserDetail({ id }: { id: number }) {
 }
 
 // ------------------------------------------------------------------ create / edit (Budget Manager)
-function FundraiserForm({ current, onClose, onSaved }: { current?: any; onClose: () => void; onSaved: (f: any) => void }) {
+function FundraiserForm({ current, prefill, onClose, onSaved }: { current?: any; prefill?: any; onClose: () => void; onSaved: (f: any) => void }) {
+  const src = current || prefill;
   const [v, setV] = useState({
-    name: current?.name || "", description: current?.description || "",
-    start_date: current?.start_date || "", end_date: current?.end_date || "",
-    filter_text: current?.filter_text || "", filter_regex: !!current?.filter_regex,
+    name: src?.name || "", description: src?.description || "",
+    start_date: src?.start_date || "", end_date: src?.end_date || "",
+    filter_text: src?.filter_text || "", filter_regex: !!src?.filter_regex,
   });
+  // 2.1.0 (#277): "Continues from (previous fundraiser)"
+  const [cont, setCont] = useState<string>(src?.continues_from_id ? String(src.continues_from_id) : "");
+  const [contOpts, setContOpts] = useState<any[]>([]);
   // chosen budgets: "<fiscal year id>:<INCOME|EXPENSE>" -> budget id
   const [chosen, setChosen] = useState<Record<string, number>>(() => Object.fromEntries((current?.budgets || []).map((b: any) => [`${b.fiscal_year.id}:${b.kind}`, b.id])));
   const frozen = (current?.budgets || []).filter((b: any) => b.fiscal_year.status === "CLOSED");
@@ -303,6 +374,24 @@ function FundraiserForm({ current, onClose, onSaved }: { current?: any; onClose:
     if (!v.start_date || end < v.start_date) { setOptions([]); return; }
     api.get(`/api/fundraisers/budget-options?start_date=${v.start_date}&end_date=${end}`).then(setOptions, setErr);
   }, [v.start_date, end]);
+  useEffect(() => {
+    if (!v.start_date) { setContOpts([]); return; }
+    api.get(`/api/fundraisers/continue-options?start_date=${v.start_date}${current ? `&fundraiser_id=${current.id}` : ""}`).then(setContOpts, () => setContOpts([]));
+  }, [v.start_date]); // eslint-disable-line react-hooks/exhaustive-deps
+  // "Create next year's from this one": the continuing budgets, once next year's options are known
+  const prefilled = useRef(false);
+  useEffect(() => {
+    if (!prefill || prefilled.current || !options?.length) return;
+    prefilled.current = true;
+    const next: Record<string, number> = {};
+    for (const o of options) {
+      for (const kind of ["INCOME", "EXPENSE"] as const) {
+        const hit = (kind === "INCOME" ? o.income : o.expense).find((b: any) => (prefill.budget_ids || []).includes(b.id));
+        if (hit) next[`${o.fiscal_year.id}:${kind}`] = hit.id;
+      }
+    }
+    setChosen(next);
+  }, [options]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const frozenKeys = new Set(frozen.map((b: any) => `${b.fiscal_year.id}:${b.kind}`));
   const eligibleFy = new Set((options || []).map((o) => String(o.fiscal_year.id)));
@@ -329,8 +418,10 @@ function FundraiserForm({ current, onClose, onSaved }: { current?: any; onClose:
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setErr(null);
-    const body = { name: v.name, description: v.description || null, start_date: v.start_date, end_date: v.end_date || null,
-                   budget_ids: ids, filter_text: v.filter_text || null, filter_regex: v.filter_regex };
+    const body: any = { name: v.name, description: v.description || null, start_date: v.start_date, end_date: v.end_date || null,
+                   budget_ids: ids, filter_text: v.filter_text || null, filter_regex: v.filter_regex,
+                   continues_from_id: cont ? Number(cont) : null };
+    if (!current && prefill?.copy_buckets_from_id) body.copy_buckets_from_id = prefill.copy_buckets_from_id;
     try {
       onSaved(current ? await api.put(`/api/fundraisers/${current.id}`, body) : await api.post("/api/fundraisers", body));
     } catch (x) { setErr(x); }
@@ -338,7 +429,7 @@ function FundraiserForm({ current, onClose, onSaved }: { current?: any; onClose:
   const optionWarnings = (opts: any[], id?: number) => (opts.find((o) => o.id === id)?.warnings || []);
 
   return (
-    <Modal title={current ? "Edit fundraiser" : "New fundraiser"} onClose={onClose} wide>
+    <Modal title={current ? "Edit fundraiser" : prefill ? "New fundraiser (next year)" : "New fundraiser"} onClose={onClose} wide>
       <GuardedForm onSubmit={submit}>
         <ErrorBox error={err} />
         <Field label="Name"><input required maxLength={120} value={v.name} onChange={set("name")} /></Field>
@@ -378,6 +469,14 @@ function FundraiserForm({ current, onClose, onSaved }: { current?: any; onClose:
             </div>
           ))}
         </fieldset>
+        <Field label="Continues from (previous fundraiser)" hint="Links this fundraiser with the same event in an earlier year, for the Fiscal Year fundraising report. Leave empty for a new, unlinked fundraiser.">
+          <select value={cont} onChange={(e) => setCont(e.target.value)}>
+            <option value="">— none (new event) —</option>
+            {contOpts.map((o) => <option key={o.id} value={o.id}>{o.name} ({o.year}){o.series_name ? ` — ${o.series_name}` : ""}</option>)}
+            {cont && !contOpts.some((o) => String(o.id) === cont) ? <option value={cont}>{src?.series_link?.continues_from?.name || prefill?.from_name || `Fundraiser ${cont}`}</option> : null}
+          </select>
+        </Field>
+        {prefill ? <p className="hint">Copied from <b>{prefill.from_name}</b>: name, description, filter, the continuing budgets and the buckets{prefill.categories?.length ? " and categories" : ""} ({(prefill.buckets || []).join(", ") || "none"}), without amounts. Change anything before saving.</p> : null}
         <Field label="Description filter (optional)" hint="Only lines whose description contains this text are included (any upper/lower case).">
           <input maxLength={200} value={v.filter_text} onChange={set("filter_text")} placeholder="e.g. Gala" />
         </Field>
@@ -426,6 +525,32 @@ function BucketDialog({ f, bucket, onClose, onSaved }: { f: any; bucket: any; on
         </Field>
         <div className="actions"><button type="button" onClick={onClose}>Cancel</button><button className="primary" type="submit">Save</button></div>
       </GuardedForm>
+    </Modal>
+  );
+}
+
+// 2.1.0 (#277): change or remove "Continues from" - any Fiscal Year, closed ones included (reporting only)
+function SeriesLinkDialog({ f, onClose, onSaved }: { f: any; onClose: () => void; onSaved: (f: any) => void }) {
+  const [opts, setOpts] = useState<any[]>([]);
+  const [cont, setCont] = useState<string>(f.continues_from_id ? String(f.continues_from_id) : "");
+  const [err, setErr] = useState<unknown>(null);
+  useEffect(() => { api.get(`/api/fundraisers/continue-options?start_date=${f.start_date}&fundraiser_id=${f.id}`).then(setOpts, setErr); }, [f.id]);
+  const save = async () => {
+    setErr(null);
+    try { onSaved(await api.put(`/api/fundraisers/${f.id}/series-link`, { continues_from_id: cont ? Number(cont) : null })); } catch (x) { setErr(x); }
+  };
+  return (
+    <Modal title="Link with an earlier year" onClose={onClose}>
+      <ErrorBox error={err} />
+      <p className="hint">The link is used only by the Fiscal Year fundraising report, so it can be changed even when the Fiscal Year is closed.</p>
+      <Field label="Continues from (previous fundraiser)">
+        <select value={cont} onChange={(e) => setCont(e.target.value)}>
+          <option value="">— none (not linked) —</option>
+          {opts.map((o) => <option key={o.id} value={o.id}>{o.name} ({o.year}){o.series_name ? ` — ${o.series_name}` : ""}</option>)}
+          {cont && !opts.some((o) => String(o.id) === cont) && f.series_link.continues_from ? <option value={cont}>{f.series_link.continues_from.name}</option> : null}
+        </select>
+      </Field>
+      <div className="actions"><button onClick={onClose}>Cancel</button><button className="primary" onClick={save}>Save link</button></div>
     </Modal>
   );
 }

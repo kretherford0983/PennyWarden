@@ -223,7 +223,8 @@ def snapshot(f: Fundraiser) -> dict:
             "budget_ids": [fb.budget_id for fb in f.budgets], "archived": f.archived_at is not None,
             "cancelled": f.cancelled_at is not None, "cancel_reason": f.cancel_reason,
             "cancelled_at": f.cancelled_at.isoformat() + "Z" if f.cancelled_at else None,
-            "summary_notes": f.summary_notes, "results_final": f.results_final_at is not None}
+            "summary_notes": f.summary_notes, "results_final": f.results_final_at is not None,
+            "series_id": f.series_id, "continues_from_id": f.continues_from_id}
 
 
 def _apply(db: Session, ctx, f: Fundraiser, body, creating: bool) -> None:
@@ -260,6 +261,13 @@ def create(db: Session, ctx, body) -> Fundraiser:
     _apply(db, ctx, f, body, creating=True)
     db.add(f)
     db.flush()
+    # 2.1.0 (#277): "Continues from" and "Create next year's from this one"
+    from . import fundraiser_series as series
+    if getattr(body, "continues_from_id", None):
+        series.set_link(db, ctx, f, body.continues_from_id, record=False)
+    if getattr(body, "copy_buckets_from_id", None):
+        src = get(db, ctx, body.copy_buckets_from_id)
+        series.copy_buckets(db, ctx, src, f)
     audit.record(db, ctx, "FUNDRAISER_CREATED", "fundraiser", f.id, None, snapshot(f))
     return f
 
@@ -268,6 +276,9 @@ def update(db: Session, ctx, f: Fundraiser, body) -> Fundraiser:
     before = snapshot(f)
     _apply(db, ctx, f, body, creating=False)
     db.flush()
+    if "continues_from_id" in body.model_fields_set and body.continues_from_id != f.continues_from_id:
+        from . import fundraiser_series as series
+        series.set_link(db, ctx, f, body.continues_from_id)
     after = snapshot(f)
     if set(after["budget_ids"]) != set(before["budget_ids"]):
         dropped = _drop_orphan_adjustments(db, f)
@@ -615,6 +626,7 @@ def detail(db: Session, ctx, f: Fundraiser) -> dict:
                    "excluded_lines": sum(1 for r in rows if r["excluded"])},
         "buckets": _bucket_summary(db, f, rows),
         "report_status": _report_status(db, f),
+        "series_link": _series_link(db, f),
         "classification_types": [{"kind": k, "applies_to": v[0], "label": v[1]} for k, v in CLASSIFICATIONS.items()],
         "per_fiscal_year": per_fy,
         "lines": lines, "filtered_out_lines": skipped,
@@ -967,6 +979,15 @@ def reorder(db: Session, ctx, f: Fundraiser, what: str, ids: list[int]) -> None:
 def _report_status(db: Session, f: Fundraiser) -> dict:
     from .fundraiser_summary import report_status
     return report_status(db, f)
+
+
+def _series_link(db: Session, f: Fundraiser) -> dict:
+    """2.1.0 (#277): the series and the previous fundraiser this one continues."""
+    from ..models import FundraiserSeries
+    s = db.get(FundraiserSeries, f.series_id) if f.series_id else None
+    prev = db.get(Fundraiser, f.continues_from_id) if f.continues_from_id else None
+    return {"series": {"id": s.id, "name": s.name} if s else None,
+            "continues_from": {"id": prev.id, "name": prev.name, "start_date": prev.start_date.isoformat()} if prev else None}
 
 
 def set_summary_notes(db: Session, ctx, f: Fundraiser, notes: str | None) -> Fundraiser:

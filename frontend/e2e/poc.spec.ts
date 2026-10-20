@@ -1722,6 +1722,46 @@ test("2.1.0 (#278): bucket categories with subtotals, reorder, and Charge / Less
   await logout(page);
 });
 
+test("2.1.0 (#277): next year's fundraiser continues the series, prior years entered, Fiscal Year report and deck", async ({ page }) => {
+  await login(page, "bm1");
+  await page.getByRole("link", { name: "Fundraisers" }).click();
+  await page.getByRole("link", { name: "Harvest Dinner" }).click();
+  await page.getByRole("button", { name: "Create next year's…" }).click();
+  let dlg = page.getByRole("dialog", { name: "New fundraiser (next year)" });
+  await expect(dlg.getByLabel("Name")).not.toHaveValue("");
+  await expect(dlg.getByLabel("Continues from (previous fundraiser)")).not.toHaveValue("");
+  await dlg.getByLabel("Name").fill("Harvest Dinner next year");
+  await dlg.getByRole("button", { name: "Create fundraiser" }).click();
+  await expect(page.getByTestId("fr-series")).toContainText("continues Harvest Dinner");
+  // the series list: enter a year before PennyWarden
+  await page.getByRole("link", { name: "Fundraisers" }).first().click();
+  await page.getByRole("link", { name: "Fundraiser series" }).click();
+  await page.getByRole("button", { name: "Enter a prior year…" }).first().click();
+  dlg = page.getByRole("dialog", { name: /Enter a prior year/ });
+  await dlg.getByLabel("Fiscal Year (include the year)").fill("FY2019");
+  await dlg.getByLabel("Amount raised (net)").fill("640.00");
+  await dlg.getByRole("button", { name: "Save" }).click();
+  await expect(page.locator("section.card").first()).toContainText("FY2019");
+  await page.screenshot({ path: "e2e-screenshots/light-fundraiser-series.png", fullPage: true });
+  // the Fiscal Year report for the ticked fundraisers
+  await page.getByRole("link", { name: "← Fundraisers" }).click();
+  await expect(page.getByTestId("fundraiser-list")).toBeVisible();
+  await page.getByRole("button", { name: "Fiscal Year report…" }).click();
+  dlg = page.getByRole("dialog", { name: "Fiscal Year fundraising report" });
+  await dlg.getByLabel("Include targeted total").check();
+  await dlg.getByLabel(/Notes \(printed/).fill("Matching gifts expected.");
+  await dlg.getByRole("button", { name: "Save notes" }).click();
+  await expect(dlg.getByRole("button", { name: "Save notes" })).toBeDisabled();
+  const pdf = await page.request.get((await dlg.getByRole("link", { name: "Report (PDF)" }).getAttribute("href"))!);
+  expect(pdf.status()).toBe(200);
+  expect(pdf.headers()["content-type"]).toBe("application/pdf");
+  const deck = await page.request.get((await dlg.getByRole("link", { name: "Presentation" }).getAttribute("href"))!);
+  expect(deck.status()).toBe(200);
+  expect(deck.headers()["content-type"]).toContain("presentationml");
+  await dlg.getByRole("button", { name: "Done" }).click();
+  await logout(page);
+});
+
 // ---------------------------------------------------------------- v1.6.2 CR-035: fundraiser report
 test("CR-035: fundraiser report PDF; Audit and Close reports can include fundraisers", async ({ page }) => {
   await login(page, "bm1");

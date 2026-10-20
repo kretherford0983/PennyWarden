@@ -19,6 +19,7 @@ import Entities from "./pages/Entities";
 import Account from "./pages/Account";
 import Reports from "./pages/Reports";
 import Fundraisers, { FundraiserDetail } from "./pages/Fundraisers";
+import FundraiserSeries from "./pages/FundraiserSeries";
 import CheckSetup from "./pages/CheckSetup";
 import Payments from "./pages/Payments";
 import Notifications, { REMINDERS_CHANGED } from "./pages/Notifications";
@@ -228,6 +229,7 @@ function Shell({ workspace, warning, mode, onLogout }: { workspace: string; warn
   else if (path === "/reports") page = guard("/reports", <Reports />);
   else if (path === "/notifications") page = can("reminder.view") ? <Notifications /> : <NotAuthorized />;
   else if (path === "/fundraisers") page = guard("/fundraisers", <Fundraisers />);
+  else if (path === "/fundraiser-series") page = can("fundraiser.manage") ? guard("/fundraisers", <FundraiserSeries />) : <NotAuthorized />; // 2.1.0 (#277)
   else if (path === "/check-setup") page = guard("/check-setup", <CheckSetup />);
   else if (path === "/payments") page = guard("/payments", <Payments />);
   else if ((m = match("/fundraisers/:id", path))) page = guard("/fundraisers", <FundraiserDetail id={Number(m.id)} />);

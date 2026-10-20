@@ -67,6 +67,21 @@ PennyWarden 2.1.0 (in progress).
   charge-less-credit detail, key takeaways and summary notes. The charts are native and editable, with amounts on
   them, and every slide's speaker notes give the exact figures and how they are worked out. Slides with nothing to
   show are left out; with contributor names off, no name appears anywhere in the file. (#276)
+- **Fundraisers across years.** *Continues from (previous fundraiser)* on the fundraiser form links it with the same
+  event in an earlier year — a skipped year still links — and *Create next year's…* on a fundraiser pre-fills next
+  year's: the name with the year moved on, description, filter, the continuing budgets, the buckets and categories
+  (without amounts) and the link, all editable. **Fundraiser series** (Budget Managers) lists each event across years:
+  rename it, group it as *Other* in the charts, enter results of years before PennyWarden (*Entered*; retired, never
+  deleted) and merge two series started separately. The link can be changed even in a closed year. (#277)
+- **Fiscal Year fundraising report and presentation.** On *Fundraisers*, tick the fundraisers of a Fiscal Year (all
+  of that year's, cancelled ones unticked, by default) and choose *Fiscal Year report…*. It covers:
+  - this year by fundraiser, with net revenue, expenses, net proceeds, margin and share;
+  - growth versus last year and the first year shown, the top fundraiser, the cumulative total and the peak year;
+  - the annual trend (with an optional *targeted* estimate for events still to come), share by series (small ones
+    as *Other*), the average per active year, and the history marked *Recorded* or *Entered*.
+
+  Notes are remembered per year. Available as a PDF and a `.pptx` deck with charts and speaker notes. No contributor
+  names. (#277)
 - **Bucket categories.** Group a fundraiser's buckets under optional categories (for example *Sponsorships*,
   *Registrations*, *Day-of event*), one category per bucket or none. The Buckets table shows each category with its
   buckets beneath and a subtotal of income, expenses and net, and so does the fundraiser section of the Audit and

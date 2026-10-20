@@ -16,7 +16,7 @@ import io
 from pptx import Presentation
 from pptx.chart.data import CategoryChartData
 from pptx.dml.color import RGBColor
-from pptx.enum.chart import XL_CHART_TYPE, XL_LABEL_POSITION, XL_LEGEND_POSITION
+from pptx.enum.chart import XL_AXIS_CROSSES, XL_CHART_TYPE, XL_LABEL_POSITION, XL_LEGEND_POSITION
 from pptx.enum.shapes import MSO_SHAPE
 from pptx.enum.text import PP_ALIGN
 from pptx.util import Emu, Inches, Pt
@@ -92,6 +92,7 @@ def _style_chart(chart, legend=True, legend_pos=XL_LEGEND_POSITION.BOTTOM):
     chart.has_title = False          # the slide title says what it is
     if chart.chart_type in (XL_CHART_TYPE.BAR_CLUSTERED,):
         chart.category_axis.reverse_order = True   # first category at the top, as in the tables
+        chart.category_axis.crosses = XL_AXIS_CROSSES.MAXIMUM   # ... and the value axis stays at the bottom
     chart.has_legend = legend
     if legend:
         chart.legend.position = legend_pos

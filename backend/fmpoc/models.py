@@ -548,6 +548,9 @@ class Fundraiser(Base):
     summary_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     results_final_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     results_final_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 2.1.0 (#277): the same event across years ("Continues from" puts it in the previous fundraiser's series)
+    series_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    continues_from_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
     created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
@@ -574,6 +577,48 @@ class FundraiserBudget(Base):
 
 
 # ---------------------------------------------------------------- v1.6.1 CR-034 fundraiser management
+class FundraiserSeries(Base):
+    """2.1.0 (#277): one fundraising event across years (e.g. "Golf Outing"). Created behind the scenes when a
+    fundraiser continues an earlier one; renamed, grouped as Other or merged in the Fundraiser series list."""
+    __tablename__ = "fundraiser_series"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    group_as_other: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false())
+    merged_into_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class FundraiserSeriesResult(Base):
+    """2.1.0 (#277): a year's result entered by hand (years before PennyWarden). Retired, never deleted (BR-001)."""
+    __tablename__ = "fundraiser_series_result"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    series_id: Mapped[int] = mapped_column(ForeignKey("fundraiser_series.id"), index=True)
+    fiscal_year_label: Mapped[str] = mapped_column(String(40))
+    year: Mapped[int] = mapped_column(Integer)
+    net_cents: Mapped[int] = mapped_column(BigInteger)
+    income_cents: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    expense_cents: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    retired_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    retired_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    retire_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class FundraiserFyReportNote(Base):
+    """2.1.0 (#277): the Fiscal Year fundraising report's notes, remembered per Fiscal Year."""
+    __tablename__ = "fundraiser_fy_report_note"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
+    fiscal_year_id: Mapped[int] = mapped_column(ForeignKey("fiscal_year.id"), unique=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    updated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
 class FundraiserBucketCategory(Base):
     """2.1.0 (#278): an optional heading that groups buckets of one fundraiser (presentation only)."""
     __tablename__ = "fundraiser_bucket_category"
