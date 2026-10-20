@@ -192,6 +192,15 @@ def summary(db: Session, ctx, f: Fundraiser, *, itemized: bool = True, names: bo
             plain.append({"date": r["t"].transaction_date.isoformat(), "who": who(r),
                           "income": fmt(r["eff"]) if r["kind"] == "INCOME" else None,
                           "expense": fmt(r["eff"]) if r["kind"] == "EXPENSE" else None})
+    # cumulative income and net by transaction date (for the presentation's "revenue over time")
+    by_day: dict[str, list[int]] = {}
+    for r in rows:
+        by_day.setdefault(r["t"].transaction_date.isoformat(), [0, 0])[0 if r["kind"] == "INCOME" else 1] += r["eff"]
+    cumulative, ci, ce = [], 0, 0
+    for day in sorted(by_day):
+        ci += by_day[day][0]
+        ce += by_day[day][1]
+        cumulative.append({"date": day, "income": fmt(ci), "net": fmt(ci - ce)})
     status = report_status(db, f)
     return {
         "organization": ws.name, "fundraiser": f.name, "start_date": f.start_date.isoformat(),
@@ -202,7 +211,7 @@ def summary(db: Session, ctx, f: Fundraiser, *, itemized: bool = True, names: bo
                    "net_proceeds": fmt(net), "net_margin": margin, "roi": fsvc.roi(revenue, expenses),
                    "credits": fmt(credits)},
         "per_fiscal_year": per_fy, "has_buckets": has_buckets, "groups": groups, "other": other_out,
-        "takeaways": take, "summary_notes": f.summary_notes, "plain_lines": plain,
+        "takeaways": take, "summary_notes": f.summary_notes, "plain_lines": plain, "cumulative": cumulative,
         "generated_at": utcnow().isoformat(timespec="seconds") + "Z",
     }
 

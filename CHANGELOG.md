@@ -61,6 +61,12 @@ PennyWarden 2.1.0 (in progress).
   accounts, budgets or attachments. Budget Managers can write the **summary notes** and **Mark results final**; the
   report reads *Interim*, *Post-event*, *Final* or *Cancelled*. The previous detailed report (lines, excluded lines,
   documents and attachments) is now **Reports → Fundraiser detail (audit)**. (#275)
+- **Fundraiser presentation.** *Presentation* in the same dialog gives the report as a 16:9 slide deck (`.pptx`)
+  that opens in PowerPoint, Google Slides and Keynote. It has highlights, a revenue-to-proceeds column chart, revenue
+  by category (doughnut), category detail, net by category, revenue over time, top contributors, expenses with
+  charge-less-credit detail, key takeaways and summary notes. The charts are native and editable, with amounts on
+  them, and every slide's speaker notes give the exact figures and how they are worked out. Slides with nothing to
+  show are left out; with contributor names off, no name appears anywhere in the file. (#276)
 - **Bucket categories.** Group a fundraiser's buckets under optional categories (for example *Sponsorships*,
   *Registrations*, *Day-of event*), one category per bucket or none. The Buckets table shows each category with its
   buckets beneath and a subtotal of income, expenses and net, and so does the fundraiser section of the Audit and
@@ -88,7 +94,7 @@ PennyWarden 2.1.0 (in progress).
 - **Release dates are set by the pipeline.** The release is dated when it is published (GitHub, pennywarden.org,
   *What's new*); `CHANGELOG.md` gets the date with the next version's first change. No extra round before each
   release. README links to the latest release instead of naming a version. (#240)
-- **New dependency:** `python-docx` (MIT, with `lxml`, BSD) writes the Word version of the fundraiser report; it is in THIRD-PARTY-NOTICES and every package. (#275)
+- **New dependencies:** `python-docx` (MIT, with `lxml`, BSD) writes the Word version of the fundraiser report (#275); `python-pptx` (MIT) and `XlsxWriter` (BSD) write the presentation and its chart data (#276). All are in THIRD-PARTY-NOTICES and every package.
 - **Python dependencies are compiled with pip-tools** (`backend/requirements.in` → `requirements.txt`, same versions as
   2.0.0), so automatic dependency updates move related packages together. (#226)
 

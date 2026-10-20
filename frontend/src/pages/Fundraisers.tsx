@@ -482,7 +482,7 @@ function ReportDialog({ f, onClose }: { f: any; onClose: () => void }) {
   };
   return (
     <Modal title="Fundraiser report" onClose={onClose}>
-      <p>The Financial &amp; Proceeds Statement for <b>{f.name}</b> ({f.report_status.text}).</p>
+      <p>The Financial &amp; Proceeds Statement for <b>{f.name}</b> ({f.report_status.text}). <b>Presentation</b> is the same figures as a slide deck with charts (.pptx — opens in PowerPoint, Google Slides and Keynote).</p>
       {hasBuckets ? (
         <label className="check"><input type="checkbox" checked={o.itemized} onChange={(e) => setO({ ...o, itemized: e.target.checked })} /> Itemized revenue <span className="muted">(off: a summary-only report)</span></label>
       ) : (
@@ -491,6 +491,7 @@ function ReportDialog({ f, onClose }: { f: any; onClose: () => void }) {
       <label className="check"><input type="checkbox" checked={o.names} onChange={(e) => setO({ ...o, names: e.target.checked })} /> Show contributor names <span className="muted">(off: “Contributor 1, 2…”, for reports that go outside the organization)</span></label>
       <div className="actions">
         <button onClick={onClose}>Done</button>
+        <a className="button" href={`/api/fundraisers/${f.id}/presentation?itemized=${o.itemized}&names=${o.names}`}>Presentation</a>
         <a className="button" href={href("docx")}>Report (Word)</a>
         <a className="button primary" href={href("pdf")} target="_blank" rel="noopener">Report (PDF)</a>
       </div>
