@@ -27,7 +27,7 @@ Python packages (server):
   click 8.5.0 - BSD-3-Clause
   colorama 0.4.6 - BSD-3-Clause
   cryptography 50.0.2 - Apache-2.0 OR BSD-3-Clause
-  fastapi 0.143.0 - MIT
+  fastapi 0.143.3 - MIT
   google-re2 1.1.20251105 - BSD License
   h11 0.16.0 - MIT License
   idna 3.20 - BSD-3-Clause
@@ -39,13 +39,13 @@ Python packages (server):
   pydantic 2.14.0 - MIT
   pydantic_core 2.50.0 - MIT
   PyOTP 2.10.0 - MIT
-  pypdf 6.20.1 - BSD-3-Clause
+  pypdf 6.21.0 - BSD-3-Clause
   pypdfium2 5.14.0 - BSD-3-Clause, Apache-2.0, dependency licenses
   python-multipart 0.0.32 - Apache-2.0
   reportlab 5.0.1 - BSD License
   segno 1.6.6 - BSD License
-  SQLAlchemy 2.1.4 - MIT
-  starlette 1.7.0 - BSD-3-Clause
+  SQLAlchemy 2.1.5 - MIT
+  starlette 1.8.0 - BSD-3-Clause
   typing-inspection 0.4.4 - MIT
   typing_extensions 4.16.0 - PSF-2.0
   uvicorn 0.54.0 - BSD-3-Clause
@@ -912,7 +912,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ----------------------------------------------------------------------------------------------------
 
-fastapi 0.143.0
+fastapi 0.143.3
 License: MIT
 Source: https://github.com/fastapi/fastapi
 
@@ -3021,7 +3021,7 @@ THE SOFTWARE.
 
 ----------------------------------------------------------------------------------------------------
 
-pypdf 6.20.1
+pypdf 6.21.0
 License: BSD-3-Clause
 Source: https://github.com/py-pdf/pypdf
 
@@ -6181,7 +6181,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ----------------------------------------------------------------------------------------------------
 
-SQLAlchemy 2.1.4
+SQLAlchemy 2.1.5
 License: MIT
 Source: https://www.sqlalchemy.org
 
@@ -6240,7 +6240,7 @@ SOFTWARE.
 
 ----------------------------------------------------------------------------------------------------
 
-starlette 1.7.0
+starlette 1.8.0
 License: BSD-3-Clause
 Source: https://github.com/Kludex/starlette
 
