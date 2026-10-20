@@ -81,6 +81,30 @@ an Other document — it is not required for closing a year.
 
 ## Fundraisers
 
+### The stakeholder report (Financial & Proceeds Statement)
+**Report…** on a fundraiser's page opens the report options:
+- **Itemized revenue** (on): every income line under its category or bucket. Off gives a one-to-two-page summary.
+- **Show contributor names** (on): off shows "Contributor 1, 2…" instead of names, for a report that goes outside the
+  organization.
+- **Plain line list** (only for a fundraiser without buckets): adds a simple list of its income and expense lines.
+
+Then **Report (PDF)** to print or email it, or **Report (Word)** to adjust the wording before sending. The report
+starts with the organization, the fundraiser, its dates and its status:
+- *Interim, figures may change* before or during the event;
+- *Post-event* once it is over;
+- *Final* when a Budget Manager uses **Mark results final** (it can be undone) or when every Fiscal Year it uses is
+  closed;
+- *Cancelled*, with the reason.
+
+It continues with three headline figures — net revenue, expenses and net proceeds with the net margin — and a summary
+from gross deposits to net proceeds (the cash float is never counted as income or expense). With buckets there are
+breakdowns by category and bucket, and lines that are in no bucket appear as *Other (not in a bucket)*, so the
+figures always add up. *Key takeaways* are worked out from the figures. A Budget Manager can add **Summary notes** on
+the fundraiser's page; they print under the takeaways.
+
+The report leaves out what is audit detail: transaction numbers, bank accounts, budgets, excluded lines and
+attachments. That detail is under **Reports → Fundraiser detail (audit)**.
+
 ### Bucket categories
 On a fundraiser's page, **New category** adds a heading such as *Sponsorships* or *Day-of event*. In a bucket's
 **Edit**, choose its **Category** (or *No category*). The Buckets table then shows each category with its buckets

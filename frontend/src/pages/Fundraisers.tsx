@@ -94,6 +94,7 @@ export function FundraiserDetail({ id }: { id: number }) {
   const [bucketEdit, setBucketEdit] = useState<any>(null);
   const [categoryEdit, setCategoryEdit] = useState<any>(null);   // 2.1.0 (#278)
   const [ordering, setOrdering] = useState(false);
+  const [reporting, setReporting] = useState(false);   // 2.1.0 (#275)
   const [cancelling, setCancelling] = useState(false); // v1.6.4 CR-037
   const [countSheet, setCountSheet] = useState(false); // v1.6.4 CR-038
   const load = () => api.get(`/api/fundraisers/${id}`).then(setF, setErr);
@@ -114,7 +115,7 @@ export function FundraiserDetail({ id }: { id: number }) {
       <p><Link to="/fundraisers">← Fundraisers</Link></p>
       <div className="page-head">
         <h1>{f.name} <FundraiserStatus status={f.status} /></h1>
-        <a className="button" href={`/api/fundraisers/${id}/report`} target="_blank" rel="noopener">Report (PDF)</a>
+        <button onClick={() => setReporting(true)}>Report…</button>
         <button onClick={() => setCountSheet(true)}>Cash count sheet…</button>
         {manage ? (
           <div className="row">
@@ -168,6 +169,8 @@ export function FundraiserDetail({ id }: { id: number }) {
           {t.excluded_lines ? ` ${t.excluded_lines} excluded line${t.excluded_lines === 1 ? "" : "s"} (income ${money(t.excluded_income)}, expenses ${money(t.excluded_expense)}).` : ""}
         </p>
       ) : null}
+
+      <StakeholderReport f={f} manage={manage} onChanged={setF} onOpen={() => setReporting(true)} />
 
       <section className="card" aria-labelledby="fr-buckets-h">
         <div className="charts-head">
@@ -265,6 +268,7 @@ export function FundraiserDetail({ id }: { id: number }) {
       {lineEdit ? <LineDialog f={f} line={lineEdit} onClose={() => setLineEdit(null)} onSaved={(x) => { setF(x); setLineEdit(null); }} /> : null}
       {bucketEdit ? <BucketDialog f={f} bucket={bucketEdit} onClose={() => setBucketEdit(null)} onSaved={(x) => { setF(x); setBucketEdit(null); }} /> : null}
       {categoryEdit ? <CategoryDialog f={f} category={categoryEdit} onClose={() => setCategoryEdit(null)} onSaved={(x) => { setF(x); setCategoryEdit(null); }} /> : null}
+      {reporting ? <ReportDialog f={f} onClose={() => setReporting(false)} /> : null}
       {ordering ? <OrderDialog f={f} onClose={() => setOrdering(false)} onSaved={(x) => { setF(x); setOrdering(false); }} /> : null}
       {editing ? <FundraiserForm current={f} onClose={() => setEditing(false)} onSaved={(x) => { setF(x); setEditing(false); }} /> : null}
       {confirmDelete ? (
@@ -422,6 +426,74 @@ function BucketDialog({ f, bucket, onClose, onSaved }: { f: any; bucket: any; on
         </Field>
         <div className="actions"><button type="button" onClick={onClose}>Cancel</button><button className="primary" type="submit">Save</button></div>
       </GuardedForm>
+    </Modal>
+  );
+}
+
+// 2.1.0 (#275): the stakeholder report - status, Mark results final and summary notes (Budget Managers)
+function StakeholderReport({ f, manage, onChanged, onOpen }: { f: any; manage: boolean; onChanged: (f: any) => void; onOpen: () => void }) {
+  const st = f.report_status;
+  const [notes, setNotes] = useState<string>(f.summary_notes || "");
+  const [err, setErr] = useState<unknown>(null);
+  const [saved, setSaved] = useState(false);
+  useEffect(() => { setNotes(f.summary_notes || ""); }, [f.summary_notes]);
+  const run = async (fn: () => Promise<any>) => {
+    setErr(null); setSaved(false);
+    try { onChanged(await fn()); setSaved(true); } catch (x) { setErr(x); }
+  };
+  return (
+    <section className="card" aria-labelledby="fr-report-h">
+      <div className="charts-head">
+        <h2 id="fr-report-h">Stakeholder report</h2>
+        <button className="small" onClick={onOpen}>Report…</button>
+      </div>
+      <p className="hint">A clean Financial &amp; Proceeds Statement for the committee and stakeholders — headline figures, breakdowns by category and bucket, key takeaways. It has no transaction numbers, accounts, budgets or attachments; the audit detail is under Reports → Fundraiser detail (audit).</p>
+      <ErrorBox error={err} />
+      <p data-testid="fr-report-status"><b>Report status:</b> {st.text}
+        {st.marked_final ? " (marked final)" : st.final_because_closed ? " (every Fiscal Year is closed)" : ""}
+        {manage && !st.final_because_closed ? (
+          <button className="small fr-final-btn" onClick={() => run(() => api.put(`/api/fundraisers/${f.id}/results-final`, { final: !st.marked_final }))}>
+            {st.marked_final ? "Undo final" : "Mark results final"}
+          </button>
+        ) : null}
+      </p>
+      {manage ? (
+        <>
+          <Field label="Summary notes (printed under the key takeaways)">
+            <textarea rows={3} maxLength={10000} value={notes} onChange={(e) => { setNotes(e.target.value); setSaved(false); }} />
+          </Field>
+          <div className="actions left">
+            <button disabled={notes === (f.summary_notes || "")} onClick={() => run(() => api.put(`/api/fundraisers/${f.id}/summary-notes`, { summary_notes: notes }))}>Save notes</button>
+            {saved ? <span className="ok-text" role="status">Saved.</span> : null}
+          </div>
+        </>
+      ) : f.summary_notes ? <><h3>Summary notes</h3><p className="pre-wrap">{f.summary_notes}</p></> : null}
+    </section>
+  );
+}
+
+function ReportDialog({ f, onClose }: { f: any; onClose: () => void }) {
+  const [o, setO] = useState({ itemized: true, names: true, plain_lines: false });
+  const hasBuckets = f.buckets.items.length > 0;
+  const href = (format: string, download = false) => {
+    const p = new URLSearchParams({ format, itemized: String(o.itemized), names: String(o.names), plain_lines: String(!hasBuckets && o.plain_lines) });
+    if (download) p.set("download", "true");
+    return `/api/fundraisers/${f.id}/summary-report?${p.toString()}`;
+  };
+  return (
+    <Modal title="Fundraiser report" onClose={onClose}>
+      <p>The Financial &amp; Proceeds Statement for <b>{f.name}</b> ({f.report_status.text}).</p>
+      {hasBuckets ? (
+        <label className="check"><input type="checkbox" checked={o.itemized} onChange={(e) => setO({ ...o, itemized: e.target.checked })} /> Itemized revenue <span className="muted">(off: a summary-only report)</span></label>
+      ) : (
+        <label className="check"><input type="checkbox" checked={o.plain_lines} onChange={(e) => setO({ ...o, plain_lines: e.target.checked })} /> Plain line list <span className="muted">(this fundraiser has no buckets)</span></label>
+      )}
+      <label className="check"><input type="checkbox" checked={o.names} onChange={(e) => setO({ ...o, names: e.target.checked })} /> Show contributor names <span className="muted">(off: “Contributor 1, 2…”, for reports that go outside the organization)</span></label>
+      <div className="actions">
+        <button onClick={onClose}>Done</button>
+        <a className="button" href={href("docx")}>Report (Word)</a>
+        <a className="button primary" href={href("pdf")} target="_blank" rel="noopener">Report (PDF)</a>
+      </div>
     </Modal>
   );
 }

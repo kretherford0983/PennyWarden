@@ -48,6 +48,19 @@ PennyWarden 2.1.0 (in progress).
   (#261)
 
 ### Fundraisers
+- **Stakeholder report.** *Report…* on a fundraiser's page now produces a clean **Financial & Proceeds Statement** for
+  the committee and stakeholders, as a **PDF or an editable Word document**:
+  - three headline figures (net revenue, expenses, net proceeds with the net margin) and a financial summary from
+    gross deposits to net proceeds;
+  - revenue and expense breakdowns by category and bucket, with *Other (not in a bucket)* so they add up, itemized
+    revenue, charge-less-credit detail and a net-by-category table;
+  - key takeaways worked out from the figures and optional summary notes.
+
+  Options: summary only (no itemized revenue), hide contributor names ("Contributor 1, 2…") for reports that go
+  outside the organization, and a plain line list for a fundraiser without buckets. It has no transaction numbers,
+  accounts, budgets or attachments. Budget Managers can write the **summary notes** and **Mark results final**; the
+  report reads *Interim*, *Post-event*, *Final* or *Cancelled*. The previous detailed report (lines, excluded lines,
+  documents and attachments) is now **Reports → Fundraiser detail (audit)**. (#275)
 - **Bucket categories.** Group a fundraiser's buckets under optional categories (for example *Sponsorships*,
   *Registrations*, *Day-of event*), one category per bucket or none. The Buckets table shows each category with its
   buckets beneath and a subtotal of income, expenses and net, and so does the fundraiser section of the Audit and
@@ -75,6 +88,7 @@ PennyWarden 2.1.0 (in progress).
 - **Release dates are set by the pipeline.** The release is dated when it is published (GitHub, pennywarden.org,
   *What's new*); `CHANGELOG.md` gets the date with the next version's first change. No extra round before each
   release. README links to the latest release instead of naming a version. (#240)
+- **New dependency:** `python-docx` (MIT, with `lxml`, BSD) writes the Word version of the fundraiser report; it is in THIRD-PARTY-NOTICES and every package. (#275)
 - **Python dependencies are compiled with pip-tools** (`backend/requirements.in` → `requirements.txt`, same versions as
   2.0.0), so automatic dependency updates move related packages together. (#226)
 
