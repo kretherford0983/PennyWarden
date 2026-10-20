@@ -545,9 +545,22 @@ button.small, label.button { display: inline-flex; align-items: center; justify-
 .table th .sort-arrow.idle { opacity: 0.45; }
 .sort-note { margin: 4px 0 6px; }
 /* 2.1.0 (#260): electronic payment - the kind of number and the number side by side */
-.number-kind { display: flex; gap: 8px; }
-.number-kind select { flex: 0 0 auto; width: auto !important; }
-.number-kind input { flex: 1 1 8em; min-width: 6em; }
+/* 2.1.0 (#260, build 2 feedback): checkbox spanning two rows | Paid by (across) / kind of number | the number */
+.electronic-payment { margin: 4px 0 8px; }
+.electronic-payment.on { display: grid; grid-template-columns: auto minmax(13em, 16em) minmax(12em, 1fr);
+  column-gap: 16px; align-items: start; }
+.electronic-payment.on .ep-toggle { grid-row: 1 / span 2; grid-column: 1; align-self: center; }
+.electronic-payment .ep-method { grid-row: 1; grid-column: 2 / span 2; }
+.electronic-payment .ep-method.with-other { grid-column: 2; }
+.electronic-payment .ep-other { grid-row: 1; grid-column: 3; }
+.electronic-payment .ep-kind { grid-row: 2; grid-column: 2; }
+.electronic-payment .ep-number { grid-row: 2; grid-column: 3; }
+.electronic-payment .ep-method select, .electronic-payment .ep-kind select, .electronic-payment .ep-number input,
+.electronic-payment .ep-other input { width: 100%; }
+@media (max-width: 720px) {
+  .electronic-payment.on { grid-template-columns: 1fr; }
+  .electronic-payment.on > * { grid-row: auto !important; grid-column: 1 !important; }
+}
 /* 2.1.0 (#259): reordering attachments */
 .attachments h3 .att-reorder { margin-left: 10px; vertical-align: middle; font-weight: normal; }
 .att-order li { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border: 1px solid var(--border);
