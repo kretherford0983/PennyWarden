@@ -836,6 +836,52 @@ test("2.1.0 (#262, #260, #259): register sort, electronic payment, reorder attac
   await logout(page);
 });
 
+test("2.1.0 (#257, #261): Budget Prep report with projection choices; the Planning Sheet from the Fiscal Year screen", async ({ page }) => {
+  // Budget Managers only: a Register User has no Budget Prep tab
+  await login(page, "ru1", "Brand-New-Pass-99");
+  await page.goto("/reports");
+  await expect(page.getByRole("tab", { name: "Financial Flow" })).toBeVisible();
+  await expect(page.getByRole("tab", { name: "Budget Prep" })).toHaveCount(0);
+  await logout(page);
+  await login(page, "bm1");
+  await page.goto("/reports");
+  await page.getByRole("tab", { name: "Budget Prep" }).click();
+  await page.getByLabel("Projected column").check();
+  const choices = page.locator("fieldset.projection-choices");
+  await expect(choices).toContainText("Projected budgets");
+  const first = choices.getByRole("checkbox").first();
+  await first.uncheck();
+  await choices.getByRole("button", { name: "Save projection choices" }).click();
+  await expect(choices.getByRole("status")).toHaveText("Saved.");
+  await page.getByLabel("Next year's budget").check();
+  await page.getByRole("button", { name: "Run report" }).click();
+  const rep = page.locator(".budget-prep");
+  await expect(rep.getByRole("heading", { name: /Budget Prep — / })).toBeVisible();
+  await expect(rep).toContainText("Complete: no projection");
+  await expect(rep).toContainText(/Budgeted \$/);
+  await expect(rep.getByRole("link", { name: "Download CSV" })).toHaveAttribute("href", /format=csv/);
+  const pdf = await page.request.get((await rep.getByRole("link", { name: "Open PDF" }).getAttribute("href"))!);
+  expect(pdf.status()).toBe(200);
+  expect(pdf.headers()["content-type"]).toBe("application/pdf");
+  await page.screenshot({ path: "e2e-screenshots/light-budget-prep.png", fullPage: true });
+  // back to the defaults, so later tests see the usual figures
+  await choices.getByRole("button", { name: "Back to defaults" }).click();
+  await expect(choices.getByRole("status")).toHaveText("Saved.");
+  // #261: the Planning Sheet from the Fiscal Year screen
+  const fy = await (await page.request.get(`/api/fiscal-years/natural?date=${new Date().toISOString().slice(0, 10)}`)).json();
+  await page.goto(`/fiscal-years/${fy.default_fiscal_year_id}`);
+  await page.getByRole("button", { name: "Planning sheet…" }).click();
+  const dlg = page.getByRole("dialog", { name: "Fiscal Year Planning Sheet" });
+  await expect(dlg).toContainText("isn't required for the Fiscal Year closure review");
+  const href = await dlg.getByRole("link", { name: "Open planning sheet PDF" }).getAttribute("href");
+  const sheet = await page.request.get(href!);
+  expect(sheet.status()).toBe(200);
+  expect(sheet.headers()["content-type"]).toBe("application/pdf");
+  await dlg.getByRole("button", { name: "Done" }).click();
+  await expect(dlg).toHaveCount(0);
+  await logout(page);
+});
+
 test("1.6.7: a documentation review item links to its transaction in the Register", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 800 });
   await login(page, "ru1", "Brand-New-Pass-99");

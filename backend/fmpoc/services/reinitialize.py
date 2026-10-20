@@ -30,7 +30,7 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
 from .. import audit
-from ..models import (Attachment, AuditEvent, BankAccount, BankAccountBalance, Budget, CheckAccount,
+from ..models import (Attachment, AuditEvent, BankAccount, BankAccountBalance, Budget, BudgetProjectionChoice, CheckAccount,
                       CheckDocument, CheckNumberAcknowledgement, CheckPrinterSetting, CheckSigner, CheckStyle, Entity,
                       FiscalYear, FiscalYearReview, Fundraiser, FundraiserBucket, FundraiserBucketLine, FundraiserBudget,
                       FundraiserClassification, FundraiserExclusion, RegisterTransaction, Reminder, RequestKey,
@@ -45,7 +45,7 @@ COOLDOWN = dt.timedelta(hours=24)
 # children first
 WIPE = (FundraiserBucketLine, FundraiserClassification, FundraiserExclusion, FiscalYearReview, Attachment,
         TransactionAllocation, RegisterTransaction, CheckNumberAcknowledgement, CheckAccount, CheckPrinterSetting,
-        BankAccountBalance, BankAccount, FundraiserBucket, FundraiserBudget, Fundraiser, Budget, FiscalYear,
+        BankAccountBalance, BankAccount, FundraiserBucket, FundraiserBudget, Fundraiser, BudgetProjectionChoice, Budget, FiscalYear,
         CheckDocument, CheckSigner, CheckStyle, RequestKey)
 
 
