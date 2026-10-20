@@ -48,6 +48,19 @@ could not otherwise be corrected. Scope and safeguards:
 - Audited as `TRANSACTION_VOID_DATE_CORRECTED` with before/after snapshots and the reason.
 - Tests: `backend/tests/test_cr001_void_date.py` (5 tests) and E2E "CR-001".
 
+**2.1.0 — build 4–6 feedback (Kyle, 2026-10-20), on the build 7 branch.**
+- *Contributor override:* migration `0042` adds `fundraiser_bucket_line.contributor_override` (120 characters).
+  - `set_line()` takes `contributor_override` per bucket item and keeps it in the audit snapshot (`bucket_line_out`).
+  - `summary()` uses it instead of the Entity for income lines (with names on). With names off, "Contributor n" is
+    numbered per override text. For expenses it replaces the Entity before the description.
+  - Top contributors in the deck aggregate by the shown name, so all "Cash" lines add up.
+- *Headings:* `fundraiser_summary.heading()` puts a `CondPageBreak(1.3 in)` before every PDF section and itemized
+  sub-heading, in the stakeholder and the Fiscal Year report. The two-column itemized list is now one 7-column table
+  (left | gap | right) that splits by rows. Before, the nested tables could not split, so a long list jumped to the
+  next page and left its heading behind. Word: the sub-heading paragraphs keep with next.
+- *Deck axes:* `_style_chart()` gives every non-doughnut value axis a `"$"#,##0` format and a round major unit
+  (`_nice_step`, about 4 steps). The bounds are rounded to that step. Data labels keep the cents.
+
 **2.1.0 test build 7 — fundraisers across years, Fiscal Year report and deck (#277).** Migration `0041`:
 - tables `fundraiser_series` (`name`, `group_as_other`, `merged_into_id`), `fundraiser_series_result` (label, `year`,
   net / income / expense cents, note, retired fields) and `fundraiser_fy_report_note` (one per Fiscal Year);

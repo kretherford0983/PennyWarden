@@ -95,7 +95,7 @@ def test_charge_less_on_an_expense_counts_the_net(env, gala):
     d = r.json()
     line = next(x for x in d["lines"] if x["description"] == "Food supplies")
     assert line["buckets"] == [{"bucket_id": venue["id"], "amount": "300.00", "charge": "450.00", "less": "150.00",
-                                "less_description": "Pre-paid team credit"}]
+                                "less_description": "Pre-paid team credit", "contributor_override": None}]
     assert line["unassigned"] == "0.00"
     v = next(x for x in d["buckets"]["items"] if x["id"] == venue["id"])
     assert v["expense"] == "300.00" and v["credits_expense"] == "150.00"
@@ -139,7 +139,7 @@ def test_plain_amount_still_works(env, gala):
     assert r.status_code == 200
     line = next(x for x in r.json()["lines"] if x["description"] == "Food supplies")
     assert line["buckets"][0] == {"bucket_id": b["id"], "amount": "120.00", "charge": "120.00", "less": "0.00",
-                                  "less_description": None}
+                                  "less_description": None, "contributor_override": None}
 
 
 def test_closed_year_locks_assignments_but_not_categories(env, gala, app):

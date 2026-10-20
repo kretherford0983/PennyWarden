@@ -682,6 +682,8 @@ class FundraiserBucketLine(Base):
     charge_cents: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     less_cents: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
     less_description: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # 2.1.0 (#278 feedback): shown instead of the Entity as the contributor on the fundraiser reports
+    contributor_override: Mapped[str | None] = mapped_column(String(120), nullable=True)
     __table_args__ = (UniqueConstraint("bucket_id", "allocation_id", name="uq_fundraiser_bucket_line"),)
 
 

@@ -57,7 +57,8 @@ PennyWarden 2.1.0 (in progress).
   - key takeaways worked out from the figures and optional summary notes.
 
   Options: summary only (no itemized revenue), hide contributor names ("Contributor 1, 2…") for reports that go
-  outside the organization, and a plain line list for a fundraiser without buckets. It has no transaction numbers,
+  outside the organization, and a plain line list for a fundraiser without buckets. A section heading never sits
+  alone at the bottom of a page; long itemized lists run on across pages in two columns. It has no transaction numbers,
   accounts, budgets or attachments. Budget Managers can write the **summary notes** and **Mark results final**; the
   report reads *Interim*, *Post-event*, *Final* or *Cancelled*. The previous detailed report (lines, excluded lines,
   documents and attachments) is now **Reports → Fundraiser detail (audit)**. (#275)
@@ -65,7 +66,8 @@ PennyWarden 2.1.0 (in progress).
   that opens in PowerPoint, Google Slides and Keynote. It has highlights, a revenue-to-proceeds column chart, revenue
   by category (doughnut), category detail, net by category, revenue over time, top contributors, expenses with
   charge-less-credit detail, key takeaways and summary notes. The charts are native and editable, with amounts on
-  them, and every slide's speaker notes give the exact figures and how they are worked out. Slides with nothing to
+  them (whole-dollar axes with round steps, so labels don't run into each other), and every slide's speaker notes give
+  the exact figures and how they are worked out. Slides with nothing to
   show are left out; with contributor names off, no name appears anywhere in the file. (#276)
 - **Fundraisers across years.** *Continues from (previous fundraiser)* on the fundraiser form links it with the same
   event in an earlier year — a skipped year still links — and *Create next year's…* on a fundraiser pre-fills next
@@ -91,6 +93,11 @@ PennyWarden 2.1.0 (in progress).
   buckets beneath and a subtotal of income, expenses and net, and so does the fundraiser section of the Audit and
   Close reports. Deleting a category leaves its buckets uncategorized; no figure changes. A bucket can still hold both
   income and expenses (*Food Sales* with its sales and its supplies). (#278)
+- **Contributor shown on the reports.** When assigning part of a line to a bucket, *Different contributor on
+  reports* replaces the line's Entity on the fundraiser reports and presentations. Use it for lump cash the
+  organization collected ("Cash", so it doesn't look as if the organization gave to itself), for the name people
+  know a business by, or when someone handed in money collected from others. It is set per bucket part and recorded
+  in the audit log. (#278)
 - **Reorder categories and buckets** with *Reorder…*. The order is used on the page and in the reports. Existing
   buckets keep their alphabetical order until reordered; new ones go to the end. Categories and order are presentation
   only, so they can be changed in a closed Fiscal Year too. (#278)

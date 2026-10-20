@@ -295,7 +295,7 @@ export function FundraiserDetail({ id }: { id: number }) {
                     <td>{l.budget}</td>
                     <td className="num">{money(l.amount)}</td>
                     <td className="num">{l.excluded ? "—" : money(l.counted)}</td>
-                    <td>{l.buckets.length ? l.buckets.map((b: any) => <span key={b.bucket_id} className="pill fr-bucket">{bucketName(b.bucket_id)} {money(b.amount)}{Number(b.less) ? <span className="muted"> ({money(b.charge)} less {money(b.less)} {b.less_description})</span> : null}</span>) : <span className="muted">—</span>}
+                    <td>{l.buckets.length ? l.buckets.map((b: any) => <span key={b.bucket_id} className="pill fr-bucket">{bucketName(b.bucket_id)} {money(b.amount)}{Number(b.less) ? <span className="muted"> ({money(b.charge)} less {money(b.less)} {b.less_description})</span> : null}{b.contributor_override ? <span className="muted"> · shown as “{b.contributor_override}”</span> : null}</span>) : <span className="muted">—</span>}
                       {l.over_assigned ? <span className="badge yellow">More than counted</span> : null}</td>
                     <td>{l.attachments.length ? l.attachments.map((a: any) => <a key={a.id} href={a.content_url} target="_blank" rel="noopener" className="att-link">{a.original_filename}</a>) : <span className="muted">—</span>}</td>
                     {canLines ? <td className="row-actions">{l.read_only ? <span className="muted">Closed</span> : <button className="small" aria-label={`Manage line ${l.description || l.transaction_date}`} onClick={() => setLineEdit(l)}>Manage</button>}</td> : null}
@@ -745,6 +745,9 @@ function LineDialog({ f, line, onClose, onSaved }: { f: any; line: any; onClose:
   type CL = { on: boolean; charge: string; less: string; desc: string };
   const [cl, setCl] = useState<Record<number, CL>>(() => Object.fromEntries(line.buckets.filter((b: any) => Number(b.less) > 0)
     .map((b: any) => [b.bucket_id, { on: true, charge: b.charge, less: b.less, desc: b.less_description || "" }])));
+  // build 4-6 feedback: the contributor shown on the reports for this bucket's part (e.g. "Cash", or a known name)
+  const [who, setWho] = useState<Record<number, { on: boolean; text: string }>>(() => Object.fromEntries(line.buckets
+    .filter((b: any) => b.contributor_override).map((b: any) => [b.bucket_id, { on: true, text: b.contributor_override }])));
   const [err, setErr] = useState<unknown>(null);
   const total = toCents(line.amount);
   const counted = total - (cls ? toCents(clsAmount) : 0);
@@ -753,9 +756,10 @@ function LineDialog({ f, line, onClose, onSaved }: { f: any; line: any; onClose:
   const remaining = counted - assigned;
   const bucketBody = () => f.buckets.items.flatMap((b: any) => {
     const c = cl[b.id];
-    if (c?.on) return toCents(c.charge) > 0 ? [{ bucket_id: b.id, charge: fromCents(toCents(c.charge)), less: fromCents(toCents(c.less)), less_description: c.desc || null }] : [];
+    const o = who[b.id]?.on && who[b.id].text.trim() ? { contributor_override: who[b.id].text.trim() } : {};
+    if (c?.on) return toCents(c.charge) > 0 ? [{ bucket_id: b.id, charge: fromCents(toCents(c.charge)), less: fromCents(toCents(c.less)), less_description: c.desc || null, ...o }] : [];
     const a = amounts[b.id];
-    return toCents(a) > 0 ? [{ bucket_id: b.id, amount: fromCents(toCents(a)) }] : [];
+    return toCents(a) > 0 ? [{ bucket_id: b.id, amount: fromCents(toCents(a)), ...o }] : [];
   });
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -824,7 +828,17 @@ function LineDialog({ f, line, onClose, onSaved }: { f: any; line: any; onClose:
                                   onClick={() => c?.on ? setC({ charge: fromCents(remaining + mine + toCents(c.less)) }) : setAmounts({ ...amounts, [b.id]: fromCents(remaining + mine) })}>All remaining</button>
                           <label className="check small"><input type="checkbox" checked={!!c?.on} aria-label={`Charge less a credit for ${b.name}`}
                             onChange={(e) => e.target.checked ? setC({}) : (setCl({ ...cl, [b.id]: { ...(c as CL), on: false } }), setAmounts({ ...amounts, [b.id]: fromCents(mine) }))} /> Charge less a credit</label>
+                          <label className="check small"><input type="checkbox" checked={!!who[b.id]?.on} aria-label={`Show a different contributor for ${b.name}`}
+                            onChange={(e) => setWho({ ...who, [b.id]: { on: e.target.checked, text: who[b.id]?.text || "" } })} /> Different contributor on reports</label>
                         </div>
+                        {who[b.id]?.on ? (
+                          <div className="fr-who">
+                            <Field label="Shown on the reports as" hint={`Instead of ${line.entity || "the line's Entity"} — e.g. "Cash" for lump cash collected, or the name people know the contributor by.`}>
+                              <input maxLength={120} aria-label={`Contributor shown for ${b.name}`} value={who[b.id].text} placeholder="e.g. Cash"
+                                     onChange={(e) => setWho({ ...who, [b.id]: { on: true, text: e.target.value } })} />
+                            </Field>
+                          </div>
+                        ) : null}
                       </div>
                     );
                   })}

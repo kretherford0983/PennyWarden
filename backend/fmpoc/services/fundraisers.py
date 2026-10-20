@@ -639,7 +639,8 @@ def bucket_line_out(b: FundraiserBucketLine) -> dict:
     """A bucket's part of a line: the net (amount) and, 2.1.0 (#278), the charge and the credit taken off it."""
     charge = b.charge_cents if b.charge_cents is not None else b.amount_cents
     return {"bucket_id": b.bucket_id, "amount": fmt(b.amount_cents), "charge": fmt(charge),
-            "less": fmt(b.less_cents or 0), "less_description": b.less_description}
+            "less": fmt(b.less_cents or 0), "less_description": b.less_description,
+            "contributor_override": b.contributor_override}
 
 
 def ordered_buckets(db: Session, f: Fundraiser) -> list[FundraiserBucket]:
@@ -848,22 +849,26 @@ def set_line(db: Session, ctx, f: Fundraiser, allocation_id: int, body) -> None:
             else:
                 st["c"].kind, st["c"].amount_cents, st["c"].note = kind, classified, note
         want: dict[int, tuple[int, int, int, str | None]] = {}   # bucket -> (net, charge, less, less description)
+        shown: dict[int, str | None] = {}                          # bucket -> contributor shown on the reports
         for item in body.buckets:
             get_bucket(db, f, item.bucket_id)
             if item.bucket_id in want:
                 raise validation("A bucket can be listed only once per line.", "buckets")
             want[item.bucket_id] = _bucket_amounts(item, cents)
+            shown[item.bucket_id] = (getattr(item, "contributor_override", None) or "").strip() or None
         if sum(v[0] for v in want.values()) > amount - classified:
             raise validation("The bucket amounts add up to more than the amount that counts for this line "
                              f"({fmt(amount - classified)}).", "buckets")
         for bl in st["bls"]:
             if bl.bucket_id in want:
                 bl.amount_cents, bl.charge_cents, bl.less_cents, bl.less_description = want.pop(bl.bucket_id)
+                bl.contributor_override = shown[bl.bucket_id]
             else:
                 db.delete(bl)
         for bucket_id, (net, charge, less, desc) in want.items():
             db.add(FundraiserBucketLine(bucket_id=bucket_id, allocation_id=allocation_id, amount_cents=net,
-                                        charge_cents=charge, less_cents=less, less_description=desc))
+                                        charge_cents=charge, less_cents=less, less_description=desc,
+                                        contributor_override=shown[bucket_id]))
     db.flush()
     after = _line_snapshot(_line_state(db, f, allocation_id))
     if after != before:

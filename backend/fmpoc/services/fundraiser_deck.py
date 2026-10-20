@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import datetime as dt
 import io
+import math
 
 from pptx import Presentation
 from pptx.chart.data import CategoryChartData
@@ -86,10 +87,36 @@ def _coin(slide, x, y, d):
     inner.line.width = Pt(2)
 
 
+def _nice_step(top: float) -> float:
+    """A round axis step giving about 4-5 gridlines (Kyle, 2026-10-20: long axis amounts ran into each other)."""
+    if top <= 0:
+        return 1
+    raw = top / 4
+    mag = 10 ** math.floor(math.log10(raw))
+    for m in (1, 2, 2.5, 5, 10):
+        if raw <= m * mag:
+            return m * mag
+    return 10 * mag
+
+
 def _style_chart(chart, legend=True, legend_pos=XL_LEGEND_POSITION.BOTTOM):
     chart.font.name = FONT
     chart.font.size = Pt(12)
     chart.has_title = False          # the slide title says what it is
+    if chart.chart_type != XL_CHART_TYPE.DOUGHNUT:
+        # whole dollars on the value axis, with a round step, so the labels never overlap (the data labels keep cents)
+        va = chart.value_axis
+        va.tick_labels.number_format = '"$"#,##0'
+        va.tick_labels.number_format_is_linked = False
+        va.tick_labels.font.size = Pt(11)
+        vals = [v for p in chart.plots for s_ in p.series for v in s_.values if v is not None]
+        if vals:
+            top = max(max(vals), 0)
+            low = min(min(vals), 0)
+            step = _nice_step(max(top - low, 1))
+            va.major_unit = step
+            va.maximum_scale = math.ceil(top * 1.1 / step) * step if top > 0 else 0
+            va.minimum_scale = math.floor(low / step) * step if low < 0 else 0
     if chart.chart_type in (XL_CHART_TYPE.BAR_CLUSTERED,):
         chart.category_axis.reverse_order = True   # first category at the top, as in the tables
         chart.category_axis.crosses = XL_AXIS_CROSSES.MAXIMUM   # ... and the value axis stays at the bottom

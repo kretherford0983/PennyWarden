@@ -161,6 +161,17 @@ the page and in the reports. Existing buckets stay in alphabetical order until y
 end. Categories, a bucket's category and the order can be changed even after the Fiscal Year is closed — they only
 change how things are grouped, never a figure.
 
+### Different contributor on reports
+The fundraiser reports name the line's Entity as the contributor. When that isn't right, tick **Different contributor
+on reports** next to the bucket in **Manage** and type what should show instead:
+- lump cash the organization itself collected (food, raffle…) → "Cash", so the organization doesn't appear to have
+  given to itself;
+- a business everyone knows by a shorter name than its legal name → that name;
+- someone who handed in money collected from others → the actual contributor.
+
+It applies to that bucket's part of the line, so a deposit split between two buckets can show a different name for
+each. With *Show contributor names* off, the report still shows "Contributor 1, 2…".
+
 ### Charge less a credit
 Sometimes a bill is a full charge less a credit: a $1,500 venue invoice less $500 that teams pre-paid, paid with a
 $1,000 check. In **Manage** on the line, tick **Charge less a credit** next to the bucket and enter the **Charge**

@@ -19,7 +19,7 @@ from reportlab.platypus import KeepTogether, Paragraph, Spacer, Table, TableStyl
 from xml.sax.saxutils import escape
 
 from . import fundraiser_deck as deck
-from .fundraiser_summary import _BAND, _TILE, _b, _h, _p, _table, _us, safe_name
+from .fundraiser_summary import _BAND, _TILE, _b, _h, _p, _table, _us, heading, safe_name
 from .reports import FRAME_W, P, _AuditDoc, _Mark, _stamp_and_write, money
 
 NO_HISTORY = "No earlier years linked yet."
@@ -68,14 +68,14 @@ def build_pdf(org: str, rep: dict) -> tuple[bytes, _AuditDoc]:
                       f"peak year {rep['peak_year']}", "fs_w")]]], colWidths=[W])
     band.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), _BAND), ("LEFTPADDING", (0, 0), (-1, -1), 12),
                               ("TOPPADDING", (0, 0), (-1, -1), 10), ("BOTTOMPADDING", (0, 0), (-1, -1), 10)]))
-    f: list = [_Mark(doc, rep["fiscal_year"]["display_name"]), band, Spacer(1, 8), P("Executive highlights", "h2")]
+    f: list = [_Mark(doc, rep["fiscal_year"]["display_name"]), band, Spacer(1, 8), *heading("Executive highlights")]
     hl = highlights(rep)
     cells = [[[P(k, "fs_tk"), P(v, "fs_tv"), P(c, "small")] for k, v, c in hl]]
     tt = Table(cells, colWidths=[W / len(hl)] * len(hl))
     tt.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), _TILE), ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#c3cad3")),
                             ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#c3cad3")), ("VALIGN", (0, 0), (-1, -1), "TOP"),
                             ("LEFTPADDING", (0, 0), (-1, -1), 6), ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6)]))
-    f += [tt, Spacer(1, 8), P("This year by fundraiser", "h2")]
+    f += [tt, Spacer(1, 8), *heading("This year by fundraiser")]
     data = [_h(["Fundraiser", "Event", "Status", "Net revenue", "Expenses", "Net", "Margin", "Share"])]
     for r in rep["this_year"]:
         ev = _us(r["start_date"]) if r["start_date"] == r["end_date"] else f"{_us(r['start_date'])}–{_us(r['end_date'])}"
@@ -86,7 +86,7 @@ def build_pdf(org: str, rep: dict) -> tuple[bytes, _AuditDoc]:
     f.append(_table(data, [W - 5.9 * inch, 1.1 * inch, 0.9 * inch, 0.85 * inch, 0.8 * inch, 0.85 * inch, 0.65 * inch, 0.75 * inch],
                     bold_rows=[len(data) - 1]))
     # annual trend (table; the deck has the chart)
-    f += [Spacer(1, 8), P("Annual trend", "h2")]
+    f += [Spacer(1, 8), *heading("Annual trend")]
     if rep["linked_history"]:
         data = [_h(["Year", "Net raised"])]
         for t in rep["trend"]:
@@ -102,7 +102,7 @@ def build_pdf(org: str, rep: dict) -> tuple[bytes, _AuditDoc]:
         f.append(P("Estimates: " + "; ".join(f"{e['series']} {money(e['estimate'])} (average of {e['years']} year"
                                               f"{'s' if e['years'] != 1 else ''} {money(e['average'])})" for e in rep["estimates"]), "small"))
     # share by series
-    f += [Spacer(1, 8), P("Share by series over the period", "h2")]
+    f += [Spacer(1, 8), *heading("Share by series over the period")]
     if rep["share"]:
         data = [_h(["Series", "Total", "Share"])]
         for x in rep["share"]:
@@ -110,7 +110,7 @@ def build_pdf(org: str, rep: dict) -> tuple[bytes, _AuditDoc]:
             data.append([P(name, "cell"), P(money(x["total"]), "cellr"), P(_p(x["share"]), "cellr")])
         f.append(_table(data, [W - 2.4 * inch, 1.2 * inch, 1.2 * inch]))
     # average per active year
-    f += [Spacer(1, 8), P("Average per active year", "h2")]
+    f += [Spacer(1, 8), *heading("Average per active year")]
     if rep["linked_history"]:
         data = [_h(["Series", "Total over the period", "Active years", "Average per active year"])]
         for a in rep["averages"]:
@@ -121,7 +121,7 @@ def build_pdf(org: str, rep: dict) -> tuple[bytes, _AuditDoc]:
         f.append(P(NO_HISTORY, "body"))
     # year over year by series (#277 feedback)
     if rep["year_over_year"]:
-        f += [Spacer(1, 8), P("Year over year by series", "h2"),
+        f += [Spacer(1, 8), *heading("Year over year by series"),
               P("Net raised by each event in each year, and the change on the year before — to help decide which "
                 "fundraisers to keep offering.", "small"), Spacer(1, 3)]
         years = rep["period"][-6:]
@@ -134,14 +134,14 @@ def build_pdf(org: str, rep: dict) -> tuple[bytes, _AuditDoc]:
         if len(rep["period"]) > len(years):
             f.append(P(f"The last {len(years)} years are shown; the historical results below list every year.", "small"))
     # historical table
-    f += [Spacer(1, 8), P("Historical results", "h2")]
+    f += [Spacer(1, 8), *heading("Historical results")]
     data = [_h(["Year", "Series", "Amount raised", "Source", "Note"])]
     for h in rep["history"]:
         data.append([P(str(h["year"]), "cell"), P(h["series"], "cell"), P(money(h["amount"]), "cellr"),
                      P(h["source"], "cell"), P(h["note"] or "", "cell")])
     f.append(_table(data, [0.6 * inch, 2.3 * inch, 1.2 * inch, 1.2 * inch, W - 5.3 * inch]))
     if rep["notes"]:
-        f += [Spacer(1, 8), P("Notes", "h2"), P(rep["notes"], "body")]
+        f += [Spacer(1, 8), *heading("Notes"), P(rep["notes"], "body")]
     if rep["footnotes"]:
         f += [Spacer(1, 8)] + [P(x, "small") for x in rep["footnotes"]]
     doc.build(f)

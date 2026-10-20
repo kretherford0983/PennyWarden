@@ -553,6 +553,7 @@ class FundraiserBucketAmountIn(In):
     charge: Amount | None = None
     less: Amount | None = None
     less_description: OptStr(200) = None
+    contributor_override: OptStr(120) = None   # 2.1.0: the contributor shown on the fundraiser reports (e.g. "Cash")
 
 
 class FundraiserLineIn(In):
