@@ -544,6 +544,10 @@ class Fundraiser(Base):
     cancelled_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     cancelled_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     cancel_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # 2.1.0 (#275): stakeholder report - narrative notes (Budget Managers) and "Mark results final"
+    summary_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    results_final_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    results_final_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
     created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)

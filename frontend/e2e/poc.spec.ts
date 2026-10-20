@@ -1727,11 +1727,36 @@ test("CR-035: fundraiser report PDF; Audit and Close reports can include fundrai
   await login(page, "bm1");
   await page.getByRole("link", { name: "Fundraisers" }).click();
   await page.getByRole("link", { name: "Harvest Dinner" }).click();
-  const href = await page.getByRole("link", { name: "Report (PDF)" }).getAttribute("href");
+  // 2.1.0 (#275): the page's Report… is the stakeholder report (PDF or Word), with options
+  await page.getByRole("button", { name: "Report…" }).first().click();
+  const rd = page.getByRole("dialog", { name: "Fundraiser report" });
+  await rd.getByLabel(/Show contributor names/).uncheck();
+  const href = await rd.getByRole("link", { name: "Report (PDF)" }).getAttribute("href");
+  expect(href).toContain("names=false");
   const pdf = await page.request.get(href!);
   expect(pdf.status()).toBe(200);
   expect(pdf.headers()["content-type"]).toBe("application/pdf");
+  const word = await page.request.get((await rd.getByRole("link", { name: "Report (Word)" }).getAttribute("href"))!);
+  expect(word.status()).toBe(200);
+  expect(word.headers()["content-type"]).toContain("wordprocessingml");
+  await rd.getByRole("button", { name: "Done" }).click();
+  // Budget Manager: summary notes and Mark results final
+  const card = page.locator("section").filter({ has: page.getByRole("heading", { name: "Stakeholder report" }) });
+  await card.getByLabel(/Summary notes/).fill("Thanks to every volunteer.");
+  await card.getByRole("button", { name: "Save notes" }).click();
+  await expect(card.getByRole("status")).toHaveText("Saved.");
+  await card.getByRole("button", { name: "Mark results final" }).click();
+  await expect(page.getByTestId("fr-report-status")).toContainText("Final (marked final)");
+  await page.screenshot({ path: "e2e-screenshots/light-fundraiser-stakeholder-report.png", fullPage: true });
+  await card.getByRole("button", { name: "Undo final" }).click();
+  await expect(page.getByTestId("fr-report-status")).not.toContainText("marked final");
+  // the audit detail moved to Reports -> Fundraiser detail (audit)
   await page.getByRole("link", { name: "Reports" }).click();
+  await page.getByRole("tab", { name: "Fundraiser detail (audit)" }).click();
+  const det = await page.getByRole("link", { name: "Open detail PDF" }).getAttribute("href");
+  expect(det).toMatch(/\/api\/fundraisers\/\d+\/report$/);
+  expect((await page.request.get(det!)).status()).toBe(200);
+  await page.getByRole("tab", { name: "End of Year Audit" }).click();
   await expect(page.getByLabel("Include fundraisers")).toBeChecked();
   const audit = await page.getByRole("link", { name: "Open printable PDF" }).getAttribute("href");
   expect(audit).toContain("include_fundraisers=true");

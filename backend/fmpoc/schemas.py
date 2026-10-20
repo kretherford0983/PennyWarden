@@ -494,6 +494,14 @@ class FundraiserBucketIn(In):
     category_id: int | None = None      # 2.1.0 (#278): one category or none
 
 
+class FundraiserNotesIn(In):           # 2.1.0 (#275): the stakeholder report's summary notes
+    summary_notes: OptStr(10000) = None
+
+
+class FundraiserFinalIn(In):           # 2.1.0 (#275): Mark results final (reversible)
+    final: bool
+
+
 class FundraiserCategoryIn(In):         # 2.1.0 (#278)
     name: Str(80)
     description: OptStr(500) = None

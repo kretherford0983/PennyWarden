@@ -2,19 +2,22 @@
 from __future__ import annotations
 
 import datetime as dt
+from typing import Literal
 
 import os
 
 from fastapi import APIRouter, Depends, Query, Request
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 from starlette.background import BackgroundTask
 from sqlalchemy.orm import Session
 
 from .. import audit
 from ..deps import Ctx, get_db, require
 from ..errors import validation
-from ..schemas import (ReasonIn, FundraiserBucketIn, FundraiserCategoryIn, FundraiserIn, FundraiserLineIn, FundraiserOrderIn,
+from ..schemas import (ReasonIn, FundraiserBucketIn, FundraiserCategoryIn, FundraiserFinalIn, FundraiserIn, FundraiserLineIn,
+                       FundraiserNotesIn, FundraiserOrderIn,
                        FundraiserPreviewIn, ModulesIn)
+from ..services import fundraiser_summary as fs  # 2.1.0 (#275); imports python-docx at start-up
 from ..services import fundraisers as svc
 from ..services.checkprint import service as checks_svc
 
@@ -244,3 +247,45 @@ def count_sheet(fid: int, signer_id: list[int] = Query([]), signer_title: list[s
                "Content-Security-Policy": "default-src 'none'; frame-ancestors 'self'"}
     return FileResponse(path, media_type="application/pdf", headers=headers,
                         background=BackgroundTask(lambda: os.path.exists(path) and os.unlink(path)))
+
+
+# ------------------------------------------------------------------ 2.1.0 (#275): stakeholder report
+@router.get("/fundraisers/{fid}/summary-report")
+def summary_report(fid: int, format: Literal["pdf", "docx"] = "pdf", itemized: bool = True, names: bool = True,
+                   plain_lines: bool = False, download: bool = False, db: Session = Depends(get_db),
+                   ctx: Ctx = Depends(viewer)):
+    """The Financial & Proceeds Statement for committee and stakeholders (no audit detail)."""
+    f = svc.get(db, ctx, fid)
+    s = fs.summary(db, ctx, f, itemized=itemized, names=names, plain_lines=plain_lines)
+    opts = {"itemized": itemized, "names": names, "plain_lines": plain_lines}
+    if format == "docx":
+        data = fs.build_docx(s)
+        audit.record(db, ctx, "REPORT_GENERATED", "fundraiser", f.id, None,
+                     {"report": "FUNDRAISER_SUMMARY", "format": "DOCX", "options": opts})
+        db.commit()
+        return Response(data, media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                        headers={"Content-Disposition": f'attachment; filename="{fs.docx_name(s)}"',
+                                 "Cache-Control": "private, no-store"})
+    path, fname, pages = fs.pdf_file(db, ctx, s)
+    audit.record(db, ctx, "REPORT_GENERATED", "fundraiser", f.id, None,
+                 {"report": "FUNDRAISER_SUMMARY", "format": "PDF", "options": opts, "pages": pages})
+    db.commit()
+    headers = {"Content-Disposition": f'{"attachment" if download else "inline"}; filename="{fname}"',
+               "Cache-Control": "private, no-store", "X-Frame-Options": "SAMEORIGIN",
+               "Content-Security-Policy": "default-src 'none'; frame-ancestors 'self'"}
+    return FileResponse(path, media_type="application/pdf", headers=headers,
+                        background=BackgroundTask(lambda: os.path.exists(path) and os.unlink(path)))
+
+
+@router.put("/fundraisers/{fid}/summary-notes")
+def summary_notes(fid: int, body: FundraiserNotesIn, db: Session = Depends(get_db), ctx: Ctx = Depends(manager)):
+    f = svc.set_summary_notes(db, ctx, svc.get(db, ctx, fid), body.summary_notes)
+    db.commit()
+    return svc.detail(db, ctx, f)
+
+
+@router.put("/fundraisers/{fid}/results-final")
+def results_final(fid: int, body: FundraiserFinalIn, db: Session = Depends(get_db), ctx: Ctx = Depends(manager)):
+    f = svc.set_results_final(db, ctx, svc.get(db, ctx, fid), body.final)
+    db.commit()
+    return svc.detail(db, ctx, f)

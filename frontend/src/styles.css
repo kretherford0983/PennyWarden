@@ -588,3 +588,4 @@ button.small, label.button { display: inline-flex; align-items: center; justify-
 .fr-bucket-row .fr-credit { flex: 1; }
 .fr-bucket-row .fr-credit .row.fields { flex-wrap: wrap; }
 label.check.small { font-size: 12px; }
+.fr-final-btn { margin-left: 10px; }

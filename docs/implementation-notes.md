@@ -48,6 +48,43 @@ could not otherwise be corrected. Scope and safeguards:
 - Audited as `TRANSACTION_VOID_DATE_CORRECTED` with before/after snapshots and the reason.
 - Tests: `backend/tests/test_cr001_void_date.py` (5 tests) and E2E "CR-001".
 
+**2.1.0 test build 5 — fundraiser stakeholder report (#275).** Migration `0040`: `fundraiser.summary_notes`,
+`results_final_at`, `results_final_by_user_id`. New dependency `python-docx` 1.2.0 (+ `lxml`), pinned through
+`requirements.in`, in THIRD-PARTY-NOTICES, pip-audit clean, and in the three PyInstaller specs
+(`collect_data_files("docx")` for its default template, `collect_submodules("docx"/"lxml")`).
+`routers/fundraisers.py` imports `services/fundraiser_summary.py`, which imports `docx`, at start-up, so a package
+built without it fails its smoke test.
+- `fundraiser_summary.summary()` computes everything once from `fundraisers._lines()`, without excluded lines:
+  - totals: gross deposits, float returned/out, net revenue (counted income), expenses, net, margin
+    (net ÷ revenue), ROI (as on the page) and credits (sum of Less on expenses);
+  - groups: categories in order, then uncategorized buckets, each with its buckets' income and expense lines (bucket
+    nets; Charge / Less as detail);
+  - `other` = the unassigned part of each line;
+  - per-Fiscal-Year rows, takeaways and the plain line list.
+
+  #276 and #277 are to use the same function.
+- Contributor: the Entity (not system ones), else the line description. With names off, income lines become
+  "Contributor n" (numbered in date order, one number per Entity), and expenses show the line description only.
+- `report_status()`:
+  - CANCELLED wins;
+  - then FINAL (marked, or every Fiscal Year of the fundraiser Closed);
+  - then INTERIM (planned / in progress) or POST_EVENT.
+
+  The fundraiser detail returns it as `report_status`.
+- Endpoints:
+  - `GET /api/fundraisers/{id}/summary-report?format=pdf|docx&itemized&names&plain_lines` (`fundraiser.view`; audit
+    `REPORT_GENERATED {report: FUNDRAISER_SUMMARY, format, options}`);
+  - `PUT …/summary-notes` and `PUT …/results-final` (`fundraiser.manage`; audited
+    `FUNDRAISER_SUMMARY_NOTES_UPDATED` and `FUNDRAISER_RESULTS_FINAL_MARKED/UNMARKED`). Both are allowed in a closed
+    year, since they are reporting only;
+  - the former `GET …/report` (audit section) is unchanged and is linked from Reports → *Fundraiser detail (audit)*.
+- PDF: portrait, `_AuditDoc`. The footer is "Prepared for committee & stakeholders · Generated … · status ·
+  Transaction-level evidence is in the Audit report". Itemized lists of more than 12 lines use two side-by-side
+  tables.
+- DOCX: Letter, Arial, a shaded title band, tiles and tables. The footer has PAGE/NUMPAGES fields. User text goes in
+  as plain runs (BR-096). No pictures, macros or external links. The tests read it back with python-docx.
+- Tests: `test_v210_fundraiser_summary.py` and the CR-035 E2E (dialog, Word, notes, final, Fundraiser detail).
+
 **2.1.0 test build 4 — fundraiser buckets (#278; all questions resolved 2026-10-20).** Migration `0039`: table
 `fundraiser_bucket_category` (`name`, `description`, `display_order`); `fundraiser_bucket.category_id` (no DB-level
 FK, like `continues_budget_id`) and `display_order` (existing buckets numbered by `(name, id)` — the old listing

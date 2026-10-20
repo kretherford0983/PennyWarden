@@ -222,7 +222,8 @@ def snapshot(f: Fundraiser) -> dict:
             "end_date": f.end_date.isoformat(), "filter_text": f.filter_text, "filter_regex": bool(f.filter_regex),
             "budget_ids": [fb.budget_id for fb in f.budgets], "archived": f.archived_at is not None,
             "cancelled": f.cancelled_at is not None, "cancel_reason": f.cancel_reason,
-            "cancelled_at": f.cancelled_at.isoformat() + "Z" if f.cancelled_at else None}
+            "cancelled_at": f.cancelled_at.isoformat() + "Z" if f.cancelled_at else None,
+            "summary_notes": f.summary_notes, "results_final": f.results_final_at is not None}
 
 
 def _apply(db: Session, ctx, f: Fundraiser, body, creating: bool) -> None:
@@ -613,6 +614,7 @@ def detail(db: Session, ctx, f: Fundraiser) -> dict:
                    "excluded_expense": fmt(sum(r["a"].amount_cents for r in rows if r["excluded"] and r["kind"] == "EXPENSE")),
                    "excluded_lines": sum(1 for r in rows if r["excluded"])},
         "buckets": _bucket_summary(db, f, rows),
+        "report_status": _report_status(db, f),
         "classification_types": [{"kind": k, "applies_to": v[0], "label": v[1]} for k, v in CLASSIFICATIONS.items()],
         "per_fiscal_year": per_fy,
         "lines": lines, "filtered_out_lines": skipped,
@@ -959,6 +961,41 @@ def reorder(db: Session, ctx, f: Fundraiser, what: str, ids: list[int]) -> None:
     db.flush()
     audit.record(db, ctx, f"FUNDRAISER_{what.upper()}_REORDERED", "fundraiser", f.id, {"order": before},
                  {"order": [{"id": i, "name": by[i].name} for i in ids]})
+
+
+# ------------------------------------------------------------------ 2.1.0 (#275): stakeholder report settings
+def _report_status(db: Session, f: Fundraiser) -> dict:
+    from .fundraiser_summary import report_status
+    return report_status(db, f)
+
+
+def set_summary_notes(db: Session, ctx, f: Fundraiser, notes: str | None) -> Fundraiser:
+    """Budget Managers only (fundraiser.manage); printed under the key takeaways. Reporting text, so allowed in a
+    closed year too."""
+    notes = (notes or "").strip() or None
+    if notes != f.summary_notes:
+        before = f.summary_notes
+        f.summary_notes = notes
+        f.updated_by_user_id = ctx.user.id
+        db.flush()
+        audit.record(db, ctx, "FUNDRAISER_SUMMARY_NOTES_UPDATED", "fundraiser", f.id, {"summary_notes": before},
+                     {"summary_notes": notes})
+    return f
+
+
+def set_results_final(db: Session, ctx, f: Fundraiser, final: bool) -> Fundraiser:
+    """Mark results final (reversible). The report reads Final when marked, or when every Fiscal Year is Closed."""
+    if final == (f.results_final_at is not None):
+        return f
+    before = {"results_final": f.results_final_at is not None,
+              "results_final_at": f.results_final_at.isoformat() + "Z" if f.results_final_at else None}
+    f.results_final_at = utcnow() if final else None
+    f.results_final_by_user_id = ctx.user.id if final else None
+    db.flush()
+    audit.record(db, ctx, "FUNDRAISER_RESULTS_FINAL_MARKED" if final else "FUNDRAISER_RESULTS_FINAL_UNMARKED",
+                 "fundraiser", f.id, before,
+                 {"results_final": final, "results_final_at": f.results_final_at.isoformat() + "Z" if final else None})
+    return f
 
 
 # ------------------------------------------------------------------ v1.6.2 CR-035: report selection
