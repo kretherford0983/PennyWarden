@@ -102,7 +102,16 @@ through the #276 deck helpers).
   - `Fundraisers.tsx`: list checkboxes and `FyReportDialog`; `FundraiserForm` gains *Continues from* and the
     pre-fill; the detail page gets *Series* with *Change…* (`SeriesLinkDialog`) and *Create next year's…*.
   - New page `pages/FundraiserSeries.tsx` at `/fundraiser-series`.
-- Tests: `test_v210_fundraiser_series.py` (12 tests) and the E2E "2.1.0 (#277)".
+- **Year over year** (Kyle's feedback on the build 7 screenshots, 2026-10-20):
+  - `series_history(f)` gives every year of the fundraiser's series up to its own year. A year is the sum of the
+    series' fundraisers counted in it (`summary(…, history=False)`, so there is no recursion) or its entered result.
+    Revenue, expenses and margin are `None` when an entered result has only the net.
+  - `summary()` returns `year_over_year` (when there is more than one year) and adds a "Net proceeds were up/down …
+    on <year>" takeaway.
+  - The stakeholder PDF / Word get a *Year over year* table; the deck gets a column chart and table slide.
+  - `fy_report()` returns `year_over_year` per series: values per period year, and the change on the most recent
+    earlier year. The FY PDF shows a table (the last 6 years); the deck shows a multi-line chart and a change table.
+- Tests: `test_v210_fundraiser_series.py` (15 tests) and the E2E "2.1.0 (#277)".
 
 **2.1.0 test build 6 — fundraiser presentation (#276).** No migration. New dependencies `python-pptx` 1.0.2 (MIT) and
 `XlsxWriter` 3.2.9 (BSD, the embedded chart workbooks). They are pinned, in THIRD-PARTY-NOTICES, pip-audit clean, and

@@ -213,6 +213,30 @@ def build(s: dict) -> bytes:
                 f"{money(t['net_proceeds'])}."] + [f"{y['fiscal_year']}: revenue {money(y['income'])}, expenses "
                                                    f"{money(y['expense'])}, net {money(y['net'])}." for y in s["per_fiscal_year"]])
 
+    # year over year (#277 feedback): only when earlier years of the series are known
+    if s.get("year_over_year"):
+        from .fundraiser_summary import YOY_HEAD, yoy_rows, yoy_change
+        yy = s["year_over_year"]
+        sl = prs.slides.add_slide(blank)
+        _title(sl, "Year over year", "Each year this fundraiser was held")
+        cd = CategoryChartData(number_format='"$"#,##0.00')
+        cd.categories = [str(r["year"]) for r in yy]
+        cd.add_series("Net revenue", [float(r["net_revenue"]) if r["net_revenue"] is not None else None for r in yy])
+        cd.add_series("Expenses", [float(r["expenses"]) if r["expenses"] is not None else None for r in yy])
+        cd.add_series("Net proceeds", [float(r["net_proceeds"]) for r in yy])
+        ch = sl.shapes.add_chart(XL_CHART_TYPE.COLUMN_CLUSTERED, Inches(0.5), Inches(1.6), Inches(7.2), Inches(5.6), cd).chart
+        _style_chart(ch)
+        _labels(ch.plots[0], size=9)
+        for i, ser in enumerate(ch.plots[0].series):
+            ser.format.fill.solid()
+            ser.format.fill.fore_color.rgb = (BLUE, GOLD, RGBColor(0x2E, 0x8B, 0x57))[i]
+        rows = [["Year", "Net proceeds", "vs year before"]] + [[str(r["year"]) + ("" if r["source"] == "Recorded" else " (Entered)"),
+                                                               money(r["net_proceeds"]), yoy_change(r)] for r in yy[-TABLE_ROWS:]]
+        _table(sl, Inches(7.9), Inches(1.7), Inches(5.0), rows, [1.4, 1.5, 2.1], {1}, bold_rows=[len(rows) - 1], size=11)
+        _notes(sl, ["Year over year for this fundraiser's series (linked with “Continues from”); Entered = a year before "
+                    "PennyWarden entered by hand, which may have only the net amount.", " | ".join(YOY_HEAD)]
+               + [" | ".join(r) for r in yoy_rows(s)])
+
     if s["has_buckets"]:
         rev = [(g["name"], g["income"], g["income_pct"]) for g in groups if g["income"] != "0.00"]
         if other["income"] != "0.00":

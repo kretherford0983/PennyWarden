@@ -41,6 +41,11 @@ STATUS_TEXT = {"INTERIM": "Interim, figures may change", "POST_EVENT": "Post-eve
 
 
 # ------------------------------------------------------------------ figures
+def _neg(v: str) -> str:
+    """A subtracted amount: "-$300.00" ("$0.00" when there is nothing to take off)."""
+    return money(v) if v in ("0.00", "-0.00") else f"-{money(v)}"
+
+
 def pct(part: int, whole: int) -> str | None:
     if whole == 0:
         return None
@@ -69,7 +74,7 @@ def report_status(db: Session, f: Fundraiser) -> dict:
 
 
 def summary(db: Session, ctx, f: Fundraiser, *, itemized: bool = True, names: bool = True,
-            plain_lines: bool = False) -> dict:
+            plain_lines: bool = False, history: bool = True) -> dict:
     ws = db.get(Workspace, ctx.workspace_id)
     rows, _skipped = fsvc._lines(db, f)
     rows = [r for r in rows if not r["excluded"]]
@@ -186,6 +191,20 @@ def summary(db: Session, ctx, f: Fundraiser, *, itemized: bool = True, names: bo
         take.append(f"Credits received on expenses: {money(fmt(credits))}, taken off the charges shown in the "
                     "expense breakdown.")
 
+    # 2.1.0 (#277 feedback): year over year - this fundraiser and the earlier years of its series
+    yoy = []
+    if history:
+        from .fundraiser_series import series_history
+        yoy = series_history(db, ctx, f, {"net_revenue": fmt(revenue), "expenses": fmt(expenses), "net_proceeds": fmt(net)})
+        if len(yoy) > 1:
+            last, prev = yoy[-1], yoy[-2]
+            ch = last["change"]
+            if ch is not None:
+                word = "up" if not ch.startswith("-") else "down"
+                take.append(f"Net proceeds were {word} {money(ch.lstrip('-'))}"
+                            + (f" ({last['change_pct'].lstrip('-')}%)" if last["change_pct"] else "")
+                            + f" on {prev['year']} ({money(prev['net_proceeds'])}).")
+
     plain = []
     if plain_lines and not has_buckets:
         for r in rows:
@@ -212,6 +231,7 @@ def summary(db: Session, ctx, f: Fundraiser, *, itemized: bool = True, names: bo
                    "credits": fmt(credits)},
         "per_fiscal_year": per_fy, "has_buckets": has_buckets, "groups": groups, "other": other_out,
         "takeaways": take, "summary_notes": f.summary_notes, "plain_lines": plain, "cumulative": cumulative,
+        "year_over_year": yoy if len(yoy) > 1 else [],
         "generated_at": utcnow().isoformat(timespec="seconds") + "Z",
     }
 
@@ -332,13 +352,14 @@ def build_pdf(s: dict) -> tuple[bytes, _AuditDoc]:
     data.append([_b("Net revenue"), P("", "cell"), P(money(t['net_revenue']), "fs_rb")])
     data.append([P("Less expenses", "cell"), P("Fundraiser expenses" + ("; cash float taken out is not an expense"
                                                                          if t["cash_float_out"] != "0.00" else ""), "cell"),
-                 P(f"-{money(t['expenses'])}", "cellr")])
+                 P(_neg(t["expenses"]), "cellr")])
     data.append([_b("Net proceeds"), P(f"Net margin {_p(t['net_margin'])}", "cell"), P(money(t['net_proceeds']), "fs_rb")])
     f += [PM("Financial summary", "h2"), _table(data, [1.8 * inch, W - 3.0 * inch, 1.2 * inch], bold_rows=[len(data) - 1])]
     f.append(P(f"ROI (net proceeds ÷ expenses): {t['roi'] if t['roi'] is not None else 'n/a (no expenses)'}", "small"))
     for y in s["per_fiscal_year"]:
         f.append(P(f"{y['fiscal_year']}: revenue {money(y['income'])}, expenses {money(y['expense'])}, "
                    f"net {money(y['net'])}", "small"))
+    f += _yoy_pdf(s, W)
     groups, other = s["groups"], s["other"]
     if s["has_buckets"]:
         # revenue breakdown
@@ -426,6 +447,38 @@ def build_pdf(s: dict) -> tuple[bytes, _AuditDoc]:
                            "documents) is in the Audit report.", "small")]
     doc.build(f)
     return buf.getvalue(), doc
+
+
+def yoy_change(r: dict) -> str:
+    if r.get("change") is None:
+        return "—"
+    if r["change"] in ("0.00", "-0.00"):
+        return "no change"
+    word = "up" if not r["change"].startswith("-") else "down"
+    return f"{word} {money(r['change'].lstrip('-'))}" + (f" ({r['change_pct'].lstrip('-')}%)" if r.get("change_pct") else "")
+
+
+def yoy_rows(s: dict) -> list[list[str]]:
+    return [[str(r["year"]), r["label"] + ("" if r["source"] == "Recorded" else f" ({r['source']})"),
+             money(r["net_revenue"]) if r["net_revenue"] is not None else "—",
+             money(r["expenses"]) if r["expenses"] is not None else "—", money(r["net_proceeds"]),
+             _p(r["net_margin"]) if r["net_revenue"] is not None else "—", yoy_change(r)] for r in s["year_over_year"]]
+
+
+YOY_HEAD = ["Year", "Fundraiser", "Net revenue", "Expenses", "Net proceeds", "Margin", "Net vs year before"]
+YOY_NOTE = ("How this fundraiser has done in each year it was held (linked with “Continues from”; Entered = a year "
+            "before PennyWarden entered by hand). Use it to judge whether to keep offering it.")
+
+
+def _yoy_pdf(s: dict, W: float) -> list:
+    if not s.get("year_over_year"):
+        return []
+    data = [_h(YOY_HEAD)]
+    for row in yoy_rows(s):
+        data.append([P(row[0], "cell"), P(row[1], "cell")] + [P(v, "cellr") for v in row[2:6]] + [P(row[6], "cell")])
+    t = _table(data, [0.5 * inch, W - 5.15 * inch, 0.9 * inch, 0.85 * inch, 0.95 * inch, 0.6 * inch, 1.35 * inch],
+               bold_rows=[len(data) - 1])
+    return [Spacer(1, 8), KeepTogether([PM("Year over year", "h2"), P(YOY_NOTE, "small"), Spacer(1, 3), t])]
 
 
 def _itemized(title: str, lines: list[dict], subtotal: str, W: float) -> list:
@@ -593,7 +646,7 @@ def build_docx(s: dict) -> bytes:
     _drow(tb, ["Net revenue", "", money(t["net_revenue"])], {2}, bold=True, widths=W3)
     _drow(tb, ["Less expenses", "Fundraiser expenses" + ("; cash float taken out is not an expense"
                                                          if t["cash_float_out"] != "0.00" else ""),
-               f"-{money(t['expenses'])}"], {2}, widths=W3)
+               _neg(t["expenses"])], {2}, widths=W3)
     _drow(tb, ["Net proceeds", f"Net margin {_p(t['net_margin'])}", money(t["net_proceeds"])], {2}, bold=True,
           shade=_HEX_GROUP, widths=W3)
     p = d.add_paragraph(f"ROI (net proceeds ÷ expenses): {t['roi'] if t['roi'] is not None else 'n/a (no expenses)'}")
@@ -601,6 +654,15 @@ def build_docx(s: dict) -> bytes:
     for y in s["per_fiscal_year"]:
         q = d.add_paragraph(f"{y['fiscal_year']}: revenue {money(y['income'])}, expenses {money(y['expense'])}, net {money(y['net'])}")
         q.runs[0].font.size = Pt(8)
+    if s.get("year_over_year"):
+        d.add_heading("Year over year", level=2)
+        q = d.add_paragraph(YOY_NOTE)
+        q.runs[0].font.size = Pt(8)
+        WY = [0.55, 1.75, 0.95, 0.9, 0.95, 0.65, 1.25]
+        tb = _dtable(d, YOY_HEAD, WY, {2, 3, 4, 5})
+        rows = yoy_rows(s)
+        for i, row in enumerate(rows):
+            _drow(tb, row, {2, 3, 4, 5}, bold=i == len(rows) - 1, widths=WY)
     groups, other = s["groups"], s["other"]
     if s["has_buckets"]:
         d.add_heading("Revenue breakdown", level=2)

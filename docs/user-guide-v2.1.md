@@ -143,6 +143,12 @@ PennyWarden) or *Entered*. Two fundraisers of one series in the same year add to
 Fiscal Years counts in the year its event starts (a footnote says so). With nothing linked yet, the history sections
 say "No earlier years linked yet".
 
+**Year over year.** Once a fundraiser is linked with earlier years (or results of earlier years are entered), its own
+report and presentation get a *Year over year* section, and the Fiscal Year report and deck a *Year over year by
+series* section. Each year's figures are shown with the change on the year before (up or down, in dollars and
+percent), so the committee can see how an event is trending when deciding whether to keep it. A year entered by hand
+with only the amount raised shows — for income, expenses and margin.
+
 ### Bucket categories
 On a fundraiser's page, **New category** adds a heading such as *Sponsorships* or *Day-of event*. In a bucket's
 **Edit**, choose its **Category** (or *No category*). The Buckets table then shows each category with its buckets

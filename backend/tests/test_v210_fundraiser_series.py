@@ -248,3 +248,48 @@ def test_next_year_before_its_fiscal_year_exists(env, years):
     opts = env.bm.get("/api/fundraisers/continue-options?start_date=2027-09-18").json()
     assert {o["name"] for o in opts} == {"Raffle", "2026 Golf Outing"}
     assert fseries.date_year.__doc__
+
+
+# ------------------------------------------------------------------ year over year (Kyle, 2026-10-20)
+def test_year_over_year_in_the_fundraiser_report_and_deck(env, years):
+    sid = env.bm.get("/api/fundraiser-series").json()[0]["id"]
+    env.bm.post(f"/api/fundraiser-series/{sid}/results", {"fiscal_year_label": "FY2025", "net": "600.00"})
+    from sqlalchemy.orm import Session
+    from fmpoc.models import Fundraiser, User
+    from fmpoc.services import fundraiser_summary as fsum
+    with Session(env.app.state.engine) as db:
+        f = db.get(Fundraiser, years["g27"]["id"])
+
+        class Ctx:
+            workspace_id = f.workspace_id
+            user = db.query(User).filter_by(username="budgetuser").one()
+        s = fsum.summary(db, Ctx, f)
+    yy = s["year_over_year"]
+    assert [(r["year"], r["source"], r["net_proceeds"]) for r in yy] == [(2025, "Entered", "600.00"), (2026, "Recorded", "800.00"),
+                                                                        (2027, "Recorded", "1000.00")]
+    assert yy[0]["net_revenue"] is None                          # entered with the net only
+    assert (yy[2]["change"], yy[2]["change_pct"]) == ("200.00", "25.0")
+    assert any("Net proceeds were up $200.00 (25.0%) on 2026" in x for x in s["takeaways"])
+    t = pdf_text(env.bu.get(f"/api/fundraisers/{years['g27']['id']}/summary-report").content)
+    assert "Year over year" in t and "up $200.00 (25.0%)" in t and "FY2025 (Entered)" in t
+    prs = Presentation(io.BytesIO(env.bu.get(f"/api/fundraisers/{years['g27']['id']}/presentation").content))
+    titles = [next((sh.text_frame.text for sh in sl.shapes if sh.has_text_frame and sh.text_frame.text), "") for sl in prs.slides]
+    assert "Year over year" in titles
+    # last year's report goes up to its own year only (the entered 2025, then itself), never later years
+    t0 = pdf_text(env.bu.get(f"/api/fundraisers/{years['g26']['id']}/summary-report").content)
+    assert "Year over year" in t0 and "up $200.00 (33.3%)" in t0 and "2026 Golf Outing" not in t0
+    # and a fundraiser in no series neither
+    assert "Year over year" not in pdf_text(env.bu.get(f"/api/fundraisers/{years['raffle']['id']}/summary-report").content)
+
+
+def test_year_over_year_by_series_in_the_fiscal_year_report(env, years):
+    rep = _report(env, years).json()
+    golf = next(x for x in rep["year_over_year"] if x["name"] == "Golf Outing")
+    assert golf["values"] == ["800.00", "1000.00"] and golf["change"] == "200.00" and golf["change_pct"] == "25.0"
+    raffle = next(x for x in rep["year_over_year"] if x["name"] == "Raffle")
+    assert raffle["values"] == [None, "250.00"] and raffle["change"] is None
+    t = pdf_text(_report(env, years, fmt="pdf").content)
+    assert "Year over year by series" in t and "up $200.00 (25.0%)" in t
+    prs = Presentation(io.BytesIO(_report(env, years, fmt="pptx").content))
+    titles = [next((sh.text_frame.text for sh in sl.shapes if sh.has_text_frame and sh.text_frame.text), "") for sl in prs.slides]
+    assert "Year over year by series" in titles and "Change on the year before" in titles

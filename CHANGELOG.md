@@ -82,6 +82,10 @@ PennyWarden 2.1.0 (in progress).
 
   Notes are remembered per year. Available as a PDF and a `.pptx` deck with charts and speaker notes. No contributor
   names. (#277)
+- **Year over year.** When earlier years are known (linked fundraisers or entered results), the fundraiser's report
+  and presentation add a *Year over year* section: each year's net revenue, expenses, net proceeds and margin, and
+  the change on the year before. The Fiscal Year report and deck add *Year over year by series*, with a line per
+  event and the change on the year before, to help decide which fundraisers to keep offering. (#277)
 - **Bucket categories.** Group a fundraiser's buckets under optional categories (for example *Sponsorships*,
   *Registrations*, *Day-of event*), one category per bucket or none. The Buckets table shows each category with its
   buckets beneath and a subtotal of income, expenses and net, and so does the fundraiser section of the Audit and

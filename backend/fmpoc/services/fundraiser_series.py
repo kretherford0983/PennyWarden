@@ -237,6 +237,79 @@ def merge(db: Session, ctx, s: FundraiserSeries, into: FundraiserSeries) -> None
                  {"merged_into_id": into.id, "merged_into_name": into.name})
 
 
+def series_history(db: Session, ctx, f: Fundraiser, current: dict) -> list[dict]:
+    """Year over year for one fundraiser: every year of its series up to its own year, oldest first. A year is the
+    sum of the series' fundraisers counted in it (Recorded) or its entered result (Entered). `current` holds this
+    fundraiser's own totals (avoids computing them twice)."""
+    from .fundraiser_summary import pct, summary
+    me = fundraiser_year(db, f)
+    root = f.series_id
+    seen = set()
+    while root and root not in seen:
+        seen.add(root)
+        s = db.get(FundraiserSeries, root)
+        if s is None or not s.merged_into_id:
+            break
+        root = s.merged_into_id
+    years: dict[int, dict] = {}
+
+    def cell(y):
+        return years.setdefault(y, {"year": y, "names": [], "income": 0, "expense": 0, "net": 0, "partial": False,
+                                    "sources": set(), "notes": []})
+    c = cell(me)
+    c["names"].append(f.name)
+    c["sources"].add("Recorded")
+    c["income"] += _c(current["net_revenue"])
+    c["expense"] += _c(current["expenses"])
+    c["net"] += _c(current["net_proceeds"])
+    if root:
+        members = set(db.scalars(select(Fundraiser.id).where(Fundraiser.series_id.in_(
+            [root] + list(db.scalars(select(FundraiserSeries.id).where(FundraiserSeries.merged_into_id == root)))))))
+        for other in db.scalars(select(Fundraiser).where(Fundraiser.id.in_(members), Fundraiser.id != f.id)):
+            y = fundraiser_year(db, other)
+            if y > me:
+                continue
+            t = summary(db, ctx, other, itemized=False, names=False, history=False)["totals"]
+            c = cell(y)
+            c["names"].append(other.name)
+            c["sources"].add("Recorded")
+            c["income"] += _c(t["net_revenue"])
+            c["expense"] += _c(t["expenses"])
+            c["net"] += _c(t["net_proceeds"])
+        for r in db.scalars(select(FundraiserSeriesResult).where(FundraiserSeriesResult.series_id == root,
+                                                                 FundraiserSeriesResult.retired_at.is_(None))):
+            if r.year >= me:
+                continue
+            c = cell(r.year)
+            c["names"].append(r.fiscal_year_label)
+            c["sources"].add("Entered")
+            c["net"] += r.net_cents
+            if r.income_cents is None or r.expense_cents is None:
+                c["partial"] = True
+            c["income"] += r.income_cents or 0
+            c["expense"] += r.expense_cents or 0
+            if r.note:
+                c["notes"].append(r.note)
+    out, prev = [], None
+    for y in sorted(years):
+        c = years[y]
+        row = {"year": y, "label": ", ".join(c["names"]), "source": " + ".join(sorted(c["sources"])),
+               "net_revenue": None if c["partial"] else fmt(c["income"]),
+               "expenses": None if c["partial"] else fmt(c["expense"]), "net_proceeds": fmt(c["net"]),
+               "net_margin": None if c["partial"] else pct(c["net"], c["income"]), "note": "; ".join(c["notes"]) or None,
+               "change": None, "change_pct": None}
+        if prev is not None:
+            row["change"] = fmt(c["net"] - prev)
+            row["change_pct"] = pct(c["net"] - prev, abs(prev)) if prev else None
+        prev = c["net"]
+        out.append(row)
+    return out
+
+
+def _c(v: str) -> int:
+    return int(round(float(v) * 100))
+
+
 # ------------------------------------------------------------------ "Create next year's from this one"
 def next_year_draft(db: Session, ctx, f: Fundraiser) -> dict:
     """Pre-filled values for the create form; everything stays editable before saving."""
@@ -426,6 +499,16 @@ def fy_report(db: Session, ctx, fy: FiscalYear, ids: list[int], *, years: int = 
         share.append({"name": "Other", "total": fmt(other_total), "share": _pct(other_total, period_total),
                       "members": sorted(other_members)})
 
+    # year over year by series (#277 feedback): each series' amount per year and the change on the year before
+    yoy = []
+    for k in keys:
+        vals = [hist[k][y]["amount"] if y in hist[k] else None for y in period]
+        last = hist[k].get(Y, {}).get("amount")
+        before = next((hist[k][y]["amount"] for y in sorted(hist[k], reverse=True) if y < Y), None)
+        yoy.append({"name": name_of(k), "values": [fmt(v) if v is not None else None for v in vals],
+                    "change": fmt(last - before) if last is not None and before is not None else None,
+                    "change_pct": (_pct(last - before, abs(before)) if last is not None and before else None)})
+
     history_rows = []
     for k in keys:
         for y in period:
@@ -466,7 +549,7 @@ def fy_report(db: Session, ctx, fy: FiscalYear, ids: list[int], *, years: int = 
         "trend": [{"year": y, "total": fmt(year_totals[y]), "current": y == Y} for y in period],
         "estimates": estimates, "estimate_total": fmt(est_total), "targeted_total": fmt(year_total + est_total),
         "share": share, "averages": [{k: v for k, v in p.items() if not k.startswith("_")} for p in per_series],
-        "history": history_rows, "notes": notes, "footnotes": foot,
+        "history": history_rows, "notes": notes, "footnotes": foot, "year_over_year": yoy if linked_history else [],
         "generated_at": utcnow().isoformat(timespec="seconds") + "Z",
         "selected_ids": [f.id for f in selected],
     }

@@ -31,6 +31,15 @@ def _growth(v: str | None) -> str:
     return f"{'+' if not v.startswith('-') else ''}{v}%"
 
 
+def _chg(x: dict) -> str:
+    if x["change"] is None:
+        return "—"
+    if x["change"] in ("0.00", "-0.00"):
+        return "no change"
+    word = "up" if not x["change"].startswith("-") else "down"
+    return f"{word} {money(x['change'].lstrip('-'))}" + (f" ({x['change_pct'].lstrip('-')}%)" if x.get("change_pct") else "")
+
+
 def highlights(rep: dict) -> list[tuple[str, str, str]]:
     out = [("Raised this Fiscal Year (net)", money(rep["year_total"]),
             ("YTD — the year is still open" if not rep["fy_ended"] else "Net proceeds of the fundraisers shown"))]
@@ -110,6 +119,20 @@ def build_pdf(org: str, rep: dict) -> tuple[bytes, _AuditDoc]:
         f.append(_table(data, [W - 4.2 * inch, 1.5 * inch, 1.0 * inch, 1.7 * inch]))
     else:
         f.append(P(NO_HISTORY, "body"))
+    # year over year by series (#277 feedback)
+    if rep["year_over_year"]:
+        f += [Spacer(1, 8), P("Year over year by series", "h2"),
+              P("Net raised by each event in each year, and the change on the year before — to help decide which "
+                "fundraisers to keep offering.", "small"), Spacer(1, 3)]
+        years = rep["period"][-6:]
+        idx = [rep["period"].index(y) for y in years]
+        data = [_h(["Series"] + [str(y) for y in years] + ["Change vs year before"])]
+        for x in rep["year_over_year"]:
+            data.append([P(x["name"], "cell")] + [P(money(x["values"][i]) if x["values"][i] is not None else "—", "cellr") for i in idx]
+                        + [P(_chg(x), "cell")])
+        f.append(_table(data, [W - 1.6 * inch - 0.95 * inch * len(years)] + [0.95 * inch] * len(years) + [1.6 * inch]))
+        if len(rep["period"]) > len(years):
+            f.append(P(f"The last {len(years)} years are shown; the historical results below list every year.", "small"))
     # historical table
     f += [Spacer(1, 8), P("Historical results", "h2")]
     data = [_h(["Year", "Series", "Amount raised", "Source", "Note"])]
@@ -248,6 +271,30 @@ def build_pptx(org: str, rep: dict) -> bytes:
     else:
         deck._text(sl, Inches(0.9), Inches(2.4), Inches(11), Inches(1), NO_HISTORY, size=22, color=deck.GREY)
         deck._notes(sl, [NO_HISTORY])
+    # year over year by series (#277 feedback): a line per series, and the change table
+    if rep["year_over_year"]:
+        sl = prs.slides.add_slide(blank)
+        deck._title(sl, "Year over year by series", "Net raised per year")
+        cd = CategoryChartData(number_format='"$"#,##0.00')
+        cd.categories = [str(y) for y in rep["period"]]
+        for x in rep["year_over_year"][:8]:
+            cd.add_series(x["name"], [float(v) if v is not None else None for v in x["values"]])
+        ch = sl.shapes.add_chart(XL_CHART_TYPE.LINE_MARKERS, Inches(0.6), Inches(1.7), Inches(12.1), Inches(5.4), cd).chart
+        deck._style_chart(ch)
+        deck._labels(ch.plots[0], pos=XL_LABEL_POSITION.ABOVE, size=9)
+        for i, ser in enumerate(ch.plots[0].series):
+            ser.format.line.color.rgb = deck.SERIES[i % len(deck.SERIES)]
+            ser.smooth = False
+        deck._notes(sl, ["Net raised by each series per year; a gap = not held that year."]
+                    + [f"{x['name']}: " + ", ".join(f"{y} {money(v) if v is not None else '—'}" for y, v in zip(rep["period"], x["values"]))
+                       + f"; vs year before: {_chg(x)}" for x in rep["year_over_year"]])
+        rows = [["Series", f"{rep['year']}", "Change vs year before"]] + [
+            [x["name"], money(x["values"][-1]) if x["values"][-1] is not None else "—", _chg(x)] for x in rep["year_over_year"]]
+        for k, part in enumerate(deck._chunks(rows[1:], deck.TABLE_ROWS)):
+            sl = prs.slides.add_slide(blank)
+            deck._title(sl, "Change on the year before" + (" (continued)" if k else ""))
+            deck._table(sl, Inches(0.6), Inches(1.7), Inches(12.1), [rows[0]] + part, [6.1, 2.5, 3.5], {1}, size=13)
+            deck._notes(sl, ["Change = this year's net − the series' most recent earlier year; % of that earlier year."])
     # 7. historical table (about 12 rows per slide)
     rows = [[str(h["year"]), h["series"], money(h["amount"]), h["source"], h["note"] or ""] for h in rep["history"]]
     for k, part in enumerate(deck._chunks(rows, deck.TABLE_ROWS)):
