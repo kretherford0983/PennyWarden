@@ -1707,11 +1707,15 @@ test("2.1.0 (#278): bucket categories with subtotals, reorder, and Charge / Less
   await raffle.getByRole("button", { name: "All remaining" }).click();
   await raffle.getByLabel("Less for Raffle").fill("0.50");
   await raffle.getByLabel("Less description for Raffle").fill("Card fee");
+  // build 4-6 feedback: lump cash shows as "Cash" on the reports
+  await raffle.getByLabel("Show a different contributor for Raffle").check();
+  await raffle.getByLabel("Contributor shown for Raffle").fill("Cash");
   await expect(dlg.getByTestId("fr-line-remaining")).toContainText("unassigned $0.50");
   await page.screenshot({ path: "e2e-screenshots/light-fundraiser-charge-less.png" });
   await dlg.getByRole("button", { name: "Save" }).click();
   await expect(dlg).toHaveCount(0);
   await expect(page.getByTestId("fr-lines").locator(".fr-bucket").filter({ hasText: "Raffle" })).toContainText("less $0.50 Card fee");
+  await expect(page.getByTestId("fr-lines").locator(".fr-bucket").filter({ hasText: "Raffle" })).toContainText("shown as “Cash”");
   await page.screenshot({ path: "e2e-screenshots/light-fundraiser-categories.png", fullPage: true });
   // delete the category: Raffle stays, uncategorized
   page.once("dialog", (d) => d.accept());
@@ -1719,6 +1723,46 @@ test("2.1.0 (#278): bucket categories with subtotals, reorder, and Charge / Less
   await page.getByRole("menuitem", { name: "Delete" }).click();
   await expect(table.locator("tr.category-row")).toHaveCount(0);
   await expect(table).toContainText("Raffle");
+  await logout(page);
+});
+
+test("2.1.0 (#277): next year's fundraiser continues the series, prior years entered, Fiscal Year report and deck", async ({ page }) => {
+  await login(page, "bm1");
+  await page.getByRole("link", { name: "Fundraisers" }).click();
+  await page.getByRole("link", { name: "Harvest Dinner" }).click();
+  await page.getByRole("button", { name: "Create next year's…" }).click();
+  let dlg = page.getByRole("dialog", { name: "New fundraiser (next year)" });
+  await expect(dlg.getByLabel("Name")).not.toHaveValue("");
+  await expect(dlg.getByLabel("Continues from (previous fundraiser)")).not.toHaveValue("");
+  await dlg.getByLabel("Name").fill("Harvest Dinner next year");
+  await dlg.getByRole("button", { name: "Create fundraiser" }).click();
+  await expect(page.getByTestId("fr-series")).toContainText("continues Harvest Dinner");
+  // the series list: enter a year before PennyWarden
+  await page.getByRole("link", { name: "Fundraisers" }).first().click();
+  await page.getByRole("link", { name: "Fundraiser series" }).click();
+  await page.getByRole("button", { name: "Enter a prior year…" }).first().click();
+  dlg = page.getByRole("dialog", { name: /Enter a prior year/ });
+  await dlg.getByLabel("Fiscal Year (include the year)").fill("FY2019");
+  await dlg.getByLabel("Amount raised (net)").fill("640.00");
+  await dlg.getByRole("button", { name: "Save" }).click();
+  await expect(page.locator("section.card").first()).toContainText("FY2019");
+  await page.screenshot({ path: "e2e-screenshots/light-fundraiser-series.png", fullPage: true });
+  // the Fiscal Year report for the ticked fundraisers
+  await page.getByRole("link", { name: "← Fundraisers" }).click();
+  await expect(page.getByTestId("fundraiser-list")).toBeVisible();
+  await page.getByRole("button", { name: "Fiscal Year report…" }).click();
+  dlg = page.getByRole("dialog", { name: "Fiscal Year fundraising report" });
+  await dlg.getByLabel("Include targeted total").check();
+  await dlg.getByLabel(/Notes \(printed/).fill("Matching gifts expected.");
+  await dlg.getByRole("button", { name: "Save notes" }).click();
+  await expect(dlg.getByRole("button", { name: "Save notes" })).toBeDisabled();
+  const pdf = await page.request.get((await dlg.getByRole("link", { name: "Report (PDF)" }).getAttribute("href"))!);
+  expect(pdf.status()).toBe(200);
+  expect(pdf.headers()["content-type"]).toBe("application/pdf");
+  const deck = await page.request.get((await dlg.getByRole("link", { name: "Presentation" }).getAttribute("href"))!);
+  expect(deck.status()).toBe(200);
+  expect(deck.headers()["content-type"]).toContain("presentationml");
+  await dlg.getByRole("button", { name: "Done" }).click();
   await logout(page);
 });
 

@@ -223,7 +223,8 @@ def snapshot(f: Fundraiser) -> dict:
             "budget_ids": [fb.budget_id for fb in f.budgets], "archived": f.archived_at is not None,
             "cancelled": f.cancelled_at is not None, "cancel_reason": f.cancel_reason,
             "cancelled_at": f.cancelled_at.isoformat() + "Z" if f.cancelled_at else None,
-            "summary_notes": f.summary_notes, "results_final": f.results_final_at is not None}
+            "summary_notes": f.summary_notes, "results_final": f.results_final_at is not None,
+            "series_id": f.series_id, "continues_from_id": f.continues_from_id}
 
 
 def _apply(db: Session, ctx, f: Fundraiser, body, creating: bool) -> None:
@@ -260,6 +261,13 @@ def create(db: Session, ctx, body) -> Fundraiser:
     _apply(db, ctx, f, body, creating=True)
     db.add(f)
     db.flush()
+    # 2.1.0 (#277): "Continues from" and "Create next year's from this one"
+    from . import fundraiser_series as series
+    if getattr(body, "continues_from_id", None):
+        series.set_link(db, ctx, f, body.continues_from_id, record=False)
+    if getattr(body, "copy_buckets_from_id", None):
+        src = get(db, ctx, body.copy_buckets_from_id)
+        series.copy_buckets(db, ctx, src, f)
     audit.record(db, ctx, "FUNDRAISER_CREATED", "fundraiser", f.id, None, snapshot(f))
     return f
 
@@ -268,6 +276,9 @@ def update(db: Session, ctx, f: Fundraiser, body) -> Fundraiser:
     before = snapshot(f)
     _apply(db, ctx, f, body, creating=False)
     db.flush()
+    if "continues_from_id" in body.model_fields_set and body.continues_from_id != f.continues_from_id:
+        from . import fundraiser_series as series
+        series.set_link(db, ctx, f, body.continues_from_id)
     after = snapshot(f)
     if set(after["budget_ids"]) != set(before["budget_ids"]):
         dropped = _drop_orphan_adjustments(db, f)
@@ -615,6 +626,7 @@ def detail(db: Session, ctx, f: Fundraiser) -> dict:
                    "excluded_lines": sum(1 for r in rows if r["excluded"])},
         "buckets": _bucket_summary(db, f, rows),
         "report_status": _report_status(db, f),
+        "series_link": _series_link(db, f),
         "classification_types": [{"kind": k, "applies_to": v[0], "label": v[1]} for k, v in CLASSIFICATIONS.items()],
         "per_fiscal_year": per_fy,
         "lines": lines, "filtered_out_lines": skipped,
@@ -627,7 +639,8 @@ def bucket_line_out(b: FundraiserBucketLine) -> dict:
     """A bucket's part of a line: the net (amount) and, 2.1.0 (#278), the charge and the credit taken off it."""
     charge = b.charge_cents if b.charge_cents is not None else b.amount_cents
     return {"bucket_id": b.bucket_id, "amount": fmt(b.amount_cents), "charge": fmt(charge),
-            "less": fmt(b.less_cents or 0), "less_description": b.less_description}
+            "less": fmt(b.less_cents or 0), "less_description": b.less_description,
+            "contributor_override": b.contributor_override}
 
 
 def ordered_buckets(db: Session, f: Fundraiser) -> list[FundraiserBucket]:
@@ -836,22 +849,26 @@ def set_line(db: Session, ctx, f: Fundraiser, allocation_id: int, body) -> None:
             else:
                 st["c"].kind, st["c"].amount_cents, st["c"].note = kind, classified, note
         want: dict[int, tuple[int, int, int, str | None]] = {}   # bucket -> (net, charge, less, less description)
+        shown: dict[int, str | None] = {}                          # bucket -> contributor shown on the reports
         for item in body.buckets:
             get_bucket(db, f, item.bucket_id)
             if item.bucket_id in want:
                 raise validation("A bucket can be listed only once per line.", "buckets")
             want[item.bucket_id] = _bucket_amounts(item, cents)
+            shown[item.bucket_id] = (getattr(item, "contributor_override", None) or "").strip() or None
         if sum(v[0] for v in want.values()) > amount - classified:
             raise validation("The bucket amounts add up to more than the amount that counts for this line "
                              f"({fmt(amount - classified)}).", "buckets")
         for bl in st["bls"]:
             if bl.bucket_id in want:
                 bl.amount_cents, bl.charge_cents, bl.less_cents, bl.less_description = want.pop(bl.bucket_id)
+                bl.contributor_override = shown[bl.bucket_id]
             else:
                 db.delete(bl)
         for bucket_id, (net, charge, less, desc) in want.items():
             db.add(FundraiserBucketLine(bucket_id=bucket_id, allocation_id=allocation_id, amount_cents=net,
-                                        charge_cents=charge, less_cents=less, less_description=desc))
+                                        charge_cents=charge, less_cents=less, less_description=desc,
+                                        contributor_override=shown[bucket_id]))
     db.flush()
     after = _line_snapshot(_line_state(db, f, allocation_id))
     if after != before:
@@ -967,6 +984,15 @@ def reorder(db: Session, ctx, f: Fundraiser, what: str, ids: list[int]) -> None:
 def _report_status(db: Session, f: Fundraiser) -> dict:
     from .fundraiser_summary import report_status
     return report_status(db, f)
+
+
+def _series_link(db: Session, f: Fundraiser) -> dict:
+    """2.1.0 (#277): the series and the previous fundraiser this one continues."""
+    from ..models import FundraiserSeries
+    s = db.get(FundraiserSeries, f.series_id) if f.series_id else None
+    prev = db.get(Fundraiser, f.continues_from_id) if f.continues_from_id else None
+    return {"series": {"id": s.id, "name": s.name} if s else None,
+            "continues_from": {"id": prev.id, "name": prev.name, "start_date": prev.start_date.isoformat()} if prev else None}
 
 
 def set_summary_notes(db: Session, ctx, f: Fundraiser, notes: str | None) -> Fundraiser:

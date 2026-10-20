@@ -27,7 +27,7 @@ from docx.shared import Inches, Pt, RGBColor
 from reportlab.lib import colors
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import inch
-from reportlab.platypus import KeepTogether, Paragraph, Spacer, Table, TableStyle
+from reportlab.platypus import CondPageBreak, KeepTogether, Paragraph, Spacer, Table, TableStyle
 from sqlalchemy.orm import Session
 
 from ..models import Fundraiser, Workspace, utcnow
@@ -41,6 +41,11 @@ STATUS_TEXT = {"INTERIM": "Interim, figures may change", "POST_EVENT": "Post-eve
 
 
 # ------------------------------------------------------------------ figures
+def _neg(v: str) -> str:
+    """A subtracted amount: "-$300.00" ("$0.00" when there is nothing to take off)."""
+    return money(v) if v in ("0.00", "-0.00") else f"-{money(v)}"
+
+
 def pct(part: int, whole: int) -> str | None:
     if whole == 0:
         return None
@@ -69,7 +74,7 @@ def report_status(db: Session, f: Fundraiser) -> dict:
 
 
 def summary(db: Session, ctx, f: Fundraiser, *, itemized: bool = True, names: bool = True,
-            plain_lines: bool = False) -> dict:
+            plain_lines: bool = False, history: bool = True) -> dict:
     ws = db.get(Workspace, ctx.workspace_id)
     rows, _skipped = fsvc._lines(db, f)
     rows = [r for r in rows if not r["excluded"]]
@@ -86,22 +91,26 @@ def summary(db: Session, ctx, f: Fundraiser, *, itemized: bool = True, names: bo
     # Entity becomes "Contributor n" (income) or the line description / "Expense" (expenses).
     numbers: dict[tuple, int] = {}
 
-    def who(r) -> str:
+    def who(r, override: str | None = None) -> str:
         a, t = r["a"], r["t"]
         ent = a.entity or t.parent_entity
         real = ent is not None and not ent.is_system
         if r["kind"] == "INCOME":
             if names:
+                if override:      # e.g. "Cash", or the name people know the contributor by
+                    return override
                 return ent.display_name if real else (a.description or "—")
-            key = ("e", ent.id) if real else ("l", a.id)
+            key = ("o", override.casefold()) if override else ("e", ent.id) if real else ("l", a.id)
             numbers.setdefault(key, len(numbers) + 1)
             return f"Contributor {numbers[key]}"
+        if names and override:
+            return " — ".join(v for v in (override, a.description) if v)
         if names and real:
             return " — ".join(v for v in (ent.display_name, a.description) if v)
         return a.description or "Expense"
 
     def line(r, amount: int, bl=None) -> dict:
-        w = who(r)
+        w = who(r, bl.contributor_override if bl is not None else None)
         note = r["a"].description if r["kind"] == "INCOME" and r["a"].description != w else None
         d = {"date": r["t"].transaction_date.isoformat(), "who": w, "amount": fmt(amount), "note": note, "charge": None, "less": None,
              "less_description": None}
@@ -186,6 +195,20 @@ def summary(db: Session, ctx, f: Fundraiser, *, itemized: bool = True, names: bo
         take.append(f"Credits received on expenses: {money(fmt(credits))}, taken off the charges shown in the "
                     "expense breakdown.")
 
+    # 2.1.0 (#277 feedback): year over year - this fundraiser and the earlier years of its series
+    yoy = []
+    if history:
+        from .fundraiser_series import series_history
+        yoy = series_history(db, ctx, f, {"net_revenue": fmt(revenue), "expenses": fmt(expenses), "net_proceeds": fmt(net)})
+        if len(yoy) > 1:
+            last, prev = yoy[-1], yoy[-2]
+            ch = last["change"]
+            if ch is not None:
+                word = "up" if not ch.startswith("-") else "down"
+                take.append(f"Net proceeds were {word} {money(ch.lstrip('-'))}"
+                            + (f" ({last['change_pct'].lstrip('-')}%)" if last["change_pct"] else "")
+                            + f" on {prev['year']} ({money(prev['net_proceeds'])}).")
+
     plain = []
     if plain_lines and not has_buckets:
         for r in rows:
@@ -212,6 +235,7 @@ def summary(db: Session, ctx, f: Fundraiser, *, itemized: bool = True, names: bo
                    "credits": fmt(credits)},
         "per_fiscal_year": per_fy, "has_buckets": has_buckets, "groups": groups, "other": other_out,
         "takeaways": take, "summary_notes": f.summary_notes, "plain_lines": plain, "cumulative": cumulative,
+        "year_over_year": yoy if len(yoy) > 1 else [],
         "generated_at": utcnow().isoformat(timespec="seconds") + "Z",
     }
 
@@ -245,6 +269,15 @@ _IND = ParagraphStyle("fs_ind", parent=S["cell"], leftIndent=10)
 _IND2 = ParagraphStyle("fs_ind2", parent=S["cell"], leftIndent=20)
 _RB = ParagraphStyle("fs_rb", parent=S["cellr"], fontName=_FONT_BOLD)
 S.update({"fs_wb": _WB, "fs_rb": _RB, "fs_w": _W, "fs_tv": _TILE_V, "fs_tk": _TILE_K, "fs_ind": _IND, "fs_ind2": _IND2})
+
+
+KEEP_WITH_HEADING = 1.3 * inch
+
+
+def heading(text: str, style: str = "h2") -> list:
+    """A section heading that never sits alone at the bottom of a page (Kyle, 2026-10-20): if less than about an inch
+    and a quarter is left, the heading starts the next page with its section."""
+    return [CondPageBreak(KEEP_WITH_HEADING), P(text, style)]
 
 
 def _table(data, widths, header=True, bold_rows=(), italic_rows=()):
@@ -322,7 +355,7 @@ def build_pdf(s: dict) -> tuple[bytes, _AuditDoc]:
                             ("LINEAFTER", (0, 0), (1, 0), 0.5, colors.HexColor("#c3cad3")), ("VALIGN", (0, 0), (-1, -1), "TOP"),
                             ("LEFTPADDING", (0, 0), (-1, -1), 8), ("TOPPADDING", (0, 0), (-1, -1), 6),
                             ("BOTTOMPADDING", (0, 0), (-1, -1), 6)]))
-    f += [PM("Executive summary", "h2"), tt, Spacer(1, 8)]
+    f += [*heading("Executive summary"), tt, Spacer(1, 8)]
     # financial summary
     data = [_h(["Component", "Details", "Amount"])]
     data.append([P("Gross deposits", "cell"), P("All deposits counted for the fundraiser", "cell"), P(money(t["gross_deposits"]), "cellr")])
@@ -332,13 +365,14 @@ def build_pdf(s: dict) -> tuple[bytes, _AuditDoc]:
     data.append([_b("Net revenue"), P("", "cell"), P(money(t['net_revenue']), "fs_rb")])
     data.append([P("Less expenses", "cell"), P("Fundraiser expenses" + ("; cash float taken out is not an expense"
                                                                          if t["cash_float_out"] != "0.00" else ""), "cell"),
-                 P(f"-{money(t['expenses'])}", "cellr")])
+                 P(_neg(t["expenses"]), "cellr")])
     data.append([_b("Net proceeds"), P(f"Net margin {_p(t['net_margin'])}", "cell"), P(money(t['net_proceeds']), "fs_rb")])
-    f += [PM("Financial summary", "h2"), _table(data, [1.8 * inch, W - 3.0 * inch, 1.2 * inch], bold_rows=[len(data) - 1])]
+    f += [*heading("Financial summary"), _table(data, [1.8 * inch, W - 3.0 * inch, 1.2 * inch], bold_rows=[len(data) - 1])]
     f.append(P(f"ROI (net proceeds ÷ expenses): {t['roi'] if t['roi'] is not None else 'n/a (no expenses)'}", "small"))
     for y in s["per_fiscal_year"]:
         f.append(P(f"{y['fiscal_year']}: revenue {money(y['income'])}, expenses {money(y['expense'])}, "
                    f"net {money(y['net'])}", "small"))
+    f += _yoy_pdf(s, W)
     groups, other = s["groups"], s["other"]
     if s["has_buckets"]:
         # revenue breakdown
@@ -358,10 +392,10 @@ def build_pdf(s: dict) -> tuple[bytes, _AuditDoc]:
             data.append([P(other["name"], "cell"), P(str(len(other["income_lines"])), "cellr"),
                          P(money(other["income"]), "cellr"), P(_p(other["income_pct"]), "cellr")])
         data.append([_b("Total net revenue"), "", P(money(t['net_revenue']), "fs_rb"), P("100.0%" if t["net_revenue"] != "0.00" else "n/a", "cellr")])
-        f += [Spacer(1, 8), PM("Revenue breakdown", "h2"), _table(data, [W - 3.1 * inch, 0.7 * inch, 1.2 * inch, 1.2 * inch], bold_rows=bold)]
+        f += [Spacer(1, 8), *heading("Revenue breakdown"), _table(data, [W - 3.1 * inch, 0.7 * inch, 1.2 * inch, 1.2 * inch], bold_rows=bold)]
         # itemized revenue
         if s["options"]["itemized"]:
-            f += [Spacer(1, 8), PM("Itemized revenue", "h2")]
+            f += [Spacer(1, 8), *heading("Itemized revenue")]
             for g in groups:
                 for b in g["buckets"]:
                     if b["income_lines"]:
@@ -390,7 +424,7 @@ def build_pdf(s: dict) -> tuple[bytes, _AuditDoc]:
             for x in other["expense_lines"]:
                 data.append([P(x["who"], "fs_ind2"), P(money(x["amount"]), "cellr"), ""])
         data.append([_b("Total expenses"), P(money(t['expenses']), "fs_rb"), P("100.0%" if t["expenses"] != "0.00" else "n/a", "cellr")])
-        f += [Spacer(1, 8), PM("Expense breakdown", "h2"), _table(data, [W - 2.4 * inch, 1.2 * inch, 1.2 * inch], bold_rows=bold)]
+        f += [Spacer(1, 8), *heading("Expense breakdown"), _table(data, [W - 2.4 * inch, 1.2 * inch, 1.2 * inch], bold_rows=bold)]
         if t["cash_float_out"] != "0.00":
             f.append(P(f"Cash float taken out ({money(t['cash_float_out'])}) is not an expense; "
                        f"{money(t['cash_float_returned'])} came back in the deposits.", "small"))
@@ -409,7 +443,7 @@ def build_pdf(s: dict) -> tuple[bytes, _AuditDoc]:
                          P(money(other["net"]), "cellr")])
         data.append([_b("Total"), P(money(t['net_revenue']), "fs_rb"), P(money(t['expenses']), "fs_rb"),
                      P(money(t['net_proceeds']), "fs_rb")])
-        f += [Spacer(1, 8), KeepTogether([PM("Net by category / bucket", "h2"),
+        f += [Spacer(1, 8), KeepTogether([P("Net by category / bucket", "h2"),
                                           _table(data, [W - 3.6 * inch, 1.2 * inch, 1.2 * inch, 1.2 * inch], bold_rows=bold)])]
     elif s["plain_lines"]:
         data = [_h(["Date", "Contributor / description", "Income", "Expenses"])]
@@ -417,33 +451,75 @@ def build_pdf(s: dict) -> tuple[bytes, _AuditDoc]:
             data.append([P(_us(x["date"]), "cell"), P(x["who"], "cell"), P(money(x["income"]) if x["income"] else "", "cellr"),
                          P(money(x["expense"]) if x["expense"] else "", "cellr")])
         data.append([_b("Total"), "", P(money(t['net_revenue']), "fs_rb"), P(money(t['expenses']), "fs_rb")])
-        f += [Spacer(1, 8), PM("Lines", "h2"), _table(data, [0.9 * inch, W - 3.3 * inch, 1.2 * inch, 1.2 * inch])]
+        f += [Spacer(1, 8), *heading("Lines"), _table(data, [0.9 * inch, W - 3.3 * inch, 1.2 * inch, 1.2 * inch])]
     if s["takeaways"]:
-        f += [Spacer(1, 8), PM("Key takeaways", "h2")] + [P(f"•  {x}", "body") for x in s["takeaways"]]
+        f += [Spacer(1, 8), *heading("Key takeaways")] + [P(f"•  {x}", "body") for x in s["takeaways"]]
     if s["summary_notes"]:
-        f += [Spacer(1, 8), PM("Summary notes", "h2"), P(s["summary_notes"], "body")]
+        f += [Spacer(1, 8), *heading("Summary notes"), P(s["summary_notes"], "body")]
     f += [Spacer(1, 10), P("Prepared for committee & stakeholders. Transaction-level evidence (every line and its "
                            "documents) is in the Audit report.", "small")]
     doc.build(f)
     return buf.getvalue(), doc
 
 
+def yoy_change(r: dict) -> str:
+    if r.get("change") is None:
+        return "—"
+    if r["change"] in ("0.00", "-0.00"):
+        return "no change"
+    word = "up" if not r["change"].startswith("-") else "down"
+    return f"{word} {money(r['change'].lstrip('-'))}" + (f" ({r['change_pct'].lstrip('-')}%)" if r.get("change_pct") else "")
+
+
+def yoy_rows(s: dict) -> list[list[str]]:
+    return [[str(r["year"]), r["label"] + ("" if r["source"] == "Recorded" else f" ({r['source']})"),
+             money(r["net_revenue"]) if r["net_revenue"] is not None else "—",
+             money(r["expenses"]) if r["expenses"] is not None else "—", money(r["net_proceeds"]),
+             _p(r["net_margin"]) if r["net_revenue"] is not None else "—", yoy_change(r)] for r in s["year_over_year"]]
+
+
+YOY_HEAD = ["Year", "Fundraiser", "Net revenue", "Expenses", "Net proceeds", "Margin", "Net vs year before"]
+YOY_NOTE = ("How this fundraiser has done in each year it was held (linked with “Continues from”; Entered = a year "
+            "before PennyWarden entered by hand). Use it to judge whether to keep offering it.")
+
+
+def _yoy_pdf(s: dict, W: float) -> list:
+    if not s.get("year_over_year"):
+        return []
+    data = [_h(YOY_HEAD)]
+    for row in yoy_rows(s):
+        data.append([P(row[0], "cell"), P(row[1], "cell")] + [P(v, "cellr") for v in row[2:6]] + [P(row[6], "cell")])
+    t = _table(data, [0.5 * inch, W - 5.15 * inch, 0.9 * inch, 0.85 * inch, 0.95 * inch, 0.6 * inch, 1.35 * inch],
+               bold_rows=[len(data) - 1])
+    return [Spacer(1, 8), KeepTogether([P("Year over year", "h2"), P(YOY_NOTE, "small"), Spacer(1, 3), t])]
+
+
 def _itemized(title: str, lines: list[dict], subtotal: str, W: float) -> list:
-    out = [P(title, "metak")]
+    out = heading(title, "metak")
     if len(lines) > TWO_COLUMN_AFTER:   # long lists: two columns side by side (date, contributor and note, amount)
         half = (len(lines) + 1) // 2
         cw = (W - 12) / 2
 
-        def col(part):
-            d = [_h(["Date", "Contributor", "Amount"])]
-            for x in part:
-                who = escape(x["who"]) + (f"<br/><font size=6>{escape(x['note'])}</font>" if x["note"] else "")
-                d.append([P(_us(x["date"]), "cell"), PM(who, "cell"), P(money(x["amount"]), "cellr")])
-            return _table(d, [0.75 * inch, cw - 1.75 * inch, 1.0 * inch])
-        pair = Table([[col(lines[:half]), col(lines[half:])]], colWidths=[cw + 6, cw + 6])
-        pair.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0),
-                                  ("RIGHTPADDING", (0, 0), (-1, -1), 6)]))
-        out.append(pair)
+        def cells(x):
+            if x is None:
+                return ["", "", ""]
+            who = escape(x["who"]) + (f"<br/><font size=6>{escape(x['note'])}</font>" if x["note"] else "")
+            return [P(_us(x["date"]), "cell"), PM(who, "cell"), P(money(x["amount"]), "cellr")]
+        # one table (left half | gap | right half), so it splits across pages row by row
+        d = [_h(["Date", "Contributor", "Amount"]) + [""] + _h(["Date", "Contributor", "Amount"])]
+        left, right = lines[:half], lines[half:]
+        for i in range(half):
+            d.append(cells(left[i]) + [""] + cells(right[i] if i < len(right) else None))
+        t = Table(d, colWidths=[0.75 * inch, cw - 1.75 * inch, 1.0 * inch, 12, 0.75 * inch, cw - 1.75 * inch, 1.0 * inch],
+                  repeatRows=1)
+        grid = colors.HexColor("#c3cad3")
+        t.setStyle(TableStyle([("GRID", (0, 0), (2, -1), 0.25, grid), ("GRID", (4, 0), (6, len(right)), 0.25, grid),
+                               ("BACKGROUND", (0, 0), (2, 0), colors.HexColor("#dfe7f1")),
+                               ("BACKGROUND", (4, 0), (6, 0), colors.HexColor("#dfe7f1")),
+                               ("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                               ("RIGHTPADDING", (0, 0), (-1, -1), 4), ("TOPPADDING", (0, 0), (-1, -1), 2),
+                               ("BOTTOMPADDING", (0, 0), (-1, -1), 2)]))
+        out.append(t)
     else:
         d = [_h(["Date", "Contributor", "Amount", "Note"])]
         for x in lines:
@@ -593,7 +669,7 @@ def build_docx(s: dict) -> bytes:
     _drow(tb, ["Net revenue", "", money(t["net_revenue"])], {2}, bold=True, widths=W3)
     _drow(tb, ["Less expenses", "Fundraiser expenses" + ("; cash float taken out is not an expense"
                                                          if t["cash_float_out"] != "0.00" else ""),
-               f"-{money(t['expenses'])}"], {2}, widths=W3)
+               _neg(t["expenses"])], {2}, widths=W3)
     _drow(tb, ["Net proceeds", f"Net margin {_p(t['net_margin'])}", money(t["net_proceeds"])], {2}, bold=True,
           shade=_HEX_GROUP, widths=W3)
     p = d.add_paragraph(f"ROI (net proceeds ÷ expenses): {t['roi'] if t['roi'] is not None else 'n/a (no expenses)'}")
@@ -601,6 +677,15 @@ def build_docx(s: dict) -> bytes:
     for y in s["per_fiscal_year"]:
         q = d.add_paragraph(f"{y['fiscal_year']}: revenue {money(y['income'])}, expenses {money(y['expense'])}, net {money(y['net'])}")
         q.runs[0].font.size = Pt(8)
+    if s.get("year_over_year"):
+        d.add_heading("Year over year", level=2)
+        q = d.add_paragraph(YOY_NOTE)
+        q.runs[0].font.size = Pt(8)
+        WY = [0.55, 1.75, 0.95, 0.9, 0.95, 0.65, 1.25]
+        tb = _dtable(d, YOY_HEAD, WY, {2, 3, 4, 5})
+        rows = yoy_rows(s)
+        for i, row in enumerate(rows):
+            _drow(tb, row, {2, 3, 4, 5}, bold=i == len(rows) - 1, widths=WY)
     groups, other = s["groups"], s["other"]
     if s["has_buckets"]:
         d.add_heading("Revenue breakdown", level=2)
@@ -631,6 +716,7 @@ def build_docx(s: dict) -> bytes:
             for title, lines, sub in subs:
                 q = d.add_paragraph()
                 q.add_run(title).bold = True
+                q.paragraph_format.keep_with_next = True
                 tb = _dtable(d, ["Date", "Contributor", "Amount", "Note"], WI, {2})
                 for x in lines:
                     _drow(tb, [_us(x["date"]), x["who"], money(x["amount"]), x["note"] or ""], {2}, widths=WI)

@@ -12,11 +12,12 @@ from __future__ import annotations
 
 import datetime as dt
 import io
+import math
 
 from pptx import Presentation
 from pptx.chart.data import CategoryChartData
 from pptx.dml.color import RGBColor
-from pptx.enum.chart import XL_CHART_TYPE, XL_LABEL_POSITION, XL_LEGEND_POSITION
+from pptx.enum.chart import XL_AXIS_CROSSES, XL_CHART_TYPE, XL_LABEL_POSITION, XL_LEGEND_POSITION
 from pptx.enum.shapes import MSO_SHAPE
 from pptx.enum.text import PP_ALIGN
 from pptx.util import Emu, Inches, Pt
@@ -86,12 +87,39 @@ def _coin(slide, x, y, d):
     inner.line.width = Pt(2)
 
 
+def _nice_step(top: float) -> float:
+    """A round axis step giving about 4-5 gridlines (Kyle, 2026-10-20: long axis amounts ran into each other)."""
+    if top <= 0:
+        return 1
+    raw = top / 4
+    mag = 10 ** math.floor(math.log10(raw))
+    for m in (1, 2, 2.5, 5, 10):
+        if raw <= m * mag:
+            return m * mag
+    return 10 * mag
+
+
 def _style_chart(chart, legend=True, legend_pos=XL_LEGEND_POSITION.BOTTOM):
     chart.font.name = FONT
     chart.font.size = Pt(12)
     chart.has_title = False          # the slide title says what it is
+    if chart.chart_type != XL_CHART_TYPE.DOUGHNUT:
+        # whole dollars on the value axis, with a round step, so the labels never overlap (the data labels keep cents)
+        va = chart.value_axis
+        va.tick_labels.number_format = '"$"#,##0'
+        va.tick_labels.number_format_is_linked = False
+        va.tick_labels.font.size = Pt(11)
+        vals = [v for p in chart.plots for s_ in p.series for v in s_.values if v is not None]
+        if vals:
+            top = max(max(vals), 0)
+            low = min(min(vals), 0)
+            step = _nice_step(max(top - low, 1))
+            va.major_unit = step
+            va.maximum_scale = math.ceil(top * 1.1 / step) * step if top > 0 else 0
+            va.minimum_scale = math.floor(low / step) * step if low < 0 else 0
     if chart.chart_type in (XL_CHART_TYPE.BAR_CLUSTERED,):
         chart.category_axis.reverse_order = True   # first category at the top, as in the tables
+        chart.category_axis.crosses = XL_AXIS_CROSSES.MAXIMUM   # ... and the value axis stays at the bottom
     chart.has_legend = legend
     if legend:
         chart.legend.position = legend_pos
@@ -211,6 +239,30 @@ def build(s: dict) -> bytes:
                 f"= net revenue {money(t['net_revenue'])}.", f"Less expenses {money(t['expenses'])} = net proceeds "
                 f"{money(t['net_proceeds'])}."] + [f"{y['fiscal_year']}: revenue {money(y['income'])}, expenses "
                                                    f"{money(y['expense'])}, net {money(y['net'])}." for y in s["per_fiscal_year"]])
+
+    # year over year (#277 feedback): only when earlier years of the series are known
+    if s.get("year_over_year"):
+        from .fundraiser_summary import YOY_HEAD, yoy_rows, yoy_change
+        yy = s["year_over_year"]
+        sl = prs.slides.add_slide(blank)
+        _title(sl, "Year over year", "Each year this fundraiser was held")
+        cd = CategoryChartData(number_format='"$"#,##0.00')
+        cd.categories = [str(r["year"]) for r in yy]
+        cd.add_series("Net revenue", [float(r["net_revenue"]) if r["net_revenue"] is not None else None for r in yy])
+        cd.add_series("Expenses", [float(r["expenses"]) if r["expenses"] is not None else None for r in yy])
+        cd.add_series("Net proceeds", [float(r["net_proceeds"]) for r in yy])
+        ch = sl.shapes.add_chart(XL_CHART_TYPE.COLUMN_CLUSTERED, Inches(0.5), Inches(1.6), Inches(7.2), Inches(5.6), cd).chart
+        _style_chart(ch)
+        _labels(ch.plots[0], size=9)
+        for i, ser in enumerate(ch.plots[0].series):
+            ser.format.fill.solid()
+            ser.format.fill.fore_color.rgb = (BLUE, GOLD, RGBColor(0x2E, 0x8B, 0x57))[i]
+        rows = [["Year", "Net proceeds", "vs year before"]] + [[str(r["year"]) + ("" if r["source"] == "Recorded" else " (Entered)"),
+                                                               money(r["net_proceeds"]), yoy_change(r)] for r in yy[-TABLE_ROWS:]]
+        _table(sl, Inches(7.9), Inches(1.7), Inches(5.0), rows, [1.4, 1.5, 2.1], {1}, bold_rows=[len(rows) - 1], size=11)
+        _notes(sl, ["Year over year for this fundraiser's series (linked with “Continues from”); Entered = a year before "
+                    "PennyWarden entered by hand, which may have only the net amount.", " | ".join(YOY_HEAD)]
+               + [" | ".join(r) for r in yoy_rows(s)])
 
     if s["has_buckets"]:
         rev = [(g["name"], g["income"], g["income_pct"]) for g in groups if g["income"] != "0.00"]

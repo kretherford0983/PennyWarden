@@ -474,6 +474,34 @@ class FundraiserIn(In):
     budget_ids: list[int] = Field(default_factory=list, max_length=4)
     filter_text: OptStr(200) = None
     filter_regex: bool = False
+    continues_from_id: int | None = None       # 2.1.0 (#277): the previous fundraiser of the series
+    copy_buckets_from_id: int | None = None    # 2.1.0 (#277): "Create next year's from this one" (create only)
+
+
+class FundraiserLinkIn(In):                    # 2.1.0 (#277)
+    continues_from_id: int | None = None
+
+
+class FundraiserSeriesIn(In):
+    name: OptStr(120) = None
+    group_as_other: bool | None = None
+
+
+class FundraiserSeriesResultIn(In):
+    fiscal_year_label: Str(40)
+    net: Amount
+    income: Amount | None = None
+    expense: Amount | None = None
+    note: OptStr(500) = None
+
+
+class FundraiserSeriesMergeIn(In):
+    into_series_id: int
+
+
+class FundraiserFyNotesIn(In):
+    fiscal_year_id: int
+    notes: OptStr(10000) = None
 
 
 class FundraiserPreviewIn(In):
@@ -525,6 +553,7 @@ class FundraiserBucketAmountIn(In):
     charge: Amount | None = None
     less: Amount | None = None
     less_description: OptStr(200) = None
+    contributor_override: OptStr(120) = None   # 2.1.0: the contributor shown on the fundraiser reports (e.g. "Cash")
 
 
 class FundraiserLineIn(In):

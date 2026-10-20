@@ -589,3 +589,5 @@ button.small, label.button { display: inline-flex; align-items: center; justify-
 .fr-bucket-row .fr-credit .row.fields { flex-wrap: wrap; }
 label.check.small { font-size: 12px; }
 .fr-final-btn { margin-left: 10px; }
+.fr-bucket-row { flex-wrap: wrap; }
+.fr-bucket-row .fr-who { flex-basis: 100%; }

@@ -48,6 +48,84 @@ could not otherwise be corrected. Scope and safeguards:
 - Audited as `TRANSACTION_VOID_DATE_CORRECTED` with before/after snapshots and the reason.
 - Tests: `backend/tests/test_cr001_void_date.py` (5 tests) and E2E "CR-001".
 
+**2.1.0 — build 4–6 feedback (Kyle, 2026-10-20), on the build 7 branch.**
+- *Contributor override:* migration `0042` adds `fundraiser_bucket_line.contributor_override` (120 characters).
+  - `set_line()` takes `contributor_override` per bucket item and keeps it in the audit snapshot (`bucket_line_out`).
+  - `summary()` uses it instead of the Entity for income lines (with names on). With names off, "Contributor n" is
+    numbered per override text. For expenses it replaces the Entity before the description.
+  - Top contributors in the deck aggregate by the shown name, so all "Cash" lines add up.
+- *Headings:* `fundraiser_summary.heading()` puts a `CondPageBreak(1.3 in)` before every PDF section and itemized
+  sub-heading, in the stakeholder and the Fiscal Year report. The two-column itemized list is now one 7-column table
+  (left | gap | right) that splits by rows. Before, the nested tables could not split, so a long list jumped to the
+  next page and left its heading behind. Word: the sub-heading paragraphs keep with next.
+- *Deck axes:* `_style_chart()` gives every non-doughnut value axis a `"$"#,##0` format and a round major unit
+  (`_nice_step`, about 4 steps). The bounds are rounded to that step. Data labels keep the cents.
+
+**2.1.0 test build 7 — fundraisers across years, Fiscal Year report and deck (#277).** Migration `0041`:
+- tables `fundraiser_series` (`name`, `group_as_other`, `merged_into_id`), `fundraiser_series_result` (label, `year`,
+  net / income / expense cents, note, retired fields) and `fundraiser_fy_report_note` (one per Fiscal Year);
+- columns `fundraiser.series_id` and `continues_from_id`.
+
+The service is `services/fundraiser_series.py`; rendering is `services/fundraiser_fy_report.py` (PDF, and pptx
+through the #276 deck helpers).
+- **Years:** a Fiscal Year's number is the four-digit year in its name, else its end year. A fundraiser's year is
+  that of the Fiscal Year covering its start date (else its first budget year, else the start year). An entered
+  result's year is the first four-digit year in its label; a label without one is refused.
+- **Linking:**
+  - `set_link()` puts the fundraiser in the previous one's series, creating it as `series_name_for()` (the
+    fundraiser's name without four-digit years) and audited `FUNDRAISER_SERIES_CREATED`. `None` unlinks.
+  - The previous one must belong to an earlier year.
+  - Audited `FUNDRAISER_SERIES_LINK_UPDATED`. It goes through `PUT …/series-link`, which works in any year, or through
+    create / update (`continues_from_id`).
+  - `continue_options()` lists the latest fundraiser per series plus unlinked ones of earlier years, newest first.
+- **Next year:** `GET …/next-year` gives the pre-fill:
+  - `next_name()` moves every four-digit year on one;
+  - dates are moved a year;
+  - budgets come from `_continued_by()`.
+
+  Create with `copy_buckets_from_id` copies categories and buckets (`copy_buckets()`, audited).
+- **Series list** (`/api/fundraiser-series`, `fundraiser.manage`): rename and *group as Other* (audited
+  `FUNDRAISER_SERIES_UPDATED`), entered results (`FUNDRAISER_RESULT_ENTERED`), retire (`FUNDRAISER_RESULT_RETIRED`)
+  and merge (`FUNDRAISER_SERIES_MERGED`).
+  - A result is refused (409) for a year with a fundraiser of the series in PennyWarden, or a second active entry for
+    that year.
+  - Merge is refused when both series have an active entry for the same year. It moves the fundraisers and entries
+    and sets `merged_into_id`; reports follow merges.
+- **`fy_report()`:**
+  - Each selected fundraiser comes from `fundraiser_summary.summary()`, so it equals its stakeholder report. The
+    year total is their sum.
+  - History is keyed by series (or by the fundraiser itself when unlinked). Recorded amounts are every fundraiser
+    counted in an earlier year plus the selected ones this year; entered results are added for earlier years. Two
+    fundraisers of a series in one year add up.
+  - Period: `years` back from this year (-1 = all).
+  - Targeted: for each series without a held fundraiser this year (none, or only PLANNED ones), the average of its
+    last `avg_years` active years less its YTD, as a separate estimate.
+  - Share: series marked *Group as Other* or under 5% of the period total become *Other*, with members listed.
+  - Averages: the total over the period ÷ the series' active years (years with a recorded or entered amount, $0
+    included).
+  - Footnotes: two-year fundraisers, Entered vs Recorded, the estimate rule, the Other members.
+  - The default selection (`…/fy-report/selection`) is every non-archived, non-cancelled fundraiser whose start year
+    is this year.
+- **Endpoints:**
+  - `GET /api/fundraisers/fy-report?fiscal_year_id&ids&years&targeted&avg_years&format=pdf|pptx|json`
+    (`fundraiser.view`; audit `REPORT_GENERATED {report: FUNDRAISER_FY_SUMMARY | FUNDRAISER_FY_PRESENTATION}` with the
+    ids and options; json is not audited);
+  - notes: `PUT /api/fundraisers/fy-report/notes` (`fundraiser.manage`, audited `FUNDRAISER_FY_REPORT_NOTES_UPDATED`).
+- Frontend:
+  - `Fundraisers.tsx`: list checkboxes and `FyReportDialog`; `FundraiserForm` gains *Continues from* and the
+    pre-fill; the detail page gets *Series* with *Change…* (`SeriesLinkDialog`) and *Create next year's…*.
+  - New page `pages/FundraiserSeries.tsx` at `/fundraiser-series`.
+- **Year over year** (Kyle's feedback on the build 7 screenshots, 2026-10-20):
+  - `series_history(f)` gives every year of the fundraiser's series up to its own year. A year is the sum of the
+    series' fundraisers counted in it (`summary(…, history=False)`, so there is no recursion) or its entered result.
+    Revenue, expenses and margin are `None` when an entered result has only the net.
+  - `summary()` returns `year_over_year` (when there is more than one year) and adds a "Net proceeds were up/down …
+    on <year>" takeaway.
+  - The stakeholder PDF / Word get a *Year over year* table; the deck gets a column chart and table slide.
+  - `fy_report()` returns `year_over_year` per series: values per period year, and the change on the most recent
+    earlier year. The FY PDF shows a table (the last 6 years); the deck shows a multi-line chart and a change table.
+- Tests: `test_v210_fundraiser_series.py` (15 tests) and the E2E "2.1.0 (#277)".
+
 **2.1.0 test build 6 — fundraiser presentation (#276).** No migration. New dependencies `python-pptx` 1.0.2 (MIT) and
 `XlsxWriter` 3.2.9 (BSD, the embedded chart workbooks). They are pinned, in THIRD-PARTY-NOTICES, pip-audit clean, and
 in the PyInstaller specs (`collect_data_files("pptx")` for the default template). The router imports
