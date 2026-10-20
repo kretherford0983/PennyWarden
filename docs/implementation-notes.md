@@ -48,6 +48,37 @@ could not otherwise be corrected. Scope and safeguards:
 - Audited as `TRANSACTION_VOID_DATE_CORRECTED` with before/after snapshots and the reason.
 - Tests: `backend/tests/test_cr001_void_date.py` (5 tests) and E2E "CR-001".
 
+**2.1.0 test build 2 — register (#262, #258, #260, #259; proposed items approved 2026-10-19).** Migrations
+`0035`–`0037`, additions only.
+- *#262 sort:* `app_user.register_sort` (`"<column>:<asc|desc>"`, `None` = `transaction_date:asc`), set through
+  `PUT /api/me/preferences` (`register_sort` / `reset_register_sort`) and returned by `/api/auth/me`. The Clear-date
+  key is `(uncleared, clear_date, transaction_date, entry_timestamp, id)` and descending reverses the whole list, so
+  ties read in entry order both ways. Sorted by Cleared the row's `running_balance` is the cleared balance (opening +
+  ACTIVE cleared items in clear order; `None` on uncleared rows) and the response says `running_balance_kind`. The
+  frontend keeps the choice in the Me context (`patchMe`) so navigating back keeps it without a reload.
+- *#258 filter:* `documentation.categories()` runs the review's `classify()` for the register's rows (ACTIVE only);
+  `missing` (and the 1.6.7 value `no`) keeps rows with a category, `marked` rows with a transaction- or
+  allocation-level mark. Every row carries `documentation` for the badge. The 1.6.7 backend test was changed on
+  purpose: a mark with a reason is documented, so it is no longer under "no".
+- *#260 electronic payment:* `register_transaction.electronic_payment`, `payment_method`, `payment_method_other`,
+  `payment_reference`. `register.electronic_values()` validates create and edit (withdrawals only; method required;
+  OTHER needs a description; check number **or** reference). References are unique per account case-insensitively,
+  in their own namespace (`DUPLICATE_PAYMENT_REFERENCE`), and never reach `checks.py` (CR-011/CR-012 read
+  `check_number` only). The fields count as financial edits (cleared confirmation, closed-year lock) and are in the
+  audit snapshot. Interlock: turning electronic on is refused (`CHECK_PRINTED`) while the current check number is the
+  last printed one (`checkprint.is_reprint`); a spoil moves the number on, after which it is allowed.
+  `get_printable(..., for_check=True)` refuses electronic payments for prepare/print/spoil/hand-written; options,
+  documents, letter, envelope and envelope-test use `for_check=False`, and `PrintCheckDialog` then shows only
+  `EnclosuresPanel`. `register.payment_text()` is what the Audit/Close and Entity Activity reports print.
+- *#259 order:* `attachment.sort_order`; `attachments.DISPLAY_ORDER = (COALESCE(sort_order, id), id)` is used by the
+  lists (active first, then removed), the Audit/Close report, the fundraiser report and the fundraiser lines.
+  `reorder()` takes every active attachment of the owner (a Fiscal Year: its Unspecified ones) and numbers them after
+  the owner's current maximum, so they never tie with attachments still in upload order; `_next_position()` puts new
+  uploads, check copies, letters, envelopes and the Close report after them once an owner has been reordered.
+  Rights = `check_manage` (the add-attachment permission per owner type); Closed Fiscal Year / deleted transaction /
+  closed fundraiser refused; VOID allowed (BR-070); no `CLEARED_EDIT` (documentation). Audit `ATTACHMENTS_REORDERED`
+  on the owner's object type, before/after `attachment_order` (id + filename); an unchanged order is a no-op.
+
 **2.1.0 test build 1 — pipeline and installer (#240, #236, #237, #226; decided in chat 2026-10-19).** No migration.
 - *#240 release dates:* `check_promotion.sh` no longer refuses `## <version> — unreleased` into main (the 1.7.3 rule);
   it still needs the section and refuses a tagged version, and pull requests into test/main fail while an *earlier*

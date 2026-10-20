@@ -5,6 +5,25 @@ Versions are `Breaking.Major.Minor` from 1.6.0 (docs/branching.md).
 ## 2.1.0 — unreleased
 PennyWarden 2.1.0 (in progress).
 
+### Register
+- **Sort by Date or Cleared.** Click the *Date* or *Cleared* heading to sort by it; click again for newest first. Each
+  user's choice is remembered (in any browser). Sorted by *Cleared*, uncleared transactions come last (first when
+  newest first) and the balance column shows the **bank (cleared) balance** after each cleared item — the figure on
+  your bank statement. *Reset to default* goes back to Date, oldest first. (#262)
+- **Attachments filter: All / Yes / Missing / Marked.** *Missing* lists exactly what the Fiscal Year documentation
+  review warns about — no attachment, or "no attachment will be provided" without a reason — so a transaction such as
+  bank interest marked with a reason no longer shows up. *Marked* lists everything marked "no attachment will be
+  provided". Old links with *No* open *Missing*. (#258)
+- **Electronic payments.** Tick *Electronic payment* on a withdrawal paid by ACH / bill pay, debit card, wire or an
+  online portal, so it is clear why there is no check. An optional number is either a check number from your own
+  sequence (counted in the missing-check review) or the bank's or vendor's reference (never in the check sequence).
+  The register shows an *Electronic* badge and a *Payment* filter; the Audit and Close reports show *Electronic
+  (method)* where the check number would be. In the Payments module an electronic payment is recorded without
+  printing a check (a cover letter and envelope stay optional). (#260)
+- **Reorder attachments.** *Reorder…* on a transaction's, an allocation's, a fundraiser's or a Fiscal Year's other
+  documents sets the order they are shown and printed in the Audit, Close and fundraiser reports — for example
+  invoice, receipt, approval email. New files go to the end; a closed Fiscal Year can't be reordered. (#259)
+
 ### For whoever runs the server
 
 - **`sudo pennywarden apply-config`** applies `config.toml` on a Linux server without running the whole installer:

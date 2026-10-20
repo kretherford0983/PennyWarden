@@ -100,6 +100,8 @@ class User(Base):
     dashboard_layout: Mapped[str | None] = mapped_column(String(200), nullable=True)  # v1.5.0 CR-031 (comma list)
     # 2.0.0 (#164): the bank account of this user's last payment (Payments module), preselected next time
     last_payment_account_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 2.1.0 (#262): the user's register sort, "<column>:<asc|desc>" (None = Date, oldest first)
+    register_sort: Mapped[str | None] = mapped_column(String(40), nullable=True)
     password_changed_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
     created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("app_user.id"), nullable=True)
@@ -332,6 +334,13 @@ class RegisterTransaction(Base):
     deleted_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     deleted_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     delete_reason: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    # 2.1.0 (#260): a withdrawal paid electronically (no physical check). The optional number is either a check number
+    # from the organization's own sequence (check_number, CR-011/CR-012) or a bank/vendor reference (never in the
+    # check sequence).
+    electronic_payment: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
+    payment_method: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    payment_method_other: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    payment_reference: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
     allocations: Mapped[list["TransactionAllocation"]] = relationship(
         back_populates="transaction", lazy="selectin", order_by="TransactionAllocation.id"
@@ -418,6 +427,8 @@ class Attachment(Base):
     # v1.3 CR-007: APPROVAL | AUDIT_SIGNOFF | UNSPECIFIED for Fiscal Year attachments (None otherwise)
     document_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
     system_generated: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
+    # 2.1.0 (#259): position among its owner's attachments; None = upload order (listed by COALESCE(sort_order, id))
+    sort_order: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class RequestKey(Base):

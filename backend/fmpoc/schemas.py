@@ -93,6 +93,9 @@ class PreferencesIn(In):
     # v1.5.0 CR-031: dashboard sections in display order with visibility; reset_dashboard_layout -> default
     dashboard_layout: list[DashboardSectionIn] | None = Field(None, max_length=7)
     reset_dashboard_layout: bool | None = None
+    # 2.1.0 (#262): the register's sort, remembered per user; reset_register_sort -> Date, oldest first
+    register_sort: Literal["transaction_date:asc", "transaction_date:desc", "clear_date:asc", "clear_date:desc"] | None = None
+    reset_register_sort: bool | None = None
 
 
 Domain = Literal["ADMINISTRATOR", "FINANCIAL", "AUDITOR", "COMBINED"]  # 1.9.0 (#54): COMBINED on local installs
@@ -177,6 +180,13 @@ class FiscalYearApproveIn(In):
 class AttachmentTypeIn(In):
     """v1.3 CR-007: Fiscal Year document type."""
     document_type: Literal["APPROVAL", "AUDIT_SIGNOFF", "UNSPECIFIED"]
+
+
+class AttachmentOrderIn(In):
+    """2.1.0 (#259): the new order of an owner's attachments (every active one shown there, exactly once)."""
+    owner_type: Literal["fiscal_year", "transaction", "allocation", "fundraiser"]
+    owner_id: int
+    attachment_ids: Annotated[list[int], Field(min_length=1, max_length=500)]
 
 
 class ApprovalNoAttachmentIn(In):
@@ -314,6 +324,12 @@ RequestKeyStr = Annotated[str | None, StringConstraints(pattern=r"^[A-Za-z0-9-]{
 CheckNumberStr = Annotated[str | None, StringConstraints(strip_whitespace=True, max_length=20, pattern=r"^[A-Za-z0-9-]*$")]
 
 
+# 2.1.0 (#260): electronic payment methods (withdrawals)
+PaymentMethod = Literal["ACH", "DEBIT_CARD", "WIRE", "ONLINE_PORTAL", "OTHER"]
+PaymentReferenceStr = Annotated[str | None, StringConstraints(strip_whitespace=True, max_length=40,
+                                                              pattern=r"^[A-Za-z0-9 ._/#-]*$")]
+
+
 class TransactionCreateIn(In):
     bank_account_id: int
     transaction_type: Literal["DEPOSIT", "WITHDRAWAL"]
@@ -330,6 +346,12 @@ class TransactionCreateIn(In):
     no_attachment: bool = False
     no_attachment_reason: OptStr(500) = None
     request_key: RequestKeyStr = None  # v1.3 CR-011: one-time key per opened form (repeat submit = same result)
+    # 2.1.0 (#260): paid electronically (withdrawals); the number is check_number (from our sequence) OR
+    # payment_reference (a bank/vendor confirmation number) - never both
+    electronic_payment: bool | None = None
+    payment_method: PaymentMethod | None = None
+    payment_method_other: OptStr(60) = None
+    payment_reference: PaymentReferenceStr = None
     confirmations: Confirmations = []
 
 
@@ -344,6 +366,12 @@ class TransactionUpdateIn(In):
     allocations: Annotated[list[AllocationIn] | None, Field(max_length=100)] = None
     no_attachment: bool | None = None
     no_attachment_reason: OptStr(500) = None
+    # 2.1.0 (#260): paid electronically (withdrawals); the number is check_number (from our sequence) OR
+    # payment_reference (a bank/vendor confirmation number) - never both
+    electronic_payment: bool | None = None
+    payment_method: PaymentMethod | None = None
+    payment_method_other: OptStr(60) = None
+    payment_reference: PaymentReferenceStr = None
     confirmations: Confirmations = []
 
 

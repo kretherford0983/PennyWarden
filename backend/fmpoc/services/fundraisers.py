@@ -30,6 +30,7 @@ from ..models import (Attachment, BankAccount, Budget, FiscalYear, Fundraiser, F
                       TransactionAllocation, Workspace, utcnow)
 from ..money import fmt, parse_amount
 from . import bank_accounts as bank
+from .attachments import DISPLAY_ORDER
 from .common import add_months, budget_label, covering_fiscal_years, fy_brief, get_scoped
 
 WINDOW_MONTHS = 3
@@ -544,7 +545,7 @@ def detail(db: Session, ctx, f: Fundraiser) -> dict:
     if rows:
         q = select(Attachment).where(Attachment.active.is_(True),
                                      (Attachment.transaction_id.in_(t_ids)) | (Attachment.allocation_id.in_(a_ids)))
-        for x in db.scalars(q.order_by(Attachment.id)):
+        for x in db.scalars(q.order_by(*DISPLAY_ORDER)):  # 2.1.0 (#259)
             key = ("a", x.allocation_id) if x.allocation_id else ("t", x.transaction_id)
             atts[key].append({"id": x.id, "original_filename": x.original_filename, "mime_type": x.mime_type,
                               "size_bytes": x.size_bytes, "content_url": f"/api/attachments/{x.id}/content"})

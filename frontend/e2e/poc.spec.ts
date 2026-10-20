@@ -759,7 +759,7 @@ test("1.6.7: Clear puts the register filters back to their defaults and keeps th
   await logout(page);
 });
 
-test("1.6.7: the register's Attachments filter shows transactions with or without attachments", async ({ page }) => {
+test("1.6.7 / 2.1.0 (#258): the register's Attachments filter - Yes, Missing (the documentation review), Marked", async ({ page }) => {
   await login(page, "ru1", "Brand-New-Pass-99");
   await page.getByRole("link", { name: "Register" }).click();
   const withoutAny = page.getByRole("row", { name: /Scroll 29/ }); // the "Scroll" transactions have no attachments
@@ -770,15 +770,69 @@ test("1.6.7: the register's Attachments filter shows transactions with or withou
   await att.selectOption("yes");
   await expect(withoutAny).toHaveCount(0);
   const yes = await page.locator("table.register tbody tr").count();
-  await att.selectOption("no");
+  await att.selectOption("missing");
   await expect(withoutAny).toBeVisible();
-  const no = await page.locator("table.register tbody tr").count();
+  await expect(withoutAny).toContainText("Missing attachment");
+  const missing = await page.locator("table.register tbody tr").count();
   expect(yes).toBeGreaterThan(0);
-  expect(no).toBeGreaterThan(0);
-  expect(yes + no).toBe(all);
+  expect(missing).toBeGreaterThan(0);
+  expect(yes + missing).toBeLessThanOrEqual(all); // VOID ones and documented "no attachment" marks are neither
   await page.screenshot({ path: "e2e-screenshots/light-register-attachments-filter.png" });
+  await att.selectOption("marked");
+  await expect(withoutAny).toHaveCount(0);
   await page.getByRole("button", { name: "Clear", exact: true }).click();
   await expect(att).toHaveValue("");
+  await logout(page);
+});
+
+test("2.1.0 (#262, #260, #259): register sort, electronic payment, reorder attachments", async ({ page }) => {
+  await login(page, "ru1", "Brand-New-Pass-99");
+  await page.getByRole("link", { name: "Register" }).click();
+  // #262: sort by Cleared (the balance column becomes the cleared balance), remembered after a reload, then reset
+  const cleared = page.getByRole("columnheader", { name: "Cleared", exact: true });
+  await expect(cleared).toHaveAttribute("aria-sort", "none");
+  await cleared.getByRole("button").click();
+  await expect(cleared).toHaveAttribute("aria-sort", "ascending");
+  await expect(page.getByRole("columnheader", { name: "Cleared balance" })).toBeVisible();
+  await cleared.getByRole("button").click();
+  await expect(cleared).toHaveAttribute("aria-sort", "descending");
+  await page.reload();
+  await expect(page.getByRole("columnheader", { name: "Cleared", exact: true })).toHaveAttribute("aria-sort", "descending");
+  await page.getByRole("button", { name: "Reset to default" }).click();
+  await expect(page.getByRole("columnheader", { name: "Date", exact: true })).toHaveAttribute("aria-sort", "ascending");
+  await expect(page.getByRole("columnheader", { name: "Balance", exact: true })).toBeVisible();
+  // #260: an electronic payment with a reference
+  await page.getByRole("button", { name: "New transaction" }).click();
+  const t = page.getByRole("dialog", { name: /New transaction/ });
+  await t.getByLabel("Transaction date").fill("2026-11-20");
+  await t.getByLabel("Electronic payment (no physical check)").check();
+  await expect(t.getByLabel("Check #", { exact: true })).toHaveCount(0);
+  await t.getByLabel("Electronic payment method").selectOption("ACH");
+  await t.getByLabel("Kind of number").selectOption("reference");
+  await t.getByLabel("Payment reference").fill("ACH-20261120");
+  await pickTravel(t);
+  await t.getByLabel("Allocation 1 Amount").fill("41.17");
+  await t.getByRole("button", { name: "Save" }).click();
+  await expect(t).toHaveCount(0);
+  const row = page.getByRole("row", { name: /2026-11-20/ });
+  await expect(row).toContainText("Electronic");
+  await expect(row).toContainText("ACH-20261120");
+  await page.getByRole("combobox", { name: "Payment" }).selectOption("electronic");
+  await expect(page.locator("table.register tbody tr")).toHaveCount(1);
+  await page.screenshot({ path: "e2e-screenshots/light-register-electronic-payment.png" });
+  // #259: two attachments, reordered
+  await row.getByRole("button", { name: /Details for transaction/ }).click();
+  const files = page.locator("section.attachments").filter({ hasText: "Transaction attachments" }).first();
+  for (const n of ["first-invoice.pdf", "second-receipt.pdf"]) {
+    await files.locator("input[type=file]").setInputFiles({ name: n, mimeType: "application/pdf", buffer: PDF });
+    await expect(files).toContainText(n);
+  }
+  await files.getByRole("button", { name: "Reorder…" }).click();
+  const order = page.locator("section.attachments").filter({ hasText: "set the order" });
+  await order.getByRole("button", { name: "Move second-receipt.pdf up" }).click();
+  await order.getByRole("button", { name: "Save order" }).click();
+  await expect(files.locator(".att-list li").first()).toContainText("second-receipt.pdf");
+  await page.getByRole("button", { name: "Clear", exact: true }).click();
   await logout(page);
 });
 
@@ -1278,7 +1332,7 @@ test("#104 / #105: a budget on the Budgets page opens the Register filtered to i
   }
   await page.screenshot({ path: "e2e-screenshots/light-register-budget-filter.png" });
   // Clear removes it
-  await page.getByRole("button", { name: "Clear" }).click();
+  await page.getByRole("button", { name: "Clear", exact: true }).click();
   await expect(budgetSel).toHaveValue("");
 });
 

@@ -208,6 +208,15 @@ paid with **Create payment…** in its details, see *printing a check* above):
 
 The Payments page lists the checks printed from the account; **Open in register** shows the transaction.
 
+**Paid electronically (2.1.0, #260).** Tick **Electronic payment (no physical check)** on the payment and choose how it
+was paid (ACH / bill pay, debit card, wire, online portal, or other). Optionally enter a number: a **check # from your
+own sequence** (some bill-pay services ask for one; it counts in the missing-check review like any check) or a
+**payment reference** (the bank's or vendor's confirmation number; never part of the check sequence). **Save
+payment** records the withdrawal; no check is printed. The screen that opens offers only the cover letter and envelope,
+which stay optional. A payment whose check was already printed can't be switched to electronic until the check is
+marked spoiled (**Reprint check…** → Mark spoiled); an electronic payment can't have a check printed (untick
+*Electronic payment* first if a check is written after all).
+
 ## Cover letters and envelopes
 
 ### Setting them up (Administrators)
