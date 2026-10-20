@@ -699,7 +699,8 @@ def _not_deleted(t: RegisterTransaction) -> None:
 def delete(db: Session, ctx, t: RegisterTransaction, reason: str) -> RegisterTransaction:
     """1.7.3 (#53): a Register Admin marks an ACTIVE, uncleared transaction Deleted instead of voiding it (BR-001: it
     stays in the database for Auditors and the audit trail). A Clear/Post Date means it has posted at the bank and is
-    final - remove the clear date first if it was put on the wrong line. Deleting a transfer leg deletes both legs."""
+    final - remove the clear date first if it was put on the wrong line. Deleting a transfer leg deletes both legs.
+    2.1.0 (#289): its check number is released (refused while a printed check carries it)."""
     from .transfers import legs as transfer_legs
     if not (reason or "").strip():
         raise validation("A reason for deleting the transaction is required.", "reason")
@@ -715,6 +716,13 @@ def delete(db: Session, ctx, t: RegisterTransaction, reason: str) -> RegisterTra
             raise conflict("FISCAL_YEAR_CLOSED", "A transaction affecting a Closed Fiscal Year cannot be deleted.")
         if db.get(BankAccount, leg.bank_account_id).status != "ACTIVE":
             raise conflict("ACCOUNT_CLOSED", "The Bank Account is closed.")
+        # 2.1.0 (#289): deleting releases the check number - not while a printed (not spoiled) check carries it
+        if leg.check_number:
+            from .checkprint import service as checkprint
+            if checkprint.is_reprint(db, leg):
+                raise conflict("CHECK_PRINTED", f"Check #{leg.check_number} was printed for this transaction, so a "
+                                                "paper check exists. Void the transaction instead, or mark the check "
+                                                "spoiled first (Reprint check…), then delete it.")
     for leg in group:
         before = snapshot(leg)
         leg.status = "DELETED"

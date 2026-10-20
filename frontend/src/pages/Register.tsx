@@ -1033,7 +1033,7 @@ function DeleteTxnForm({ txn, onClose, onDeleted }: { txn: any; onClose: () => v
         <ErrorBox error={err} />
         {txn.transfer ? <div className="alert warn">This is one side of a transfer. <b>Both</b> the withdrawal and the deposit will be deleted.</div> : null}
         <div className="alert warn" role="alert"><b>The transaction will be deleted.</b> It disappears from the Register, the balances, the budgets
-          and the reports. Auditors can still see it, with your reason. This cannot be undone.{txn.check_number ? ` Check number ${txn.check_number} stays used.` : ""}</div>
+          and the reports. Auditors can still see it, with your reason. This cannot be undone.{txn.check_number ? ` Check number ${txn.check_number} is released and can be used on another record.` : ""}</div>
         <Field label="Reason (required)"><textarea required value={reason} onChange={(e) => setReason(e.target.value)} /></Field>
         <div className="actions"><button type="button" onClick={onClose}>Cancel</button><button className="primary danger" type="submit" disabled={!reason.trim()}>Delete transaction</button></div>
       </GuardedForm>
