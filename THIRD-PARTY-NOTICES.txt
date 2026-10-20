@@ -35,7 +35,7 @@ Python packages (server):
   Mako 1.4.3 - MIT
   MarkupSafe 3.0.4 - BSD-3-Clause
   opentelemetry-api 1.45.1 - Apache-2.0
-  pillow 12.3.0 - MIT-CMU
+  pillow 13.0.0 - MIT-CMU
   pycparser 3.11 - BSD-3-Clause
   pydantic 2.14.0 - MIT
   pydantic_core 2.50.0 - MIT
@@ -1489,9 +1489,9 @@ Apache License
 
 ----------------------------------------------------------------------------------------------------
 
-pillow 12.3.0
+pillow 13.0.0
 License: MIT-CMU
-Source: https://python-pillow.github.io
+Source: https://python-pillow.org
 
 --- LICENSE ---
 The Python Imaging Library (PIL) is

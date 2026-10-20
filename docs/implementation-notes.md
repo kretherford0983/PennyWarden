@@ -48,6 +48,15 @@ could not otherwise be corrected. Scope and safeguards:
 - Audited as `TRANSACTION_VOID_DATE_CORRECTED` with before/after snapshots and the reason.
 - Tests: `backend/tests/test_cr001_void_date.py` (5 tests) and E2E "CR-001".
 
+**2.1.0 fix — deleted transactions release their check number (#289, Kyle 2026-10-20; amends the #53 decision).**
+- `checks.holders()` (CR-011 uniqueness) and `checks.review()` (CR-012 missing checks) leave out `status ==
+  "DELETED"`. The deleted record keeps `check_number` for the Auditors, and the duplicate message no longer mentions
+  deleted transactions.
+- `register.delete()` refuses with `CHECK_PRINTED` while `checkprint.is_reprint()` is true for a leg, i.e. the
+  current number was printed and not spoiled.
+- No migration: earlier deletions are released by the same query.
+- The 1.7.3 test asserting the number stays used was changed on purpose. Tests: `test_v210_deleted_check_number.py`.
+
 **2.1.0 — build 4–6 feedback (Kyle, 2026-10-20), on the build 7 branch.**
 - *Contributor override:* migration `0042` adds `fundraiser_bucket_line.contributor_override` (120 characters).
   - `set_line()` takes `contributor_override` per bucket item and keeps it in the audit snapshot (`bucket_line_out`).

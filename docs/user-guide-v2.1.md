@@ -41,6 +41,12 @@ Audit, Close and fundraiser reports — put the invoice first, then the receipt,
 files go to the end. The order of a closed Fiscal Year can't be changed. Register Users reorder transaction
 attachments, Budget Managers the Fiscal Year documents, and whoever manages a fundraiser its documents.
 
+### Deleting a transaction frees its check number
+When a Register Admin deletes a transaction that had a check number, the number becomes free again for another
+record. If it isn't reused, the missing-check review shows it until it is entered or confirmed "not missing". If a
+check was printed for that transaction with the Payments module, deleting is refused: void it, or mark the check
+spoiled first. (A VOID record keeps its number, as before.)
+
 ## Budget planning (Budget Managers)
 
 ### Budget Prep report

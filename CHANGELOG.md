@@ -24,6 +24,14 @@ PennyWarden 2.1.0 (in progress).
   documents sets the order they are shown and printed in the Audit, Close and fundraiser reports — for example
   invoice, receipt, approval email. New files go to the end; a closed Fiscal Year can't be reordered. (#259)
 
+### Fixed
+- **Deleting a transaction releases its check number.** Before, a deleted transaction kept its check number, so
+  the number couldn't be used again and nobody could correct it (Auditors see deleted transactions read-only). Now
+  the number is free for another record, and the missing-check review lists it until it is reused or confirmed. This
+  includes transactions deleted before the upgrade. The deleted record still shows the number to the Auditors.
+  Deleting is refused while a check printed with the Payments module carries the number: void the transaction, or
+  mark the check spoiled first. VOID records still keep their numbers. (#289)
+
 ### Budget planning (Budget Managers)
 - **Budget Prep report** (Reports → Budget Prep). Every budget of a Fiscal Year with its history over earlier years —
   budgeted, actual and the difference in dollars and percent, marked *over* or *under* — following the budget
