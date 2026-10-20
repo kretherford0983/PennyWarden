@@ -73,9 +73,12 @@ Auditors see About, Settings and Security.
 - A backup made with **Let this server recover the passphrase** (the default) can be restored by the server's owner
   even if its passphrase is forgotten — from the server's command line, on that server only. Restoring from the web
   page always asks for the passphrase.
-- **`sudo pennywarden restore`** restores a backup from a Linux server's command line;
-  **`sudo pennywarden restore --list`** shows the backups it can recover, with their full paths. On a Windows server:
-  `C:\PennyWarden\current\PennyWarden.cmd restore …` as Administrator. Details: [Backup and restore](backup-restore.md).
+- **`sudo pennywarden restore --data-dir /var/lib/pennywarden`** restores a backup from a Linux server's command line;
+  **`sudo pennywarden restore --list --data-dir /var/lib/pennywarden`** shows the backups it can recover, with their
+  full paths. On a server, always add `--data-dir`
+  ([why](backup-restore.md#the-data-folder---data-dir)). On a Windows server:
+  `C:\PennyWarden\current\PennyWarden.cmd restore … --data-dir C:\ProgramData\PennyWarden` as Administrator. Details:
+  [Backup and restore](backup-restore.md).
 - After a restore, **Reports → Restore re-entry reports** lists what was entered or changed after the backup, so it
   can be entered again.
 

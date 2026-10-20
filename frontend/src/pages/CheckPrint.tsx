@@ -21,8 +21,13 @@ export function PrintCheckDialog({ txn, onClose, onChanged }: { txn: any; onClos
   const defaultSigner = o ? (o.signers.find((s: any) => s.id === o.default_signer_id) || o.signers[0])?.id ?? null : null;
   const reprintChoice = !!(o && o.is_reprint && o.check_style_id && o.has_documents);
   return (
-    <Modal title={`Print check – transaction #${txn.id}`} onClose={onClose} wide>
+    <Modal title={o?.transaction?.electronic_payment ? `Letter and envelope – transaction #${txn.id}` : `Print check – transaction #${txn.id}`} onClose={onClose} wide>
       <ErrorBox error={err} />
+      {o?.transaction?.electronic_payment ? (
+        // 2.1.0 (#260): paid electronically - no check; a cover letter and envelope stay optional
+        <EnclosuresPanel txnId={txn.id} signerId={defaultSigner} onChanged={onChanged}
+          intro="This payment was made electronically, so no check is printed. Print a cover letter or envelope if you send one; printed letters and envelopes are attached to the transaction." />
+      ) : <>
       {o && o.has_documents && !reprintChoice ? (
         <div className="segmented" role="radiogroup" aria-label="How is the check made">
           <label><input type="radio" name="mode" checked={mode === "print"} onChange={() => setMode("print")} /> Print the check</label>
@@ -49,6 +54,7 @@ export function PrintCheckDialog({ txn, onClose, onChanged }: { txn: any; onClos
       ) : (
         <PrintForm o={o} reload={load} onClose={onClose} onChanged={onChanged} />
       )}
+      </>}
     </Modal>
   );
 }

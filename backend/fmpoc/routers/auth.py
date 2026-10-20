@@ -21,6 +21,7 @@ from ..services.dashboard_layout import encode as encode_layout
 from ..services.dashboard_layout import is_customized, layout_for
 from ..services.checkprint.service import module_enabled as checks_enabled
 from ..services.fundraisers import module_enabled
+from ..services.register import DEFAULT_REGISTER_SORT
 
 router = APIRouter(prefix="/api", tags=["auth"])
 _PRE_CSRF_TOKEN = re.compile(r"[A-Za-z0-9_-]{43}")  # secrets.token_urlsafe(32)
@@ -63,6 +64,7 @@ def me_payload(ctx: Ctx) -> dict:
             "security_domain": u.security_domain, "roles": sorted(ctx.roles), "permissions": sorted(ctx.perms),
             "theme": u.theme, "nav_collapsed": bool(u.nav_collapsed), "dashboard_charts": charts_for(u),
             "dashboard_layout": layout_for(u), "dashboard_layout_customized": is_customized(u),
+            "register_sort": u.register_sort or DEFAULT_REGISTER_SORT,   # 2.1.0 (#262)
             "modules": {"fundraisers": module_enabled(object_session(u), u.workspace_id),  # v1.6.0 CR-033
                         "checks": checks_enabled(object_session(u), u.workspace_id)},  # 2.0.0 (#156)
             "sign_in_notices": recovery.sign_in_notices(u),  # 1.8.0 (#113)
@@ -229,6 +231,10 @@ def preferences(body: PreferencesIn, db: Session = Depends(get_db), ctx: Ctx = D
         ctx.user.nav_collapsed = body.nav_collapsed  # v1.3 CR-014
     if body.dashboard_charts is not None:  # v1.4.1 CR-020
         ctx.user.dashboard_charts = ",".join(dict.fromkeys(body.dashboard_charts))
+    if body.reset_register_sort:  # 2.1.0 (#262)
+        ctx.user.register_sort = None
+    elif body.register_sort is not None:
+        ctx.user.register_sort = None if body.register_sort == DEFAULT_REGISTER_SORT else body.register_sort
     if body.reset_dashboard_layout:  # v1.5.0 CR-031
         ctx.user.dashboard_layout = None
     elif body.dashboard_layout is not None:
@@ -236,7 +242,8 @@ def preferences(body: PreferencesIn, db: Session = Depends(get_db), ctx: Ctx = D
     db.commit()
     return {"theme": ctx.user.theme, "nav_collapsed": bool(ctx.user.nav_collapsed),
             "dashboard_charts": charts_for(ctx.user), "dashboard_layout": layout_for(ctx.user),
-            "dashboard_layout_customized": is_customized(ctx.user)}
+            "dashboard_layout_customized": is_customized(ctx.user),
+            "register_sort": ctx.user.register_sort or DEFAULT_REGISTER_SORT}
 
 
 # ------------------------------------------------------------------ 1.8.0 (#113): forgotten password

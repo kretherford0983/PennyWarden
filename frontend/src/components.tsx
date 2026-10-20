@@ -242,7 +242,7 @@ export function Loading() {
 // ------------------------------------------------------------------ attachments
 export const FY_DOCUMENT_TYPES: [string, string][] = [["APPROVAL", "Approval document"], ["AUDIT_SIGNOFF", "Audit Signoff"], ["UNSPECIFIED", "Other document"]];
 
-export function Attachments({ ownerType, ownerId, canUpload, canRemove, title = "Attachments", documentTypes, canRetype, reloadKey, onChanged, hint }: {
+export function Attachments({ ownerType, ownerId, canUpload, canRemove, title = "Attachments", documentTypes, canRetype, reloadKey, onChanged, hint, canReorder }: {
   ownerType: "fiscal_year" | "transaction" | "allocation" | "fundraiser";
   ownerId: number;
   canUpload: boolean;
@@ -254,8 +254,12 @@ export function Attachments({ ownerType, ownerId, canUpload, canRemove, title = 
   reloadKey?: number;
   onChanged?: () => void;
   hint?: ReactNode;
+  /** 2.1.0 (#259): may set the order (used on screen, in the Audit/Close/fundraiser reports and downloads). */
+  canReorder?: boolean;
 }) {
   const [all, setAll] = useState<any[]>([]);
+  const [order, setOrder] = useState<any[] | null>(null);   // #259: the list while reordering (null = not reordering)
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
   const [err, setErr] = useState<unknown>(null);
   const [viewIdx, setViewIdx] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
@@ -296,10 +300,58 @@ export function Attachments({ ownerType, ownerId, canUpload, canRemove, title = 
       setErr(e);
     }
   };
+  const move = (from: number, to: number) => {
+    if (!order || to < 0 || to >= order.length || from === to) return;
+    const next = [...order];
+    const [x] = next.splice(from, 1);
+    next.splice(to, 0, x);
+    setOrder(next);
+  };
+  const saveOrder = async () => {
+    if (!order) return;
+    setErr(null);
+    setBusy(true);
+    try {
+      await api.put("/api/attachments/order", { owner_type: ownerType, owner_id: ownerId, attachment_ids: order.map((a) => a.id) });
+      setOrder(null);
+      await load();
+      onChanged?.();
+    } catch (e) { setErr(e); } finally { setBusy(false); }
+  };
   const cur = viewIdx !== null ? items[viewIdx] : null;
+  if (order) {
+    return (
+      <section className="attachments">
+        <h3>{title}: set the order</h3>
+        <p className="hint">Drag a file by its handle, or use ▲ and ▼. This order is used on screen, in the reports and in downloads.</p>
+        <ErrorBox error={err} />
+        <ol className="att-list att-order" aria-label={`Order of ${title}`}>
+          {order.map((a, i) => (
+            <li key={a.id} draggable onDragStart={() => setDragIdx(i)} onDragEnd={() => setDragIdx(null)}
+                onDragOver={(e) => { e.preventDefault(); if (dragIdx !== null && dragIdx !== i) { move(dragIdx, i); setDragIdx(i); } }}
+                className={dragIdx === i ? "dragging" : undefined}>
+              <span className="drag-handle" aria-hidden="true" title="Drag to move">⠿</span>
+              <span className="att-name">{a.original_filename}</span>
+              {a.system_generated ? <span className="badge grey">System generated</span> : null}
+              <span className="att-move">
+                <button type="button" className="small" aria-label={`Move ${a.original_filename} up`} disabled={i === 0} onClick={() => move(i, i - 1)}>▲</button>
+                <button type="button" className="small" aria-label={`Move ${a.original_filename} down`} disabled={i === order.length - 1} onClick={() => move(i, i + 1)}>▼</button>
+              </span>
+            </li>
+          ))}
+        </ol>
+        <div className="actions">
+          <button type="button" onClick={() => { setOrder(null); setErr(null); }}>Cancel</button>
+          <button type="button" className="primary" disabled={busy || order.every((a, i) => a.id === items[i]?.id)} onClick={saveOrder}>Save order</button>
+        </div>
+      </section>
+    );
+  }
   return (
     <section className="attachments">
-      <h3>{title} ({items.length})</h3>
+      <h3>{title} ({items.length})
+        {canReorder && items.length > 1 ? <button type="button" className="small att-reorder" onClick={() => setOrder(items)}>Reorder…</button> : null}
+      </h3>
       {hint}
       <ErrorBox error={err} />
       {items.length ? (

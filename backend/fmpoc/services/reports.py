@@ -43,7 +43,8 @@ from ..money import fmt
 from . import bank_accounts as bank
 from . import budgets as bsvc
 from . import fundraisers as fsvc
-from .attachments import path_for
+from . import register as reg
+from .attachments import DISPLAY_ORDER, path_for
 from .common import budget_label
 from .documentation import review as documentation_review
 from .fiscal_years import closure_check
@@ -390,7 +391,7 @@ def _attachments_for(db: Session, t: RegisterTransaction) -> tuple[list[Attachme
     alloc_ids = [a.id for a in t.allocations]
     rows = list(db.scalars(select(Attachment).where(or_(Attachment.transaction_id == t.id,
                                                         Attachment.allocation_id.in_(alloc_ids or [-1])))
-                           .order_by(Attachment.id)))
+                           .order_by(*DISPLAY_ORDER)))
     parent = [a for a in rows if a.transaction_id == t.id and a.active]
     by_alloc: dict[int, list[Attachment]] = {}
     for a in rows:
@@ -508,7 +509,7 @@ def build_audit_report(db: Session, ctx, settings, fy: FiscalYear, account_id: i
     doc_items = {i["transaction_id"]: i for i in doc_review}
     fy_atts = list(db.scalars(select(Attachment).where(Attachment.fiscal_year_id == fy.id, Attachment.active.is_(True),
                                                        Attachment.system_generated.is_(False))
-                              .order_by(Attachment.id)))
+                              .order_by(*DISPLAY_ORDER)))
     order = {"APPROVAL": 0, "AUDIT_SIGNOFF": 1}
     fy_atts.sort(key=lambda a: (order.get(a.document_type or "UNSPECIFIED", 2), a.id))
     att_cache = {t.id: _attachments_for(db, t) for t in txns}
@@ -673,7 +674,9 @@ def build_audit_report(db: Session, ctx, settings, fy: FiscalYear, account_id: i
             ("Description", _txn_description(t)),
             ("Clear Date", t.clear_date or "Uncleared"),
             ("Notes", t.notes or "—")]))
-        extra = [("Status", t.status), ("Check number", t.check_number or "—"),
+        # 2.1.0 (#260): an electronic payment shows "Electronic (method)" where the check number would be
+        extra = [("Status", t.status),
+                 ("Payment", reg.payment_text(t)) if t.electronic_payment else ("Check number", t.check_number or "—"),
                  ("Entered", f"{t.entry_timestamp:%Y-%m-%d %H:%M} UTC by {users.get(t.created_by_user_id, '?')}")]
         if void:
             extra.append(("Void", f"{t.void_reason} — {t.voided_at:%Y-%m-%d %H:%M} UTC by "
@@ -898,7 +901,7 @@ def _fundraiser_section(db: Session, ctx, settings, doc: _AuditDoc, fr: Fundrais
 
     # ---- attachments: fundraiser documents, then the transactions' attachments
     docs = list(db.scalars(select(Attachment).where(Attachment.fundraiser_id == fr.id, Attachment.active.is_(True))
-                           .order_by(Attachment.id)))
+                           .order_by(*DISPLAY_ORDER)))
     for i, a in enumerate(docs):
         f += _attachment_flowables(doc, settings, a, f"Fundraiser document {i + 1} of {len(docs)}", users)
     seen: set[int] = set()
@@ -995,7 +998,7 @@ def entity_activity(db: Session, ctx, *, account_id: int | None, date_from: dt.d
             g["lines"].append({"transaction_id": t.id, "transaction_date": t.transaction_date.isoformat(),
                                "account": f"{a.account_name} - {bank.masked(a)}", "type": t.transaction_type,
                                "description": al.description, "invoice_number": al.invoice_number,
-                               "check_number": t.check_number, "amount": fmt(al.amount_cents),
+                               "check_number": reg.payment_text(t), "amount": fmt(al.amount_cents),
                                "cleared": t.clear_date is not None})
     rows = []
     for g in groups.values():
@@ -1044,7 +1047,7 @@ def entity_activity_csv(report: dict) -> str:
                     report["date_from"], report["date_to"]])
     if any(r["lines"] for r in report["rows"]):
         w.writerow([])
-        w.writerow(["Entity", "Transaction #", "Date", "Account", "Type", "Description", "Invoice #", "Check #", "Amount"])
+        w.writerow(["Entity", "Transaction #", "Date", "Account", "Type", "Description", "Invoice #", "Check # / payment", "Amount"])
         for r in report["rows"]:
             for ln in r["lines"] or []:
                 w.writerow([_csv_safe(r["label"]), ln["transaction_id"], ln["transaction_date"], _csv_safe(ln["account"]),

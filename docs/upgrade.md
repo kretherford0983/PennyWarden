@@ -10,7 +10,7 @@ Before switching versions the installer stops the service and copies the whole d
 
 | Upgrade | Database change | Rollback |
 |---|---|---|
-| 2.0.0 → 2.1.0 | none yet (test build 1 changes only the installer and the host commands) | switch binaries |
+| 2.0.0 → 2.1.0 | migrations `0035` to `0037`, all additions — no existing value changes: `app_user.register_sort` (empty = Date, oldest first; `0035`), four columns on `register_transaction` for electronic payments — `electronic_payment` (off for every existing transaction), `payment_method`, `payment_method_other`, `payment_reference` (`0036`) — and `attachment.sort_order` (empty = upload order; `0037`) | switch binaries **and** restore the pre-upgrade data backup (2.0.0 does not know revisions 0035–0037) |
 | 1.10.0 → 2.0.0 | migrations `0025` to `0034`, all additions — no existing value is changed or removed. Tables: `check_style`, `check_signer`, `check_account`, `check_printer_setting` (`0025`) and `check_document` (`0027`) for the Payments module. Columns: `workspace` — `checks_enabled` (off; `0025`), `backup_warning_days` (7; `0029`), four for maintenance mode (`0031`) and five for reinitialize (`0032`); `app_user` — `last_payment_account_id` (`0026`), `first_name`, `last_name` (`0033`); `transaction_allocation.invoice_date` (`0027`); `check_printer_setting.document_id` (`0027`); four logo columns on `check_document` (`0028`); `auth_session.client_ip` (`0030`); `audit_event` — `actor_name` (`0033`) and `labels` (`0034`; existing audit events are never rewritten). See *2.0.0: after the upgrade* below | switch binaries **and** restore the pre-upgrade data backup (1.10.0 does not know revisions 0025–0034) |
 | 1.9.0 → 1.10.0 | migration `0024` — creates the table `update_check` (the update notification: on/off and the last result); no existing data changes | switch binaries **and** restore the pre-upgrade data backup (1.9.0 does not know revision 0024) |
 | 1.8.0 → 1.9.0 | migration `0023` — creates the tables `backup_schedule` and `backup_run` (scheduled backups); no existing data changes. On a local install new installations give the first user every role; existing users keep their roles | switch binaries **and** restore the pre-upgrade data backup (1.8.0 does not know revision 0023) |
@@ -422,5 +422,5 @@ sudo pennywarden reset-mfa --user <username> --data-dir /var/lib/pennywarden
 ```
 
 (since 2.0.0; files it writes are handed back to the service account afterwards. On an older installation without the
-`pennywarden` command: `sudo -u pennywarden /opt/pennywarden/current/pennywarden reset-mfa …`). The reset is
+`pennywarden` command: `sudo -u pennywarden /opt/pennywarden/current/pennywarden reset-mfa --user <username> --data-dir /var/lib/pennywarden`). The reset is
 recorded in the audit log; the user sets up two-step verification again at the next sign-in.
