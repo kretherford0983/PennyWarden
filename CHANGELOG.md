@@ -24,6 +24,14 @@ PennyWarden 2.1.0 (in progress).
   documents sets the order they are shown and printed in the Audit, Close and fundraiser reports — for example
   invoice, receipt, approval email. New files go to the end; a closed Fiscal Year can't be reordered. (#259)
 
+### Fixed
+- **Deleting a transaction releases its check number.** Before, a deleted transaction kept its check number, so
+  the number couldn't be used again and nobody could correct it (Auditors see deleted transactions read-only). Now
+  the number is free for another record, and the missing-check review lists it until it is reused or confirmed. This
+  includes transactions deleted before the upgrade. The deleted record still shows the number to the Auditors.
+  Deleting is refused while a check printed with the Payments module carries the number: void the transaction, or
+  mark the check spoiled first. VOID records still keep their numbers. (#289)
+
 ### Budget planning (Budget Managers)
 - **Budget Prep report** (Reports → Budget Prep). Every budget of a Fiscal Year with its history over earlier years —
   budgeted, actual and the difference in dollars and percent, marked *over* or *under* — following the budget
@@ -57,7 +65,8 @@ PennyWarden 2.1.0 (in progress).
   - key takeaways worked out from the figures and optional summary notes.
 
   Options: summary only (no itemized revenue), hide contributor names ("Contributor 1, 2…") for reports that go
-  outside the organization, and a plain line list for a fundraiser without buckets. It has no transaction numbers,
+  outside the organization, and a plain line list for a fundraiser without buckets. A section heading never sits
+  alone at the bottom of a page; long itemized lists run on across pages in two columns. It has no transaction numbers,
   accounts, budgets or attachments. Budget Managers can write the **summary notes** and **Mark results final**; the
   report reads *Interim*, *Post-event*, *Final* or *Cancelled*. The previous detailed report (lines, excluded lines,
   documents and attachments) is now **Reports → Fundraiser detail (audit)**. (#275)
@@ -65,13 +74,38 @@ PennyWarden 2.1.0 (in progress).
   that opens in PowerPoint, Google Slides and Keynote. It has highlights, a revenue-to-proceeds column chart, revenue
   by category (doughnut), category detail, net by category, revenue over time, top contributors, expenses with
   charge-less-credit detail, key takeaways and summary notes. The charts are native and editable, with amounts on
-  them, and every slide's speaker notes give the exact figures and how they are worked out. Slides with nothing to
+  them (whole-dollar axes with round steps, so labels don't run into each other), and every slide's speaker notes give
+  the exact figures and how they are worked out. Slides with nothing to
   show are left out; with contributor names off, no name appears anywhere in the file. (#276)
+- **Fundraisers across years.** *Continues from (previous fundraiser)* on the fundraiser form links it with the same
+  event in an earlier year — a skipped year still links — and *Create next year's…* on a fundraiser pre-fills next
+  year's: the name with the year moved on, description, filter, the continuing budgets, the buckets and categories
+  (without amounts) and the link, all editable. **Fundraiser series** (Budget Managers) lists each event across years:
+  rename it, group it as *Other* in the charts, enter results of years before PennyWarden (*Entered*; retired, never
+  deleted) and merge two series started separately. The link can be changed even in a closed year. (#277)
+- **Fiscal Year fundraising report and presentation.** On *Fundraisers*, tick the fundraisers of a Fiscal Year (all
+  of that year's, cancelled ones unticked, by default) and choose *Fiscal Year report…*. It covers:
+  - this year by fundraiser, with net revenue, expenses, net proceeds, margin and share;
+  - growth versus last year and the first year shown, the top fundraiser, the cumulative total and the peak year;
+  - the annual trend (with an optional *targeted* estimate for events still to come), share by series (small ones
+    as *Other*), the average per active year, and the history marked *Recorded* or *Entered*.
+
+  Notes are remembered per year. Available as a PDF and a `.pptx` deck with charts and speaker notes. No contributor
+  names. (#277)
+- **Year over year.** When earlier years are known (linked fundraisers or entered results), the fundraiser's report
+  and presentation add a *Year over year* section: each year's net revenue, expenses, net proceeds and margin, and
+  the change on the year before. The Fiscal Year report and deck add *Year over year by series*, with a line per
+  event and the change on the year before, to help decide which fundraisers to keep offering. (#277)
 - **Bucket categories.** Group a fundraiser's buckets under optional categories (for example *Sponsorships*,
   *Registrations*, *Day-of event*), one category per bucket or none. The Buckets table shows each category with its
   buckets beneath and a subtotal of income, expenses and net, and so does the fundraiser section of the Audit and
   Close reports. Deleting a category leaves its buckets uncategorized; no figure changes. A bucket can still hold both
   income and expenses (*Food Sales* with its sales and its supplies). (#278)
+- **Contributor shown on the reports.** When assigning part of a line to a bucket, *Different contributor on
+  reports* replaces the line's Entity on the fundraiser reports and presentations. Use it for lump cash the
+  organization collected ("Cash", so it doesn't look as if the organization gave to itself), for the name people
+  know a business by, or when someone handed in money collected from others. It is set per bucket part and recorded
+  in the audit log. (#278)
 - **Reorder categories and buckets** with *Reorder…*. The order is used on the page and in the reports. Existing
   buckets keep their alphabetical order until reordered; new ones go to the end. Categories and order are presentation
   only, so they can be changed in a closed Fiscal Year too. (#278)

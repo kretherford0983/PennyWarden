@@ -41,6 +41,12 @@ Audit, Close and fundraiser reports — put the invoice first, then the receipt,
 files go to the end. The order of a closed Fiscal Year can't be changed. Register Users reorder transaction
 attachments, Budget Managers the Fiscal Year documents, and whoever manages a fundraiser its documents.
 
+### Deleting a transaction frees its check number
+When a Register Admin deletes a transaction that had a check number, the number becomes free again for another
+record. If it isn't reused, the missing-check review shows it until it is entered or confirmed "not missing". If a
+check was printed for that transaction with the Payments module, deleting is refused: void it, or mark the check
+spoiled first. (A VOID record keeps its number, as before.)
+
 ## Budget planning (Budget Managers)
 
 ### Budget Prep report
@@ -114,6 +120,41 @@ the exact figures and how each one is worked out, for example "Net margin = net 
 nothing to show are left out — a fundraiser without buckets gets no category slides. The *Top contributors* slides
 appear only with itemized revenue and contributor names both on.
 
+### Fundraisers across years
+- **Link a fundraiser with last year's.** On the fundraiser form, **Continues from (previous fundraiser)** lists the
+  latest fundraiser of each event (and fundraisers not linked yet) from earlier Fiscal Years. Picking one puts both in
+  the same *series* (e.g. "Golf Outing" — the year is taken out of the name). The link only matters for reporting,
+  so **Change…** next to *Series* on the fundraiser's page works even when the year is closed.
+- **Create next year's…** (Budget Managers) opens a new fundraiser already filled in from this one: the name with
+  the year moved on (2026 → 2027), the description, the filter, next year's continuing budgets, the buckets and
+  categories without amounts, and the link. Change anything before saving.
+- **Fundraiser series** (button on *Fundraisers*): rename a series, **Group as Other** (it is then combined with
+  the small ones in the share charts), **Enter a prior year…** for years before PennyWarden (Fiscal Year label with
+  the year, amount raised, optionally income, expenses and a note; shown as *Entered*), **Retire…** an entry (it
+  stays listed, struck through), and **Merge into…** when the same event was started twice. A year in which the
+  series already has a fundraiser in PennyWarden can't be entered.
+
+### The Fiscal Year fundraising report
+On **Fundraisers**, choose the Fiscal Year: each fundraiser has a checkbox, and every fundraiser of that year is
+ticked except cancelled ones (*All* / *None* change that). **Fiscal Year report…** then offers:
+- **Years of history** (5 by default, or all) and **Include targeted total**. The targeted total adds, for each
+  event that hasn't taken place yet this year, the average of its last 5 active years (you can change the number),
+  shown separately as an estimate.
+- **Notes** (Budget Managers), printed on the report and the deck, and remembered for that Fiscal Year.
+- **Report (PDF)** or **Presentation** (`.pptx`, like the fundraiser presentation).
+
+It shows the year's total raised and each fundraiser's share, growth versus last year, the top fundraiser, the annual
+trend, each event's share and its average per active year, and every year's result marked *Recorded* (from
+PennyWarden) or *Entered*. Two fundraisers of one series in the same year add together. A fundraiser that spans two
+Fiscal Years counts in the year its event starts (a footnote says so). With nothing linked yet, the history sections
+say "No earlier years linked yet".
+
+**Year over year.** Once a fundraiser is linked with earlier years (or results of earlier years are entered), its own
+report and presentation get a *Year over year* section, and the Fiscal Year report and deck a *Year over year by
+series* section. Each year's figures are shown with the change on the year before (up or down, in dollars and
+percent), so the committee can see how an event is trending when deciding whether to keep it. A year entered by hand
+with only the amount raised shows — for income, expenses and margin.
+
 ### Bucket categories
 On a fundraiser's page, **New category** adds a heading such as *Sponsorships* or *Day-of event*. In a bucket's
 **Edit**, choose its **Category** (or *No category*). The Buckets table then shows each category with its buckets
@@ -125,6 +166,17 @@ Deleting a category keeps its buckets — they just become uncategorized. A buck
 the page and in the reports. Existing buckets stay in alphabetical order until you reorder them; new ones go to the
 end. Categories, a bucket's category and the order can be changed even after the Fiscal Year is closed — they only
 change how things are grouped, never a figure.
+
+### Different contributor on reports
+The fundraiser reports name the line's Entity as the contributor. When that isn't right, tick **Different contributor
+on reports** next to the bucket in **Manage** and type what should show instead:
+- lump cash the organization itself collected (food, raffle…) → "Cash", so the organization doesn't appear to have
+  given to itself;
+- a business everyone knows by a shorter name than its legal name → that name;
+- someone who handed in money collected from others → the actual contributor.
+
+It applies to that bucket's part of the line, so a deposit split between two buckets can show a different name for
+each. With *Show contributor names* off, the report still shows "Contributor 1, 2…".
 
 ### Charge less a credit
 Sometimes a bill is a full charge less a credit: a $1,500 venue invoice less $500 that teams pre-paid, paid with a

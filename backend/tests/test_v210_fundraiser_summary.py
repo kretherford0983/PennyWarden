@@ -223,3 +223,50 @@ def test_long_itemized_list_uses_two_columns(env, gala):
             env.ru.put(url(gala, f"/lines/{x['allocation_id']}"), {"buckets": [{"bucket_id": bid, "amount": x["amount"]}]})
     t = pdf_text(get(env, gala).content)
     assert t.count("Date Contributor Amount") >= 2      # two side-by-side tables
+
+
+# ------------------------------------------------------------------ build 4-6 feedback (Kyle, 2026-10-20)
+def test_contributor_shown_on_reports(env, buckets):
+    """Lump cash collected by the organization shows as "Cash"; the override is per bucket assignment."""
+    org = env.entity("Riverside Boosters Club")
+    env.txn(buckets["base"]["acct"]["id"], "DEPOSIT", [{"budget_id": buckets["base"]["inc_leaf"], "amount": "93.23",
+                                                        "description": "Raffle cash"}], date="2026-09-15", entity_id=org["id"])
+    line = next(x for x in env.bu.get(url(buckets)).json()["lines"] if x["description"] == "Raffle cash")
+    r = env.ru.put(url(buckets, f"/lines/{line['allocation_id']}"),
+                   {"buckets": [{"bucket_id": buckets["ids"]["Raffle"], "amount": "93.23", "contributor_override": "Cash"}]})
+    assert r.status_code == 200, r.text
+    got = next(x for x in r.json()["lines"] if x["description"] == "Raffle cash")["buckets"][0]
+    assert got["contributor_override"] == "Cash"
+    ev = env.auditor.get("/api/audit-events?action=FUNDRAISER_LINE_UPDATED").json()["items"][0]
+    assert ev["after"]["buckets"][0]["contributor_override"] == "Cash"
+    t = pdf_text(get(env, buckets).content)
+    assert "Cash" in t and "Riverside Boosters Club" not in t
+    assert "Riverside Boosters Club" not in docx_text(get(env, buckets, format="docx").content)
+    from pptx import Presentation
+    deck = env.bu.get(url(buckets, "/presentation")).content
+    blob = b"".join(zipfile.ZipFile(io.BytesIO(deck)).read(n) for n in zipfile.ZipFile(io.BytesIO(deck)).namelist())
+    assert b"Riverside Boosters Club" not in blob and b"Cash" in blob
+    assert Presentation(io.BytesIO(deck))
+    # too long is refused
+    r = env.ru.put(url(buckets, f"/lines/{line['allocation_id']}"),
+                   {"buckets": [{"bucket_id": buckets["ids"]["Raffle"], "amount": "93.23", "contributor_override": "x" * 121}]})
+    assert r.status_code == 422
+
+
+def test_heading_stays_with_its_table_and_long_lists_split(env, gala):
+    acct = gala["base"]["acct"]["id"]
+    for i in range(70):
+        env.txn(acct, "DEPOSIT", [{"budget_id": gala["base"]["inc_leaf"], "amount": f"{10 + i}.00", "description": f"Ticket {i}"}],
+                date="2026-09-15")
+    bid = env.ru.post(url(gala, "/buckets"), {"name": "Tickets"}).json()["buckets"]["items"][0]["id"]
+    for x in env.bu.get(url(gala)).json()["lines"]:
+        if (x["description"] or "").startswith("Ticket"):
+            env.ru.put(url(gala, f"/lines/{x['allocation_id']}"), {"buckets": [{"bucket_id": bid, "amount": x["amount"]}]})
+    pages = [" ".join((p.extract_text() or "").split()) for p in PdfReader(io.BytesIO(get(env, gala).content)).pages]
+    # every section heading has rows of its table on the same page
+    for heading_text in ("Itemized revenue", "Expense breakdown", "Key takeaways"):
+        page = next(p for p in pages if heading_text in p)
+        after = page.split(heading_text, 1)[1].split("Prepared for committee")[0]
+        assert len(after.strip()) > 40, heading_text
+    # the 70-line list runs over more than one page (two columns, split by rows)
+    assert sum(1 for p in pages if "Ticket" in p) >= 2
