@@ -31,6 +31,11 @@ PennyWarden 2.1.0 (in progress).
   includes transactions deleted before the upgrade. The deleted record still shows the number to the Auditors.
   Deleting is refused while a check printed with the Payments module carries the number: void the transaction, or
   mark the check spoiled first. VOID records still keep their numbers. (#289)
+- **Years before PennyWarden can be entered for any fundraiser.** Prior years were entered on a fundraiser series,
+  but a series was only created when a fundraiser *continued from* an earlier one in PennyWarden. So an event whose
+  earlier years are all in spreadsheets had nowhere to enter them. Now **Enter prior years…** on a fundraiser, and
+  **Start a series…** on *Fundraiser series*, create the series when there is none. The entered years then appear in
+  the year over year of the fundraiser's report and presentation and in the Fiscal Year report. (#292)
 
 ### Budget planning (Budget Managers)
 - **Budget Prep report** (Reports → Budget Prep). Every budget of a Fiscal Year with its history over earlier years —

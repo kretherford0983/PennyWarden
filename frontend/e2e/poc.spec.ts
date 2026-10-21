@@ -1766,6 +1766,33 @@ test("2.1.0 (#277): next year's fundraiser continues the series, prior years ent
   await logout(page);
 });
 
+test("2.1.0 (#292): prior years for an event with nothing earlier in PennyWarden - Start a series, Enter prior years", async ({ page }) => {
+  await login(page, "bm1");
+  // on a fundraiser already in a series, Enter prior years… opens that series' entry
+  await page.getByRole("link", { name: "Fundraisers" }).click();
+  await page.getByRole("link", { name: "Harvest Dinner", exact: true }).click();
+  await page.getByRole("button", { name: "Enter prior years…" }).click();
+  let dlg = page.getByRole("dialog", { name: "Enter a prior year — Harvest Dinner" });
+  await expect(dlg).toBeVisible();
+  await dlg.getByRole("button", { name: "Cancel" }).click();
+  // Spring Fair 2028 continues from nothing: start its series from the series page
+  await page.getByRole("button", { name: "Start a series…" }).click();
+  dlg = page.getByRole("dialog", { name: "Start a series" });
+  await dlg.getByLabel("Fundraiser").selectOption((await dlg.locator("option", { hasText: "Spring Fair 2028" }).getAttribute("value"))!);
+  await expect(dlg).toContainText("The series will be named Spring Fair");
+  await page.screenshot({ path: "e2e-screenshots/light-fundraiser-start-series.png" });
+  await dlg.getByRole("button", { name: "Start series" }).click();
+  dlg = page.getByRole("dialog", { name: "Enter a prior year — Spring Fair" });
+  await dlg.getByLabel("Fiscal Year (include the year)").fill("FY2025");
+  await dlg.getByLabel("Amount raised (net)").fill("410.00");
+  await dlg.getByRole("button", { name: "Save" }).click();
+  const card = page.locator("section.card").filter({ has: page.getByRole("heading", { name: "Spring Fair" }) });
+  await expect(card).toContainText("Spring Fair 2028");
+  await expect(card).toContainText("FY2025");
+  await expect(card).toContainText("$410.00");
+  await logout(page);
+});
+
 // ---------------------------------------------------------------- v1.6.2 CR-035: fundraiser report
 test("CR-035: fundraiser report PDF; Audit and Close reports can include fundraisers", async ({ page }) => {
   await login(page, "bm1");
