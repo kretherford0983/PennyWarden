@@ -36,6 +36,10 @@ PennyWarden 2.1.0 (in progress).
   earlier years are all in spreadsheets had nowhere to enter them. Now **Enter prior years…** on a fundraiser, and
   **Start a series…** on *Fundraiser series*, create the series when there is none. The entered years then appear in
   the year over year of the fundraiser's report and presentation and in the Fiscal Year report. (#292)
+- **The Fiscal Year fundraising report (PDF) works with 6 or more years of history.** Its *Year over year by series*
+  table was wider than the page from 6 years on, so the PDF failed with an internal error (the presentation was not
+  affected). The table now fits the page and shows up to the last 6 years: fewer only when very large amounts would
+  otherwise wrap, and the report says how many are shown. *Historical results* still lists every year. (#295)
 
 ### Budget planning (Budget Managers)
 - **Budget Prep report** (Reports → Budget Prep). Every budget of a Fiscal Year with its history over earlier years —
