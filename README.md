@@ -170,6 +170,8 @@ guide: [docs/check-printing.md](docs/check-printing.md)) · [2.1](docs/user-guid
 - `scripts/demo_data.py` and `scripts/readme_screenshots.mjs` — fill a new, empty installation with a made-up
   organization and retake the screenshots on this page; `scripts/macos_install_mockups.mjs` redraws the
   illustrations of [docs/install-macos.md](docs/install-macos.md)
+- [docs/test-data.md](docs/test-data.md) — the private test data set: a workflow-built, encrypted backup of a made-up
+  organization for refreshing a test server (`scripts/demo_data.py --profile test`)
 
 **Origin.** PennyWarden started as an implementation of the *Financial Management POC Agent-Agnostic Benchmark v1.1*.
 The specification is kept unchanged in [`spec/`](spec/); [docs/acceptance-results.md](docs/acceptance-results.md),

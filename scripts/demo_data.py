@@ -281,4 +281,18 @@ def main(base: str) -> None:
 
 
 if __name__ == "__main__":
-    main(sys.argv[1].rstrip("/") if len(sys.argv) > 1 else "http://127.0.0.1:8787")
+    import argparse
+    ap = argparse.ArgumentParser(description="Fill a new, empty PennyWarden installation with made-up data.")
+    ap.add_argument("url", nargs="?", default="http://127.0.0.1:8787")
+    ap.add_argument("--profile", choices=("demo", "test"), default="demo",
+                    help="demo: the small published demo (default); test: the larger private test data set (#272), "
+                         "credentials from PW_TESTDATA_PASSWORD / PW_TESTDATA_PASSPHRASE")
+    ap.add_argument("--fy-start-month", type=int, default=7, help="test profile: first month of the Fiscal Year (1-12)")
+    ap.add_argument("--backup", help="test profile: also write an encrypted backup (.fmbak) to this file")
+    ap.add_argument("--summary", help="test profile: write a JSON summary (no secrets) to this file")
+    a = ap.parse_args()
+    if a.profile == "demo":
+        main(a.url.rstrip("/"))
+    else:
+        import test_data
+        test_data.main(a.url.rstrip("/"), a.fy_start_month, a.backup, a.summary)
