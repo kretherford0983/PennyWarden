@@ -48,6 +48,39 @@ could not otherwise be corrected. Scope and safeguards:
 - Audited as `TRANSACTION_VOID_DATE_CORRECTED` with before/after snapshots and the reason.
 - Tests: `backend/tests/test_cr001_void_date.py` (5 tests) and E2E "CR-001".
 
+**2.1.0 — private test data set (#272, Kyle 2026-10-20/21).**
+- `scripts/test_data.py` is called as `scripts/demo_data.py --profile test`; the demo profile is unchanged.
+  - It reuses the demo's API client and makes everything through the web API of a new installation, so every rule
+    and the audit trail apply. It refuses an initialized installation.
+  - `PW_TESTDATA_PASSWORD` is the sign-in password and the security answers; `PW_TESTDATA_PASSPHRASE` is the backup
+    passphrase. Both come from the environment only. GitHub masks them in Actions (they come from `secrets.*`). They are
+    redacted from API error text and never printed: the script doesn't print them even to mask them (CodeQL).
+  - Fiscal Years are relative to today, July–June by default (`--fy-start-month`): two closed, the current approved,
+    the next a Draft with `continues_budget_id` links.
+- Kyle's decisions (2026-10-21):
+  - The test users enroll two-step verification again after each restore. There are no fixed seeds: the API makes up
+    the secret, and writing one into the database would bypass it.
+  - The sign-ins are admin, budgetmgr, bookkeeper, auditor and treasurer. treasurer also has Register Admin, so the
+    data set can include a deleted transaction.
+  - The workflow can build from any branch, `test` by default.
+  - The data covers several years.
+- The two-a-year Pancake Breakfasts can't continue from each other: "Continues from" needs an earlier Fiscal Year. In
+  the first year, each starts a series (#292) and the two are merged. Later years continue from the previous year's.
+- `--backup` uses the backup API (`POST /api/system/backups`, `recoverable: false`, since the runner's server key is
+  thrown away) and downloads the `.fmbak`. `--summary` writes JSON without secrets for the run summary.
+- `.github/workflows/test-data.yml`:
+  - runs on `workflow_dispatch` with the inputs `ref` (default `test`) and `fy_start_month`; `contents: read`;
+  - starts `python -m fmpoc` on loopback with a temporary data folder (no frontend build is needed);
+  - writes the schema from `alembic_version` into the run summary;
+  - uploads the artifact with a 7-day retention.
+
+  GitHub only lists a manual workflow once the file is on the default branch.
+- Tests: `backend/tests/test_v210_test_data.py`. It runs the generator against a live server and checks:
+  - refusals without the password variable and on an initialized installation;
+  - the data;
+  - that no secret appears in output, logs or the backup;
+  - `pennywarden restore` into a new folder, then server mode: every test user signs in and gets `mfa_pending: ENROLL`.
+
 **2.1.0 fix — Fiscal Year report PDF with 6+ years of history (#295, Kyle 2026-10-21).**
 - The *Year over year by series* table used fixed 0.95" year columns and a 1.6" change column. From 6 years that is
   wider than the 7.13" frame, so the Series column had a negative width and ReportLab raised `ValueError`, which

@@ -192,6 +192,10 @@ The web page's **Restore** tab works the same way with the schedule passphrase.
   runs the current release, so `sudo pennywarden …` works from any folder. An installation made before 2.0.0 gets it
   with the next run of the installer; until then use `sudo /opt/pennywarden/current/pennywarden …`.
 
+## Test data for a test server (since 2.1.0)
+A synthetic organization can be built as a backup by the *Build test data* workflow (or locally) and restored here,
+to try a test build against realistic data. See [test-data.md](test-data.md).
+
 ## Undoing a restore (`pre-restore/`)
 
 > **Don't run another restore before undoing.** Every restore, from the web or the command line, first moves the
