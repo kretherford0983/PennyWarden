@@ -145,6 +145,20 @@ def series_list(db: Session = Depends(get_db), ctx: Ctx = Depends(manager)):
     return series.series_list(db, ctx)
 
 
+@router.get("/fundraiser-series/start-options")
+def series_start_options(db: Session = Depends(get_db), ctx: Ctx = Depends(manager)):
+    """2.1.0 (#292): fundraisers in no series, for "Start a series"."""
+    return series.start_options(db, ctx)
+
+
+@router.post("/fundraisers/{fid}/series")
+def start_series(fid: int, db: Session = Depends(get_db), ctx: Ctx = Depends(manager)):
+    """2.1.0 (#292): the fundraiser's series, created when it has none, so prior years can be entered."""
+    s = series.start_series(db, ctx, svc.get(db, ctx, fid))
+    db.commit()
+    return {"series_id": s.id, "series": series.series_list(db, ctx)}
+
+
 @router.patch("/fundraiser-series/{sid}")
 def update_series(sid: int, body: FundraiserSeriesIn, db: Session = Depends(get_db), ctx: Ctx = Depends(manager)):
     series.update_series(db, ctx, series._series(db, ctx, sid), body.name, body.group_as_other)

@@ -1,10 +1,12 @@
 // 2.1.0 (#277): Fundraiser series (Budget Managers) - the same event across years. Series are created when a
 // fundraiser continues an earlier one; here they are renamed, grouped as Other, given results of years before
 // PennyWarden (labelled Entered; retired, never deleted) and merged when one event was started twice.
+// #292: a series can also be started on a single fundraiser ("Start a series…" here, or "Enter prior years…" on the
+// fundraiser), for events whose earlier years all predate PennyWarden; ?enter=<series id> opens its prior-year entry.
 import { useEffect, useState } from "react";
 import { api, money } from "../api";
 import { ErrorBox, Field, Loading, Modal } from "../components";
-import { Link } from "../router";
+import { Link, useRouter } from "../router";
 
 export default function FundraiserSeries() {
   const [list, setList] = useState<any[] | null>(null);
@@ -12,16 +14,25 @@ export default function FundraiserSeries() {
   const [entering, setEntering] = useState<any>(null);
   const [merging, setMerging] = useState<any>(null);
   const [renaming, setRenaming] = useState<any>(null);
+  const [starting, setStarting] = useState(false);
+  const { search } = useRouter();
   const run = async (fn: () => Promise<any>) => { setErr(null); try { setList(await fn()); } catch (x) { setErr(x); } };
-  useEffect(() => { api.get("/api/fundraiser-series").then(setList, setErr); }, []);
+  useEffect(() => {
+    api.get("/api/fundraiser-series").then((l: any[]) => {
+      setList(l);
+      const want = Number(new URLSearchParams(search).get("enter"));
+      const s = want ? l.find((x) => x.id === want) : null;
+      if (s) { setEntering(s); setTimeout(() => document.getElementById(`series-${s.id}`)?.scrollIntoView(), 0); }
+    }, setErr);
+  }, []);
   if (!list) return <><ErrorBox error={err} />{err ? null : <Loading />}</>;
   return (
     <div>
       <p><Link to="/fundraisers">← Fundraisers</Link></p>
-      <div className="page-head"><h1>Fundraiser series</h1></div>
-      <p className="hint">A series is the same event across years. It is created when a fundraiser <b>continues from</b> an earlier one (set on the fundraiser). Results of years before PennyWarden can be entered here; they show as <i>Entered</i> in the Fiscal Year fundraising report.</p>
+      <div className="page-head"><h1>Fundraiser series</h1><button onClick={() => setStarting(true)}>Start a series…</button></div>
+      <p className="hint">A series is the same event across years. It is created when a fundraiser <b>continues from</b> an earlier one (set on the fundraiser), or here with <b>Start a series…</b> when the event's earlier years are all from before PennyWarden. Results of years before PennyWarden are entered on a series with <b>Enter a prior year…</b>; they show as <i>Entered</i> in the Fiscal Year fundraising report and in year over year.</p>
       <ErrorBox error={err} />
-      {list.length === 0 ? <p className="muted">No series yet — link a fundraiser to an earlier one with “Continues from”.</p> : null}
+      {list.length === 0 ? <p className="muted">No series yet. To enter years from before PennyWarden, use <b>Start a series…</b> and choose the fundraiser, or link a fundraiser to an earlier one with “Continues from”.</p> : null}
       {list.map((s) => (
         <section className="card" key={s.id} aria-labelledby={`series-${s.id}`}>
           <div className="charts-head">
@@ -53,6 +64,7 @@ export default function FundraiserSeries() {
       ))}
       {entering ? <EnterResult s={entering} onClose={() => setEntering(null)} onSaved={(x) => { setList(x); setEntering(null); }} /> : null}
       {renaming ? <Rename s={renaming} onClose={() => setRenaming(null)} onSaved={(x) => { setList(x); setRenaming(null); }} /> : null}
+      {starting ? <StartSeries onClose={() => setStarting(false)} onSaved={(r) => { setStarting(false); setList(r.series); const s = r.series.find((x: any) => x.id === r.series_id); if (s) setEntering(s); }} /> : null}
       {merging ? <Merge s={merging} list={list} onClose={() => setMerging(null)} onSaved={(x) => { setList(x); setMerging(null); }} /> : null}
     </div>
   );
@@ -113,6 +125,30 @@ function Merge({ s, list, onClose, onSaved }: { s: any; list: any[]; onClose: ()
       </Field>
       <div className="actions"><button onClick={onClose}>Cancel</button>
         <button className="primary" disabled={!into} onClick={async () => { try { onSaved(await api.post(`/api/fundraiser-series/${s.id}/merge`, { into_series_id: Number(into) })); } catch (x) { setErr(x); } }}>Merge</button></div>
+    </Modal>
+  );
+}
+
+function StartSeries({ onClose, onSaved }: { onClose: () => void; onSaved: (x: any) => void }) {
+  const [opts, setOpts] = useState<any[] | null>(null);
+  const [pick, setPick] = useState("");
+  const [err, setErr] = useState<unknown>(null);
+  useEffect(() => { api.get("/api/fundraiser-series/start-options").then((l: any[]) => { setOpts(l); if (l.length) setPick(String(l[0].id)); }, setErr); }, []);
+  const chosen = opts?.find((o) => String(o.id) === pick);
+  return (
+    <Modal title="Start a series" onClose={onClose}>
+      <ErrorBox error={err} />
+      {!opts ? (err ? null : <Loading />) : opts.length === 0 ? <p className="muted">Every fundraiser is already in a series.</p> : <>
+        <p>Choose the fundraiser whose earlier years are from before PennyWarden. A series is created for it so those years can be entered.</p>
+        <Field label="Fundraiser">
+          <select value={pick} onChange={(e) => setPick(e.target.value)}>
+            {opts.map((o) => <option key={o.id} value={o.id}>{o.name} ({o.year})</option>)}
+          </select>
+        </Field>
+        {chosen ? <p className="hint">The series will be named <b>{chosen.series_name}</b>; it can be renamed later.</p> : null}
+      </>}
+      <div className="actions"><button onClick={onClose}>Cancel</button>
+        <button className="primary" disabled={!pick} onClick={async () => { setErr(null); try { onSaved(await api.post(`/api/fundraisers/${pick}/series`)); } catch (x) { setErr(x); } }}>Start series</button></div>
     </Modal>
   );
 }

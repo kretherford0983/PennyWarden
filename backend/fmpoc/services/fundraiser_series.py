@@ -109,7 +109,9 @@ def continue_options(db: Session, ctx, start_date: dt.date, exclude_id: int | No
 def set_link(db: Session, ctx, f: Fundraiser, previous_id: int | None, *, record: bool = True) -> Fundraiser:
     """Put the fundraiser in the previous one's series (creating it), or take it out (None). Any Fiscal Year."""
     before = _link_snapshot(f)
-    if previous_id is None:
+    if previous_id is None and f.continues_from_id is None:
+        pass        # nothing to unlink; a series started on this fundraiser (start_series, #292) keeps it and its history
+    elif previous_id is None:
         f.series_id, f.continues_from_id = None, None
     else:
         prev = fsvc.get(db, ctx, previous_id)
@@ -127,6 +129,33 @@ def set_link(db: Session, ctx, f: Fundraiser, previous_id: int | None, *, record
     if record and _link_snapshot(f) != before:
         audit.record(db, ctx, "FUNDRAISER_SERIES_LINK_UPDATED", "fundraiser", f.id, before, _link_snapshot(f))
     return f
+
+
+def start_series(db: Session, ctx, f: Fundraiser) -> FundraiserSeries:
+    """The fundraiser's series, creating it when the fundraiser is in none - so results of years before PennyWarden
+    can be entered for an event whose earlier years exist only outside the app (nothing to "continue from").
+    Named like an auto-created series ("2026 Golf Outing" -> "Golf Outing"). Any Fiscal Year: reporting only."""
+    if f.series_id is not None:
+        return _series(db, ctx, f.series_id)
+    before = _link_snapshot(f)
+    s = FundraiserSeries(workspace_id=ctx.workspace_id, name=series_name_for(f.name), created_by_user_id=ctx.user.id)
+    db.add(s)
+    db.flush()
+    f.series_id = s.id
+    db.flush()
+    audit.record(db, ctx, "FUNDRAISER_SERIES_CREATED", "fundraiser_series", s.id, None,
+                 {"name": s.name, "fundraiser_ids": [f.id]})
+    audit.record(db, ctx, "FUNDRAISER_SERIES_LINK_UPDATED", "fundraiser", f.id, before, _link_snapshot(f))
+    return s
+
+
+def start_options(db: Session, ctx) -> list[dict]:
+    """Fundraisers in no series, newest first - the choices for "Start a series"."""
+    out = sorted(db.scalars(select(Fundraiser).where(Fundraiser.workspace_id == ctx.workspace_id,
+                                                     Fundraiser.series_id.is_(None))),
+                 key=lambda f: (f.start_date, f.id), reverse=True)
+    return [{"id": f.id, "name": f.name, "start_date": f.start_date.isoformat(), "year": fundraiser_year(db, f),
+             "series_name": series_name_for(f.name)} for f in out]
 
 
 def _result_out(r: FundraiserSeriesResult) -> dict:
