@@ -15,6 +15,7 @@ from pptx.enum.text import PP_ALIGN
 from pptx.util import Inches
 from reportlab.lib import colors
 from reportlab.lib.units import inch
+from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.platypus import KeepTogether, Paragraph, Spacer, Table, TableStyle
 from xml.sax.saxutils import escape
 
@@ -57,6 +58,22 @@ def file_stem(org: str, rep: dict) -> str:
 
 
 # ------------------------------------------------------------------ PDF
+def yoy_layout(W: float, years: list, cells: list[str]) -> tuple[list, list[float]]:
+    """How many of the latest `years` (up to 6) "Year over year by series" shows, and its column widths (Series, one per
+    year, change), so that it always fits the frame and no amount wraps: a year column is as wide as the widest amount
+    in the table plus padding (at most 0.95"), the change column 1.15" and the Series column at least 1.1"; years that
+    don't fit are left out from the oldest. Before #295 the years were 0.95" each regardless, so 6 years left the
+    Series column a negative width and the PDF failed."""
+    from . import reports
+    change, series_min, pad = 1.15 * inch, 1.1 * inch, 10
+    need = max([stringWidth(c, reports._FONT, 7.5) for c in cells] + [stringWidth("0000", reports._FONT_BOLD, 7.5)]) + pad
+    years = list(years)[-6:]
+    fit = max(1, int((W - change - series_min) // need))
+    years = years[-fit:]
+    yr = min(0.95 * inch, max(need, (W - change - series_min) / len(years)))
+    return years, [W - change - yr * len(years)] + [yr] * len(years) + [change]
+
+
 def build_pdf(org: str, rep: dict) -> tuple[bytes, _AuditDoc]:
     buf = io.BytesIO()
     doc = _AuditDoc(buf, title="Fundraising report", author=org)
@@ -124,13 +141,14 @@ def build_pdf(org: str, rep: dict) -> tuple[bytes, _AuditDoc]:
         f += [Spacer(1, 8), *heading("Year over year by series"),
               P("Net raised by each event in each year, and the change on the year before — to help decide which "
                 "fundraisers to keep offering.", "small"), Spacer(1, 3)]
-        years = rep["period"][-6:]
+        cells = [money(v) for x in rep["year_over_year"] for v in x["values"] if v is not None]
+        years, widths = yoy_layout(W, rep["period"], cells)
         idx = [rep["period"].index(y) for y in years]
         data = [_h(["Series"] + [str(y) for y in years] + ["Change vs year before"])]
         for x in rep["year_over_year"]:
             data.append([P(x["name"], "cell")] + [P(money(x["values"][i]) if x["values"][i] is not None else "—", "cellr") for i in idx]
                         + [P(_chg(x), "cell")])
-        f.append(_table(data, [W - 1.6 * inch - 0.95 * inch * len(years)] + [0.95 * inch] * len(years) + [1.6 * inch]))
+        f.append(_table(data, widths))
         if len(rep["period"]) > len(years):
             f.append(P(f"The last {len(years)} years are shown; the historical results below list every year.", "small"))
     # historical table

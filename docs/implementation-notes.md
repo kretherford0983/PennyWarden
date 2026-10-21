@@ -48,6 +48,16 @@ could not otherwise be corrected. Scope and safeguards:
 - Audited as `TRANSACTION_VOID_DATE_CORRECTED` with before/after snapshots and the reason.
 - Tests: `backend/tests/test_cr001_void_date.py` (5 tests) and E2E "CR-001".
 
+**2.1.0 fix — Fiscal Year report PDF with 6+ years of history (#295, Kyle 2026-10-21).**
+- The *Year over year by series* table used fixed 0.95" year columns and a 1.6" change column. From 6 years that is
+  wider than the 7.13" frame, so the Series column had a negative width and ReportLab raised `ValueError`, which
+  surfaced as INTERNAL_ERROR.
+- `fundraiser_fy_report.yoy_layout(W, period, cells)` sizes a year column to the widest amount in the table (report
+  font, 7.5 pt) plus padding, at most 0.95". The change column is 1.15" and the Series column at least 1.1". Of the
+  latest 6 years, only as many as fit are shown, so amounts never wrap: $122,545.67 fits 6, $1,234,567.89 fits 5.
+- Tests: `backend/tests/test_v210_fy_report_many_years.py` covers the layout across year counts and amount sizes, and
+  the PDF and deck at 5, 7, 10 and All available with 8 years of history.
+
 **2.1.0 fix — starting a series on one fundraiser (#292, Kyle 2026-10-21; completes #277's prior years).**
 - `fundraiser_series.start_series()`: returns the fundraiser's series, or creates one named `series_name_for(name)`.
   It is audited as `FUNDRAISER_SERIES_CREATED` plus `FUNDRAISER_SERIES_LINK_UPDATED`, and is idempotent.
