@@ -197,7 +197,8 @@ export function FundraiserDetail({ id }: { id: number }) {
         <dt>Series</dt><dd data-testid="fr-series">{f.series_link.series
           ? <>{f.series_link.series.name}{f.series_link.continues_from ? <> — continues <Link to={`/fundraisers/${f.series_link.continues_from.id}`}>{f.series_link.continues_from.name}</Link></> : null}</>
           : <span className="muted">Not linked to an earlier year</span>}
-          {manage ? <button className="small fr-final-btn" onClick={() => setLinking(true)}>Change…</button> : null}</dd>
+          {manage ? <button className="small fr-final-btn" onClick={() => setLinking(true)}>Change…</button> : null}
+          {manage ? <button className="small fr-final-btn" onClick={() => act(async () => { const r = await api.post(`/api/fundraisers/${id}/series`); navigate(`/fundraiser-series?enter=${r.series_id}`); })}>Enter prior years…</button> : null}</dd>
         {f.description ? <><dt>Description</dt><dd className="pre-wrap">{f.description}</dd></> : null}
         {f.filter_text ? <><dt>Description filter</dt><dd><code>{f.filter_text}</code>{f.filter_regex ? " (regular expression)" : " (contains, any case)"}</dd></> : null}
       </dl>

@@ -48,6 +48,18 @@ could not otherwise be corrected. Scope and safeguards:
 - Audited as `TRANSACTION_VOID_DATE_CORRECTED` with before/after snapshots and the reason.
 - Tests: `backend/tests/test_cr001_void_date.py` (5 tests) and E2E "CR-001".
 
+**2.1.0 fix — starting a series on one fundraiser (#292, Kyle 2026-10-21; completes #277's prior years).**
+- `fundraiser_series.start_series()`: returns the fundraiser's series, or creates one named `series_name_for(name)`.
+  It is audited as `FUNDRAISER_SERIES_CREATED` plus `FUNDRAISER_SERIES_LINK_UPDATED`, and is idempotent.
+  `start_options()` lists the fundraisers in no series, newest first. Routes: `POST /api/fundraisers/{id}/series` and
+  `GET /api/fundraiser-series/start-options`, Budget Managers only, any Fiscal Year (reporting only).
+- `set_link(None)` on a fundraiser with no `continues_from_id` no longer clears its series. The edit form always sends
+  `continues_from_id: null`, so a started series, and the history entered on it, would otherwise be dropped by the
+  link dialog. Removing the link from a fundraiser that continues from another still takes it out, as before.
+- UI: **Enter prior years…** on the fundraiser (opens `/fundraiser-series?enter=<id>`) and **Start a series…** on the
+  series page. Both open the prior-year entry for the series.
+- Tests: `backend/tests/test_v210_start_fundraiser_series.py` (5 tests) and E2E "2.1.0 (#292)".
+
 **2.1.0 fix — deleted transactions release their check number (#289, Kyle 2026-10-20; amends the #53 decision).**
 - `checks.holders()` (CR-011 uniqueness) and `checks.review()` (CR-012 missing checks) leave out `status ==
   "DELETED"`. The deleted record keeps `check_number` for the Auditors, and the duplicate message no longer mentions

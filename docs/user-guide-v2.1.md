@@ -133,6 +133,12 @@ appear only with itemized revenue and contributor names both on.
   the year, amount raised, optionally income, expenses and a note; shown as *Entered*), **Retire…** an entry (it
   stays listed, struck through), and **Merge into…** when the same event was started twice. A year in which the
   series already has a fundraiser in PennyWarden can't be entered.
+- **An event whose earlier years are all from before PennyWarden** (nothing to *continue from*): click **Enter prior
+  years…** next to *Series* on the fundraiser's page, or **Start a series…** on *Fundraiser series* and choose the
+  fundraiser. Either one creates the fundraiser's series, named with the year taken out (it can be renamed), and opens
+  **Enter a prior year…**. Next year's fundraiser then continues from this one as usual. The entered years show in the
+  **Year over year** section of the fundraiser's report and presentation, and in the Fiscal Year report. Leaving
+  *Continues from* empty on that fundraiser keeps its series.
 
 ### The Fiscal Year fundraising report
 On **Fundraisers**, choose the Fiscal Year: each fundraiser has a checkbox, and every fundraiser of that year is
