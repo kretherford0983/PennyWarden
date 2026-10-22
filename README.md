@@ -18,7 +18,7 @@ Windows PC, Mac or Linux server; your data stays in one folder you control. No s
 > - Fundraisers linked across years, with years before PennyWarden entered by hand.
 > - A Fiscal Year fundraising report with year-over-year comparisons.
 >
-> Also new: a Budget Prep report and Fiscal Year Planning Sheet, electronic payments in the register, fold marks on
+> Also new: a Budget Review report and Fiscal Year Planning Sheet, electronic payments in the register, fold marks on
 > cover letters, and more voucher check layouts. 2.0 added the optional
 > [Payments module](#payments-and-check-printing-optional-payments-module-200).
 > [What's new in 2.1](docs/user-guide-v2.1.md) · [What's new in 2.0](docs/user-guide-v2.0.md) · [Changelog](CHANGELOG.md)
@@ -114,7 +114,7 @@ return every quarter, renew the insurance every year — so duties survive a cha
 | **Fiscal Years and budgets** | Hierarchical income and expense budgets, quarterly actuals, approval and lock, unlock with a reason, Fiscal Year close with a stored Close report |
 | **Registers** | Checking, savings and investment accounts; split allocations; transfers; electronic payments; cleared dates and the bank (cleared) balance; void lifecycle; duplicate and check-number protection; missing-check review |
 | **Documentation** | Attachments on transactions and on single allocations; typed Fiscal Year documents (approval, audit signoff); documentation review; "no attachment" with a stated reason |
-| **Reports** | End of Year Audit PDF with signature page and account start/end pages; Fiscal Year Close report; Entity activity report with CSV export; Budget Prep report and Fiscal Year Planning Sheet; fundraiser stakeholder report (PDF, Word) and presentation; Fiscal Year fundraising report and presentation; cash count sheet |
+| **Reports** | End of Year Audit PDF with signature page and account start/end pages; Fiscal Year Close report; Entity activity report with CSV export; Budget Review and Fiscal Year Planning Sheet; fundraiser stakeholder report (PDF, Word) and presentation; Fiscal Year fundraising report and presentation; cash count sheet |
 | **Dashboard** | Bank balances, budget progress, items needing attention, charts; each user chooses and arranges their own sections; light and dark mode |
 | **Fundraisers** | Budgets, offerings ("buckets") in categories, charge less a credit, contributor shown on reports, cash float, exclusions, documents, cancelled events, events spanning two Fiscal Years, series across years with earlier years entered by hand |
 | **Payments module** | Check styles from presets, field layout with a scale preview, built-in fonts, amounts in words with protective fill, memo patterns, encrypted signatures with an amount limit, two signature lines, voucher checks with the check on top, in the middle or at the bottom, sheet and single-check feed, reprint and spoiled checks, record copies, per-user printer adjustment; payments, cover letters with optional fold marks, #10 envelopes, handwritten checks |
@@ -154,7 +154,7 @@ report) · [1.4](docs/user-guide-v1.4.md) (audit signatures, two-step verificati
 reminders) · [1.7](docs/user-guide-v1.7.md) (the new name) · [1.8](docs/user-guide-v1.8.md) (budget history, Financial
 Flow Report, forgotten passwords) · [1.9](docs/user-guide-v1.9.md) (one person on a local install, automatic backups) ·
 [1.10](docs/user-guide-v1.10.md) (pennywarden.org, update notification) · [2.0](docs/user-guide-v2.0.md) (check printing; full
-guide: [docs/check-printing.md](docs/check-printing.md)) · [2.1](docs/user-guide-v2.1.md) (fundraiser reports and presentations, year over year, Budget Prep, electronic payments).
+guide: [docs/check-printing.md](docs/check-printing.md)) · [2.1](docs/user-guide-v2.1.md) (fundraiser reports and presentations, year over year, Budget Review, electronic payments).
 
 **Running PennyWarden**
 - [docs/deployment.md](docs/deployment.md) — local and server installation, HTTPS reverse proxy, Docker, data portability

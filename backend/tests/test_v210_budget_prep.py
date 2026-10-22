@@ -208,8 +208,9 @@ def test_pdf_csv_and_audit(env, base, hist):
     w, h = float(reader.pages[0].mediabox.width), float(reader.pages[0].mediabox.height)
     assert w > h                                                     # landscape
     text = " ".join(" ".join(p.extract_text().split()) for p in reader.pages)   # cells wrap
-    for needle in ("Budget Prep report", "FY2026", "0900", "history on parent", "Budgeted $900.00", "$450.00 under (50.0%)",
-                   "YTD 9/30/2026", "projected", "sum of sub-budgets", "1100", "Page 1 of"):
+    # 2.1.0 (#283): named Budget Review, laid out as Budgeted / Actual / Difference rows per budget
+    for needle in ("Budget Review", "FY2026", "0900", "history on parent", "Budgeted", "$900.00", "$450.00 under (50.0%)",
+                   "YTD 9/30/2026", "projected", "sum of sub-budgets", "1100", "Avg", "Page 1 of"):
         assert needle in text, needle
     c = rep(env, base, format="csv", projected=True)
     rows = list(csv.reader(io.StringIO(c.text)))
@@ -217,7 +218,7 @@ def test_pdf_csv_and_audit(env, base, hist):
     ops = next(x for x in rows if x[2] == "1000")
     assert "450.00" in ops and "360.00" in ops
     ev = env.auditor.get("/api/audit-events?action=REPORT_GENERATED").json()["items"]
-    kinds = [e["after"].get("format") for e in ev if (e.get("after") or {}).get("report") == "BUDGET_PREP"]
+    kinds = [e["after"].get("format") for e in ev if (e.get("after") or {}).get("report") == "BUDGET_REVIEW"]
     assert sorted(kinds) == ["csv", "pdf"]
 
 

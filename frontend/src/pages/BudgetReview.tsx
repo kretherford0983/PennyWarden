@@ -1,4 +1,5 @@
-// 2.1.0 (#257) Budget Prep report and (#261) the Fiscal Year Planning Sheet - Budget Managers only.
+// 2.1.0 (#257) Budget Review report (named Budget Prep until #283) and (#261) the Fiscal Year Planning Sheet -
+// Budget Managers only.
 // Both use the same projection rule and the same per-user, per-budget projection choices.
 import { Fragment, useEffect, useState } from "react";
 import { api, money, qs } from "../api";
@@ -24,7 +25,7 @@ export function ProjectionChoices({ fyId, onSaved }: { fyId: string | number; on
   const [err, setErr] = useState<unknown>(null);
   const [busy, setBusy] = useState(false);
   const [saved, setSaved] = useState(false);
-  const load = () => api.get(`/api/reports/budget-prep/projection-choices${qs({ fiscal_year_id: fyId })}`).then((x) => { setD(x); setEdit({}); }, setErr);
+  const load = () => api.get(`/api/reports/budget-review/projection-choices${qs({ fiscal_year_id: fyId })}`).then((x) => { setD(x); setEdit({}); }, setErr);
   useEffect(() => { setD(null); load(); }, [fyId]);
   if (!d) return <><ErrorBox error={err} />{err ? null : <Loading />}</>;
   const rows = [...d.income.map((x: any) => ({ ...x, sec: "Income" })), ...d.expense.map((x: any) => ({ ...x, sec: "Expense" }))];
@@ -34,7 +35,7 @@ export function ProjectionChoices({ fyId, onSaved }: { fyId: string | number; on
     setBusy(true); setErr(null); setSaved(false);
     try {
       const choices = reset ? [] : Object.entries(edit).map(([id, project]) => ({ budget_id: Number(id), project }));
-      setD(await api.put("/api/reports/budget-prep/projection-choices", { fiscal_year_id: Number(fyId), choices, reset }));
+      setD(await api.put("/api/reports/budget-review/projection-choices", { fiscal_year_id: Number(fyId), choices, reset }));
       setEdit({}); setSaved(true); onSaved?.();
     } catch (e) { setErr(e); } finally { setBusy(false); }
   };
@@ -72,33 +73,51 @@ export function ProjectionChoices({ fyId, onSaved }: { fyId: string | number; on
   );
 }
 
-function Cmp({ c, word = "Actual" }: { c: any; word?: string }) {
-  if (!c) return <span className="muted" title="No linked budget that year">—</span>;
-  return (
-    <div className="cmp">
-      <div>Budgeted {money(c.budgeted)}</div>
-      <div>{word} {money(c.actual)}</div>
-      <div>{diffText(c.difference, c.difference_pct)}</div>
-      {c.renumbered || (c.status && c.status !== "APPROVED") ? <div className="muted small">{[c.renumbered ? c.code : null, c.status && c.status !== "APPROVED" ? c.status.charAt(0) + c.status.slice(1).toLowerCase() : null].filter(Boolean).join(" · ")}</div> : null}
-    </div>
-  );
+const status = (s: string) => s.charAt(0) + s.slice(1).toLowerCase();
+
+/** #283 (layout A): one column = (Budgeted, Actual, Difference) for a budget. */
+type Col = { key: string; head: React.ReactNode; cells: (r: any) => [React.ReactNode, React.ReactNode, React.ReactNode] };
+
+function columns(data: any): Col[] {
+  const cols: Col[] = data.years.map((y: any, i: number) => ({
+    key: `y${y.id}`, head: y.display_name,
+    cells: (r: any) => {
+      const c = r.history[i];
+      if (!c) return [r.history_note ? <i className="muted">history on parent</i> : <span className="muted" title="No linked budget that year">—</span>, null, null];
+      const note = [c.renumbered ? c.code : null, c.status && c.status !== "APPROVED" ? status(c.status) : null].filter(Boolean).join(" · ");
+      return [<>{money(c.budgeted)}{note ? <div className="muted small">{note}</div> : null}</>, money(c.actual), diffText(c.difference, c.difference_pct)];
+    },
+  }));
+  if (data.years.length) {
+    cols.push({ key: "avg", head: <>Avg<div className="muted small">prior years</div></>,
+      cells: (r: any) => r.average ? [money(r.average.budgeted), money(r.average.actual), diffText(r.average.difference, r.average.difference_pct)] : [<span className="muted">—</span>, null, null] });
+  }
+  cols.push({ key: "cur", head: <>{data.fiscal_year.display_name}<div className="muted small">YTD {data.as_of}</div></>,
+    cells: (r: any) => [money(r.current.budgeted), money(r.current.actual), diffText(r.current.difference, r.current.difference_pct)] });
+  if (data.projected) {
+    cols.push({ key: "proj", head: <>Projected<div className="muted small">to {data.fiscal_year.end_date}</div></>,
+      cells: (r: any) => {
+        const p = r.projection;
+        if (!p) return [null, null, null];
+        if (p.state === "NOT_PROJECTED") return [money(r.current.budgeted), <i>Complete: no projection</i>, null];
+        if (p.state === "TOO_EARLY") return [money(r.current.budgeted), <i>too early to project</i>, null];
+        const word = p.state === "ROLLUP" ? "sum of sub-budgets" : p.state === "YEAR_ENDED" ? "year ended: actual" : "projected";
+        return [money(r.current.budgeted), <>{money(p.projected)}<div className="muted small">{word}</div></>, diffText(p.difference, p.difference_pct)];
+      } });
+  }
+  if (data.include_next) {
+    cols.push({ key: "next", head: <>{data.next_fiscal_year ? data.next_fiscal_year.display_name : "Next year"}<div className="muted small">next year's budget</div></>,
+      cells: (r: any) => {
+        const n = r.next;
+        if (!n) return [<span className="muted">—</span>, null, null];
+        const ch = Number(n.change) === 0 ? "no change" : `${n.change.startsWith("-") ? "−" : "+"}${money(n.change.replace("-", ""))} (${pctText(n.change_pct)}) vs this year`;
+        return [<>{money(n.amount)}<div className="muted small">{n.code} · {status(n.status)}</div></>, null, ch];
+      } });
+  }
+  return cols;
 }
 
-function Proj({ p }: { p: any }) {
-  if (!p) return null;
-  if (p.state === "NOT_PROJECTED") return <div className="cmp"><i>Complete: no projection</i><div>YTD {money(p.projected)}</div></div>;
-  if (p.state === "TOO_EARLY") return <i>too early to project</i>;
-  const word = p.state === "ROLLUP" ? "sum of sub-budgets" : p.state === "YEAR_ENDED" ? "year ended: actual" : "projected";
-  return <div className="cmp"><div>{money(p.projected)}</div><div>{diffText(p.difference, p.difference_pct)}</div><div className="muted small">{word}</div></div>;
-}
-
-function Next({ n }: { n: any }) {
-  if (!n) return <span className="muted">—</span>;
-  const ch = Number(n.change) === 0 ? "no change" : `${n.change.startsWith("-") ? "−" : "+"}${money(n.change.replace("-", ""))} (${pctText(n.change_pct)})`;
-  return <div className="cmp"><div>{n.code} · {n.status.charAt(0) + n.status.slice(1).toLowerCase()}</div><div>{money(n.amount)}</div><div>change {ch}</div></div>;
-}
-
-export default function BudgetPrep({ fys }: { fys: any[] }) {
+export default function BudgetReview({ fys }: { fys: any[] }) {
   const t = today();
   const cur = fys.find((f) => f.start_date <= t && f.end_date >= t) || fys[fys.length - 1];
   const [f, setF] = useState({ fiscal_year_id: cur ? String(cur.id) : "", years: "3", projected: false, include_next: false, budget: "", as_of: t });
@@ -109,7 +128,7 @@ export default function BudgetPrep({ fys }: { fys: any[] }) {
   useEffect(() => {
     if (!f.fiscal_year_id) return;
     setData(null);
-    api.get(`/api/reports/budget-prep/projection-choices${qs({ fiscal_year_id: f.fiscal_year_id })}`).then((d) => setOpts([...d.income, ...d.expense]), () => setOpts([]));
+    api.get(`/api/reports/budget-review/projection-choices${qs({ fiscal_year_id: f.fiscal_year_id })}`).then((d) => setOpts([...d.income, ...d.expense]), () => setOpts([]));
   }, [f.fiscal_year_id]);
   const [kind, id] = f.budget ? f.budget.split(":") : ["", ""];
   const params = (format: string, download = false) => ({
@@ -117,18 +136,18 @@ export default function BudgetPrep({ fys }: { fys: any[] }) {
     budget_id: kind === "b" ? id : null, parent_budget_id: kind === "p" ? id : null, as_of: f.as_of || null,
     format: format === "json" ? null : format, download: download || null,
   });
-  const url = (format: string, download = false) => `/api/reports/budget-prep${qs(params(format, download))}`;
+  const url = (format: string, download = false) => `/api/reports/budget-review${qs(params(format, download))}`;
   const run = async () => {
     setBusy(true); setErr(null);
     try { setData(await api.get(url("json"))); } catch (e) { setErr(e); } finally { setBusy(false); }
   };
   return (
     <section className="card">
-      <h2 className="no-print">Budget Prep report</h2>
+      <h2 className="no-print">Budget Review</h2>
       <p className="no-print">Each budget of the Fiscal Year with its history over earlier years (following the budget continuation links, so a renumbered budget stays on one line), budgeted against actual, the year-to-date actual and, optionally, a projection to the year end and next year's continuing budget. For Budget Managers.</p>
       <div className="report-options no-print">
         <Field label="Fiscal Year">
-          <select aria-label="Budget Prep Fiscal Year" value={f.fiscal_year_id} onChange={(e) => setF({ ...f, fiscal_year_id: e.target.value, budget: "" })}>
+          <select aria-label="Budget Review Fiscal Year" value={f.fiscal_year_id} onChange={(e) => setF({ ...f, fiscal_year_id: e.target.value, budget: "" })}>
             {fys.map((y) => <option key={y.id} value={y.id}>{y.label}</option>)}
           </select>
         </Field>
@@ -152,49 +171,49 @@ export default function BudgetPrep({ fys }: { fys: any[] }) {
       </div>
       {f.projected && f.fiscal_year_id ? <ProjectionChoices fyId={f.fiscal_year_id} onSaved={() => data && run()} /> : null}
       <ErrorBox error={err} />
-      {data ? <BudgetPrepTable data={data} url={url} /> : null}
+      {data ? <BudgetReviewTable data={data} url={url} /> : null}
     </section>
   );
 }
 
-function BudgetPrepTable({ data, url }: { data: any; url: (format: string, download?: boolean) => string }) {
-  const cols = data.years.length + 2 + (data.projected ? 1 : 0) + (data.include_next ? 1 : 0);
+function BudgetReviewTable({ data, url }: { data: any; url: (format: string, download?: boolean) => string }) {
+  const cols = columns(data);
+  const span = cols.length + 1;
   return (
-    <div className="budget-prep">
-      <h2>Budget Prep — {data.fiscal_year.display_name}</h2>
-      <p>Actuals year-to-date as of {data.as_of}. Prior years shown: {data.years.length} of {data.available_years}. Difference = actual − budgeted; n/a when nothing was budgeted.{data.projected ? ` Projected = YTD ÷ elapsed months × months in the year (${data.projection_basis.elapsed_months} of ${data.projection_basis.months} months elapsed).` : ""}</p>
+    <div className="budget-review">
+      <h2>Budget Review — {data.fiscal_year.display_name}</h2>
+      <p>Actuals year-to-date as of {data.as_of}. Prior years shown: {data.years.length} of {data.available_years}. Difference = actual − budgeted; n/a when nothing was budgeted. Avg = the average of the prior years shown in which the budget existed.{data.projected ? ` Projected = YTD ÷ elapsed months × months in the year (${data.projection_basis.elapsed_months} of ${data.projection_basis.months} months elapsed).` : ""}</p>
       <div className="actions left no-print">
         <a className="button primary" href={url("pdf")} target="_blank" rel="noopener">Open PDF</a>
         <a className="button" href={url("pdf", true)}>Download PDF</a>
         <a className="button" href={url("csv")}>Download CSV</a>
       </div>
       <div className="table-scroll">
-        <table className="table compact">
-          <thead>
-            <tr>
-              <th>Budget</th>
-              {data.years.map((y: any) => <th key={y.id}>{y.display_name}<div className="muted small">budgeted · actual · difference</div></th>)}
-              <th>{data.fiscal_year.display_name} (current)<div className="muted small">budgeted · actual YTD · difference</div></th>
-              {data.projected ? <th>Projected to {data.fiscal_year.end_date}</th> : null}
-              {data.include_next ? <th>{data.next_fiscal_year ? data.next_fiscal_year.display_name : "Next year"}<div className="muted small">continuing budget · change</div></th> : null}
-            </tr>
-          </thead>
-          <tbody>
-            {(["income", "expense"] as const).map((sec) => data[sec].length ? (
-              <Fragment key={sec}>
-                <tr className="section-row"><th colSpan={cols}>{sec === "income" ? "Income" : "Expense"}</th></tr>
-                {data[sec].map((r: any) => (
-                  <tr key={r.id} className={r.level === "parent" ? "parent-row" : ""}>
-                    <td className={r.level === "sub" ? "indent" : ""}>{r.level === "parent" ? <b>{r.code} {r.name}</b> : `${r.code} ${r.name}`} <BudgetState state={r.state} /></td>
-                    {r.history.map((c: any, i: number) => <td key={i}>{!c && r.history_note ? <i className="muted">history on parent</i> : <Cmp c={c} />}</td>)}
-                    <td><Cmp c={r.current} word="YTD" /></td>
-                    {data.projected ? <td><Proj p={r.projection} /></td> : null}
-                    {data.include_next ? <td><Next n={r.next} /></td> : null}
-                  </tr>
-                ))}
-              </Fragment>
-            ) : null)}
-          </tbody>
+        <table className="table compact" aria-label="Budget Review">
+          <thead><tr><th />{cols.map((c) => <th key={c.key} className="num">{c.head}</th>)}</tr></thead>
+          {(["income", "expense"] as const).map((sec) => data[sec].length ? (
+            <tbody key={sec}>
+              <tr className="section-row"><th colSpan={span}>{sec === "income" ? "Income" : "Expense"}</th></tr>
+              {data[sec].map((r: any) => {
+                const vals = cols.map((c) => c.cells(r));
+                return (
+                  <Fragment key={r.id}>
+                    <tr className={r.level === "parent" ? "budget-head parent-row" : "budget-head"}>
+                      <th colSpan={span} scope="rowgroup" className={r.level === "sub" ? "indent" : ""}>
+                        {r.level === "parent" ? <b>{r.code} {r.name}</b> : `${r.code} ${r.name}`} <BudgetState state={r.state} />
+                      </th>
+                    </tr>
+                    {(["Budgeted", "Actual", "Difference"] as const).map((word, k) => (
+                      <tr key={word} className={k === 2 ? "last-of-budget" : ""}>
+                        <th scope="row" className="muted">{word}</th>
+                        {vals.map((v, i) => <td key={cols[i].key} className="num">{v[k]}</td>)}
+                      </tr>
+                    ))}
+                  </Fragment>
+                );
+              })}
+            </tbody>
+          ) : null)}
         </table>
       </div>
     </div>
@@ -206,10 +225,11 @@ function BudgetPrepTable({ data, url }: { data: any; url: (format: string, downl
  * Proposed Revision column), otherwise the current year with a blank Proposed column. */
 export function PlanningSheetDialog({ onClose }: { onClose: () => void }) {
   const [asOf, setAsOf] = useState(today());
+  const [withReview, setWithReview] = useState(false);     // #283: the Budget Review pages after the sheet
   const [c, setC] = useState<any>(null);
   const [err, setErr] = useState<unknown>(null);
   useEffect(() => { api.get("/api/reports/planning-sheet/context").then(setC, setErr); }, []);
-  const href = (download: boolean) => `/api/reports/planning-sheet${qs({ as_of: asOf || null, download: download || null })}`;
+  const href = (download: boolean) => `/api/reports/planning-sheet${qs({ as_of: asOf || null, download: download || null, include_review: withReview || null })}`;
   return (
     <Modal title="Fiscal Year Planning Sheet" onClose={onClose} wide>
       <p>A printed form for the budget planning meeting: this year's budgets with what was budgeted, the actual year-to-date and the projection, and blank columns to write in the proposed amounts, with room for new budgets.</p>
@@ -223,6 +243,7 @@ export function PlanningSheetDialog({ onClose }: { onClose: () => void }) {
       ) : null}
       <p className="hint">The filled-in sheet can be scanned and attached to the new Fiscal Year as an Other document. It isn't required for the Fiscal Year closure review.</p>
       <Field label="Actuals as of"><input type="date" value={asOf} onChange={(e) => setAsOf(e.target.value)} /></Field>
+      <label className="check"><input type="checkbox" checked={withReview} onChange={(e) => setWithReview(e.target.checked)} /> Include the Budget Review <span className="muted">(the last 3 years of each budget — budgeted, actual and difference — after the sheet, in the same PDF)</span></label>
       {c ? <ProjectionChoices fyId={c.fiscal_year.id} /> : null}
       <div className="actions">
         <button onClick={onClose}>Done</button>

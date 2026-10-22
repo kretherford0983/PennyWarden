@@ -1,7 +1,7 @@
 # What's new in 2.1 — quick guide
 
 *2.1.0: fundraiser reporting (a stakeholder report as PDF or Word, a slide deck, fundraisers across years with
-year over year, and a Fiscal Year fundraising report), Budget Prep and the Fiscal Year Planning Sheet, electronic
+year over year, and a Fiscal Year fundraising report), the Budget Review and the Fiscal Year Planning Sheet, electronic
 payments and other register improvements, fold marks on cover letters and more voucher check layouts. The full list is
 in the [changelog](../CHANGELOG.md).*
 
@@ -52,10 +52,13 @@ spoiled first. (A VOID record keeps its number, as before.)
 
 ## Budget planning (Budget Managers)
 
-### Budget Prep report
-**Reports → Budget Prep.** Choose the Fiscal Year and how many earlier years to show (or *All linked years*), then
-**Run report**. For each budget you see, per year: what was budgeted, the actual, and the difference — in dollars and
-percent, with *over* or *under* in words (*n/a* when nothing was budgeted).
+### Budget Review
+**Reports → Budget Review** (called *Budget Prep* in the first test builds). Choose the Fiscal Year and how many
+earlier years to show (or *All linked years*), then **Run report**. Each budget is a block, laid out like a budget
+review spreadsheet: its name, then a **Budgeted**, an **Actual** and a **Difference** row, with the years across. The
+difference is in dollars and percent, with *over* or *under* in words (*n/a* when nothing was budgeted). **Avg** is
+the average of the earlier years shown, counting only the years the budget existed (the current year isn't
+included, since it isn't finished).
 - **History follows the budget links** (*Continues* on a budget, set when a budget is copied into the next year or by
   hand). A budget that was renumbered stays on one line; its earlier code is shown in that year. A year with no linked
   budget shows —. A sub-budget without a link of its own says *history on parent*; *Other* follows its parent.
@@ -92,6 +95,10 @@ draft code with the previous code under it. A new draft budget is marked *new in
 isn't in the draft is marked *not in draft*. If the Income table ends low on a page, the Expense table starts on the
 next page. After the meeting, scan the sheet and attach it to the new Fiscal Year as
 an Other document — it is not required for closing a year.
+
+Tick **Include the Budget Review** to print the Budget Review of the same year after the sheet, in the same PDF: the
+last 3 years of each budget (budgeted, actual and difference), the projection with your projection choices, and the
+Draft year's budgets when there is one. (#283)
 
 ## Fundraisers
 
