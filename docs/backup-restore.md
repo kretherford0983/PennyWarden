@@ -300,6 +300,12 @@ System/About → Backups → Backup / Restore → **Scheduled** writes backups o
 - **Run now** writes a backup immediately; the page lists the recent runs with their result, file and size. Settings
   changes, runs, failures and deletions are in the audit log (`BACKUP_SCHEDULE_UPDATED`, `BACKUP_PASSPHRASE_SET`,
   `SCHEDULED_BACKUP_CREATED/FAILED/DELETED`).
+- **Kept as** (since 2.1.0, #233) shows why each listed backup is still there, with the current keep settings:
+  *Daily*, *Weekly*, *Monthly* (one or more, e.g. *Daily, Weekly*), or *Latest* when only being the newest keeps it.
+  *Removed* means the keep rules deleted it. *Removed at the next backup* means the keep settings were lowered since
+  the last run, and the next run deletes it. *Not managed (another folder)* is a backup made into an earlier folder,
+  which the keep rules don't touch. It is worked out with the same code that does the deleting, so the column and
+  the deletions always agree.
 
 ## Moving to another server
 

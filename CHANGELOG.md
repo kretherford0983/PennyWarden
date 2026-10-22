@@ -129,6 +129,9 @@ PennyWarden 2.1.0 (in progress).
   and the credit show as detail on the line and in the reports. A fully credited item (net $0) is allowed. (#278)
 
 ### For whoever runs the server
+- **Scheduled backups show why each backup is kept.** The *Recent backups* table has a **Kept as** column (*Daily*,
+  *Weekly*, *Monthly*, *Latest*, *Removed*), worked out with the same rules that delete old backups, so it's easy to
+  check the keep settings do what you expect. (#233)
 
 - **`sudo pennywarden apply-config`** applies `config.toml` on a Linux server without running the whole installer:
   after changing `backup_folders` (or another setting), it checks the file first and changes nothing if there is a

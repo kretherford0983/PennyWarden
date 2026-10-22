@@ -2245,6 +2245,8 @@ test("#62: an Administrator sets up scheduled backups to a folder, tests it and 
   const hist = card.getByRole("table", { name: "Backup history" });
   await expect(hist.locator("tbody tr").first()).toContainText("Done", { timeout: 30_000 });
   await expect(hist.locator("tbody tr").first()).toContainText("Run now");
+  // 2.1.0 (#233): the only backup is the newest daily one (and the first of its week and month)
+  await expect(hist.locator("tbody tr").first().getByTestId("kept-as")).toContainText("Daily");
   await page.screenshot({ path: "e2e-screenshots/light-scheduled-backups.png", fullPage: true });
   const files = readdirSync(folder).filter((f) => f.endsWith(".fmbak"));
   expect(files).toHaveLength(1);
