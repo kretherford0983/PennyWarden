@@ -265,7 +265,22 @@ A **cover letter** has:
   Fold the page in three with the addresses on the top panel facing the windows. The positions follow a standard #10
   double-window envelope. To check yours, print **Test print** on plain paper: the windows are drawn as dashed boxes
   and the folds are marked. Fold it, slide it into the envelope and see whether the addresses show; if not, move each
-  address (right/down, up to 3/4 inch) and test again. The real letter never shows the boxes.
+  address (right/down, up to 3/4 inch) and test again. The real letter never shows the boxes or the labeled fold
+  lines.
+- **Fold marks** (since 2.1.0, #247) — small ticks at the left and right edges where the page folds in even thirds
+  (11/3 and 22/3 inches from the top), to fold any letter neatly for a #10 envelope. They are on the first sheet only
+  (with *On a separate address page*, the address page). They are deliberately faint, just enough to fold by: no
+  label, a hairline about 0.15 inch long in light gray, starting 0.25 inch from the paper edge. **Tick length**
+  (0.1–0.5 in), **distance from the edge** (0.1–0.5 in), **line weight** (hairline, thin, medium) and **shade**
+  (light, medium, dark gray) can be tuned; the preview and the test print show them.
+  - **On the front of the page** — the ticks print on page 1.
+  - **On the back of the page (needs two-sided printing)** — for a letter with no marks on its face. The PDF gets a
+    back page after every page: the ticks behind page 1, the others blank, so each page starts a new sheet. The thirds
+    are symmetric, so the ticks land on the folds whichever way the printer flips the sheet. Printed one-sided, the
+    ticks come out on a separate sheet.
+
+  New window-envelope letters start with marks on the front; other new letters and every letter made before 2.1.0
+  have none, so they print as before.
 
 The payee's name and address under "To:" come from the payee's entity — keep the vendor's address in **Entities**.
 
@@ -282,6 +297,13 @@ envelope**. A payee without an address, or a variable without data, asks you to 
 first. Each printed letter and envelope is attached to the transaction (the same one only once).
 **Test on plain paper** prints the envelope without recording it; **My envelope printer settings** saves your own page,
 guide and an adjustment of up to 1/4 inch.
+
+**Fold marks** (since 2.1.0, #247) for the letter are chosen next to it: *None*, *On the front* or *On the back
+(two-sided)*. The choice starts from **your own default**, or else from the template's setting, and applies to this
+letter only. **My letter printer settings** saves your default: *Use the template's setting*, *On the front*, or *On
+the back (my printer prints two-sided)*. Whenever the marks go on the back, a banner reminds you to print on both
+sides (flip on long edge). The app can't switch the printer to two-sided, and printed one-sided, the marks come out
+on a separate sheet. The attached copy is the letter as printed.
 
 ### Checks written by hand
 For a check you write by hand (or a personal check), open **Create payment…** and choose **I'm writing the check by
