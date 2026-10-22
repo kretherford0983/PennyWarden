@@ -133,7 +133,7 @@ export default function ScheduledBackups() {
       {d.history.length ? (
         <div className="table-wrap">
           <table className="table" aria-label="Backup history">
-            <thead><tr><th>Started</th><th>How</th><th>Result</th><th>File</th><th className="num">Size</th></tr></thead>
+            <thead><tr><th>Started</th><th>How</th><th>Result</th><th>File</th><th className="num">Size</th><th title="Which keep rule holds on to this backup, with the current keep settings">Kept as</th></tr></thead>
             <tbody>
               {d.history.map((h: any) => (
                 <tr key={h.id}>
@@ -141,6 +141,7 @@ export default function ScheduledBackups() {
                   <td>{h.result === "SUCCESS" ? <span className="badge green">Done</span> : h.result === "FAILED" ? <span className="badge red">Failed</span> : <span className="badge grey">Running</span>}{h.error ? <div className="muted">{h.error}</div> : null}</td>
                   <td>{h.filename}{h.deleted ? <span className="muted"> (removed by the keep rules)</span> : null}</td>
                   <td className="num">{size(h.size)}</td>
+                  <td data-testid="kept-as">{keptAs(h.kept_as)}</td>
                 </tr>
               ))}
             </tbody>
@@ -149,6 +150,15 @@ export default function ScheduledBackups() {
       ) : <p className="muted">No scheduled backups yet.</p>}
     </section>
   );
+}
+
+/** 2.1.0 (#233): why a backup is still there - computed by the server with the same rules as retention. */
+function keptAs(k: string | null | undefined) {
+  if (!k) return null;
+  if (k === "Removed") return <span className="muted">Removed</span>;
+  if (k === "Removed at the next backup") return <span className="badge yellow" title="The keep settings changed: the next backup removes it">{k}</span>;
+  if (k.startsWith("Not managed")) return <span className="muted" title="Made into another folder; the keep rules only manage the current folder">{k}</span>;
+  return <span className="badge green">{k}</span>;
 }
 
 /** Administrators: shown at the top of every page while the last scheduled backup has failed. */

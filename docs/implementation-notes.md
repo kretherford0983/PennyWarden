@@ -48,6 +48,122 @@ could not otherwise be corrected. Scope and safeguards:
 - Audited as `TRANSACTION_VOID_DATE_CORRECTED` with before/after snapshots and the reason.
 - Tests: `backend/tests/test_cr001_void_date.py` (5 tests) and E2E "CR-001".
 
+**2.1.0 — Budget Review (#283, Kyle 2026-10-20; built 2026-10-21 with layout A, the issue's recommendation).**
+- Renamed from Budget Prep. `budget_review()`, `budget_review_csv()` and `budget_review_pdf()` are the new names;
+  `budget_prep*` stay as aliases. The routes are `/api/reports/budget-review` and `/budget-review/projection-choices`,
+  and the `/budget-prep` paths still answer, hidden from the schema. The audit name is `report: BUDGET_REVIEW` (older
+  events keep `BUDGET_PREP`). Files are `budget-review-*.pdf/.csv`. The table `budget_projection_choice` is unchanged.
+- The figures are unchanged from #257. Each row adds `average`: the mean budgeted and actual of the prior years shown
+  that have a linked budget, with `compare()` for the difference (actual − budgeted, Kyle 2026-10-20) and `years`.
+  The CSV adds Avg budgeted / actual / difference / years.
+- **PDF, layout A:** a title band. For each budget, a heading row (spanning, shaded) and Budgeted / Actual /
+  Difference rows. The columns are the prior years, Avg, the current year (YTD), and optionally Projected (Budgeted =
+  the current budget, Actual = the projection) and Next year (its budget, and the change in the Difference row).
+  Each block is `NOSPLIT`, and the columns split into bands when there are many years. The screen
+  (`BudgetReview.tsx`, was `BudgetPrep.tsx`) shows the same layout.
+- **Planning Sheet:** `include_review=true` makes `append_review()` build the review of the same year (3 years,
+  projected with the person's choices, the Draft year's budgets when there is one) and append it with pypdf. Each
+  part keeps its own page numbers. Recorded in the sheet's `REPORT_GENERATED` (`include_review`, `review_pages`,
+  `review_years`).
+- Tests: `backend/tests/test_v210_budget_review.py` (alias, averages, CSV, PDF layout, Planning Sheet with the review,
+  access); `test_v210_budget_prep.py` (figures) is updated only for the name and layout; the E2E Budget Review steps.
+
+**2.1.0 — voucher layouts (#246, decided by Kyle 2026-10-15/21; built 2026-10-21).**
+- The 2.0.0 config model already allowed any `check_tops[0]` and one or two stubs anywhere that don't overlap
+  (`StyleConfig._check_stubs`), and the renderer draws stubs at their own tops. What was missing was the presets and
+  the UI.
+- `presets.VOUCHER_LAYOUTS` holds the six layouts (check top, stubs as top, height and copy, and a stock note).
+  `voucher_config()` builds the five new presets from `VOUCHER_TOP`, which itself is unchanged.
+  `presets.voucher_layouts()` is served in `/api/checks/setup` for the setup screen's Check position and Stubs. With
+  two stubs, VENDOR (invoice) is the stub next to the check.
+- `render._draw_stub(outline=True)` dashes a stub's top edge when it isn't the sheet's top, and its bottom edge when the
+  check starts there (a stub above the check). The real check never draws outlines, so 2.0.0 voucher prints are
+  unchanged. `stub_drawing()` returns `top`, and the preview's viewBox extends upward for stubs above the check.
+- UI labels: *Invoice stub* / *Office stub* (Kyle 2026-10-21). The printed copy label stays *OFFICE COPY*.
+- Positions are the issue's starting presets, to be checked against real sheets (Kyle 2026-10-21). The 7-inch stub
+  is 3.5–10.5 in with a 0.5 in strip.
+- Tests: `backend/tests/test_v210_voucher_layouts.py` (presets, capacity, validation with the check anywhere, printing
+  each new layout with positions on the check and record copy, calibration perforations, setup and access) and the
+  E2E voucher steps.
+
+**2.1.0 — fold marks on cover letters (#247, decided by Kyle 2026-10-15; built 2026-10-21).**
+- `LetterConfig` gains `fold_marks` (NONE / FRONT / BACK, default NONE, so 2.0.0 templates are unchanged),
+  `fold_length` and `fold_edge` (0.1–0.5 in; defaults 0.15 and 0.25), `fold_weight` (HAIRLINE 0.25 pt / THIN 0.5 /
+  MEDIUM 0.9) and `fold_shade` (LIGHT / MEDIUM / DARK gray). These live in the template's JSON config, so no migration
+  is needed. The WINDOW preset starts with FRONT, and the editor sets FRONT when a *new* draft chooses a window layout.
+- `documents.fold_ticks()` draws four ticks at `FOLD_LINES`. `letter_pdf(fold=...)` draws them in `onFirstPage` for
+  FRONT. For BACK, `_with_back_pages()` uses pypdf to put a ticks page after page 1 and a blank page after each other
+  page. The output is deterministic (reportlab `invariant`), so a reprint's record copy is still de-duplicated by
+  SHA-256. The test print and preview pass through `sample_letter_pdf`, so they show the ticks as well as the
+  labeled window marks.
+- **Levels:**
+  - letter: `LetterIn.fold_marks`;
+  - user: `check_printer_setting.fold_marks` on a row with `feed_key "letter"` and no style or template (migration
+    `0044`; empty = TEMPLATE; GET/PUT `/api/checks/my-printer/letter`, audited `CHECK_PRINTER_SETTINGS`);
+  - template.
+
+  `letter_fold_default()` resolves user, then template. The print-screen documents list returns `fold_default` per
+  letter and `my_letter_fold`. `CHECK_LETTER_PRINTED` records the `fold_marks` used.
+- Tests: `backend/tests/test_v210_fold_marks.py` (8 tests: tick positions from the content stream, address page,
+  back pages, tuning and limits, test print, user and letter levels, audit, access) and the E2E letter steps.
+
+**2.1.0 — scheduled backups: Kept as (#233, Kyle 2026-10-14; built 2026-10-21).**
+- `scheduled_backup.keep_levels(runs, daily, weekly, monthly)` returns each kept run's reasons ("Daily", "Weekly",
+  "Monthly", or "Latest" when only being the newest keeps it). `keep_set()` is now `set(keep_levels(...))`, so
+  retention and the column share one calculation. `_retained_runs()` and `_keep_args()` are shared by
+  `apply_retention()` and `kept_as()`.
+- `out()` adds `kept_as` to each history row: the levels; *Removed* (deleted by retention); *Removed at the next
+  backup* (managed but no longer kept after the settings changed); *Not managed (another folder)*; empty for failed
+  or running ones. Nothing new is stored.
+- Tests: `backend/tests/test_v210_backup_kept_as.py` (levels, Latest, 40 daily runs and a settings change before and
+  after the next run) and the E2E scheduled-backup test.
+
+**2.1.0 — contributor override for lines in no bucket (#303, Kyle 2026-10-21).**
+- New table `fundraiser_line_contributor` (migration `0043`): one row per fundraiser and line, holding the
+  contributor shown for the part of the line in no bucket. Bucket parts keep `fundraiser_bucket_line.contributor_override`
+  (`0042`).
+- `set_line` takes a line-level `contributor_override`. It is saved with the rest of the line and appears in the
+  `FUNDRAISER_LINE_UPDATED` before/after, and it is deleted when the line is excluded. `_lines()` puts it on each row
+  (none for an excluded line).
+- `fundraiser_summary`: `line()` uses the bucket's override for a bucket part, and the line's own for the *Other* part.
+  The plain line list uses the line's own. With names off, `who()` numbers it as its own *Contributor N*, as before.
+- The table is also covered by `has_management_data` (a fundraiser with one is archived, not deleted), by
+  `_drop_orphan_adjustments` and by reinitialize's wipe.
+- Tests: `backend/tests/test_v210_line_contributor.py` (5 tests) and the E2E fundraiser line test.
+
+**2.1.0 — private test data set (#272, Kyle 2026-10-20/21).**
+- `scripts/test_data.py` is called as `scripts/demo_data.py --profile test`; the demo profile is unchanged.
+  - It reuses the demo's API client and makes everything through the web API of a new installation, so every rule
+    and the audit trail apply. It refuses an initialized installation.
+  - `PW_TESTDATA_PASSWORD` is the sign-in password and the security answers; `PW_TESTDATA_PASSPHRASE` is the backup
+    passphrase. Both come from the environment only. GitHub masks them in Actions (they come from `secrets.*`). They are
+    redacted from API error text and never printed: the script doesn't print them even to mask them (CodeQL).
+  - Fiscal Years are relative to today, July–June by default (`--fy-start-month`): two closed, the current approved,
+    the next a Draft with `continues_budget_id` links.
+- Kyle's decisions (2026-10-21):
+  - The test users enroll two-step verification again after each restore. There are no fixed seeds: the API makes up
+    the secret, and writing one into the database would bypass it.
+  - The sign-ins are admin, budgetmgr, bookkeeper, auditor and treasurer. treasurer also has Register Admin, so the
+    data set can include a deleted transaction.
+  - The workflow can build from any branch, `test` by default.
+  - The data covers several years.
+- The two-a-year Pancake Breakfasts can't continue from each other: "Continues from" needs an earlier Fiscal Year. In
+  the first year, each starts a series (#292) and the two are merged. Later years continue from the previous year's.
+- `--backup` uses the backup API (`POST /api/system/backups`, `recoverable: false`, since the runner's server key is
+  thrown away) and downloads the `.fmbak`. `--summary` writes JSON without secrets for the run summary.
+- `.github/workflows/test-data.yml`:
+  - runs on `workflow_dispatch` with the inputs `ref` (default `test`) and `fy_start_month`; `contents: read`;
+  - starts `python -m fmpoc` on loopback with a temporary data folder (no frontend build is needed);
+  - writes the schema from `alembic_version` into the run summary;
+  - uploads the artifact with a 7-day retention.
+
+  GitHub only lists a manual workflow once the file is on the default branch.
+- Tests: `backend/tests/test_v210_test_data.py`. It runs the generator against a live server and checks:
+  - refusals without the password variable and on an initialized installation;
+  - the data;
+  - that no secret appears in output, logs or the backup;
+  - `pennywarden restore` into a new folder, then server mode: every test user signs in and gets `mfa_pending: ENROLL`.
+
 **2.1.0 fix — Fiscal Year report PDF with 6+ years of history (#295, Kyle 2026-10-21).**
 - The *Year over year by series* table used fixed 0.95" year columns and a 1.6" change column. From 6 years that is
   wider than the 7.13" frame, so the Series column had a negative width and ReportLab raised `ValueError`, which
@@ -282,12 +398,23 @@ budget, so per Fiscal Year). Reinitialize wipes it with the budgets.
 
   Each report is audited `REPORT_GENERATED` on the Fiscal Year.
 - PDF output:
-  - `_AuditDoc` takes a `pagesize`, so the Budget Prep report is landscape Letter; year columns split into bands when
+  - `_AuditDoc` takes a `pagesize`, so the Budget Review (then Budget Prep) report is landscape Letter; year columns split into bands when
     they don't fit.
   - The footer title carries the organization and print date.
   - The single-budget chart is a reportlab `VerticalBarChart`, with the legend in words.
 - Frontend: `pages/BudgetPrep.tsx` holds the report tab (shown only with `budget.manage`), the shared
-  `ProjectionChoices` checklist and `PlanningSheetDialog` (Fiscal Year screen, not on a Closed year).
+  `ProjectionChoices` checklist and `PlanningSheetDialog`.
+- Build 3 feedback (Kyle, 2026-10-20):
+  - The sheet is printed from the **Fiscal Years page**. `planning_context()` picks one planning at a time:
+    - the latest Draft year that has an earlier year → plan it from the year before;
+    - else the non-draft year covering today;
+    - else the latest non-draft year, else the latest year.
+  - `GET /api/reports/planning-sheet/context` tells the dialog which; `fiscal_year_id` is optional on
+    `/planning-sheet`.
+  - `_successor()` falls back to a next-year budget with the **same code, type and level that continues nothing**,
+    when the current budget isn't continued by anything. Hand-entered drafts therefore line up instead of appearing
+    twice (*not in draft* + *new in draft*). The Budget Review next-year column uses the same rule.
+  - The Expense table starts on a new page when less than 35% of the page is left (`CondPageBreak(0.35 * BODY_H)`).
 - Tests: `test_v210_budget_prep.py`, `test_v210_planning_sheet.py` (negative role tests for Budget User, Register
   User, Auditor and Administrator) and the E2E "2.1.0 (#257, #261)".
 

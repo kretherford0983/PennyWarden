@@ -362,12 +362,13 @@ def count_sheet(fid: int, signer_id: list[int] = Query([]), signer_title: list[s
 # ------------------------------------------------------------------ 2.1.0 (#275): stakeholder report
 @router.get("/fundraisers/{fid}/summary-report")
 def summary_report(fid: int, format: Literal["pdf", "docx"] = "pdf", itemized: bool = True, names: bool = True,
-                   plain_lines: bool = False, download: bool = False, db: Session = Depends(get_db),
-                   ctx: Ctx = Depends(viewer)):
-    """The Financial & Proceeds Statement for committee and stakeholders (no audit detail)."""
+                   plain_lines: bool = False, history: bool = True, download: bool = False,
+                   db: Session = Depends(get_db), ctx: Ctx = Depends(viewer)):
+    """The Financial & Proceeds Statement for committee and stakeholders (no audit detail). history=false (#300)
+    leaves out year over year, for a report about this year's fundraiser only."""
     f = svc.get(db, ctx, fid)
-    s = fs.summary(db, ctx, f, itemized=itemized, names=names, plain_lines=plain_lines)
-    opts = {"itemized": itemized, "names": names, "plain_lines": plain_lines}
+    s = fs.summary(db, ctx, f, itemized=itemized, names=names, plain_lines=plain_lines, history=history)
+    opts = {"itemized": itemized, "names": names, "plain_lines": plain_lines, "history": history}
     if format == "docx":
         data = fs.build_docx(s)
         audit.record(db, ctx, "REPORT_GENERATED", "fundraiser", f.id, None,
@@ -388,14 +389,16 @@ def summary_report(fid: int, format: Literal["pdf", "docx"] = "pdf", itemized: b
 
 
 @router.get("/fundraisers/{fid}/presentation")
-def presentation(fid: int, itemized: bool = True, names: bool = True, db: Session = Depends(get_db),
-                 ctx: Ctx = Depends(viewer)):
-    """2.1.0 (#276): the stakeholder report as a 16:9 .pptx (PowerPoint, Google Slides, Keynote); always downloaded."""
+def presentation(fid: int, itemized: bool = True, names: bool = True, history: bool = True,
+                 db: Session = Depends(get_db), ctx: Ctx = Depends(viewer)):
+    """2.1.0 (#276): the stakeholder report as a 16:9 .pptx (PowerPoint, Google Slides, Keynote); always downloaded.
+    history=false (#300) leaves out the year-over-year slide."""
     f = svc.get(db, ctx, fid)
-    s = fs.summary(db, ctx, f, itemized=itemized, names=names)
+    s = fs.summary(db, ctx, f, itemized=itemized, names=names, history=history)
     data = deck.build(s)
     audit.record(db, ctx, "REPORT_GENERATED", "fundraiser", f.id, None,
-                 {"report": "FUNDRAISER_PRESENTATION", "format": "PPTX", "options": {"itemized": itemized, "names": names}})
+                 {"report": "FUNDRAISER_PRESENTATION", "format": "PPTX",
+                  "options": {"itemized": itemized, "names": names, "history": history}})
     db.commit()
     return Response(data, media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
                     headers={"Content-Disposition": f'attachment; filename="{deck.file_name(s)}"',

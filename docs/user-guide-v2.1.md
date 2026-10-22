@@ -1,6 +1,9 @@
 # What's new in 2.1 — quick guide
 
-*2.1.0 (in progress): this guide grows with each test build.*
+*2.1.0: fundraiser reporting (a stakeholder report as PDF or Word, a slide deck, fundraisers across years with
+year over year, and a Fiscal Year fundraising report), the Budget Review and the Fiscal Year Planning Sheet, electronic
+payments and other register improvements, fold marks on cover letters and more voucher check layouts. The full list is
+in the [changelog](../CHANGELOG.md).*
 
 ## Register
 
@@ -49,10 +52,13 @@ spoiled first. (A VOID record keeps its number, as before.)
 
 ## Budget planning (Budget Managers)
 
-### Budget Prep report
-**Reports → Budget Prep.** Choose the Fiscal Year and how many earlier years to show (or *All linked years*), then
-**Run report**. For each budget you see, per year: what was budgeted, the actual, and the difference — in dollars and
-percent, with *over* or *under* in words (*n/a* when nothing was budgeted).
+### Budget Review
+**Reports → Budget Review** (called *Budget Prep* in the first test builds). Choose the Fiscal Year and how many
+earlier years to show (or *All linked years*), then **Run report**. Each budget is a block, laid out like a budget
+review spreadsheet: its name, then a **Budgeted**, an **Actual** and a **Difference** row, with the years across. The
+difference is in dollars and percent, with *over* or *under* in words (*n/a* when nothing was budgeted). **Avg** is
+the average of the earlier years shown, counting only the years the budget existed (the current year isn't
+included, since it isn't finished).
 - **History follows the budget links** (*Continues* on a budget, set when a budget is copied into the next year or by
   hand). A budget that was renumbered stays on one line; its earlier code is shown in that year. A year with no linked
   budget shows —. A sub-budget without a link of its own says *history on parent*; *Other* follows its parent.
@@ -72,18 +78,27 @@ percent, with *over* or *under* in words (*n/a* when nothing was budgeted).
 - **Open PDF** (landscape), **Download PDF** or **Download CSV**.
 
 ### Fiscal Year Planning Sheet
-On the Fiscal Year screen, **Planning sheet…** prints the form for the budget planning meeting. It is in portrait, on
-as few pages as possible:
+On the **Fiscal Years** page, **Planning sheet…** prints the form for the budget planning meeting — usually before
+next year's Fiscal Year is even created. PennyWarden works out which year is being planned (one at a time): if a
+**Draft** Fiscal Year exists, it plans that year from the year before it; otherwise it plans the year after the
+current one, with the new year's name and the Proposed column left blank. The dialog says which. The sheet is in
+portrait, on as few pages as possible:
 - **page 1:** the organization, the current and the new Fiscal Year, attendee lines, and the meeting date (top right).
   Then the **Income** and **Expense** tables: Budget Code, Budget Description, Previous Budgeted, Actual YTD (dated),
   Projected, and a blank **Proposed Budget**, plus four blank rows for new budgets;
 - **the last page:** more blank Income and Expense tables.
 
 If the next Fiscal Year already exists as a **Draft**, the sheet fills in its name and dates and shows each draft
-amount as *Proposed*, with a blank **Proposed Revision** column to write changes in. A renumbered budget shows the
+amount as *Proposed* — on the row of the budget it continues, or of the budget with the same code if it was entered
+by hand — with a blank **Proposed Revision** column to write changes in. A renumbered budget shows the
 draft code with the previous code under it. A new draft budget is marked *new in draft*, and a current budget that
-isn't in the draft is marked *not in draft*. After the meeting, scan the sheet and attach it to the new Fiscal Year as
+isn't in the draft is marked *not in draft*. If the Income table ends low on a page, the Expense table starts on the
+next page. After the meeting, scan the sheet and attach it to the new Fiscal Year as
 an Other document — it is not required for closing a year.
+
+Tick **Include the Budget Review** to print the Budget Review of the same year after the sheet, in the same PDF: the
+last 3 years of each budget (budgeted, actual and difference), the projection with your projection choices, and the
+Draft year's budgets when there is one. (#283)
 
 ## Fundraisers
 
@@ -161,6 +176,11 @@ series* section. Each year's figures are shown with the change on the year befor
 percent), so the committee can see how an event is trending when deciding whether to keep it. A year entered by hand
 with only the amount raised shows — for income, expenses and margin.
 
+To report on **this year's fundraiser only**, untick **Include year over year** in the fundraiser's *Report…* dialog.
+The PDF, the Word file and the presentation then leave out the *Year over year* section, its slide and the
+"Net proceeds were up/down…" takeaway; everything else is the same. The option shows only for a fundraiser in a
+series, and the Fiscal Year report always includes its history.
+
 ### Bucket categories
 On a fundraiser's page, **New category** adds a heading such as *Sponsorships* or *Day-of event*. In a bucket's
 **Edit**, choose its **Category** (or *No category*). The Buckets table then shows each category with its buckets
@@ -184,12 +204,38 @@ on reports** next to the bucket in **Manage** and type what should show instead:
 It applies to that bucket's part of the line, so a deposit split between two buckets can show a different name for
 each. With *Show contributor names* off, the report still shows "Contributor 1, 2…".
 
+For the part of a line that is in **no bucket** (shown under *Other (not in a bucket)*), and for every line of a
+fundraiser without buckets (the plain line list), use **Different contributor on reports** in the separate
+*Contributor for the part in no bucket* box of **Manage**. The lines table shows the name after the buckets
+(*not in a bucket: shown as "…"*). (#303)
+
 ### Charge less a credit
 Sometimes a bill is a full charge less a credit: a $1,500 venue invoice less $500 that teams pre-paid, paid with a
 $1,000 check. In **Manage** on the line, tick **Charge less a credit** next to the bucket and enter the **Charge**
 ($1,500), the **Less** amount ($500) and a **Less description** ("Pre-paid team credit"). The **net** ($1,000) is what
 counts for the line, so the fundraiser's totals still match the register. It works the same on income — a $200
 sponsorship less a $6 card fee. The Less amount can equal the charge (a fully comped item, net $0) but not exceed it.
+
+## Payments
+
+### Voucher checks: check on top, in the middle or at the bottom
+Payments Setup has five more voucher presets: the check **in the middle** or **at the bottom** with two stubs, and the
+check on top or at the bottom with **one tall invoice stub** (including a 7-inch one). In an existing voucher style,
+**Stubs (voucher check)** has **Check position** and **Stubs** to switch layouts, and **Check top** to fine-tune where
+the check is. The stubs are now called **Invoice stub** (mailed with the check, no budgets) and **Office stub**. The
+positions are starting points from the published layouts; check them against your stock with the test print. (#246)
+
+### Fold marks on cover letters
+A cover letter can print **fold marks**: four small, faint ticks at the left and right edges where the page is folded
+in even thirds for a #10 envelope, on the first sheet only.
+- **Administrators** set it on the letter template (*Payments Setup → Cover letters → Fold marks*): *No*, *On the
+  front of the page*, or *On the back of the page* (needs two-sided printing), with the tick length, distance from the
+  edge, line weight and shade. New window-envelope letters start with marks on the front.
+- **Your own default:** on the print screen, **My letter printer settings** → *Fold marks on my letters*. For example,
+  choose *On the back* when your printer prints two-sided.
+- **One letter:** the **Fold marks** choice next to the letter changes it for that letter only.
+
+With marks on the back, the print screen shows a banner: print on both sides of the paper (flip on long edge). (#247)
 
 ## For whoever runs a Linux server
 

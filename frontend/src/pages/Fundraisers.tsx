@@ -297,6 +297,7 @@ export function FundraiserDetail({ id }: { id: number }) {
                     <td className="num">{money(l.amount)}</td>
                     <td className="num">{l.excluded ? "—" : money(l.counted)}</td>
                     <td>{l.buckets.length ? l.buckets.map((b: any) => <span key={b.bucket_id} className="pill fr-bucket">{bucketName(b.bucket_id)} {money(b.amount)}{Number(b.less) ? <span className="muted"> ({money(b.charge)} less {money(b.less)} {b.less_description})</span> : null}{b.contributor_override ? <span className="muted"> · shown as “{b.contributor_override}”</span> : null}</span>) : <span className="muted">—</span>}
+                      {l.contributor_override ? <span className="muted fr-line-who"> · {l.buckets.length ? "not in a bucket: " : ""}shown as “{l.contributor_override}”</span> : null}
                       {l.over_assigned ? <span className="badge yellow">More than counted</span> : null}</td>
                     <td>{l.attachments.length ? l.attachments.map((a: any) => <a key={a.id} href={a.content_url} target="_blank" rel="noopener" className="att-link">{a.original_filename}</a>) : <span className="muted">—</span>}</td>
                     {canLines ? <td className="row-actions">{l.read_only ? <span className="muted">Closed</span> : <button className="small" aria-label={`Manage line ${l.description || l.transaction_date}`} onClick={() => setLineEdit(l)}>Manage</button>}</td> : null}
@@ -599,10 +600,12 @@ function StakeholderReport({ f, manage, onChanged, onOpen }: { f: any; manage: b
 }
 
 function ReportDialog({ f, onClose }: { f: any; onClose: () => void }) {
-  const [o, setO] = useState({ itemized: true, names: true, plain_lines: false });
+  const [o, setO] = useState({ itemized: true, names: true, plain_lines: false, history: true });
   const hasBuckets = f.buckets.items.length > 0;
+  const inSeries = !!f.series_link?.series;   // #300: year over year exists only for a fundraiser in a series
+  const history = String(!inSeries || o.history);
   const href = (format: string, download = false) => {
-    const p = new URLSearchParams({ format, itemized: String(o.itemized), names: String(o.names), plain_lines: String(!hasBuckets && o.plain_lines) });
+    const p = new URLSearchParams({ format, itemized: String(o.itemized), names: String(o.names), plain_lines: String(!hasBuckets && o.plain_lines), history });
     if (download) p.set("download", "true");
     return `/api/fundraisers/${f.id}/summary-report?${p.toString()}`;
   };
@@ -615,9 +618,12 @@ function ReportDialog({ f, onClose }: { f: any; onClose: () => void }) {
         <label className="check"><input type="checkbox" checked={o.plain_lines} onChange={(e) => setO({ ...o, plain_lines: e.target.checked })} /> Plain line list <span className="muted">(this fundraiser has no buckets)</span></label>
       )}
       <label className="check"><input type="checkbox" checked={o.names} onChange={(e) => setO({ ...o, names: e.target.checked })} /> Show contributor names <span className="muted">(off: “Contributor 1, 2…”, for reports that go outside the organization)</span></label>
+      {inSeries ? (
+        <label className="check"><input type="checkbox" checked={o.history} onChange={(e) => setO({ ...o, history: e.target.checked })} /> Include year over year <span className="muted">(off: only this year's fundraiser — no comparison with the earlier years of {f.series_link.series.name})</span></label>
+      ) : null}
       <div className="actions">
         <button onClick={onClose}>Done</button>
-        <a className="button" href={`/api/fundraisers/${f.id}/presentation?itemized=${o.itemized}&names=${o.names}`}>Presentation</a>
+        <a className="button" href={`/api/fundraisers/${f.id}/presentation?itemized=${o.itemized}&names=${o.names}&history=${history}`}>Presentation</a>
         <a className="button" href={href("docx")}>Report (Word)</a>
         <a className="button primary" href={href("pdf")} target="_blank" rel="noopener">Report (PDF)</a>
       </div>
@@ -749,6 +755,8 @@ function LineDialog({ f, line, onClose, onSaved }: { f: any; line: any; onClose:
   // build 4-6 feedback: the contributor shown on the reports for this bucket's part (e.g. "Cash", or a known name)
   const [who, setWho] = useState<Record<number, { on: boolean; text: string }>>(() => Object.fromEntries(line.buckets
     .filter((b: any) => b.contributor_override).map((b: any) => [b.bucket_id, { on: true, text: b.contributor_override }])));
+  // #303: the contributor shown for the part of the line in no bucket ("Other", or every line without buckets)
+  const [lineWho, setLineWho] = useState<{ on: boolean; text: string }>({ on: !!line.contributor_override, text: line.contributor_override || "" });
   const [err, setErr] = useState<unknown>(null);
   const total = toCents(line.amount);
   const counted = total - (cls ? toCents(clsAmount) : 0);
@@ -771,6 +779,7 @@ function LineDialog({ f, line, onClose, onSaved }: { f: any; line: any; onClose:
           excluded: false,
           classification: cls && ctype ? { kind: ctype.kind, amount: clsAmount, note: clsNote || null } : null,
           buckets: bucketBody(),
+          contributor_override: lineWho.on && lineWho.text.trim() ? lineWho.text.trim() : null,
         };
     try { onSaved(await api.put(`/api/fundraisers/${f.id}/lines/${line.allocation_id}`, body)); } catch (x) { setErr(x); }
   };
@@ -848,6 +857,20 @@ function LineDialog({ f, line, onClose, onSaved }: { f: any; line: any; onClose:
                   </p>
                 </>
               ) : <p className="muted">No buckets yet — create one in the Buckets section first.</p>}
+            </fieldset>
+            <fieldset className="fr-budgets">
+              <legend>{f.buckets.items.length ? "Contributor for the part in no bucket" : "Contributor on reports"}</legend>
+              <label className="check"><input type="checkbox" checked={lineWho.on} aria-label="Show a different contributor for the part in no bucket"
+                onChange={(e) => setLineWho({ ...lineWho, on: e.target.checked })} /> Different contributor on reports</label>
+              {f.buckets.items.length ? <p className="hint">For the part shown under “Other (not in a bucket)”. Each bucket above has its own.</p> : null}
+              {lineWho.on ? (
+                <div className="fr-who">
+                  <Field label="Shown on the reports as" hint={`Instead of ${line.entity || "the line's Entity"} — e.g. "Cash" for lump cash collected, or the name people know the contributor by.`}>
+                    <input maxLength={120} aria-label="Contributor shown for the part in no bucket" value={lineWho.text} placeholder="e.g. Cash"
+                           onChange={(e) => setLineWho({ on: true, text: e.target.value })} />
+                  </Field>
+                </div>
+              ) : null}
             </fieldset>
           </>
         )}

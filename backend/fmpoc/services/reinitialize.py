@@ -34,7 +34,8 @@ from ..models import (Attachment, AuditEvent, BankAccount, BankAccountBalance, B
                       CheckDocument, CheckNumberAcknowledgement, CheckPrinterSetting, CheckSigner, CheckStyle, Entity,
                       FiscalYear, FiscalYearReview, Fundraiser, FundraiserBucket, FundraiserBucketCategory, FundraiserBucketLine, FundraiserBudget,
                       FundraiserFyReportNote, FundraiserSeries, FundraiserSeriesResult,
-                      FundraiserClassification, FundraiserExclusion, RegisterTransaction, Reminder, RequestKey,
+                      FundraiserClassification, FundraiserExclusion, FundraiserLineContributor, RegisterTransaction, Reminder,
+                      RequestKey,
                       TransactionAllocation, User, Workspace, utcnow)
 from . import backup as bk
 from . import server_recovery
@@ -44,7 +45,7 @@ CONFIRM_WORD = "reinitialize"
 COOLDOWN = dt.timedelta(hours=24)
 
 # children first
-WIPE = (FundraiserBucketLine, FundraiserClassification, FundraiserExclusion, FiscalYearReview, Attachment,
+WIPE = (FundraiserBucketLine, FundraiserLineContributor, FundraiserClassification, FundraiserExclusion, FiscalYearReview, Attachment,
         TransactionAllocation, RegisterTransaction, CheckNumberAcknowledgement, CheckAccount, CheckPrinterSetting,
         BankAccountBalance, BankAccount, FundraiserBucket, FundraiserBucketCategory, FundraiserBudget, Fundraiser, FundraiserSeriesResult,
         FundraiserSeries, FundraiserFyReportNote, BudgetProjectionChoice, Budget, FiscalYear,
@@ -137,6 +138,7 @@ def wipe(db: Session, ws_id: int, ctx, by: str, backup_name: str, via: str, befo
     scoped = {
         FundraiserBucketLine: FundraiserBucketLine.bucket_id.in_(bucket_ids),
         FundraiserClassification: FundraiserClassification.fundraiser_id.in_(fr_ids),
+        FundraiserLineContributor: FundraiserLineContributor.fundraiser_id.in_(fr_ids),
         FundraiserExclusion: FundraiserExclusion.fundraiser_id.in_(fr_ids),
         TransactionAllocation: TransactionAllocation.id.in_(alloc_ids),
         FundraiserBucket: FundraiserBucket.id.in_(bucket_ids),

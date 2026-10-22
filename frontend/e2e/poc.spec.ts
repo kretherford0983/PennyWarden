@@ -844,16 +844,16 @@ test("2.1.0 (#262, #260, #259): register sort, electronic payment, reorder attac
   await logout(page);
 });
 
-test("2.1.0 (#257, #261): Budget Prep report with projection choices; the Planning Sheet from the Fiscal Year screen", async ({ page }) => {
-  // Budget Managers only: a Register User has no Budget Prep tab
+test("2.1.0 (#257, #261, #283): Budget Review with projection choices; the Planning Sheet from the Fiscal Years page", async ({ page }) => {
+  // Budget Managers only: a Register User has no Budget Review tab
   await login(page, "ru1", "Brand-New-Pass-99");
   await page.goto("/reports");
   await expect(page.getByRole("tab", { name: "Financial Flow" })).toBeVisible();
-  await expect(page.getByRole("tab", { name: "Budget Prep" })).toHaveCount(0);
+  await expect(page.getByRole("tab", { name: "Budget Review" })).toHaveCount(0);
   await logout(page);
   await login(page, "bm1");
   await page.goto("/reports");
-  await page.getByRole("tab", { name: "Budget Prep" }).click();
+  await page.getByRole("tab", { name: "Budget Review" }).click();
   await page.getByLabel("Projected column").check();
   const choices = page.locator("fieldset.projection-choices");
   await expect(choices).toContainText("Projected budgets");
@@ -863,28 +863,38 @@ test("2.1.0 (#257, #261): Budget Prep report with projection choices; the Planni
   await expect(choices.getByRole("status")).toHaveText("Saved.");
   await page.getByLabel("Next year's budget").check();
   await page.getByRole("button", { name: "Run report" }).click();
-  const rep = page.locator(".budget-prep");
-  await expect(rep.getByRole("heading", { name: /Budget Prep — / })).toBeVisible();
+  const rep = page.locator(".budget-review");
+  await expect(rep.getByRole("heading", { name: /Budget Review — / })).toBeVisible();
   await expect(rep).toContainText("Complete: no projection");
-  await expect(rep).toContainText(/Budgeted \$/);
+  // #283: a block per budget - Budgeted, Actual and Difference rows, an Avg column
+  const table = rep.getByRole("table", { name: "Budget Review" });
+  await expect(table.getByRole("rowheader", { name: "Budgeted" }).first()).toBeVisible();
+  await expect(table.getByRole("rowheader", { name: "Difference" }).first()).toBeVisible();
   await expect(rep.getByRole("link", { name: "Download CSV" })).toHaveAttribute("href", /format=csv/);
   const pdf = await page.request.get((await rep.getByRole("link", { name: "Open PDF" }).getAttribute("href"))!);
   expect(pdf.status()).toBe(200);
   expect(pdf.headers()["content-type"]).toBe("application/pdf");
-  await page.screenshot({ path: "e2e-screenshots/light-budget-prep.png", fullPage: true });
+  await page.screenshot({ path: "e2e-screenshots/light-budget-review.png", fullPage: true });
   // back to the defaults, so later tests see the usual figures
   await choices.getByRole("button", { name: "Back to defaults" }).click();
   await expect(choices.getByRole("status")).toHaveText("Saved.");
-  // #261: the Planning Sheet from the Fiscal Year screen
-  const fy = await (await page.request.get(`/api/fiscal-years/natural?date=${new Date().toISOString().slice(0, 10)}`)).json();
-  await page.goto(`/fiscal-years/${fy.default_fiscal_year_id}`);
+  // #261: the Planning Sheet from the Fiscal Years page (build 3 feedback: no Fiscal Year needs to be opened)
+  await page.getByRole("link", { name: "Fiscal Years" }).click();
   await page.getByRole("button", { name: "Planning sheet…" }).click();
   const dlg = page.getByRole("dialog", { name: "Fiscal Year Planning Sheet" });
+  await expect(dlg.getByTestId("planning-context")).toContainText("Planning");
   await expect(dlg).toContainText("isn't required for the Fiscal Year closure review");
   const href = await dlg.getByRole("link", { name: "Open planning sheet PDF" }).getAttribute("href");
   const sheet = await page.request.get(href!);
   expect(sheet.status()).toBe(200);
   expect(sheet.headers()["content-type"]).toBe("application/pdf");
+  // #283: the Budget Review can follow the sheet in the same PDF
+  await dlg.getByLabel(/Include the Budget Review/).check();
+  const withReview = await dlg.getByRole("link", { name: "Open planning sheet PDF" }).getAttribute("href");
+  expect(withReview).toContain("include_review=true");
+  const both = await page.request.get(withReview!);
+  expect(both.status()).toBe(200);
+  expect((await both.body()).length).toBeGreaterThan((await sheet.body()).length);
   await dlg.getByRole("button", { name: "Done" }).click();
   await expect(dlg).toHaveCount(0);
   await logout(page);
@@ -1711,9 +1721,13 @@ test("2.1.0 (#278): bucket categories with subtotals, reorder, and Charge / Less
   await raffle.getByLabel("Show a different contributor for Raffle").check();
   await raffle.getByLabel("Contributor shown for Raffle").fill("Cash");
   await expect(dlg.getByTestId("fr-line-remaining")).toContainText("unassigned $0.50");
+  // 2.1.0 (#303): the part in no bucket can show a different contributor too
+  await dlg.getByLabel("Show a different contributor for the part in no bucket").check();
+  await dlg.getByLabel("Contributor shown for the part in no bucket").fill("Change jar");
   await page.screenshot({ path: "e2e-screenshots/light-fundraiser-charge-less.png" });
   await dlg.getByRole("button", { name: "Save" }).click();
   await expect(dlg).toHaveCount(0);
+  await expect(page.getByTestId("fr-lines")).toContainText("not in a bucket: shown as “Change jar”");
   await expect(page.getByTestId("fr-lines").locator(".fr-bucket").filter({ hasText: "Raffle" })).toContainText("less $0.50 Card fee");
   await expect(page.getByTestId("fr-lines").locator(".fr-bucket").filter({ hasText: "Raffle" })).toContainText("shown as “Cash”");
   await page.screenshot({ path: "e2e-screenshots/light-fundraiser-categories.png", fullPage: true });
@@ -1802,8 +1816,13 @@ test("CR-035: fundraiser report PDF; Audit and Close reports can include fundrai
   await page.getByRole("button", { name: "Report…" }).first().click();
   const rd = page.getByRole("dialog", { name: "Fundraiser report" });
   await rd.getByLabel(/Show contributor names/).uncheck();
+  // 2.1.0 (#300): Harvest Dinner is in a series - year over year can be left out (report and presentation)
+  await expect(rd.getByLabel(/Include year over year/)).toBeChecked();
+  await rd.getByLabel(/Include year over year/).uncheck();
+  expect(await rd.getByRole("link", { name: "Presentation" }).getAttribute("href")).toContain("history=false");
   const href = await rd.getByRole("link", { name: "Report (PDF)" }).getAttribute("href");
   expect(href).toContain("names=false");
+  expect(href).toContain("history=false");
   const pdf = await page.request.get(href!);
   expect(pdf.status()).toBe(200);
   expect(pdf.headers()["content-type"]).toBe("application/pdf");
@@ -2236,6 +2255,8 @@ test("#62: an Administrator sets up scheduled backups to a folder, tests it and 
   const hist = card.getByRole("table", { name: "Backup history" });
   await expect(hist.locator("tbody tr").first()).toContainText("Done", { timeout: 30_000 });
   await expect(hist.locator("tbody tr").first()).toContainText("Run now");
+  // 2.1.0 (#233): the only backup is the newest daily one (and the first of its week and month)
+  await expect(hist.locator("tbody tr").first().getByTestId("kept-as")).toContainText("Daily");
   await page.screenshot({ path: "e2e-screenshots/light-scheduled-backups.png", fullPage: true });
   const files = readdirSync(folder).filter((f) => f.endsWith(".fmbak"));
   expect(files).toHaveLength(1);
@@ -2514,6 +2535,10 @@ test("#165-#166: Administrator sets up a cover letter and an envelope; a Registe
   await page.getByLabel("Address for a window envelope").selectOption("LETTER");
   await expect(page.getByLabel("Payee address – right (in)")).toBeVisible();
   await page.getByLabel("Address for a window envelope").selectOption("NONE");
+  // 2.1.0 (#247): fold marks (a saved template: choosing a window doesn't change them) - on the front, a longer tick
+  await expect(page.getByLabel("Print fold marks")).toHaveValue("NONE");
+  await page.getByLabel("Print fold marks").selectOption("FRONT");
+  await page.getByLabel("Tick length").fill("0.2");
   await page.getByRole("button", { name: "+ Add line" }).click();
   await page.getByLabel("Letterhead line 2", { exact: true }).fill("100 Example Street, Sampletown");
   await page.getByLabel("Name when there is no signer").fill("Pat Example");
@@ -2566,6 +2591,20 @@ test("#165-#166: Administrator sets up a cover letter and an envelope; a Registe
   await dlg.getByLabel("Type the check number again").fill("8301");
   await dlg.getByRole("button", { name: "Record check number" }).click();
   await expect(dlg.getByText("Check number #8301 is recorded for this payment.")).toBeVisible();
+  // 2.1.0 (#247): the letter's fold marks start from the template; on the back shows the two-sided banner
+  await expect(dlg.getByLabel("Fold marks", { exact: true })).toHaveValue("FRONT");
+  await dlg.getByLabel("Fold marks", { exact: true }).selectOption("BACK");
+  await expect(dlg.getByTestId("fold-back-banner")).toContainText("Print on both sides of the paper");
+  await page.screenshot({ path: "e2e-screenshots/light-letter-fold-marks.png" });
+  await dlg.getByRole("button", { name: "My letter printer settings" }).click();
+  await dlg.getByLabel("Fold marks on my letters").selectOption("BACK");
+  await dlg.getByRole("button", { name: "Save my setting" }).click();
+  await expect(dlg.getByRole("button", { name: "Hide (adjusted)" })).toBeVisible();
+  await dlg.getByLabel("Fold marks on my letters").selectOption("TEMPLATE");
+  await dlg.getByRole("button", { name: "Save my setting" }).click();
+  await expect(dlg.getByRole("button", { name: "Hide", exact: true })).toBeVisible();
+  await dlg.getByLabel("Fold marks", { exact: true }).selectOption("FRONT");
+  await expect(dlg.getByTestId("fold-back-banner")).toHaveCount(0);
   // the payee has no address: printing asks first
   await dlg.getByRole("button", { name: "Print cover letter" }).click();
   const cf = page.getByRole("dialog", { name: "Confirmation required" });
@@ -2601,6 +2640,22 @@ test("#167: Administrator sets up a voucher check with two signature lines; a Re
   await expect(page.getByRole("img", { name: "Check preview drawn to scale" })).toContainText("SIGNATURE 2");
   // #186: the stubs are drawn under the check in the preview
   await expect(page.getByTestId("stub-preview")).toContainText("OFFICE COPY");
+  // 2.1.0 (#246): the layout - check at the bottom with two stubs above it, then back to the top
+  await expect(page.getByLabel("Check position")).toHaveValue("TOP");
+  await expect(page.getByLabel("Stubs", { exact: true })).toHaveValue("TWO");
+  await expect(page.getByLabel("Stub 1 copy").locator("option:checked")).toHaveText("Invoice stub");
+  const restubbed = page.waitForResponse((r) => r.url().includes("/api/checks/sample-stubs"));
+  await page.getByLabel("Check position").selectOption("BOTTOM");
+  await restubbed;                                                     // the preview's stubs follow the new layout
+  await expect(page.getByLabel("Check top")).toHaveValue("7.5");
+  await expect(page.getByLabel("Stub 1 top")).toHaveValue("0");
+  await expect(page.getByTestId("stub-preview")).toContainText("OFFICE COPY");
+  await page.getByTestId("voucher-layout").scrollIntoViewIfNeeded();
+  await page.screenshot({ path: "e2e-screenshots/light-voucher-bottom-layout.png" });
+  await page.getByRole("img", { name: "Check preview drawn to scale" }).screenshot({ path: "e2e-screenshots/light-voucher-bottom-preview.png" });
+  await page.getByLabel("Check position").selectOption("TOP");
+  await expect(page.getByLabel("Check top")).toHaveValue("0");
+  await expect(page.getByLabel("Stub 2 copy")).toHaveValue("OFFICE");
   await page.getByRole("button", { name: "Save check style" }).click();
   await expect(page.getByRole("status").filter({ hasText: "Saved." })).toBeVisible();
   await page.getByRole("button", { name: "Test print", exact: true }).click();
@@ -2816,6 +2871,7 @@ test("#217: several cover letters and envelopes, Duplicate, the window-envelope 
   await letters.getByRole("button", { name: "New window-envelope letter" }).click();
   await expect(page.getByRole("heading", { name: "Cover letter: Window envelope letter" })).toBeVisible();
   await expect(page.getByLabel("Address for a window envelope")).toHaveValue("LETTER");
+  await expect(page.getByLabel("Print fold marks")).toHaveValue("FRONT");          // #247: on for new window letters
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.getByRole("status").filter({ hasText: "Saved." })).toBeVisible();
   await page.getByRole("button", { name: "Back to Payments Setup" }).click();

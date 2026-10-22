@@ -671,6 +671,20 @@ class FundraiserClassification(Base):
     __table_args__ = (UniqueConstraint("fundraiser_id", "allocation_id", name="uq_fundraiser_classification_line"),)
 
 
+class FundraiserLineContributor(Base):
+    """2.1.0 (#303): the contributor shown on the fundraiser reports for the part of a line that is in no bucket (the
+    "Other" lines, and every line of a fundraiser without buckets) - e.g. "Cash". Bucket parts keep their own
+    (fundraiser_bucket_line.contributor_override)."""
+    __tablename__ = "fundraiser_line_contributor"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    fundraiser_id: Mapped[int] = mapped_column(ForeignKey("fundraiser.id"), index=True)
+    allocation_id: Mapped[int] = mapped_column(ForeignKey("transaction_allocation.id"))
+    contributor_override: Mapped[str] = mapped_column(String(120))
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    __table_args__ = (UniqueConstraint("fundraiser_id", "allocation_id", name="uq_fundraiser_line_contributor"),)
+
+
 class FundraiserBucketLine(Base):
     """Amount of a line assigned to a bucket (a line can be split across buckets)."""
     __tablename__ = "fundraiser_bucket_line"
@@ -892,6 +906,9 @@ class CheckPrinterSetting(Base):
     dx_mils: Mapped[int] = mapped_column(Integer, default=0)                  # thousandths of an inch, check coordinates
     dy_mils: Mapped[int] = mapped_column(Integer, default=0)
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    # 2.1.0 (#247): on the user's letter row (feed_key "letter", no style or template): cover-letter fold marks
+    # FRONT | BACK; empty = use the template's setting
+    fold_marks: Mapped[str | None] = mapped_column(String(10), nullable=True)
 
 
 class CheckDocument(Base):

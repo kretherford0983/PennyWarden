@@ -4,13 +4,12 @@ import { Attachments, ErrorBox, Field, FyStatus, Loading, Modal } from "../compo
 import { useMe } from "../App";
 import { Link } from "../router";
 import { BudgetSection } from "./BudgetTable";
-import { PlanningSheetDialog } from "./BudgetPrep";
 
 export default function FiscalYearDetail({ id }: { id: number }) {
   const { can } = useMe();
   const [d, setD] = useState<any>(null);
   const [err, setErr] = useState<unknown>(null);
-  const [dlg, setDlg] = useState<"approve" | "close" | "plan" | null>(null);
+  const [dlg, setDlg] = useState<"approve" | "close" | null>(null);
   const load = () => api.get(`/api/fiscal-years/${id}`).then(setD, setErr);
   useEffect(() => {
     setD(null);
@@ -28,7 +27,6 @@ export default function FiscalYearDetail({ id }: { id: number }) {
         {manage && d.status === "DRAFT" ? <button className="primary" onClick={() => setDlg("approve")}>Approve…</button> : null}
         {manage && d.status === "APPROVED" ? <button className="primary" onClick={() => setDlg("close")}>Close Fiscal Year…</button> : null}
         {can("budget.manage") && d.status !== "CLOSED" ? <Link to={`/budgets?fiscal_year_id=${d.id}`}>Edit budgets</Link> : null}
-        {can("budget.manage") && d.status !== "CLOSED" ? <button onClick={() => setDlg("plan")}>Planning sheet…</button> : null}
       </div>
       <ErrorBox error={err} />
       <dl className="dl">
@@ -45,7 +43,6 @@ export default function FiscalYearDetail({ id }: { id: number }) {
       <DocumentationReview fyId={d.id} />
       <FyDocuments fy={d} manage={manage} onChanged={load} />
       {dlg === "approve" ? <Approve fy={d} onClose={() => setDlg(null)} onDone={() => { setDlg(null); load(); }} /> : null}
-      {dlg === "plan" ? <PlanningSheetDialog fy={d} onClose={() => setDlg(null)} /> : null}
       {dlg === "close" ? <Close fy={d} onClose={() => setDlg(null)} onDone={() => { setDlg(null); load(); }} /> : null}
     </div>
   );

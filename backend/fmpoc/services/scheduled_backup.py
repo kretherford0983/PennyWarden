@@ -104,6 +104,7 @@ def out(db, settings, ws_id: int) -> dict:
     s = get(db, ws_id)
     runs = list(db.scalars(select(BackupRun).where(BackupRun.workspace_id == ws_id)
                            .order_by(BackupRun.started_at.desc(), BackupRun.id.desc()).limit(HISTORY)))
+    kept = kept_as(db, s, runs)        # 2.1.0 (#233)
     base = snapshot(s) if s else {"enabled": False, "frequency": "DAILY", "weekday": 0, "time_of_day": "02:00",
                                   "destination": None, "keep_daily": 7, "keep_weekly": 4, "keep_monthly": 6,
                                   "key_fingerprint": None}
@@ -119,7 +120,7 @@ def out(db, settings, ws_id: int) -> dict:
             "history": [{"id": r.id, "trigger": r.trigger, "started_at": _iso(r.started_at),
                          "started_local": _local_text(r.started_at), "finished_at": _iso(r.finished_at),
                          "result": r.result, "filename": r.filename, "size": r.size, "error": r.error,
-                         "deleted": r.deleted_at is not None} for r in runs]}
+                         "deleted": r.deleted_at is not None, "kept_as": kept.get(r.id)} for r in runs]}
 
 
 def check_destination(settings, path: str | None) -> str:
@@ -326,31 +327,70 @@ def running() -> bool:
 
 
 # ------------------------------------------------------------------ retention
-def keep_set(runs: list[BackupRun], daily: int, weekly: int, monthly: int) -> set[int]:
+def keep_levels(runs: list[BackupRun], daily: int, weekly: int, monthly: int) -> dict[int, list[str]]:
     """runs: successful, not yet deleted, newest first. Keeps the newest `daily`, the first backup of each of the
-    newest `weekly` weeks and of the newest `monthly` months (server local time). The newest backup always stays."""
-    keep: set[int] = set()
+    newest `weekly` weeks and of the newest `monthly` months (server local time). The newest backup always stays.
+    Returns, for each backup kept, why: "Daily", "Weekly", "Monthly" (one or more), or "Latest" when only being the
+    newest keeps it. 2.1.0 (#233): the Kept as column shows exactly this, so the screen and retention agree."""
+    levels: dict[int, list[str]] = {}
     if not runs:
-        return keep
-    keep.add(runs[0].id)
-    keep.update(r.id for r in runs[:daily])
-    for count, key in ((weekly, lambda d: tuple(d.isocalendar())[:2]), (monthly, lambda d: (d.year, d.month))):
+        return levels
+    for r in runs[:daily]:
+        levels.setdefault(r.id, []).append("Daily")
+    for label, count, key in (("Weekly", weekly, lambda d: tuple(d.isocalendar())[:2]),
+                              ("Monthly", monthly, lambda d: (d.year, d.month))):
         if count <= 0:
             continue
         firsts: dict[tuple, BackupRun] = {}
         for r in runs:                       # newest first: the last one seen per period is the earliest
             firsts[key(_to_local(r.started_at))] = r
         for period in sorted(firsts, reverse=True)[:count]:
-            keep.add(firsts[period].id)
-    return keep
+            levels.setdefault(firsts[period].id, []).append(label)
+    levels.setdefault(runs[0].id, ["Latest"])
+    return levels
 
 
-def apply_retention(db, s: BackupSchedule, actor) -> list[str]:
-    runs = list(db.scalars(select(BackupRun).where(
+def keep_set(runs: list[BackupRun], daily: int, weekly: int, monthly: int) -> set[int]:
+    return set(keep_levels(runs, daily, weekly, monthly))
+
+
+def _retained_runs(db, s: BackupSchedule) -> list[BackupRun]:
+    """The backups the keep rules manage: successful, still there, in the current folder; newest first."""
+    return list(db.scalars(select(BackupRun).where(
         BackupRun.workspace_id == s.workspace_id, BackupRun.result == "SUCCESS", BackupRun.deleted_at.is_(None),
         BackupRun.destination == s.destination, BackupRun.filename.is_not(None))
         .order_by(BackupRun.started_at.desc(), BackupRun.id.desc())))
-    keep = keep_set(runs, s.keep_daily if s.frequency == "DAILY" else 0, s.keep_weekly, s.keep_monthly)
+
+
+def _keep_args(s: BackupSchedule) -> tuple[int, int, int]:
+    return s.keep_daily if s.frequency == "DAILY" else 0, s.keep_weekly, s.keep_monthly
+
+
+def kept_as(db, s: BackupSchedule | None, runs: list[BackupRun]) -> dict[int, str]:
+    """2.1.0 (#233): the Kept as text for each listed run - computed with keep_levels() and the current settings."""
+    out: dict[int, str] = {}
+    if s is None:
+        return out
+    managed = _retained_runs(db, s)
+    levels = keep_levels(managed, *_keep_args(s))
+    ids = {r.id for r in managed}
+    for r in runs:
+        if r.result != "SUCCESS":
+            continue
+        if r.deleted_at is not None:
+            out[r.id] = "Removed"
+        elif r.id in levels:
+            out[r.id] = ", ".join(levels[r.id])
+        elif r.id in ids:
+            out[r.id] = "Removed at the next backup"     # the keep settings changed since the last run
+        else:
+            out[r.id] = "Not managed (another folder)"
+    return out
+
+
+def apply_retention(db, s: BackupSchedule, actor) -> list[str]:
+    runs = _retained_runs(db, s)
+    keep = keep_set(runs, *_keep_args(s))
     deleted = []
     for r in runs:
         if r.id in keep:

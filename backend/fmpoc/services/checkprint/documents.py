@@ -53,6 +53,10 @@ WINDOW_PRESET = {
     "payee": {"x": 0.85, "y": 2.1, "window": (0.75, 1.95, 4.0, 1.125)},        # lower window
 }
 FOLD_LINES = (11 / 3, 22 / 3)
+# 2.1.0 (#247): fold marks on a real letter - a short tick at the left and right edge at each fold line, barely noticeable
+FOLD_WEIGHTS = {"HAIRLINE": 0.25, "THIN": 0.5, "MEDIUM": 0.9}          # points
+FOLD_SHADES = {"LIGHT": 0.78, "MEDIUM": 0.6, "DARK": 0.35}             # gray (1 = white)
+FoldPlace = Literal["NONE", "FRONT", "BACK"]
 WINDOW_OFFSET_MAX = 0.75
 LOGO_MAX_W, LOGO_MAX_H = 2.5, 1.0        # inches (#176)
 
@@ -88,6 +92,13 @@ class LetterConfig(_M):
     return_dy: float = Field(default=0, ge=-WINDOW_OFFSET_MAX, le=WINDOW_OFFSET_MAX)
     payee_dx: float = Field(default=0, ge=-WINDOW_OFFSET_MAX, le=WINDOW_OFFSET_MAX)
     payee_dy: float = Field(default=0, ge=-WINDOW_OFFSET_MAX, le=WINDOW_OFFSET_MAX)
+    # 2.1.0 (#247): fold marks - none (2.0.0 behavior), on the front, or on the back of the first sheet (two-sided);
+    # tick length and distance from the paper edge in inches, line weight and shade
+    fold_marks: FoldPlace = "NONE"
+    fold_length: float = Field(default=0.15, ge=0.1, le=0.5)
+    fold_edge: float = Field(default=0.25, ge=0.1, le=0.5)
+    fold_weight: Literal["HAIRLINE", "THIN", "MEDIUM"] = "HAIRLINE"
+    fold_shade: Literal["LIGHT", "MEDIUM", "DARK"] = "LIGHT"
 
     @field_validator("letterhead")
     @classmethod
@@ -225,10 +236,51 @@ def _logo_size(png: bytes) -> tuple[float, float]:
     return iw * scale, ih * scale
 
 
+def fold_ticks(c, cfg: LetterConfig) -> None:
+    """2.1.0 (#247): four short ticks, at the left and right edges on each fold line (even thirds). The thirds are
+    symmetric, so the same positions are right on the back of the sheet too, whichever edge the printer flips."""
+    c.saveState()
+    c.setStrokeGray(FOLD_SHADES[cfg.fold_shade])
+    c.setLineWidth(FOLD_WEIGHTS[cfg.fold_weight])
+    c.setLineCap(0)
+    for f in FOLD_LINES:
+        y = (11 - f) * PT
+        c.line(cfg.fold_edge * PT, y, (cfg.fold_edge + cfg.fold_length) * PT, y)
+        c.line((8.5 - cfg.fold_edge - cfg.fold_length) * PT, y, (8.5 - cfg.fold_edge) * PT, y)
+    c.restoreState()
+
+
+def _with_back_pages(pdf: bytes, cfg: LetterConfig, title: str) -> bytes:
+    """2.1.0 (#247): marks on the back - a back page after every page (the ticks after page 1, blank after the
+    others), so each page starts a new sheet when printed two-sided."""
+    from pypdf import PdfReader, PdfWriter
+    from reportlab.pdfgen import canvas as rl_canvas
+    tb = io.BytesIO()
+    c = rl_canvas.Canvas(tb, pagesize=(8.5 * PT, 11 * PT), invariant=1)
+    fold_ticks(c, cfg)
+    c.showPage()
+    c.save()
+    ticks = PdfReader(io.BytesIO(tb.getvalue())).pages[0]
+    src = PdfReader(io.BytesIO(pdf))
+    w = PdfWriter()
+    for i, page in enumerate(src.pages):
+        w.add_page(page)
+        if i == 0:
+            w.add_page(ticks)
+        else:
+            w.add_blank_page(width=8.5 * PT, height=11 * PT)
+    w.add_metadata({"/Title": title, "/Creator": "PennyWarden"})
+    out = io.BytesIO()
+    w.write(out)
+    return out.getvalue()
+
+
 def letter_pdf(cfg: LetterConfig, data: LetterData, title: str = "Cover letter", logo: bytes | None = None,
-               test: bool = False) -> bytes:
-    """`logo` (#176): the template's PNG logo; `test` (#177): the window outlines and fold marks are drawn (test print
-    and preview only, never on a real letter)."""
+               test: bool = False, fold: str | None = None) -> bytes:
+    """`logo` (#176): the template's PNG logo; `test` (#177): the window outlines and labeled fold marks are drawn
+    (test print and preview only, never on a real letter). `fold` (2.1.0, #247): NONE / FRONT / BACK for this letter
+    (default: the template's fold_marks) - small unlabeled ticks on the first sheet, front or back."""
+    fold = fold or cfg.fold_marks
     texts, _empty = letter_texts(cfg, data)
     reg, bold = fonts.ps_name(cfg.font), fonts.ps_name(cfg.font, True)
     size = cfg.size
@@ -241,6 +293,8 @@ def letter_pdf(cfg: LetterConfig, data: LetterData, title: str = "Cover letter",
     blocks = window_blocks(cfg, texts, data.payee_lines) if windowed else []
 
     def first_page(c, _doc):
+        if fold == "FRONT":
+            fold_ticks(c, cfg)
         if not windowed and not test:
             return
         c.saveState()
@@ -336,6 +390,8 @@ def letter_pdf(cfg: LetterConfig, data: LetterData, title: str = "Cover letter",
     if lines:
         story.append(Paragraph("<br/>".join(lines), base))
     doc.build(story, onFirstPage=first_page)
+    if fold == "BACK":
+        return _with_back_pages(buf.getvalue(), cfg, title)
     return buf.getvalue()
 
 
