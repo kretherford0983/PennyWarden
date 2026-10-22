@@ -129,15 +129,62 @@ function setLines(c: any, n: number, def: any) {
 
 const STUB_COLS: [string, string][] = [["INVOICE", "Invoice #"], ["INVOICE_DATE", "Invoice Date"], ["DESCRIPTION", "Description"], ["BUDGET", "Budget"], ["NOTES", "Notes"], ["AMOUNT", "Amount"]];
 
+// 2.1.0 (#246): voucher layouts - check position x stubs -> the published starting positions (setup.voucher_layouts)
+const LAYOUT_KEYS: Record<string, string> = { "TOP:TWO": "TOP_TWO", "MIDDLE:TWO": "MIDDLE_TWO", "BOTTOM:TWO": "BOTTOM_TWO",
+  "TOP:INVOICE": "TOP_INVOICE", "TOP:INVOICE_7": "TOP_INVOICE_7", "BOTTOM:INVOICE": "BOTTOM_INVOICE" };
+const near = (a: number, b: number) => Math.abs(a - b) < 1e-6;
+
+function currentLayout(cfg: any, layouts: Record<string, any>): string | null {
+  return Object.entries(layouts || {}).find(([, l]) => near(l.check_top, cfg.stock.check_tops[0]) && l.stubs.length === cfg.stubs.length
+    && l.stubs.every((s: any, i: number) => near(s.top, cfg.stubs[i].top) && near(s.height, cfg.stubs[i].height) && s.copy_kind === cfg.stubs[i].copy_kind))?.[0] ?? null;
+}
+
+function applyLayout(c: any, l: any) {
+  c.stock.check_tops = [l.check_top];
+  const old = c.stubs;
+  c.stubs = l.stubs.map((s: any, i: number) => ({ title: "{ORG}", show_check_number: true, font: "SANS", size: 9, margin: 0.4, show_memo: true,
+                                                  ...(old[i] || old[0] || {}), top: s.top, height: s.height, copy_kind: s.copy_kind }));
+}
+
 function StubsSection({ cfg, setup, change }: { cfg: any; setup: any; change: (fn: (c: any) => void) => void }) {
+  const layouts = setup.voucher_layouts || {};
+  const cur = currentLayout(cfg, layouts);
+  const [pos, stubs] = cur ? Object.entries(LAYOUT_KEYS).find(([, v]) => v === cur)![0].split(":") : ["", ""];
+  const pick = (p: string, st: string) => {
+    if (p === "MIDDLE") st = "TWO";                                  // no middle check with an invoice stub only
+    if (p !== "TOP" && st === "INVOICE_7") st = "INVOICE";
+    const l = layouts[LAYOUT_KEYS[`${p}:${st || "TWO"}`]];
+    if (l) change((c) => applyLayout(c, l));
+  };
   const cols: any[] = cfg.stub_columns;
   const unused = STUB_COLS.filter(([k]) => !cols.some((c) => c.key === k));
   const move = (i: number, d: number) => change((c) => { const [it] = c.stub_columns.splice(i, 1); c.stub_columns.splice(i + d, 0, it); });
   return (
     <Section id="stubs" title="Stubs (voucher check)">
-      <p className="hint">The detail stubs below the check list the transaction's lines. Positions are inches from the top of the sheet. The vendor copy never
-        shows budgets; the office copy adds the budget column and OFFICE COPY. The check number prints on the stubs only (from the register), never on
-        the check. A transaction with more lines than fit shows "…and N more, see enclosed letter", and the user is warned before printing.</p>
+      <p className="hint">The detail stubs above or below the check list the transaction's lines. Positions are inches from the top of the sheet. The invoice
+        stub (mailed with the check) never shows budgets; the office stub adds the budget column and OFFICE COPY. The check number prints on the stubs only
+        (from the register), never on the check. A transaction with more lines than fit shows "…and N more, see enclosed letter", and the user is warned
+        before printing.</p>
+      <div className="row form-row" data-testid="voucher-layout">
+        <Field label="Check position">
+          <select aria-label="Check position" value={pos} onChange={(e) => pick(e.target.value, stubs)}>
+            {!cur ? <option value="">Fine-tuned</option> : null}
+            <option value="TOP">Top of the sheet</option><option value="MIDDLE">Middle of the sheet</option><option value="BOTTOM">Bottom of the sheet</option>
+          </select>
+        </Field>
+        <Field label="Stubs">
+          <select aria-label="Stubs" value={stubs} onChange={(e) => pick(pos || "TOP", e.target.value)}>
+            {!cur ? <option value="">Fine-tuned</option> : null}
+            <option value="TWO">Invoice and office stubs</option>
+            <option value="INVOICE" disabled={pos === "MIDDLE"}>Invoice stub only</option>
+            {pos === "TOP" || !pos ? <option value="INVOICE_7">Invoice stub only, 7-inch</option> : null}
+          </select>
+        </Field>
+        <div className="field"><span className="field-label" aria-hidden="true">Check top</span>
+          <NumIn label="Check top" value={cfg.stock.check_tops[0]} onChange={(v) => change((c) => { c.stock.check_tops = [v]; })} /></div>
+      </div>
+      <p className="hint">{cur ? layouts[cur].note : "Fine-tuned to your stock. Choosing a check position or stubs above starts again from the published layout."}{" "}
+        These are starting points: adjust the check top and each stub's top and height to the stock you use, then check with the test print.</p>
       <div className="table-wrap">
         <table className="table compact">
           <thead><tr><th>Stub</th><th>Top</th><th>Height</th><th>Copy</th><th>Title</th><th>Check #</th><th>Memo</th><th>Font</th><th>Size</th><th>Margin</th><th /></tr></thead>
@@ -148,7 +195,7 @@ function StubsSection({ cfg, setup, change }: { cfg: any; setup: any; change: (f
                 <td><NumIn label={`Stub ${i + 1} top`} value={st.top} onChange={(v) => change((c) => { c.stubs[i].top = v; })} /></td>
                 <td><NumIn label={`Stub ${i + 1} height`} value={st.height} onChange={(v) => change((c) => { c.stubs[i].height = v; })} /></td>
                 <td><select aria-label={`Stub ${i + 1} copy`} value={st.copy_kind} onChange={(e) => change((c) => { c.stubs[i].copy_kind = e.target.value; })}>
-                  <option value="VENDOR">Vendor copy</option><option value="OFFICE">Office copy</option></select></td>
+                  <option value="VENDOR">Invoice stub</option><option value="OFFICE">Office stub</option></select></td>
                 <td><PatternInput id={`stub-title-${i}`} label={`Stub ${i + 1} title`} value={st.title} variables={setup.stub_variables} hint={false} onChange={(v) => change((c) => { c.stubs[i].title = v; })} /></td>
                 <td><input type="checkbox" aria-label={`Stub ${i + 1} prints the check number`} checked={st.show_check_number} onChange={(e) => change((c) => { c.stubs[i].show_check_number = e.target.checked; })} /></td>
                 <td><input type="checkbox" aria-label={`Stub ${i + 1} prints the memo`} checked={st.show_memo} onChange={(e) => change((c) => { c.stubs[i].show_memo = e.target.checked; })} /></td>
@@ -166,7 +213,7 @@ function StubsSection({ cfg, setup, change }: { cfg: any; setup: any; change: (f
         <div className="actions left"><button className="small" onClick={() => change((c) => {
           const last = c.stubs[c.stubs.length - 1];
           const top = last ? last.top + last.height : c.stock.check_tops[0] + c.stock.check_height;
-          c.stubs.push({ top, height: Math.max(1.5, Math.min(3.5, 11 - top)), copy_kind: "OFFICE", title: "{ORG}", show_check_number: true, font: "SANS", size: 9, margin: 0.4, show_memo: true });
+          c.stubs.push({ top, height: Math.max(1.5, Math.min(3.5, 11 - top)), copy_kind: c.stubs.some((x: any) => x.copy_kind === "VENDOR") ? "OFFICE" : "VENDOR", title: "{ORG}", show_check_number: true, font: "SANS", size: 9, margin: 0.4, show_memo: true });
         })}>Add stub</button></div>
       ) : null}
       <h3>Line table</h3>

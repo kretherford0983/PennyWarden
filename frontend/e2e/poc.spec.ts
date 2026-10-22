@@ -2630,6 +2630,22 @@ test("#167: Administrator sets up a voucher check with two signature lines; a Re
   await expect(page.getByRole("img", { name: "Check preview drawn to scale" })).toContainText("SIGNATURE 2");
   // #186: the stubs are drawn under the check in the preview
   await expect(page.getByTestId("stub-preview")).toContainText("OFFICE COPY");
+  // 2.1.0 (#246): the layout - check at the bottom with two stubs above it, then back to the top
+  await expect(page.getByLabel("Check position")).toHaveValue("TOP");
+  await expect(page.getByLabel("Stubs", { exact: true })).toHaveValue("TWO");
+  await expect(page.getByLabel("Stub 1 copy").locator("option:checked")).toHaveText("Invoice stub");
+  const restubbed = page.waitForResponse((r) => r.url().includes("/api/checks/sample-stubs"));
+  await page.getByLabel("Check position").selectOption("BOTTOM");
+  await restubbed;                                                     // the preview's stubs follow the new layout
+  await expect(page.getByLabel("Check top")).toHaveValue("7.5");
+  await expect(page.getByLabel("Stub 1 top")).toHaveValue("0");
+  await expect(page.getByTestId("stub-preview")).toContainText("OFFICE COPY");
+  await page.getByTestId("voucher-layout").scrollIntoViewIfNeeded();
+  await page.screenshot({ path: "e2e-screenshots/light-voucher-bottom-layout.png" });
+  await page.getByRole("img", { name: "Check preview drawn to scale" }).screenshot({ path: "e2e-screenshots/light-voucher-bottom-preview.png" });
+  await page.getByLabel("Check position").selectOption("TOP");
+  await expect(page.getByLabel("Check top")).toHaveValue("0");
+  await expect(page.getByLabel("Stub 2 copy")).toHaveValue("OFFICE");
   await page.getByRole("button", { name: "Save check style" }).click();
   await expect(page.getByRole("status").filter({ hasText: "Saved." })).toBeVisible();
   await page.getByRole("button", { name: "Test print", exact: true }).click();

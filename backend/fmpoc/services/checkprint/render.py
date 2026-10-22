@@ -545,11 +545,15 @@ def _draw_stub(c, cfg: StyleConfig, st, data: StubData, outline: bool = False, t
     x0, x1 = st.margin * PT, (pw - st.margin) * PT
     c.saveState()
     c.setFillGray(0)
-    if outline:
+    if outline:          # the perforations: every edge of the stub inside the sheet (2.1.0, #246: stubs above the check)
         c.setStrokeGray(0.55)
         c.setLineWidth(0.5)
         c.setDash(4, 3)
-        c.line(0, top, pw * PT, top)
+        if st.top > 1e-6:
+            c.line(0, top, pw * PT, top)
+        if abs(st.top + st.height - cfg.stock.check_tops[0]) < 1e-6:     # a stub that ends where the check starts
+            bottom = (cfg.stock.paper_height - st.top - st.height) * PT
+            c.line(0, bottom, pw * PT, bottom)
         c.setDash()
     y = top - 0.35 * PT
     c.setFont(fonts.ps_name(key, True), size + 1)
@@ -669,7 +673,7 @@ def stub_drawing(cfg: StyleConfig, data: StubData | None) -> dict | None:
     for i, st in enumerate(cfg.stubs):
         _draw_stub(rec, cfg, st, data, True, (data.titles or [])[i] if data.titles and i < len(data.titles) else None)
     return {"texts": rec.texts, "lines": rec.lines,
-            "bottom": max(st.top + st.height for st in cfg.stubs)}
+            "top": min(st.top for st in cfg.stubs), "bottom": max(st.top + st.height for st in cfg.stubs)}
 
 
 SAMPLE_STUB = StubData(title="SAMPLE ORGANIZATION", check_number="1001", payee="SAMPLE PAYEE COMPANY INC",

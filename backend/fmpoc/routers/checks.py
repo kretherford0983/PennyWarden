@@ -108,6 +108,7 @@ class SampleIn(In):
 @router.get("/setup")
 def setup(request: Request, db: Session = Depends(get_db), ctx: Ctx = Depends(setup_ctx)):
     return {"styles": [svc.style_out(s) for s in svc.list_styles(db, ctx)], "presets": presets.options(),
+            "voucher_layouts": presets.voucher_layouts(),   # 2.1.0 (#246)
             "signature2_default": presets.SIGNATURE2_DEFAULT,
             "fonts": fonts.options(), "font_sizes": {"min": fonts.MIN_SIZE, "max": fonts.MAX_SIZE},
             "variables": patterns.variable_options(patterns.CHECK),
