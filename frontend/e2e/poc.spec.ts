@@ -1711,9 +1711,13 @@ test("2.1.0 (#278): bucket categories with subtotals, reorder, and Charge / Less
   await raffle.getByLabel("Show a different contributor for Raffle").check();
   await raffle.getByLabel("Contributor shown for Raffle").fill("Cash");
   await expect(dlg.getByTestId("fr-line-remaining")).toContainText("unassigned $0.50");
+  // 2.1.0 (#303): the part in no bucket can show a different contributor too
+  await dlg.getByLabel("Show a different contributor for the part in no bucket").check();
+  await dlg.getByLabel("Contributor shown for the part in no bucket").fill("Change jar");
   await page.screenshot({ path: "e2e-screenshots/light-fundraiser-charge-less.png" });
   await dlg.getByRole("button", { name: "Save" }).click();
   await expect(dlg).toHaveCount(0);
+  await expect(page.getByTestId("fr-lines")).toContainText("not in a bucket: shown as “Change jar”");
   await expect(page.getByTestId("fr-lines").locator(".fr-bucket").filter({ hasText: "Raffle" })).toContainText("less $0.50 Card fee");
   await expect(page.getByTestId("fr-lines").locator(".fr-bucket").filter({ hasText: "Raffle" })).toContainText("shown as “Cash”");
   await page.screenshot({ path: "e2e-screenshots/light-fundraiser-categories.png", fullPage: true });
