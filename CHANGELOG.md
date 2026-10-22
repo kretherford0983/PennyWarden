@@ -3,7 +3,20 @@
 Versions are `Breaking.Major.Minor` from 1.6.0 (docs/branching.md).
 
 ## 2.1.0 — unreleased
-PennyWarden 2.1.0 (in progress).
+PennyWarden 2.1.0 is mostly about **fundraisers**:
+- a stakeholder report as PDF or Word, and a slide deck with charts;
+- fundraisers linked across years, with years before PennyWarden entered by hand;
+- a Fiscal Year fundraising report with year-over-year comparisons;
+- bucket categories, *Charge less a credit*, and a different contributor name on the reports.
+
+Budget Managers get a **Budget Prep report** and a **Fiscal Year Planning Sheet**. The register adds electronic
+payments, sorting by date or cleared, and an attachments filter. Cover letters can print **fold marks**, and voucher
+checks can have the check in the middle or at the bottom.
+
+**Upgrading from 2.0.0.** The database is updated automatically (migrations `0035` to `0044`: columns and tables
+added, no existing value changed). Going back to 2.0.0 needs the data snapshot the installer takes before upgrading
+(docs/upgrade.md). Existing check styles, letter templates and reports work as before. Fold marks are off on existing
+letters, and a fundraiser's report includes year over year only once earlier years are linked or entered.
 
 ### Register
 - **Sort by Date or Cleared.** Click the *Date* or *Cleared* heading to sort by it; click again for newest first. Each
@@ -143,7 +156,8 @@ PennyWarden 2.1.0 (in progress).
 - **Scheduled backups show why each backup is kept.** The *Recent backups* table has a **Kept as** column (*Daily*,
   *Weekly*, *Monthly*, *Latest*, *Removed*), worked out with the same rules that delete old backups, so it's easy to
   check the keep settings do what you expect. (#233)
-
+- **Backup and restore guide:** restoring with `--data-dir`, which backups the server key can restore, running a
+  scheduled restore from the command line, `--list`, and undoing a restore from `pre-restore/`. (#265)
 - **`sudo pennywarden apply-config`** applies `config.toml` on a Linux server without running the whole installer:
   after changing `backup_folders` (or another setting), it checks the file first and changes nothing if there is a
   problem, lets the service write to the listed backup folders, restarts the service and waits until it answers —
@@ -162,6 +176,7 @@ PennyWarden 2.1.0 (in progress).
   closed, current and Draft Fiscal Years, printed checks, electronic payments, and fundraiser series with years
   before PennyWarden. Restore it on a test server. The sign-in password and the backup passphrase come from
   repository secrets only. See `docs/test-data.md`. (#272)
+- **Security updates:** Pillow 13.0.0 (eight advisories against 12.3.0) and pypdf 6.21.1 (CVE-2026-113786).
 - **Python dependencies are compiled with pip-tools** (`backend/requirements.in` → `requirements.txt`, same versions as
   2.0.0), so automatic dependency updates move related packages together. (#226)
 
