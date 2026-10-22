@@ -75,10 +75,10 @@ def do_print(env, setup, **kw):
 
 # ------------------------------------------------------------------ module switch and access (#156)
 def test_module_off_by_default_and_access(env, base):
-    assert env.ru.get("/api/auth/me").json()["modules"] == {"fundraisers": False, "checks": False}
+    assert env.ru.get("/api/auth/me").json()["modules"] == {"fundraisers": False, "checks": False, "donations": False}
     assert env.admin.get("/api/checks/setup").json()["error"]["code"] == "MODULE_DISABLED"
     assert env.bm.put("/api/system/modules", {"checks": True}).status_code == 403
-    assert enable(env) == {"fundraisers": False, "checks": True}
+    assert enable(env) == {"fundraisers": False, "checks": True, "donations": False}
     assert env.ru.get("/api/auth/me").json()["modules"]["checks"] is True
     assert any(e["after"] == {"checks_enabled": True}
                for e in env.admin.get("/api/audit-events?action=MODULE_ENABLED").json()["items"])
