@@ -844,7 +844,7 @@ test("2.1.0 (#262, #260, #259): register sort, electronic payment, reorder attac
   await logout(page);
 });
 
-test("2.1.0 (#257, #261): Budget Prep report with projection choices; the Planning Sheet from the Fiscal Year screen", async ({ page }) => {
+test("2.1.0 (#257, #261): Budget Prep report with projection choices; the Planning Sheet from the Fiscal Years page", async ({ page }) => {
   // Budget Managers only: a Register User has no Budget Prep tab
   await login(page, "ru1", "Brand-New-Pass-99");
   await page.goto("/reports");
@@ -875,11 +875,11 @@ test("2.1.0 (#257, #261): Budget Prep report with projection choices; the Planni
   // back to the defaults, so later tests see the usual figures
   await choices.getByRole("button", { name: "Back to defaults" }).click();
   await expect(choices.getByRole("status")).toHaveText("Saved.");
-  // #261: the Planning Sheet from the Fiscal Year screen
-  const fy = await (await page.request.get(`/api/fiscal-years/natural?date=${new Date().toISOString().slice(0, 10)}`)).json();
-  await page.goto(`/fiscal-years/${fy.default_fiscal_year_id}`);
+  // #261: the Planning Sheet from the Fiscal Years page (build 3 feedback: no Fiscal Year needs to be opened)
+  await page.getByRole("link", { name: "Fiscal Years" }).click();
   await page.getByRole("button", { name: "Planning sheet…" }).click();
   const dlg = page.getByRole("dialog", { name: "Fiscal Year Planning Sheet" });
+  await expect(dlg.getByTestId("planning-context")).toContainText("Planning");
   await expect(dlg).toContainText("isn't required for the Fiscal Year closure review");
   const href = await dlg.getByRole("link", { name: "Open planning sheet PDF" }).getAttribute("href");
   const sheet = await page.request.get(href!);

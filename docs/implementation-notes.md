@@ -383,7 +383,18 @@ budget, so per Fiscal Year). Reinitialize wipes it with the budgets.
   - The footer title carries the organization and print date.
   - The single-budget chart is a reportlab `VerticalBarChart`, with the legend in words.
 - Frontend: `pages/BudgetPrep.tsx` holds the report tab (shown only with `budget.manage`), the shared
-  `ProjectionChoices` checklist and `PlanningSheetDialog` (Fiscal Year screen, not on a Closed year).
+  `ProjectionChoices` checklist and `PlanningSheetDialog`.
+- Build 3 feedback (Kyle, 2026-10-20):
+  - The sheet is printed from the **Fiscal Years page**. `planning_context()` picks one planning at a time:
+    - the latest Draft year that has an earlier year → plan it from the year before;
+    - else the non-draft year covering today;
+    - else the latest non-draft year, else the latest year.
+  - `GET /api/reports/planning-sheet/context` tells the dialog which; `fiscal_year_id` is optional on
+    `/planning-sheet`.
+  - `_successor()` falls back to a next-year budget with the **same code, type and level that continues nothing**,
+    when the current budget isn't continued by anything. Hand-entered drafts therefore line up instead of appearing
+    twice (*not in draft* + *new in draft*). The Budget Prep next-year column uses the same rule.
+  - The Expense table starts on a new page when less than 35% of the page is left (`CondPageBreak(0.35 * BODY_H)`).
 - Tests: `test_v210_budget_prep.py`, `test_v210_planning_sheet.py` (negative role tests for Budget User, Register
   User, Auditor and Administrator) and the E2E "2.1.0 (#257, #261)".
 

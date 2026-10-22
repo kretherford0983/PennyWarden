@@ -216,12 +216,20 @@ def budget_prep(fiscal_year_id: int = Query(...), years: int = Query(3, ge=-1, l
     return rep
 
 
+@router.get("/planning-sheet/context")
+def planning_sheet_context(db: Session = Depends(get_db), ctx: Ctx = Depends(require("budget.manage"))):
+    """Which year the sheet lists and which Draft year (if any) fills the Proposed column."""
+    return plan.planning_context_out(db, ctx.workspace_id)
+
+
 @router.get("/planning-sheet")
-def planning_sheet(fiscal_year_id: int = Query(...), as_of: dt.date | None = None, download: bool = False,
+def planning_sheet(fiscal_year_id: int | None = None, as_of: dt.date | None = None, download: bool = False,
                    db: Session = Depends(get_db), ctx: Ctx = Depends(require("budget.manage"))):
-    """#261 Fiscal Year Planning Sheet: the printed form for the budget planning meeting."""
-    fy = get_scoped(db, FiscalYear, fiscal_year_id, ctx, "Fiscal Year")
+    """#261 Fiscal Year Planning Sheet: the printed form for the budget planning meeting. Without fiscal_year_id
+    (the Fiscal Years page) the year being planned is worked out: a Draft year and the year before it, else the
+    current year."""
+    fy = get_scoped(db, FiscalYear, fiscal_year_id, ctx, "Fiscal Year") if fiscal_year_id is not None else None
     path, fname, summary = plan.planning_sheet(db, ctx, fy, as_of)
-    audit.record(db, ctx, "REPORT_GENERATED", "fiscal_year", fy.id, None, summary)
+    audit.record(db, ctx, "REPORT_GENERATED", "fiscal_year", summary["fiscal_year_id"], None, summary)
     db.commit()
     return _pdf_response(path, fname, download)

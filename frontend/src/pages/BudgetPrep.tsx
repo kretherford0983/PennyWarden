@@ -201,16 +201,29 @@ function BudgetPrepTable({ data, url }: { data: any; url: (format: string, downl
   );
 }
 
-/** #261: Fiscal Year screen - print the planning sheet for the budget meeting. */
-export function PlanningSheetDialog({ fy, onClose }: { fy: any; onClose: () => void }) {
+/** #261: the planning sheet for the budget meeting, from the Fiscal Years page (build 3 feedback, 2026-10-20). It
+ * works out which year is being planned: a Draft year and the year before it (draft amounts fill Proposed, with a
+ * Proposed Revision column), otherwise the current year with a blank Proposed column. */
+export function PlanningSheetDialog({ onClose }: { onClose: () => void }) {
   const [asOf, setAsOf] = useState(today());
-  const href = (download: boolean) => `/api/reports/planning-sheet${qs({ fiscal_year_id: fy.id, as_of: asOf || null, download: download || null })}`;
+  const [c, setC] = useState<any>(null);
+  const [err, setErr] = useState<unknown>(null);
+  useEffect(() => { api.get("/api/reports/planning-sheet/context").then(setC, setErr); }, []);
+  const href = (download: boolean) => `/api/reports/planning-sheet${qs({ as_of: asOf || null, download: download || null })}`;
   return (
     <Modal title="Fiscal Year Planning Sheet" onClose={onClose} wide>
-      <p>A printed form for the budget planning meeting: this year's budgets with what was budgeted, the actual year-to-date and the projection, and blank columns to write in the proposed amounts, with room for new budgets. If a Draft next Fiscal Year exists, its name and dates and the draft amounts are filled in.</p>
+      <p>A printed form for the budget planning meeting: this year's budgets with what was budgeted, the actual year-to-date and the projection, and blank columns to write in the proposed amounts, with room for new budgets.</p>
+      <ErrorBox error={err} />
+      {c ? (
+        <div className="alert info" role="note" data-testid="planning-context">
+          {c.draft_fiscal_year
+            ? <>Planning <b>{c.draft_fiscal_year.display_name}</b> (Draft) from <b>{c.fiscal_year.display_name}</b>: the draft's name, dates and amounts are filled in, with a blank <i>Proposed Revision</i> column.</>
+            : <>Planning the year after <b>{c.fiscal_year.display_name}</b>: no Draft Fiscal Year yet, so the new year's name, dates and the <i>Proposed Budget</i> column are left blank to fill in.</>}
+        </div>
+      ) : null}
       <p className="hint">The filled-in sheet can be scanned and attached to the new Fiscal Year as an Other document. It isn't required for the Fiscal Year closure review.</p>
       <Field label="Actuals as of"><input type="date" value={asOf} onChange={(e) => setAsOf(e.target.value)} /></Field>
-      <ProjectionChoices fyId={fy.id} />
+      {c ? <ProjectionChoices fyId={c.fiscal_year.id} /> : null}
       <div className="actions">
         <button onClick={onClose}>Done</button>
         <a className="button" href={href(true)}>Download PDF</a>

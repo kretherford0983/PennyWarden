@@ -77,16 +77,18 @@ letters, and a fundraiser's report includes year over year only once earlier yea
 
   It can be limited to one parent budget or one budget (with a chart of budgeted and actual per year). On screen, as a
   landscape PDF, or CSV. (#257)
-- **Fiscal Year Planning Sheet** (Fiscal Year screen → *Planning sheet…*). A portrait form for the budget meeting:
+- **Fiscal Year Planning Sheet** (Fiscal Years page → *Planning sheet…*, before or after next year is created). A
+  portrait form for the budget meeting:
   - this year's Income and Expense budgets with the previous budgeted amount, the actual year-to-date and the
     projection, and a blank *Proposed Budget* column;
   - blank rows, and a second page of blank tables, for new budgets;
   - lines for the new Fiscal Year, the attendees and the meeting date.
 
-  When a Draft next Fiscal Year exists, its name and dates are filled in. The draft amounts appear as *Proposed*,
-  with a blank *Proposed Revision* column; new draft budgets are listed, and budgets not carried into the draft are
-  marked *not in draft*. The scanned sheet can be attached to the new Fiscal Year; it is not a required document.
-  (#261)
+  When a Draft next Fiscal Year exists, the sheet plans it: its name and dates are filled in, the draft amounts
+  appear as *Proposed* on the row of the budget they continue (or that has the same code), with a blank *Proposed
+  Revision* column; new draft budgets are listed, and budgets not carried into the draft are marked *not in draft*.
+  A table that would start low on a page (in its bottom 35%) starts on the next page. The scanned sheet can be
+  attached to the new Fiscal Year; it is not a required document. (#261, #286)
 
 ### Fundraisers
 - **Stakeholder report.** *Report…* on a fundraiser's page now produces a clean **Financial & Proceeds Statement** for
