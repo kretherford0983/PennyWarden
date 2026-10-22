@@ -1,6 +1,9 @@
 # What's new in 2.1 — quick guide
 
-*2.1.0 (in progress): this guide grows with each test build.*
+*2.1.0: fundraiser reporting (a stakeholder report as PDF or Word, a slide deck, fundraisers across years with
+year over year, and a Fiscal Year fundraising report), Budget Prep and the Fiscal Year Planning Sheet, electronic
+payments and other register improvements, fold marks on cover letters and more voucher check layouts. The full list is
+in the [changelog](../CHANGELOG.md).*
 
 ## Register
 
