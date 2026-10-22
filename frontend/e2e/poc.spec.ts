@@ -3347,6 +3347,7 @@ test("#312: Donations module - Administrator sets up the receipt; a Register Use
   await expect(ad.getByTestId("donation-receipts").getByRole("row")).toHaveCount(4);
   await expect(ad.getByRole("button", { name: /Print/ })).toHaveCount(0);
   await expect(ad.getByRole("button", { name: "Save donation lines" })).toHaveCount(0);
+  await ad.getByRole("button", { name: "Close" }).last().click();
   await logout(page);
 });
 
