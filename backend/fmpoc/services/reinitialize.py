@@ -31,7 +31,8 @@ from sqlalchemy.orm import Session
 
 from .. import audit
 from ..models import (Attachment, AuditEvent, BankAccount, BankAccountBalance, Budget, BudgetProjectionChoice, CheckAccount,
-                      CheckDocument, CheckNumberAcknowledgement, CheckPrinterSetting, CheckSigner, CheckStyle, Entity,
+                      CheckDocument, CheckNumberAcknowledgement, CheckPrinterSetting, CheckSigner, CheckStyle, DonationLine,
+                      DonationReceipt, DonationSettings, Entity,
                       FiscalYear, FiscalYearReview, Fundraiser, FundraiserBucket, FundraiserBucketCategory, FundraiserBucketLine, FundraiserBudget,
                       FundraiserFyReportNote, FundraiserSeries, FundraiserSeriesResult,
                       FundraiserClassification, FundraiserExclusion, FundraiserLineContributor, RegisterTransaction, Reminder,
@@ -45,11 +46,11 @@ CONFIRM_WORD = "reinitialize"
 COOLDOWN = dt.timedelta(hours=24)
 
 # children first
-WIPE = (FundraiserBucketLine, FundraiserLineContributor, FundraiserClassification, FundraiserExclusion, FiscalYearReview, Attachment,
+WIPE = (DonationReceipt, DonationLine, FundraiserBucketLine, FundraiserLineContributor, FundraiserClassification, FundraiserExclusion, FiscalYearReview, Attachment,
         TransactionAllocation, RegisterTransaction, CheckNumberAcknowledgement, CheckAccount, CheckPrinterSetting,
         BankAccountBalance, BankAccount, FundraiserBucket, FundraiserBucketCategory, FundraiserBudget, Fundraiser, FundraiserSeriesResult,
         FundraiserSeries, FundraiserFyReportNote, BudgetProjectionChoice, Budget, FiscalYear,
-        CheckDocument, CheckSigner, CheckStyle, RequestKey)
+        CheckDocument, CheckSigner, CheckStyle, DonationSettings, RequestKey)   # 2.1.0 (#312): donations
 
 
 class ReinitError(Exception):
@@ -154,7 +155,8 @@ def wipe(db: Session, ws_id: int, ctx, by: str, backup_name: str, via: str, befo
             cond = model.workspace_id == ws_id
         db.execute(delete(model).where(cond).execution_options(synchronize_session=False))
     # budgets reference each other (parents, continued budgets) - already deleted together above
-    db.execute(delete(Entity).where(Entity.workspace_id == ws_id, Entity.is_system.is_(False))
+    db.execute(delete(Entity).where(Entity.workspace_id == ws_id, Entity.is_system.is_(False),
+                                    Entity.is_organization.is_(False))      # 2.1.0 (#314): the organization stays
                .execution_options(synchronize_session=False))
     db.execute(delete(Reminder).where(Reminder.workspace_id == ws_id, Reminder.scope != "PERSONAL")
                .execution_options(synchronize_session=False))

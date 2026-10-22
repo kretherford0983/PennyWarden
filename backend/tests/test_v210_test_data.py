@@ -96,6 +96,7 @@ def test_data_set(built):
     assert s["sign_ins"] == ["admin", "budgetmgr", "bookkeeper", "auditor", "treasurer"]
     assert [y["status"] for y in s["fiscal_years"]] == ["Closed", "Closed", "Approved", "Draft"]
     assert s["counts"]["printed_checks"] == 2 and s["counts"]["entered_years"] == 12
+    assert s["counts"]["donation_receipts"] == 2                                     # 2.1.0 (#312)
     assert s["counts"]["fundraisers"] >= 10 and s["counts"]["electronic_payments"] > 0
     db = sqlite3.connect(built["tmp"] / "data/database/fmpoc.sqlite3")
     q = lambda sql: db.execute(sql).fetchall()  # noqa: E731

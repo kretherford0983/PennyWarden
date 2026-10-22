@@ -19,7 +19,9 @@ Windows PC, Mac or Linux server; your data stays in one folder you control. No s
 > - A Fiscal Year fundraising report with year-over-year comparisons.
 >
 > Also new: a Budget Review report and Fiscal Year Planning Sheet, electronic payments in the register, fold marks on
-> cover letters, and more voucher check layouts. 2.0 added the optional
+> cover letters, more voucher check layouts, an organization profile, and an optional Donations module for donation
+> receipt letters. 2.0 added
+> the optional
 > [Payments module](#payments-and-check-printing-optional-payments-module-200).
 > [What's new in 2.1](docs/user-guide-v2.1.md) · [What's new in 2.0](docs/user-guide-v2.0.md) · [Changelog](CHANGELOG.md)
 

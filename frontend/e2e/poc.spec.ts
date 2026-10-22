@@ -2711,12 +2711,26 @@ test("#126: an Administrator renames the organization, sees the effective settin
   await login(page, "admin");
   await page.getByRole("link", { name: "System/About" }).click();
   await aboutTab(page, "General");
+  const orgPanel = page.getByRole("region", { name: "Organization" });
   await page.getByLabel("Organization name").fill("E2E Org Renamed");
-  await page.getByRole("button", { name: "Rename" }).click();
+  await orgPanel.getByRole("button", { name: "Save" }).click();
   await expect(page.locator(".brand")).toContainText("E2E Org Renamed");
   await page.getByLabel("Organization name").fill("E2E Org");
-  await page.getByRole("button", { name: "Rename" }).click();
+  await orgPanel.getByRole("button", { name: "Save" }).click();
   await expect(page.locator(".brand")).toContainText("E2E Org");
+  // 2.1.0 (#314): the organization profile - address, phone, email and EIN (made up). Typed straight away, while the
+  // rename may still be saving: what is typed must not be overwritten when that save answers.
+  await orgPanel.getByLabel("Street address").fill("100 Example Street");
+  await orgPanel.getByLabel("City").fill("Sampletown");
+  await orgPanel.getByLabel("State").fill("US");
+  await orgPanel.getByLabel("ZIP code").fill("55555");
+  await orgPanel.getByLabel("Email").fill("office@example.org");
+  await orgPanel.getByLabel("EIN (Employer Identification Number)").fill("12-3456789");
+  await orgPanel.getByRole("button", { name: "Save" }).click();
+  await expect(orgPanel.getByRole("status")).toHaveText("Saved.");
+  await expect(orgPanel.getByLabel("Street address")).toHaveValue("100 Example Street");
+  await expect(orgPanel.getByLabel("City")).toHaveValue("Sampletown");
+  await page.screenshot({ path: "e2e-screenshots/light-organization-profile.png" });
   await aboutTab(page, "Settings");
   const settings = page.getByRole("region", { name: "Settings" });
   await expect(settings.getByRole("row", { name: /Session idle timeout \(minutes\) 30 default/ })).toBeVisible();
@@ -3253,6 +3267,107 @@ test("#214: form rows line up - one control height, buttons and checkboxes centr
 });
 
 // Keep this test LAST: it removes the financial data the other tests use.
+test("#312: Donations module - Administrator sets up the receipt; a Register User marks a deposit's donations and prints receipts (duplicate, corrected); an Auditor sees them", async ({ page }) => {
+  test.setTimeout(180_000);   // three sign-ins and five printed PDFs
+  await login(page, "admin");
+  await page.getByRole("link", { name: "System/About" }).click();
+  await aboutTab(page, "General");
+  await page.getByLabel("Donations module").check();
+  await expect(page.getByRole("status").filter({ hasText: "Saved." })).toBeVisible();
+  await page.reload();
+  await page.getByRole("link", { name: "Donations Setup" }).click();
+  // 2.1.0 (#314): the EIN and address come from the organization profile (entered in the #126 test)
+  await expect(page.getByTestId("setup-missing")).toHaveCount(0);
+  await expect(page.getByTestId("donation-org")).toContainText("12-3456789");
+  await expect(page.getByTestId("donation-org")).toContainText("Sampletown, US 55555");
+  await expect(page.getByRole("img", { name: "Donation receipt preview" })).toBeVisible();
+  await page.getByLabel("Signer's name").fill("Pat Example");
+  await page.getByLabel("Signer's title").fill("Treasurer");
+  await page.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Saved." })).toBeVisible();
+  await expect(page.getByTestId("setup-missing")).toHaveCount(0);
+  await page.getByRole("button", { name: "Test print (sample data)" }).click();
+  const tp = page.getByRole("dialog", { name: "Donation receipt test print" });
+  await expect(tp.getByRole("button", { name: "Print…" })).toBeVisible();
+  await page.screenshot({ path: "e2e-screenshots/light-donation-setup.png", fullPage: true });
+  await tp.getByRole("button", { name: "Close" }).first().click();
+  await logout(page);
+
+  // Register User: a deposit from two made-up donors
+  await login(page, "ru1", "Brand-New-Pass-99");
+  // 2.1.0 (#314): the organization is an entity too, maintained in System/About
+  await page.goto("/entities");
+  await expect(page.getByRole("row", { name: /E2E Org/ }).getByTestId("org-badge")).toBeVisible();
+  await expect(page.getByRole("row", { name: /E2E Org/ })).toContainText("System/About");
+  const post = await apiAs(page);
+  const today = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  const accts = (await (await page.request.get("/api/bank-accounts")).json()).filter((a: any) => a.register_enabled && a.status === "ACTIVE");
+  const nat = await (await page.request.get(`/api/fiscal-years/natural?date=${today}`)).json();
+  const dep = await (await page.request.get(`/api/budgets/selectable?fiscal_year_id=${nat.default_fiscal_year_id}&transaction_type=DEPOSIT`)).json();
+  const donors = [];
+  for (const n of ["Sample Donor Alpha", "Sample Donor Beta"]) {
+    const r = await post("/api/entities", { entity_type: "INDIVIDUAL", primary_contact: n, address_line1: "1 Example Lane", city: "Sampletown", state_region: "US", postal_code: "55555", confirmations: ["DUPLICATE_ENTITY"] });
+    expect(r.status()).toBe(201);
+    donors.push(await r.json());
+  }
+  let body: any = { bank_account_id: accts[0].id, transaction_type: "DEPOSIT", transaction_date: today, no_attachment: true, no_attachment_reason: "e2e",
+    allocations: [{ budget_id: dep[0].id, amount: "100.00", entity_id: donors[0].id, description: "Gift" },
+                  { budget_id: dep[0].id, amount: "40.00", entity_id: donors[0].id, description: "Raffle tickets" },
+                  { budget_id: dep[0].id, amount: "75.00", entity_id: donors[1].id, description: "Gift" }] };
+  let r = await post("/api/transactions", body);
+  if (r.status() === 409) { body = { ...body, confirmations: ((await r.json()).error.warnings || []).map((w: any) => w.code) }; r = await post("/api/transactions", body); }
+  expect(r.status(), await r.text()).toBe(201);
+  const t = await r.json();
+  await page.goto(`/register?account=${accts[0].id}&txn=${t.id}`);
+  await page.getByRole("button", { name: "Donation receipt…" }).click();
+  const dlg = page.getByRole("dialog", { name: `Donation receipt – deposit #${t.id}` });
+  await expect(dlg.getByText("No line is marked as a donation yet.")).toBeVisible();
+  await dlg.getByLabel("Donation: Sample Donor Alpha $100.00").check();
+  await dlg.getByLabel("Donation: Sample Donor Beta $75.00").check();
+  await dlg.getByLabel("Purpose").first().fill("Building fund");
+  await dlg.getByRole("button", { name: "Save donation lines" }).click();
+  await expect(dlg.getByRole("status").filter({ hasText: "Saved." })).toBeVisible();
+  const byDonor = dlg.getByTestId("donation-donors");
+  await expect(byDonor.getByRole("row", { name: /Sample Donor Alpha/ })).toContainText("$100.00");
+  await byDonor.getByRole("row", { name: /Sample Donor Alpha/ }).getByRole("button", { name: "Print receipt" }).click();
+  const pv = page.getByRole("dialog", { name: "Donation receipt – Sample Donor Alpha" });
+  await expect(pv.getByRole("button", { name: "Print…" })).toBeVisible();
+  await pv.getByRole("button", { name: "Close" }).first().click();
+  await expect(byDonor.getByRole("row", { name: /Sample Donor Alpha/ }).getByRole("button", { name: "Print duplicate" })).toBeVisible();
+  await byDonor.getByRole("row", { name: /Sample Donor Alpha/ }).getByRole("button", { name: "Print duplicate" }).click();
+  await pv.getByRole("button", { name: "Close" }).first().click();
+  // the raffle tickets were a donation too: the amount changes, so the next receipt is a corrected one
+  await dlg.getByLabel("Donation: Sample Donor Alpha $40.00").check();
+  await dlg.getByLabel("Goods or services value").nth(1).fill("10.00");
+  await dlg.getByLabel("Goods or services description").fill("Raffle prize drawing");
+  await dlg.getByRole("button", { name: "Save donation lines" }).click();
+  await expect(byDonor.getByRole("row", { name: /Sample Donor Alpha/ })).toContainText("$140.00");
+  await byDonor.getByRole("row", { name: /Sample Donor Alpha/ }).getByRole("button", { name: "Print corrected receipt" }).click();
+  const conf = page.getByRole("dialog", { name: "Confirmation required" });
+  await expect(conf).toContainText("Print a corrected receipt");
+  await conf.getByLabel("I have reviewed these warnings and explicitly confirm.").check();
+  await conf.getByRole("button", { name: "Confirm and continue" }).click();
+  await pv.getByRole("button", { name: "Close" }).first().click();
+  const printed = dlg.getByTestId("donation-receipts");
+  await expect(printed.getByRole("row")).toHaveCount(4);
+  await expect(printed.getByRole("row", { name: /Corrected/ })).toContainText("In force");
+  await expect(printed.getByRole("row", { name: /Duplicate/ })).toContainText("Replaced");
+  await page.screenshot({ path: "e2e-screenshots/light-donation-receipt.png" });
+  await dlg.getByRole("button", { name: "Close" }).last().click();
+  await logout(page);
+
+  // Auditor: sees the donations and receipts, prints nothing
+  await login(page, "auditor1");
+  await page.goto(`/register?account=${accts[0].id}&txn=${t.id}`);
+  await page.getByRole("button", { name: "Donation receipt…" }).click();
+  const ad = page.getByRole("dialog", { name: `Donation receipt – deposit #${t.id}` });
+  await expect(ad.getByTestId("donation-receipts").getByRole("row")).toHaveCount(4);
+  await expect(ad.getByRole("button", { name: /Print/ })).toHaveCount(0);
+  await expect(ad.getByRole("button", { name: "Save donation lines" })).toHaveCount(0);
+  await ad.getByRole("button", { name: "Close" }).last().click();
+  await logout(page);
+});
+
 test("#125: an Administrator reinitializes (keeping the users); everyone sees the notice until it is acknowledged", async ({ page }) => {
   await login(page, "admin");
   await page.getByRole("link", { name: "System/About" }).click();

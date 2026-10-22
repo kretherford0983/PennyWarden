@@ -83,6 +83,8 @@ def initialize(db: Session, settings, ctx, *, workspace_name: str, username: str
             workspace_id=ws.id, entity_number=MULTIPLE_ENTITY_NUMBER, entity_type="SYSTEM",
             organization_name="Multiple", is_system=True, active=True, name_key="multiple",
         ))
+    from . import organization            # 2.1.0 (#314): the organization itself, as an entity
+    organization.ensure(db, ws)
     ws.bootstrap_completed_at = utcnow()
     db.flush()
     db.refresh(admin)

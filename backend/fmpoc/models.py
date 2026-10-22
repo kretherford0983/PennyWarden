@@ -56,6 +56,8 @@ class Workspace(Base):
     fundraisers_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
     # 2.0.0 (#156): the Payments module
     checks_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
+    # 2.1.0 (#312): the Donations module (optional; donation receipt letters)
+    donations_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
     # 2.0.0 (#126): Administrators are warned after this many days without a backup (0 = off)
     backup_warning_days: Mapped[int] = mapped_column(Integer, default=7, server_default="7", nullable=False)
     # 2.0.0 (#130): maintenance mode - on while a message is set (from maintenance_starts_at, if given): everyone but
@@ -232,6 +234,9 @@ class Entity(Base):
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_financial_institution: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     is_system: Mapped[bool] = mapped_column(Boolean, default=False)
+    # 2.1.0 (#314): the organization itself - one per workspace, maintained by Administrators in System/About
+    is_organization: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
+    ein: Mapped[str | None] = mapped_column(String(10), nullable=True)       # 12-3456789 (#314; other entities #315)
     active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     name_key: Mapped[str] = mapped_column(String(200), index=True)  # normalized name for duplicate search
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
@@ -931,3 +936,57 @@ class CheckDocument(Base):
     logo_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     logo_width: Mapped[int | None] = mapped_column(Integer, nullable=True)
     logo_height: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+# ---------------------------------------------------------------- 2.1.0 (#312) Donations module: receipt letters
+class DonationSettings(Base):
+    """The organization's donation receipt setup (Administrator): EIN, mailing address and the receipt template, as
+    validated JSON (services/donations.ReceiptConfig). One per workspace."""
+    __tablename__ = "donation_settings"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), unique=True)
+    config_json: Mapped[str] = mapped_column(Text)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    updated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class DonationLine(Base):
+    """A deposit allocation marked as a donation (Register User), with an optional purpose and the goods or services
+    given in exchange (value and description; none = no goods or services)."""
+    __tablename__ = "donation_line"
+    __table_args__ = (UniqueConstraint("allocation_id", name="uq_donation_line_allocation"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
+    allocation_id: Mapped[int] = mapped_column(ForeignKey("transaction_allocation.id"))
+    purpose: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    goods_cents: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    goods_description: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    updated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class DonationReceipt(Base):
+    """A printed donation receipt for one donor of one deposit. kind ORIGINAL (a new number), DUPLICATE (the same
+    content again: the original's number) or CORRECTED (a new number replacing `replaces_id`). Never deleted; a
+    voided deposit's receipts show as void."""
+    __tablename__ = "donation_receipt"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
+    transaction_id: Mapped[int] = mapped_column(ForeignKey("register_transaction.id"), index=True)
+    donor_entity_id: Mapped[int] = mapped_column(ForeignKey("entity.id"))
+    donor_name: Mapped[str] = mapped_column(String(200))
+    number: Mapped[str] = mapped_column(String(20))
+    year: Mapped[int] = mapped_column(Integer)
+    seq: Mapped[int] = mapped_column(Integer)
+    kind: Mapped[str] = mapped_column(String(10))               # ORIGINAL | DUPLICATE | CORRECTED
+    replaces_id: Mapped[int | None] = mapped_column(ForeignKey("donation_receipt.id"), nullable=True)
+    amount_cents: Mapped[int] = mapped_column(BigInteger)
+    goods_cents: Mapped[int] = mapped_column(BigInteger, default=0)
+    date_received: Mapped[dt.date] = mapped_column(Date)
+    allocation_ids: Mapped[str] = mapped_column(String(500))    # comma-separated, for the record
+    content_sha: Mapped[str] = mapped_column(String(64))
+    attachment_id: Mapped[int | None] = mapped_column(ForeignKey("attachment.id"), nullable=True)
+    printed_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    printed_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
