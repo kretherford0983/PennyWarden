@@ -203,6 +203,13 @@ sponsorship less a $6 card fee. The Less amount can equal the charge (a fully co
 
 ## Payments
 
+### Voucher checks: check on top, in the middle or at the bottom
+Payments Setup has five more voucher presets: the check **in the middle** or **at the bottom** with two stubs, and the
+check on top or at the bottom with **one tall invoice stub** (including a 7-inch one). In an existing voucher style,
+**Stubs (voucher check)** has **Check position** and **Stubs** to switch layouts, and **Check top** to fine-tune where
+the check is. The stubs are now called **Invoice stub** (mailed with the check, no budgets) and **Office stub**. The
+positions are starting points from the published layouts; check them against your stock with the test print. (#246)
+
 ### Fold marks on cover letters
 A cover letter can print **fold marks**: four small, faint ticks at the left and right edges where the page is folded
 in even thirds for a #10 envelope, on the first sheet only.

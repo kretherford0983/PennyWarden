@@ -42,6 +42,10 @@ PennyWarden 2.1.0 (in progress).
   otherwise wrap, and the report says how many are shown. *Historical results* still lists every year. (#295)
 
 ### Payments
+- **More voucher check layouts.** The check can be at the top, in the middle or at the bottom of the sheet, with an
+  invoice stub and an office stub or one tall invoice stub. There are five new presets from the published layouts of
+  common voucher stock, and *Check position*, *Stubs* and *Check top* on the setup screen. The stubs are called
+  *Invoice stub* and *Office stub*. Existing voucher styles print as before. (#246)
 - **Fold marks on cover letters.** A letter template can print small, barely visible ticks at the page edges where the
   letter folds in even thirds for a #10 envelope. They go on the front, or on the back of the first sheet for
   two-sided printers. Their length, distance from the edge, weight and shade can be tuned. Each user can set their

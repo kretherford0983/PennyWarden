@@ -48,6 +48,24 @@ could not otherwise be corrected. Scope and safeguards:
 - Audited as `TRANSACTION_VOID_DATE_CORRECTED` with before/after snapshots and the reason.
 - Tests: `backend/tests/test_cr001_void_date.py` (5 tests) and E2E "CR-001".
 
+**2.1.0 — voucher layouts (#246, decided by Kyle 2026-10-15/21; built 2026-10-21).**
+- The 2.0.0 config model already allowed any `check_tops[0]` and one or two stubs anywhere that don't overlap
+  (`StyleConfig._check_stubs`), and the renderer draws stubs at their own tops. What was missing was the presets and
+  the UI.
+- `presets.VOUCHER_LAYOUTS` holds the six layouts (check top, stubs as top, height and copy, and a stock note).
+  `voucher_config()` builds the five new presets from `VOUCHER_TOP`, which itself is unchanged.
+  `presets.voucher_layouts()` is served in `/api/checks/setup` for the setup screen's Check position and Stubs. With
+  two stubs, VENDOR (invoice) is the stub next to the check.
+- `render._draw_stub(outline=True)` dashes a stub's top edge when it isn't the sheet's top, and its bottom edge when the
+  check starts there (a stub above the check). The real check never draws outlines, so 2.0.0 voucher prints are
+  unchanged. `stub_drawing()` returns `top`, and the preview's viewBox extends upward for stubs above the check.
+- UI labels: *Invoice stub* / *Office stub* (Kyle 2026-10-21). The printed copy label stays *OFFICE COPY*.
+- Positions are the issue's starting presets, to be checked against real sheets (Kyle 2026-10-21). The 7-inch stub
+  is 3.5–10.5 in with a 0.5 in strip.
+- Tests: `backend/tests/test_v210_voucher_layouts.py` (presets, capacity, validation with the check anywhere, printing
+  each new layout with positions on the check and record copy, calibration perforations, setup and access) and the
+  E2E voucher steps.
+
 **2.1.0 — fold marks on cover letters (#247, decided by Kyle 2026-10-15; built 2026-10-21).**
 - `LetterConfig` gains `fold_marks` (NONE / FRONT / BACK, default NONE, so 2.0.0 templates are unchanged),
   `fold_length` and `fold_edge` (0.1–0.5 in; defaults 0.15 and 0.25), `fold_weight` (HAIRLINE 0.25 pt / THIN 0.5 /

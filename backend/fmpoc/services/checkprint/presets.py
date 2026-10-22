@@ -78,6 +78,51 @@ VOUCHER_TOP["stubs"] = [
     {"top": 7.0, "height": 4.0, "copy_kind": "OFFICE", "title": "{ORG}", "show_check_number": True},
 ]
 
+# 2.1.0 (#246): more voucher layouts - the check in the middle or at the bottom, and one tall invoice stub. Starting
+# points from the published layouts of the reference stock (Deluxe SSLM260, SSLB211, SSNL208, SSLT132, SSLB121;
+# positions to be checked against real sheets); every style is fine-tuned to the stock in use. With two stubs the
+# invoice stub (VENDOR: no budget column, mailed with the check) is the one right next to the check - below it when
+# there is room, as on VOUCHER_TOP - and the office stub is the other.
+VOUCHER_LAYOUTS = {
+    # key: (check top, [(stub top, height, copy kind)], stock note)
+    "TOP_TWO": (0.0, [(3.5, 3.5, "VENDOR"), (7.0, 4.0, "OFFICE")],
+                "Voucher check, check on top: check 0-3.5 in, stubs 3.5-7 in and 7-11 in (published layout)."),
+    "MIDDLE_TWO": (3.5, [(0.0, 3.5, "OFFICE"), (7.0, 4.0, "VENDOR")],
+                   "Voucher check, check in the middle: stub 0-3.5 in, check 3.5-7 in, stub 7-11 in (e.g. Deluxe "
+                   "SSLM260; confirm on a sample sheet)."),
+    "BOTTOM_TWO": (7.5, [(0.0, 3.5, "OFFICE"), (3.5, 4.0, "VENDOR")],
+                   "Voucher check, check on the bottom: stubs 0-3.5 and 3.5-7.5 in, check 7.5-11 in (e.g. Deluxe "
+                   "SSLB211; confirm on a sample sheet)."),
+    "TOP_INVOICE": (0.0, [(3.5, 7.5, "VENDOR")],
+                    "Voucher check, check on top, one invoice stub: check 0-3.5 in, stub 3.5-11 in (e.g. Deluxe "
+                    "SSNL208; confirm on a sample sheet)."),
+    "TOP_INVOICE_7": (0.0, [(3.5, 7.0, "VENDOR")],
+                      "Voucher check, check on top, 7-inch invoice stub: check 0-3.5 in, stub 3.5-10.5 in, a 0.5 in "
+                      "strip at the bottom (e.g. Deluxe SSLT132; confirm on a sample sheet)."),
+    "BOTTOM_INVOICE": (7.5, [(0.0, 7.5, "VENDOR")],
+                       "Voucher check, check on the bottom, one invoice stub: stub 0-7.5 in, check 7.5-11 in (e.g. "
+                       "Deluxe SSLB121, a 7.5-inch voucher)."),
+}
+POSITION_NOTES = {0.0: "check at the top", 3.5: "check in the middle", 7.5: "check at the bottom"}
+
+
+def voucher_config(layout: str) -> dict:
+    top, stubs, note = VOUCHER_LAYOUTS[layout]
+    cfg = copy.deepcopy(VOUCHER_TOP)
+    cfg["stock"].update({"check_tops": [top], "stock_note": note})
+    cfg["feed_modes"] = [{"key": "voucher", "label": "Voucher sheet", "kind": "SHEET", "position": 0,
+                          "note": f"One voucher sheet per check, {POSITION_NOTES.get(top, 'check as on the stock')}."}]
+    cfg["stubs"] = [{"top": t, "height": h, "copy_kind": k, "title": "{ORG}", "show_check_number": True}
+                    for t, h, k in stubs]
+    return cfg
+
+
+def voucher_layouts() -> dict:
+    """The layouts the setup screen's Layout choice fills in: check top and the stubs (top, height, copy)."""
+    return {k: {"check_top": v[0], "stubs": [{"top": t, "height": h, "copy_kind": c} for t, h, c in v[1]], "note": v[2]}
+            for k, v in VOUCHER_LAYOUTS.items()}
+
+
 # Two signature lines (any style can switch them on; the voucher preset keeps one): the second line sits above the
 # first, the same width.
 SIGNATURE2_DEFAULT = {"x": 5.605, "y": 1.95, "w": 2.25, "h": 0.42}
@@ -94,6 +139,33 @@ PRESETS = {
         "description": "Letter sheet with one 3.5-inch check at the top and two detail stubs below (vendor copy and "
                        "office copy) listing the invoices paid.",
         "config": VOUCHER_TOP,
+    },
+    # 2.1.0 (#246)
+    "VOUCHER_MIDDLE": {
+        "name": "Voucher - check in the middle, two stubs",
+        "description": "Letter sheet with an office stub at the top, the 3.5-inch check in the middle and the invoice "
+                       "stub at the bottom.",
+        "config": voucher_config("MIDDLE_TWO"),
+    },
+    "VOUCHER_BOTTOM": {
+        "name": "Voucher - check on the bottom, two stubs",
+        "description": "Letter sheet with the office stub and the invoice stub above the 3.5-inch check at the bottom.",
+        "config": voucher_config("BOTTOM_TWO"),
+    },
+    "VOUCHER_TOP_INVOICE": {
+        "name": "Voucher - check on top, invoice stub only",
+        "description": "Letter sheet with the 3.5-inch check at the top and one tall invoice stub filling the rest.",
+        "config": voucher_config("TOP_INVOICE"),
+    },
+    "VOUCHER_TOP_INVOICE_7": {
+        "name": "Voucher - check on top, 7-inch invoice stub",
+        "description": "Letter sheet with the 3.5-inch check at the top and a 7-inch invoice stub below it.",
+        "config": voucher_config("TOP_INVOICE_7"),
+    },
+    "VOUCHER_BOTTOM_INVOICE": {
+        "name": "Voucher - check on the bottom, invoice stub only",
+        "description": "Letter sheet with a 7.5-inch invoice stub above the 3.5-inch check at the bottom.",
+        "config": voucher_config("BOTTOM_INVOICE"),
     },
 }
 
