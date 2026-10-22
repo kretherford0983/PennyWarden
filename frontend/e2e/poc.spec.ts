@@ -2718,7 +2718,8 @@ test("#126: an Administrator renames the organization, sees the effective settin
   await page.getByLabel("Organization name").fill("E2E Org");
   await orgPanel.getByRole("button", { name: "Save" }).click();
   await expect(page.locator(".brand")).toContainText("E2E Org");
-  // 2.1.0 (#314): the organization profile - address, phone, email and EIN (made up)
+  // 2.1.0 (#314): the organization profile - address, phone, email and EIN (made up). Typed straight away, while the
+  // rename may still be saving: what is typed must not be overwritten when that save answers.
   await orgPanel.getByLabel("Street address").fill("100 Example Street");
   await orgPanel.getByLabel("City").fill("Sampletown");
   await orgPanel.getByLabel("State").fill("US");
@@ -2727,6 +2728,8 @@ test("#126: an Administrator renames the organization, sees the effective settin
   await orgPanel.getByLabel("EIN (Employer Identification Number)").fill("12-3456789");
   await orgPanel.getByRole("button", { name: "Save" }).click();
   await expect(orgPanel.getByRole("status")).toHaveText("Saved.");
+  await expect(orgPanel.getByLabel("Street address")).toHaveValue("100 Example Street");
+  await expect(orgPanel.getByLabel("City")).toHaveValue("Sampletown");
   await page.screenshot({ path: "e2e-screenshots/light-organization-profile.png" });
   await aboutTab(page, "Settings");
   const settings = page.getByRole("region", { name: "Settings" });

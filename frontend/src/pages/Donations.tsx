@@ -28,7 +28,14 @@ export default function DonationSetup() {
   const dirty = JSON.stringify(cfg) !== JSON.stringify(s.config);
   const save = async () => {
     setErr(null);
-    try { const d = await api.put("/api/donations/setup", { config: cfg }); setS(d); setCfg(d.config); setSaved(true); } catch (x) { setErr(x); }
+    const sent = cfg;
+    try {
+      const d = await api.put("/api/donations/setup", { config: sent });
+      setS(d);
+      // a change typed while the save was on its way is kept (the page then shows "Unsaved changes")
+      setCfg((cur: any) => (cur === sent ? d.config : cur));
+      setSaved(true);
+    } catch (x) { setErr(x); }
   };
   const testPrint = async () => {
     setErr(null);

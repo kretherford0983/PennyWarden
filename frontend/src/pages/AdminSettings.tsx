@@ -20,9 +20,14 @@ export function OrganizationPanel({ name, onRenamed }: { name: string; onRenamed
   const dirty = !!p && (f.name !== p.name || ORG_FIELDS.some(([k]) => (f[k] || "") !== (p[k] || "")));
   const save = async () => {
     setErr(null); setSaved(false);
+    const sent = { ...f };
     try {
-      const r = await api.put("/api/system/organization", f);
-      take(r); setSaved(true);
+      const r = await api.put("/api/system/organization", sent);
+      setP(r);
+      // what was typed while the save was on its way is kept; the rest takes the server's (normalized) value
+      setF((cur) => Object.fromEntries([["name", cur.name === sent.name ? r.name : cur.name],
+        ...ORG_FIELDS.map(([k]) => [k, (cur[k] || "") === (sent[k] || "") ? r[k] || "" : cur[k]])]));
+      setSaved(true);
       if (r.name !== name) onRenamed(r.name);
     } catch (x) { setErr(x); }
   };
