@@ -603,3 +603,5 @@ label.check.small { font-size: 12px; }
 @media (min-width: 1200px) { .donation-setup .setup-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; } }
 .donation-dialog input.narrow { width: 7em; }
 .donation-dialog td .row { gap: 0.4rem; flex-wrap: nowrap; }
+/* 2.1.0 (#314): the organization profile fields wrap two or three to a line */
+.org-fields > .field { flex: 1 1 15em; }

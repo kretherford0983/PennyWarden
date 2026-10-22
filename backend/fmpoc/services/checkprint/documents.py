@@ -195,7 +195,8 @@ def letter_texts(cfg: LetterConfig, data: LetterData) -> tuple[dict, list[str]]:
     empty: list[str] = []
     vals = {**data.values, "SIGNER": data.signer_name, "SIGNER_TITLE": data.signer_title}
     out = {
-        "letterhead": [_resolve(x, vals, patterns.LETTER, empty) for x in cfg.letterhead],
+        # 2.1.0 (#314): a several-line value ({ORG.ADDRESS}, {PAYEE_ADDRESS}) in a letterhead line gives several lines
+        "letterhead": [part for x in cfg.letterhead for part in _resolve(x, vals, patterns.LETTER, empty).split("\n")],
         "subject": _resolve(cfg.subject, vals, patterns.LETTER, empty),
         "salutation": _resolve(cfg.salutation, vals, patterns.LETTER, empty),
         "opening": _resolve(cfg.opening, vals, patterns.LETTER, empty),
@@ -401,7 +402,7 @@ def envelope_lines(cfg: EnvelopeConfig, values: dict, payee_lines: list[str], re
     """(return address lines, delivery address lines, empty variables)."""
     empty: list[str] = []
     ret = [_resolve(x, values, patterns.ENVELOPE, empty) for x in cfg.return_lines] if return_address else []
-    ret = [x for x in ret if x.strip()]
+    ret = [part for x in ret for part in x.split("\n") if part.strip()]      # #314: {ORG.ADDRESS} -> its own lines
     to = list(payee_lines)
     if cfg.upper:
         ret, to = [x.upper() for x in ret], [x.upper() for x in to]

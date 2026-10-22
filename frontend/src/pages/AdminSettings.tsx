@@ -2,26 +2,61 @@
  * server installs) and the backup age warning. The server validates everything; this is convenience only. */
 import { useEffect, useState } from "react";
 import { api } from "../api";
-import { ErrorBox, Field, Modal, RowMenu, useConfirmable } from "../components";
+import { ErrorBox, Field, Loading, Modal, RowMenu, useConfirmable } from "../components";
+
+/** #126 the name; 2.1.0 (#314) the organization profile - the organization's own entity: address, phone, email, EIN.
+ * Used by letters, envelopes and receipts ({ORG.*}); the entity can be chosen in the register like any other. */
+const ORG_FIELDS: [string, string, number][] = [["address_line1", "Street address", 200], ["address_line2", "Address line 2", 200],
+  ["city", "City", 100], ["state_region", "State", 100], ["postal_code", "ZIP code", 20], ["country", "Country (outside the US)", 100],
+  ["phone", "Phone", 40], ["email", "Email", 254], ["ein", "EIN (Employer Identification Number)", 10]];
 
 export function OrganizationPanel({ name, onRenamed }: { name: string; onRenamed: (n: string) => void }) {
-  const [v, setV] = useState(name);
+  const [p, setP] = useState<any>(null);
+  const [f, setF] = useState<Record<string, string>>({ name });
   const [err, setErr] = useState<unknown>(null);
   const [saved, setSaved] = useState(false);
+  const take = (d: any) => { setP(d); setF(Object.fromEntries([["name", d.name], ...ORG_FIELDS.map(([k]) => [k, d[k] || ""])])); };
+  useEffect(() => { api.get("/api/system/organization").then(take, setErr); }, []);
+  const dirty = !!p && (f.name !== p.name || ORG_FIELDS.some(([k]) => (f[k] || "") !== (p[k] || "")));
   const save = async () => {
     setErr(null); setSaved(false);
-    try { const r = await api.put("/api/system/organization", { name: v }); setV(r.name); setSaved(true); onRenamed(r.name); } catch (x) { setErr(x); }
+    const sent = { ...f };
+    try {
+      const r = await api.put("/api/system/organization", sent);
+      setP(r);
+      // what was typed while the save was on its way is kept; the rest takes the server's (normalized) value
+      setF((cur) => Object.fromEntries([["name", cur.name === sent.name ? r.name : cur.name],
+        ...ORG_FIELDS.map(([k]) => [k, (cur[k] || "") === (sent[k] || "") ? r[k] || "" : cur[k]])]));
+      setSaved(true);
+      if (r.name !== name) onRenamed(r.name);
+    } catch (x) { setErr(x); }
   };
+  const set = (k: string) => (e: React.ChangeEvent<HTMLInputElement>) => { setF({ ...f, [k]: e.target.value }); setSaved(false); };
   return (
     <section className="card" aria-labelledby="org-h">
       <h2 id="org-h">Organization</h2>
       <ErrorBox error={err} />
+      {/* the form appears once the profile is loaded, so nothing typed is overwritten when it arrives */}
+      {!p ? (err ? null : <Loading />) : <>
       <div className="row form-row">
-        <Field label="Organization name"><input maxLength={120} value={v} onChange={(e) => { setV(e.target.value); setSaved(false); }} /></Field>
-        <button onClick={save} disabled={!v.trim() || v.trim() === name}>Rename</button>
+        <Field label="Organization name"><input maxLength={120} value={f.name || ""} onChange={set("name")} /></Field>
       </div>
-      <p className="hint">Used in new reports, signature pages, letters and backup file names. Documents already made keep the name they were made with.</p>
-      {saved ? <p className="hint" role="status">Saved.</p> : null}
+      <div className="row form-row org-fields">
+        {ORG_FIELDS.map(([k, label, max]) => (
+          <Field key={k} label={label} hint={k === "ein" ? "9 digits, as 12-3456789" : undefined}>
+            <input maxLength={max} value={f[k] || ""} placeholder={k === "ein" ? "12-3456789" : undefined} onChange={set(k)} />
+          </Field>
+        ))}
+      </div>
+      <div className="row">
+        <button className="primary" onClick={save} disabled={!dirty || !(f.name || "").trim()}>Save</button>
+        {saved && !dirty ? <span className="hint" role="status">Saved.</span> : null}
+      </div>
+      </>}
+      <p className="hint">The name is used in new reports, signature pages, letters and backup file names; documents already made keep the name they
+        were made with. The address, phone, email and EIN are available in letters, envelopes, check memos and donation receipts as
+        {" "}<code>{"{ORG.NAME}"}</code>, <code>{"{ORG.ADDRESS}"}</code>, <code>{"{ORG.CITY}"}</code>, <code>{"{ORG.EIN}"}</code> and so on.
+        {p ? <> The organization is also an entity ({p.entity_number}): choose it in the register, for example for cash collected at an event.</> : null}</p>
     </section>
   );
 }

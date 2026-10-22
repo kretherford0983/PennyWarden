@@ -155,7 +155,8 @@ def wipe(db: Session, ws_id: int, ctx, by: str, backup_name: str, via: str, befo
             cond = model.workspace_id == ws_id
         db.execute(delete(model).where(cond).execution_options(synchronize_session=False))
     # budgets reference each other (parents, continued budgets) - already deleted together above
-    db.execute(delete(Entity).where(Entity.workspace_id == ws_id, Entity.is_system.is_(False))
+    db.execute(delete(Entity).where(Entity.workspace_id == ws_id, Entity.is_system.is_(False),
+                                    Entity.is_organization.is_(False))      # 2.1.0 (#314): the organization stays
                .execution_options(synchronize_session=False))
     db.execute(delete(Reminder).where(Reminder.workspace_id == ws_id, Reminder.scope != "PERSONAL")
                .execution_options(synchronize_session=False))

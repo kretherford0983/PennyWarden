@@ -2711,12 +2711,26 @@ test("#126: an Administrator renames the organization, sees the effective settin
   await login(page, "admin");
   await page.getByRole("link", { name: "System/About" }).click();
   await aboutTab(page, "General");
+  const orgPanel = page.getByRole("region", { name: "Organization" });
   await page.getByLabel("Organization name").fill("E2E Org Renamed");
-  await page.getByRole("button", { name: "Rename" }).click();
+  await orgPanel.getByRole("button", { name: "Save" }).click();
   await expect(page.locator(".brand")).toContainText("E2E Org Renamed");
   await page.getByLabel("Organization name").fill("E2E Org");
-  await page.getByRole("button", { name: "Rename" }).click();
+  await orgPanel.getByRole("button", { name: "Save" }).click();
   await expect(page.locator(".brand")).toContainText("E2E Org");
+  // 2.1.0 (#314): the organization profile - address, phone, email and EIN (made up). Typed straight away, while the
+  // rename may still be saving: what is typed must not be overwritten when that save answers.
+  await orgPanel.getByLabel("Street address").fill("100 Example Street");
+  await orgPanel.getByLabel("City").fill("Sampletown");
+  await orgPanel.getByLabel("State").fill("US");
+  await orgPanel.getByLabel("ZIP code").fill("55555");
+  await orgPanel.getByLabel("Email").fill("office@example.org");
+  await orgPanel.getByLabel("EIN (Employer Identification Number)").fill("12-3456789");
+  await orgPanel.getByRole("button", { name: "Save" }).click();
+  await expect(orgPanel.getByRole("status")).toHaveText("Saved.");
+  await expect(orgPanel.getByLabel("Street address")).toHaveValue("100 Example Street");
+  await expect(orgPanel.getByLabel("City")).toHaveValue("Sampletown");
+  await page.screenshot({ path: "e2e-screenshots/light-organization-profile.png" });
   await aboutTab(page, "Settings");
   const settings = page.getByRole("region", { name: "Settings" });
   await expect(settings.getByRole("row", { name: /Session idle timeout \(minutes\) 30 default/ })).toBeVisible();
@@ -3262,12 +3276,11 @@ test("#312: Donations module - Administrator sets up the receipt; a Register Use
   await expect(page.getByRole("status").filter({ hasText: "Saved." })).toBeVisible();
   await page.reload();
   await page.getByRole("link", { name: "Donations Setup" }).click();
-  await expect(page.getByTestId("setup-missing")).toContainText("the organization's EIN");
+  // 2.1.0 (#314): the EIN and address come from the organization profile (entered in the #126 test)
+  await expect(page.getByTestId("setup-missing")).toHaveCount(0);
+  await expect(page.getByTestId("donation-org")).toContainText("12-3456789");
+  await expect(page.getByTestId("donation-org")).toContainText("Sampletown, US 55555");
   await expect(page.getByRole("img", { name: "Donation receipt preview" })).toBeVisible();
-  await page.getByLabel("EIN (Employer Identification Number)").fill("12-3456789");
-  await page.getByLabel("Address line 1").fill("100 Example Street");
-  await page.getByRole("button", { name: "Add a line" }).click();
-  await page.getByLabel("Address line 2").fill("Sampletown, US 55555");
   await page.getByLabel("Signer's name").fill("Pat Example");
   await page.getByLabel("Signer's title").fill("Treasurer");
   await page.getByRole("button", { name: "Save" }).click();
@@ -3282,6 +3295,10 @@ test("#312: Donations module - Administrator sets up the receipt; a Register Use
 
   // Register User: a deposit from two made-up donors
   await login(page, "ru1", "Brand-New-Pass-99");
+  // 2.1.0 (#314): the organization is an entity too, maintained in System/About
+  await page.goto("/entities");
+  await expect(page.getByRole("row", { name: /E2E Org/ }).getByTestId("org-badge")).toBeVisible();
+  await expect(page.getByRole("row", { name: /E2E Org/ })).toContainText("System/About");
   const post = await apiAs(page);
   const today = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
   const accts = (await (await page.request.get("/api/bank-accounts")).json()).filter((a: any) => a.register_enabled && a.status === "ACTIVE");

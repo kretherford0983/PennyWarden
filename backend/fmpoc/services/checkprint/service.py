@@ -33,6 +33,7 @@ from ...models import (Attachment, BankAccount, Budget, CheckAccount, CheckDocum
 from ...money import fmt
 from ...security import crypto
 from .. import attachments as att_svc
+from .. import organization as org_svc
 from .. import checks as checknum
 from .. import register as reg
 from ..common import budget_display_code, get_scoped
@@ -507,6 +508,7 @@ def variable_values(db: Session, t: RegisterTransaction, cfg: cfgmod.StyleConfig
         "TODAY": format_date(dt.date.today(), cfg.date_format),
         "PAYEE_ADDRESS": "\n".join(address_lines(t.parent_entity)),
         "SIGNER": "", "SIGNER_TITLE": "",
+        **{k: v for k, v in org_svc.values_for(db, t.workspace_id).items() if k.startswith("ORG.")},   # #314
     }
 
 
@@ -909,6 +911,8 @@ SAMPLE_VALUES = {
              "DESCRIPTION": "Supplies and services delivered in September for the annual event and others",
              "NOTES": "Sample notes", "ORG": "Sample Organization", "ACCOUNT": "Checking", "CHECK_NUMBER": "1001"},
 }
+for _v in SAMPLE_VALUES.values():                  # 2.1.0 (#314): a sample organization profile
+    _v.update({k: v for k, v in org_svc.SAMPLE.items() if k.startswith("ORG.")})
 SAMPLE_CENTS = {"NORMAL": 319930, "LONG": 98765432}
 # kept for tests that draw the long sample directly
 SAMPLES = {k: render.Content(SAMPLE_CENTS[k], "", SAMPLE_VALUES[k]["PAYEE"],

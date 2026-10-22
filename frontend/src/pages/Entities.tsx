@@ -41,12 +41,13 @@ export default function Entities() {
               const locked = e.is_financial_institution && !canFi;
               return (
                 <tr key={e.id} className={e.active ? "" : "inactive"}>
-                  <td>{e.entity_number}</td><td>{e.display_name}</td><td>{e.entity_type === "INDIVIDUAL" ? "Individual" : "Organization"}</td>
+                  <td>{e.entity_number}</td><td>{e.display_name}{e.is_organization ? <> <span className="badge green" data-testid="org-badge">Your organization</span></> : null}</td><td>{e.entity_type === "INDIVIDUAL" ? "Individual" : "Organization"}</td>
                   <td>{[e.email, e.phone_display || e.phone, e.city].filter(Boolean).join(" · ")}</td>
                   <td>{e.is_financial_institution ? "Yes" : "No"}</td><td>{e.active ? "Active" : "Inactive"}</td>
                   {manage ? (
                     <td className="actions-cell">
-                      {locked ? <span className="muted" title="Only a Budget Manager can maintain Financial Institutions">Budget Manager only</span> : (
+                      {e.is_organization ? <span className="muted" title="An Administrator changes it in System/About → Organization">System/About</span>
+                        : locked ? <span className="muted" title="Only a Budget Manager can maintain Financial Institutions">Budget Manager only</span> : (
                         <>
                           <button className="small" onClick={() => setEdit(e)}>Edit</button>
                           <RowMenu name={e.display_name} actions={[

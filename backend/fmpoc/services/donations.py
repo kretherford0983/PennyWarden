@@ -23,12 +23,11 @@ import datetime as dt
 import hashlib
 import io
 import json
-import re
 from dataclasses import dataclass, field
 from typing import Literal
 from xml.sax.saxutils import escape
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.platypus import KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
@@ -41,13 +40,13 @@ from ..models import (Attachment, DonationLine, DonationReceipt, DonationSetting
                       Workspace, utcnow)
 from . import register as reg
 from .checkprint import config as cfgmod
+from . import organization as org_svc
 from .checkprint import fonts, patterns
 from .checkprint.service import _commit_or_unlink, _store_doc_copy, address_lines, format_date
 from .common import get_scoped
 
 RECEIPT_COPY = "DONATION_RECEIPT"          # Attachment.document_type of a receipt's record copy (system generated)
 ORIGINAL, DUPLICATE, CORRECTED = "ORIGINAL", "DUPLICATE", "CORRECTED"
-EIN_RE = re.compile(r"^\d{2}-\d{7}$")
 PT = 72.0
 NO_GOODS = "No goods or services were provided in exchange for this contribution."
 
@@ -83,38 +82,25 @@ def _check(text: str, what: str) -> None:
 
 class ReceiptConfig(BaseModel):
     model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
-    ein: str = Field(default="", max_length=10)
-    org_address: list[str] = Field(default_factory=list, max_length=4)
     font: Literal["SANS", "SERIF", "CARLITO"] = "CARLITO"
     size: float = Field(default=11, ge=8, le=14)
     date_format: Literal["MM/DD/YYYY", "MM/DD/YY", "YYYY-MM-DD", "MONTH D, YYYY"] = "MONTH D, YYYY"
     title: str = Field(default="Donation Receipt", max_length=120)
     salutation: str = Field(default="Dear {DONOR_NAME},", max_length=200)
-    body: str = Field(default="Thank you for your generous contribution to {ORG_NAME}. Your support makes our work "
+    body: str = Field(default="Thank you for your generous contribution to {ORG.NAME}. Your support makes our work "
                               "possible.\n\nPlease keep this letter as the written acknowledgment of your "
                               "contribution.", max_length=2000)
     closing: str = Field(default="With gratitude,", max_length=200)
     signer_name: str = Field(default="", max_length=120)
     signer_title: str = Field(default="", max_length=120)
 
-    @field_validator("ein")
+    @model_validator(mode="before")
     @classmethod
-    def _ein(cls, v):
-        if v and not EIN_RE.match(v):
-            raise ValueError("The EIN is 9 digits written as 12-3456789.")
+    def _moved(cls, v):
+        """2.1.0 (#314): the EIN and address moved to the organization profile; older saved settings carry them."""
+        if isinstance(v, dict):
+            v = {k: x for k, x in v.items() if k not in ("ein", "org_address")}
         return v
-
-    @field_validator("org_address")
-    @classmethod
-    def _addr(cls, v):
-        out = []
-        for line in v:
-            line = (line or "").strip()
-            if len(line) > 200 or "\n" in line:
-                raise ValueError("Each address line is one line of at most 200 characters.")
-            if line:
-                out.append(line)
-        return out
 
     @model_validator(mode="after")
     def _patterns(self):
@@ -146,21 +132,28 @@ def get_config(db: Session, ws_id: int) -> ReceiptConfig:
     return ReceiptConfig.model_validate(json.loads(row.config_json)) if row else ReceiptConfig()
 
 
-def missing_setup(cfg: ReceiptConfig) -> list[str]:
-    """What a receipt can't be printed without."""
+def missing_setup(db: Session, ws_id: int) -> list[str]:
+    """What a receipt can't be printed without (#314: from the organization profile in System/About)."""
+    e = org_svc.get(db, ws_id)
     out = []
-    if not cfg.ein:
+    if not (e and e.ein):
         out.append("the organization's EIN")
-    if not cfg.org_address:
-        out.append("the organization's mailing address")
+    if not org_svc.address_lines(e):
+        out.append("the organization's address")
     return out
+
+
+def organization_out(db: Session, ws_id: int) -> dict:
+    v = org_svc.values_for(db, ws_id)
+    return {"name": v["ORG.NAME"], "address": [x for x in v["ORG.ADDRESS"].split("\n") if x], "ein": v["ORG.EIN"]}
 
 
 def setup_out(db: Session, ctx) -> dict:
     cfg = get_config(db, ctx.workspace_id)
     row = _settings_row(db, ctx.workspace_id)
     return {"config": cfg.model_dump(), "defaults": ReceiptConfig().model_dump(), "saved": row is not None,
-            "missing": missing_setup(cfg), "variables": patterns.variable_options(patterns.RECEIPT),
+            "missing": missing_setup(db, ctx.workspace_id), "organization": organization_out(db, ctx.workspace_id),
+            "variables": patterns.variable_options(patterns.RECEIPT),
             "date_formats": list(cfgmod.DATE_FORMATS), "no_goods_statement": NO_GOODS}
 
 
@@ -186,9 +179,7 @@ class ReceiptData:
     number: str
     kind: str
     kind_note: str                       # "" for an ORIGINAL
-    org_name: str
-    org_address: list[str]
-    ein: str
+    org: dict[str, str]                  # #314: the {ORG.*} values of the organization profile
     donor_name: str
     donor_address: list[str]
     amount_cents: int
@@ -215,8 +206,7 @@ def values_for(cfg: ReceiptConfig, data: ReceiptData) -> dict[str, str]:
     return {"DONOR_NAME": data.donor_name, "DONOR_ADDRESS": "\n".join(data.donor_address),
             "AMOUNT": f"{data.amount_cents // 100:,}.{data.amount_cents % 100:02d}",
             "DATE_RECEIVED": format_date(data.date_received, cfg.date_format),
-            "PURPOSE": "; ".join(data.purposes), "ORG_NAME": data.org_name, "ORG_ADDRESS": "\n".join(data.org_address),
-            "ORG_EIN": data.ein, "RECEIPT_NO": data.number, "SIGNER": cfg.signer_name,
+            "PURPOSE": "; ".join(data.purposes), **data.org, "RECEIPT_NO": data.number, "SIGNER": cfg.signer_name,
             "SIGNER_TITLE": cfg.signer_title, "TODAY": format_date(data.today, cfg.date_format)}
 
 
@@ -259,8 +249,8 @@ def receipt_pdf(cfg: ReceiptConfig, data: ReceiptData, sample: bool = False) -> 
             c.drawCentredString(0, 0, "SAMPLE - NOT A RECEIPT")
         c.restoreState()
 
-    story = [Paragraph(escape(data.org_name), strong)]
-    story += [Paragraph(escape(x), base) for x in data.org_address]
+    story = [Paragraph(escape(data.org["ORG.NAME"]), strong)]
+    story += [Paragraph(escape(x), base) for x in data.org["ORG.ADDRESS"].split("\n") if x]
     story += [Spacer(1, size * 1.2), Paragraph(escape(format_date(data.today, cfg.date_format)), base),
               Spacer(1, size * 1.2)]
     story += [Paragraph(escape(x), base) for x in [data.donor_name] + data.donor_address]
@@ -276,7 +266,7 @@ def receipt_pdf(cfg: ReceiptConfig, data: ReceiptData, sample: bool = False) -> 
         for p in _paras(texts[key]):
             story += [Paragraph(p, base), Spacer(1, size * 0.7)]
     # the acknowledgment block: always printed, not part of the template
-    rows = [("Organization", data.org_name), ("EIN", data.ein), ("Donor", data.donor_name),
+    rows = [("Organization", data.org["ORG.NAME"]), ("EIN", data.org["ORG.EIN"]), ("Donor", data.donor_name),
             ("Date received", format_date(data.date_received, cfg.date_format)),
             ("Amount", money(data.amount_cents))]
     if data.purposes:
@@ -294,7 +284,7 @@ def receipt_pdf(cfg: ReceiptConfig, data: ReceiptData, sample: bool = False) -> 
     if cfg.signer_name:
         sign.append(f"<font name='{bold}'>{escape(cfg.signer_name)}</font>")
     if cfg.signer_title:
-        sign.append(escape(", ".join(x for x in (cfg.signer_title, data.org_name) if x)))
+        sign.append(escape(", ".join(x for x in (cfg.signer_title, data.org["ORG.NAME"]) if x)))
     if sign:                                            # room to sign by hand above the name (no signature image)
         block += [Spacer(1, size * 2.6), Paragraph("<br/>".join(sign), base)]
     if block:
@@ -311,12 +301,19 @@ def receipt_pdf(cfg: ReceiptConfig, data: ReceiptData, sample: bool = False) -> 
 SAMPLE_DONOR = ["SAMPLE DONOR", "123 Main Street", "Sample Town, US 55555"]
 
 
+def _org_or_placeholders(db: Session, ws_id: int) -> dict[str, str]:
+    """The preview shows the real organization profile (not financial data), with placeholders for what's missing."""
+    v = dict(org_svc.values_for(db, ws_id))
+    if not v["ORG.ADDRESS"]:
+        v["ORG.ADDRESS"] = v["ORG_ADDRESS"] = "(organization address - System/About)"
+    if not v["ORG.EIN"]:
+        v["ORG.EIN"] = v["ORG_EIN"] = "00-0000000"
+    return v
+
+
 def sample_data(db: Session, ctx, cfg: ReceiptConfig) -> ReceiptData:
-    ws = db.get(Workspace, ctx.workspace_id)
     return ReceiptData(number=f"R-{dt.date.today().year}-0000", kind=ORIGINAL, kind_note="",
-                       org_name=ws.name if ws else "SAMPLE ORGANIZATION",
-                       org_address=cfg.org_address or ["(organization mailing address)"],
-                       ein=cfg.ein or "00-0000000", donor_name=SAMPLE_DONOR[0], donor_address=SAMPLE_DONOR[1:],
+                       org=_org_or_placeholders(db, ctx.workspace_id), donor_name=SAMPLE_DONOR[0], donor_address=SAMPLE_DONOR[1:],
                        amount_cents=25000, date_received=dt.date.today(), purposes=["General support"])
 
 
@@ -409,9 +406,10 @@ def transaction_out(db: Session, ctx, t: RegisterTransaction) -> dict:
         "transaction_id": t.id, "status": t.status, "date": t.transaction_date.isoformat(),
         "total": money(t.total_cents), "printable": printable,
         "closed": reg.is_closed_protected(db, t),
-        "setup_missing": missing_setup(cfg),
+        "setup_missing": missing_setup(db, ctx.workspace_id),
         "lines": [{"allocation_id": a.id, "donor_entity_id": (_donor(t, a).id if _donor(t, a) else None),
                    "donor": (_donor(t, a).display_name if _donor(t, a) else ""), "description": a.description or "",
+                   "donor_is_organization": bool(_donor(t, a) and _donor(t, a).is_organization),
                    "amount": money(a.amount_cents), "amount_cents": a.amount_cents,
                    "donation": a.id in lines,
                    "purpose": lines[a.id].purpose if a.id in lines else None,
@@ -472,6 +470,9 @@ def set_lines(db: Session, ctx, t: RegisterTransaction, items: list[LineIn]) -> 
         if _donor(t, a) is None:
             raise validation("This line has no entity (donor). Add the donor to the deposit first.",
                              f"lines.{i}.donation")
+        if _donor(t, a).is_organization:          # 2.1.0 (#314): e.g. lump cash recorded as the organization's
+            raise validation("This line's entity is your own organization, so it can't be a donation with a receipt. "
+                             "Record the donor as the line's entity.", f"lines.{i}.donation")
         goods = it.goods_cents or None
         if goods is not None and goods > a.amount_cents:
             raise validation("The goods or services value can't be more than the line's amount.",
@@ -509,17 +510,16 @@ def print_receipt(db: Session, ctx, settings, t: RegisterTransaction, donor_enti
         raise conflict("FISCAL_YEAR_CLOSED", "The deposit belongs to a Closed Fiscal Year and cannot be printed. Its "
                                              "receipts are attached to it.")
     cfg = get_config(db, ctx.workspace_id)
-    missing = missing_setup(cfg)
+    missing = missing_setup(db, ctx.workspace_id)
     if missing:
         raise conflict("SETUP_INCOMPLETE", "An Administrator must enter " + " and ".join(missing) +
-                       " in Donations Setup before receipts can be printed.")
+                       " in System/About → Organization before receipts can be printed.")
     g = _donor_groups(db, t).get(donor_entity_id)
     if g is None:
         raise not_found("Donor")
     receipts = _receipts(db, t)
     cur = _current(receipts, donor_entity_id)
     sha = _content_sha(t, g)
-    ws = db.get(Workspace, ctx.workspace_id)
     e = g["entity"]
     if cur is not None and cur.content_sha == sha:
         kind, number, year, seq = DUPLICATE, cur.number, cur.year, cur.seq
@@ -531,8 +531,8 @@ def print_receipt(db: Session, ctx, settings, t: RegisterTransaction, donor_enti
         kind = ORIGINAL if cur is None else CORRECTED
         note = "" if cur is None else (f"CORRECTED receipt: replaces receipt {cur.number} printed "
                                        f"{format_date(cur.printed_at.date(), cfg.date_format)}.")
-    data = ReceiptData(number=number, kind=kind, kind_note=note, org_name=ws.name, org_address=cfg.org_address,
-                       ein=cfg.ein, donor_name=e.display_name, donor_address=address_lines(e),
+    data = ReceiptData(number=number, kind=kind, kind_note=note, org=org_svc.values_for(db, ctx.workspace_id),
+                       donor_name=e.display_name, donor_address=address_lines(e),
                        amount_cents=g["amount"], date_received=t.transaction_date, purposes=g["purposes"],
                        goods=g["goods"])
     warnings = []
