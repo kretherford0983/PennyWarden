@@ -561,6 +561,8 @@ class FundraiserLineIn(In):
     exclusion_reason: OptStr(500) = None
     classification: FundraiserClassificationIn | None = None
     buckets: list[FundraiserBucketAmountIn] = Field(default_factory=list, max_length=30)
+    # 2.1.0 (#303): the contributor shown on the reports for the part of the line in no bucket (e.g. "Cash")
+    contributor_override: OptStr(120) = None
 
 
 # ------------------------------------------------------------------ v1.6.3 CR-036 reminders

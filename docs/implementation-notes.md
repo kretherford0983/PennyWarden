@@ -48,6 +48,19 @@ could not otherwise be corrected. Scope and safeguards:
 - Audited as `TRANSACTION_VOID_DATE_CORRECTED` with before/after snapshots and the reason.
 - Tests: `backend/tests/test_cr001_void_date.py` (5 tests) and E2E "CR-001".
 
+**2.1.0 — contributor override for lines in no bucket (#303, Kyle 2026-10-21).**
+- New table `fundraiser_line_contributor` (migration `0043`): one row per fundraiser and line, holding the
+  contributor shown for the part of the line in no bucket. Bucket parts keep `fundraiser_bucket_line.contributor_override`
+  (`0042`).
+- `set_line` takes a line-level `contributor_override`. It is saved with the rest of the line and appears in the
+  `FUNDRAISER_LINE_UPDATED` before/after, and it is deleted when the line is excluded. `_lines()` puts it on each row
+  (none for an excluded line).
+- `fundraiser_summary`: `line()` uses the bucket's override for a bucket part, and the line's own for the *Other* part.
+  The plain line list uses the line's own. With names off, `who()` numbers it as its own *Contributor N*, as before.
+- The table is also covered by `has_management_data` (a fundraiser with one is archived, not deleted), by
+  `_drop_orphan_adjustments` and by reinitialize's wipe.
+- Tests: `backend/tests/test_v210_line_contributor.py` (5 tests) and the E2E fundraiser line test.
+
 **2.1.0 — private test data set (#272, Kyle 2026-10-20/21).**
 - `scripts/test_data.py` is called as `scripts/demo_data.py --profile test`; the demo profile is unchanged.
   - It reuses the demo's API client and makes everything through the web API of a new installation, so every rule

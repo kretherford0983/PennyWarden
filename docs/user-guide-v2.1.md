@@ -189,6 +189,11 @@ on reports** next to the bucket in **Manage** and type what should show instead:
 It applies to that bucket's part of the line, so a deposit split between two buckets can show a different name for
 each. With *Show contributor names* off, the report still shows "Contributor 1, 2…".
 
+For the part of a line that is in **no bucket** (shown under *Other (not in a bucket)*), and for every line of a
+fundraiser without buckets (the plain line list), use **Different contributor on reports** in the separate
+*Contributor for the part in no bucket* box of **Manage**. The lines table shows the name after the buckets
+(*not in a bucket: shown as "…"*). (#303)
+
 ### Charge less a credit
 Sometimes a bill is a full charge less a credit: a $1,500 venue invoice less $500 that teams pre-paid, paid with a
 $1,000 check. In **Manage** on the line, tick **Charge less a credit** next to the bucket and enter the **Charge**

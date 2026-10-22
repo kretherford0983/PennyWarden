@@ -110,7 +110,8 @@ def summary(db: Session, ctx, f: Fundraiser, *, itemized: bool = True, names: bo
         return a.description or "Expense"
 
     def line(r, amount: int, bl=None) -> dict:
-        w = who(r, bl.contributor_override if bl is not None else None)
+        # a bucket's part: that bucket's override; the part in no bucket: the line's own (#303)
+        w = who(r, bl.contributor_override if bl is not None else r.get("contributor_override"))
         note = r["a"].description if r["kind"] == "INCOME" and r["a"].description != w else None
         d = {"date": r["t"].transaction_date.isoformat(), "who": w, "amount": fmt(amount), "note": note, "charge": None, "less": None,
              "less_description": None}
@@ -212,7 +213,7 @@ def summary(db: Session, ctx, f: Fundraiser, *, itemized: bool = True, names: bo
     plain = []
     if plain_lines and not has_buckets:
         for r in rows:
-            plain.append({"date": r["t"].transaction_date.isoformat(), "who": who(r),
+            plain.append({"date": r["t"].transaction_date.isoformat(), "who": who(r, r.get("contributor_override")),
                           "income": fmt(r["eff"]) if r["kind"] == "INCOME" else None,
                           "expense": fmt(r["eff"]) if r["kind"] == "EXPENSE" else None})
     # cumulative income and net by transaction date (for the presentation's "revenue over time")

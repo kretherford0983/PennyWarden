@@ -27,7 +27,8 @@ from .. import audit
 from ..errors import AppError, not_found, validation
 from ..models import (Attachment, BankAccount, Budget, FiscalYear, Fundraiser, FundraiserBucket, FundraiserBucketCategory,
                       FundraiserBucketLine,
-                      FundraiserBudget, FundraiserClassification, FundraiserExclusion, RegisterTransaction,
+                      FundraiserBudget, FundraiserClassification, FundraiserExclusion, FundraiserLineContributor,
+                      RegisterTransaction,
                       TransactionAllocation, Workspace, utcnow)
 from ..money import fmt, parse_amount
 from . import bank_accounts as bank
@@ -378,6 +379,8 @@ def _lines(db: Session, f: Fundraiser) -> tuple[list[dict], int]:
          .order_by(RegisterTransaction.transaction_date, RegisterTransaction.id, TransactionAllocation.id))
     excl = {x.allocation_id: x for x in db.scalars(select(FundraiserExclusion).where(FundraiserExclusion.fundraiser_id == f.id))}
     cls = {x.allocation_id: x for x in db.scalars(select(FundraiserClassification).where(FundraiserClassification.fundraiser_id == f.id))}
+    shown = {x.allocation_id: x.contributor_override for x in db.scalars(
+        select(FundraiserLineContributor).where(FundraiserLineContributor.fundraiser_id == f.id))}   # 2.1.0 (#303)
     assigned: dict[int, list[FundraiserBucketLine]] = defaultdict(list)
     for bl in db.scalars(select(FundraiserBucketLine).join(FundraiserBucket, FundraiserBucket.id == FundraiserBucketLine.bucket_id)
                          .where(FundraiserBucket.fundraiser_id == f.id).order_by(FundraiserBucketLine.id)):
@@ -394,12 +397,14 @@ def _lines(db: Session, f: Fundraiser) -> tuple[list[dict], int]:
         buckets = [] if ex else assigned.get(a.id, [])
         rows.append({"a": a, "t": t, "kind": kind, "fiscal_year_id": fy_id, "excluded": ex, "classification": c,
                      "classified": classified, "eff": eff, "buckets": buckets,
-                     "unassigned": max(0, eff - sum(b.amount_cents for b in buckets))})
+                     "unassigned": max(0, eff - sum(b.amount_cents for b in buckets)),
+                     "contributor_override": None if ex else shown.get(a.id)})
     return rows, skipped
 
 
 def has_management_data(db: Session, f: Fundraiser) -> bool:
-    for model in (FundraiserExclusion, FundraiserClassification, FundraiserBucket, FundraiserBucketCategory):
+    for model in (FundraiserExclusion, FundraiserClassification, FundraiserBucket, FundraiserBucketCategory,
+                  FundraiserLineContributor):
         if db.scalar(select(model.id).where(model.fundraiser_id == f.id).limit(1)) is not None:
             return True
     return db.scalar(select(Attachment.id).where(Attachment.fundraiser_id == f.id, Attachment.active.is_(True)).limit(1)) is not None
@@ -414,6 +419,7 @@ def _drop_orphan_adjustments(db: Session, f: Fundraiser) -> int:
     bucket_ids = list(db.scalars(select(FundraiserBucket.id).where(FundraiserBucket.fundraiser_id == f.id)))
     items = [*db.scalars(select(FundraiserExclusion).where(FundraiserExclusion.fundraiser_id == f.id)),
              *db.scalars(select(FundraiserClassification).where(FundraiserClassification.fundraiser_id == f.id)),
+             *db.scalars(select(FundraiserLineContributor).where(FundraiserLineContributor.fundraiser_id == f.id)),
              *(db.scalars(select(FundraiserBucketLine).where(FundraiserBucketLine.bucket_id.in_(bucket_ids))) if bucket_ids else [])]
     for x in items:
         a = db.get(TransactionAllocation, x.allocation_id)
@@ -590,6 +596,7 @@ def detail(db: Session, ctx, f: Fundraiser) -> dict:
             "counted": fmt(r["eff"]),
             "buckets": [bucket_line_out(b) for b in r["buckets"]],
             "unassigned": fmt(r["unassigned"]),
+            "contributor_override": r["contributor_override"],   # 2.1.0 (#303): the part in no bucket
             "over_assigned": sum(b.amount_cents for b in r["buckets"]) > r["eff"],
             "read_only": closed_fy.get(r["fiscal_year_id"], False),
         })
@@ -782,14 +789,17 @@ def _line_state(db: Session, f: Fundraiser, allocation_id: int) -> dict:
     bls = list(db.scalars(select(FundraiserBucketLine).join(FundraiserBucket, FundraiserBucket.id == FundraiserBucketLine.bucket_id)
                           .where(FundraiserBucket.fundraiser_id == f.id, FundraiserBucketLine.allocation_id == allocation_id)
                           .order_by(FundraiserBucketLine.bucket_id)))
-    return {"ex": ex, "c": c, "bls": bls}
+    lc = db.scalar(select(FundraiserLineContributor).where(FundraiserLineContributor.fundraiser_id == f.id,
+                                                           FundraiserLineContributor.allocation_id == allocation_id))
+    return {"ex": ex, "c": c, "bls": bls, "lc": lc}
 
 
 def _line_snapshot(st: dict) -> dict:
     return {"excluded": st["ex"] is not None, "exclusion_reason": st["ex"].reason if st["ex"] else None,
             "classification": None if st["c"] is None else {"kind": st["c"].kind, "amount": fmt(st["c"].amount_cents),
                                                            "note": st["c"].note},
-            "buckets": [bucket_line_out(x) for x in st["bls"]]}
+            "buckets": [bucket_line_out(x) for x in st["bls"]],
+            "contributor_override": st["lc"].contributor_override if st["lc"] else None}
 
 
 def set_line(db: Session, ctx, f: Fundraiser, allocation_id: int, body) -> None:
@@ -827,6 +837,8 @@ def set_line(db: Session, ctx, f: Fundraiser, allocation_id: int, body) -> None:
             db.delete(st["c"])
         for bl in st["bls"]:
             db.delete(bl)
+        if st["lc"] is not None:
+            db.delete(st["lc"])
     else:
         if st["ex"] is not None:
             db.delete(st["ex"])
@@ -869,6 +881,16 @@ def set_line(db: Session, ctx, f: Fundraiser, allocation_id: int, body) -> None:
             db.add(FundraiserBucketLine(bucket_id=bucket_id, allocation_id=allocation_id, amount_cents=net,
                                         charge_cents=charge, less_cents=less, less_description=desc,
                                         contributor_override=shown[bucket_id]))
+        # 2.1.0 (#303): the contributor shown for the part of the line in no bucket
+        line_shown = (getattr(body, "contributor_override", None) or "").strip() or None
+        if line_shown is None:
+            if st["lc"] is not None:
+                db.delete(st["lc"])
+        elif st["lc"] is None:
+            db.add(FundraiserLineContributor(fundraiser_id=f.id, allocation_id=allocation_id,
+                                             contributor_override=line_shown, created_by_user_id=ctx.user.id))
+        else:
+            st["lc"].contributor_override = line_shown
     db.flush()
     after = _line_snapshot(_line_state(db, f, allocation_id))
     if after != before:

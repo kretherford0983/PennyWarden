@@ -107,6 +107,9 @@ PennyWarden 2.1.0 (in progress).
   event and the change on the year before, to help decide which fundraisers to keep offering. (#277)
   To report on this year's fundraiser only, untick **Include year over year** in the fundraiser's *Report…* dialog.
   It applies to the PDF, the Word file and the presentation. (#300)
+- **Different contributor on reports, also outside buckets.** *Manage line* can now show a different contributor for
+  the part of a line in no bucket, or for the whole line when the fundraiser has no buckets. It is shown under *Other
+  (not in a bucket)* and in the plain line list, like the per-bucket override (e.g. "Cash"). (#303)
 - **Bucket categories.** Group a fundraiser's buckets under optional categories (for example *Sponsorships*,
   *Registrations*, *Day-of event*), one category per bucket or none. The Buckets table shows each category with its
   buckets beneath and a subtotal of income, expenses and net, and so does the fundraiser section of the Audit and
