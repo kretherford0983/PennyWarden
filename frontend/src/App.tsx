@@ -21,6 +21,7 @@ import Reports from "./pages/Reports";
 import Fundraisers, { FundraiserDetail } from "./pages/Fundraisers";
 import FundraiserSeries from "./pages/FundraiserSeries";
 import CheckSetup from "./pages/CheckSetup";
+import DonationSetup from "./pages/Donations";
 import Payments from "./pages/Payments";
 import Notifications, { REMINDERS_CHANGED } from "./pages/Notifications";
 import { AdminSecurityNotices, SignInNotices } from "./pages/Recovery";
@@ -50,7 +51,7 @@ export interface Me {
   dashboard_layout?: { key: string; visible: boolean }[]; // v1.5.0 CR-031
   dashboard_layout_customized?: boolean;
   register_sort?: string; // 2.1.0 (#262): "transaction_date:asc" | "transaction_date:desc" | "clear_date:asc" | "clear_date:desc"
-  modules?: { fundraisers?: boolean; checks?: boolean }; // v1.6.0 CR-033; 2.0.0 (#156) Check Printing
+  modules?: { fundraisers?: boolean; checks?: boolean; donations?: boolean }; // v1.6.0 CR-033; 2.0.0 (#156) Check Printing; 2.1.0 (#312) Donations
   mfa_pending?: "VERIFY" | "ENROLL" | "PASSWORD" | "QUESTIONS" | null; // v1.4.1 CR-018; 1.8.0 (#113) setup steps
   sign_in_notices?: { kind: string; message: string }[]; // 1.8.0 (#113)
   csrf_token: string;
@@ -175,6 +176,8 @@ function navFor(me: Me) {
   if (me.modules?.checks && me.permissions.includes("checks.print")) fin.splice(fin.findIndex((n) => n[0] === "/register") + 1, 0, ["/payments", "Payments"]);
   // 2.0.0 (#156): Payments Setup (check printing) for Administrators when the Payments module is on
   const checkSetup = me.modules?.checks && me.permissions.includes("checks.setup") ? [["/check-setup", "Payments Setup"]] : [];
+  // 2.1.0 (#312): Donations Setup (receipt letters) for Administrators when the Donations module is on
+  if (me.modules?.donations && me.permissions.includes("donation.setup")) checkSetup.push(["/donation-setup", "Donations Setup"]);
   if (me.security_domain === "ADMINISTRATOR") return [["/", "Dashboard"], ["/users", "Users"], ["/audit-log", "Audit Log"], ...checkSetup, ["/about", "System/About"]];
   // 2.0.0 (#126, #127): Auditors see System/About read-only (effective settings, sessions)
   if (me.security_domain === "AUDITOR") return [...fin, ["/users", "Users"], ["/audit-log", "Audit Log"], ...(me.permissions.includes("system.view") ? [["/about", "System/About"]] : [])];
@@ -231,6 +234,7 @@ function Shell({ workspace, warning, mode, onLogout }: { workspace: string; warn
   else if (path === "/fundraisers") page = guard("/fundraisers", <Fundraisers />);
   else if (path === "/fundraiser-series") page = can("fundraiser.manage") ? guard("/fundraisers", <FundraiserSeries />) : <NotAuthorized />; // 2.1.0 (#277)
   else if (path === "/check-setup") page = guard("/check-setup", <CheckSetup />);
+  else if (path === "/donation-setup") page = guard("/donation-setup", <DonationSetup />);
   else if (path === "/payments") page = guard("/payments", <Payments />);
   else if ((m = match("/fundraisers/:id", path))) page = guard("/fundraisers", <FundraiserDetail id={Number(m.id)} />);
   else page = <p>Page not found.</p>;

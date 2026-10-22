@@ -11,12 +11,14 @@ PennyWarden 2.1.0 is mostly about **fundraisers**:
 
 Budget Managers get a **Budget Review** report and a **Fiscal Year Planning Sheet**. The register adds electronic
 payments, sorting by date or cleared, and an attachments filter. Cover letters can print **fold marks**, and voucher
-checks can have the check in the middle or at the bottom.
+checks can have the check in the middle or at the bottom. A new optional **Donations module** prints donation receipt
+letters from deposits.
 
-**Upgrading from 2.0.0.** The database is updated automatically (migrations `0035` to `0044`: columns and tables
+**Upgrading from 2.0.0.** The database is updated automatically (migrations `0035` to `0045`: columns and tables
 added, no existing value changed). Going back to 2.0.0 needs the data snapshot the installer takes before upgrading
 (docs/upgrade.md). Existing check styles, letter templates and reports work as before. Fold marks are off on existing
-letters, and a fundraiser's report includes year over year only once earlier years are linked or entered.
+letters, and a fundraiser's report includes year over year only once earlier years are linked or entered. The
+Donations module is off until an Administrator turns it on.
 
 ### Register
 - **Sort by Date or Cleared.** Click the *Date* or *Cleared* heading to sort by it; click again for newest first. Each
@@ -64,6 +66,22 @@ letters, and a fundraiser's report includes year over year only once earlier yea
   two-sided printers. Their length, distance from the edge, weight and shade can be tuned. Each user can set their
   own default, and the print screen can change it for one letter. New window-envelope letters have them on; existing
   letters print as before. (#247)
+
+### Donations module (optional, new)
+- **Donation receipt letters** (part 1 of the Donations module; the year-end giving statement and the donor report
+  follow in 2.2). An Administrator turns the module on in *System/About* and, in **Donations Setup**, enters the
+  organization's **EIN** and mailing address, the receipt letter's wording (with `{VARIABLES}` such as
+  `{DONOR_NAME}` and `{AMOUNT}`) and the signer's name and title, with a live preview and a test print with sample
+  data only. In the register, **Donation receipt…** on a deposit marks its lines as donations (with an optional
+  purpose and any goods or services given in exchange) and prints **one receipt per donor**, numbered
+  *R-2026-0001*. Every receipt prints the organization's name and EIN, the donor, the amount, the date received, the
+  receipt number and the goods or services statement (*"No goods or services were provided in exchange for this
+  contribution."* by default); confirm the wording with your own tax advisor. Printing the same receipt again gives a
+  **DUPLICATE** with the same number; after a change (amount, donor, date, purpose or goods) it gives a **CORRECTED**
+  receipt with a new number that replaces the earlier one. A voided deposit's receipts show as void and can't be
+  reprinted. Printed receipts are attached to the deposit. Register Users mark and print; Budget Managers, Budget
+  Users and Auditors see the donations and receipts; Administrators never see deposits. Works with the Payments
+  module on or off. (#312)
 
 ### Budget planning (Budget Managers)
 - **Budget Review** (Reports → Budget Review). Every budget of a Fiscal Year with its history over earlier years,

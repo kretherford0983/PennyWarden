@@ -597,3 +597,9 @@ label.check.small { font-size: 12px; }
 .fr-final-btn { margin-left: 10px; }
 .fr-bucket-row { flex-wrap: wrap; }
 .fr-bucket-row .fr-who { flex-basis: 100%; }
+
+/* 2.1.0 (#312): Donations Setup - the settings beside the live preview on wide screens */
+.donation-setup .setup-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; }
+@media (min-width: 1200px) { .donation-setup .setup-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; } }
+.donation-dialog input.narrow { width: 7em; }
+.donation-dialog td .row { gap: 0.4rem; flex-wrap: nowrap; }

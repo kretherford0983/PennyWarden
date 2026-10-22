@@ -24,6 +24,7 @@ from ..services import fundraiser_fy_report as fyrep
 from ..services import fundraiser_series as series
 from ..services import fundraisers as svc
 from ..services.checkprint import service as checks_svc
+from ..services import donations as donations_svc
 from ..services.common import get_scoped
 from ..models import FiscalYear
 
@@ -31,7 +32,8 @@ router = APIRouter(prefix="/api", tags=["fundraisers"])
 
 
 def _modules(db: Session, ws_id: int) -> dict:
-    return {"fundraisers": svc.module_enabled(db, ws_id), "checks": checks_svc.module_enabled(db, ws_id)}
+    return {"fundraisers": svc.module_enabled(db, ws_id), "checks": checks_svc.module_enabled(db, ws_id),
+            "donations": donations_svc.module_enabled(db, ws_id)}
 
 
 @router.get("/system/modules")
@@ -45,6 +47,8 @@ def set_modules(body: ModulesIn, db: Session = Depends(get_db), ctx: Ctx = Depen
         svc.set_module(db, ctx, body.fundraisers)
     if body.checks is not None:   # 2.0.0 (#156)
         checks_svc.set_module(db, ctx, body.checks)
+    if body.donations is not None:   # 2.1.0 (#312)
+        donations_svc.set_module(db, ctx, body.donations)
     db.commit()
     return _modules(db, ctx.workspace_id)
 

@@ -123,6 +123,7 @@ VENDORS = ("Cedar Valley Hardware", "Northfield Utilities", "Lakeside Insurance 
            "Members (dues)", "Community donors", "Hall rental guests", "Cedar Valley Community Foundation")
 SPONSORS = ("Harper Family Dental", "Oakline Auto Repair", "Summit Ridge Realty", "Blue Heron Bakery",
             "Maplewood Pharmacy", "Ironwood Builders")
+DONORS = ("Avery Lindqvist", "Jordan Whitfield")            # made up (2.1.0, #312)
 PEOPLE = (("Taylor Brennan", "President"), ("Morgan Price", "Secretary"), ("Riley Okafor", "Event chair"),
           ("Quinn Delgado", "Volunteer"))
 
@@ -151,7 +152,7 @@ def main(base: str, start_month: int = 7, backup: str | None = None, summary: st
         admin.post("/api/users", {"username": name, "email": f"{name}@example.org", "password": Api.password,
                                   "display_name": f"{first} {last}", "first_name": first, "last_name": last,
                                   "security_domain": domain, "roles": roles})
-    admin.put("/api/system/modules", {"fundraisers": True, "checks": True})
+    admin.put("/api/system/modules", {"fundraisers": True, "checks": True, "donations": True})
     tr = Api(base).login("treasurer")              # Budget Manager + Register User (+ Register Admin)
     for u in ("budgetmgr", "bookkeeper", "auditor"):
         Api(base).login(u)                         # their first sign-in: security questions set
@@ -183,8 +184,18 @@ def main(base: str, start_month: int = 7, backup: str | None = None, summary: st
     cfg.update(memo_default="{BUDGET_CODE}, INVOICE {INVOICE}", default_signer_id=signer["id"])
     admin.put(f"/api/checks/styles/{style['id']}", {"name": "Voucher checks", "config": cfg})
     tr.put(f"/api/checks/accounts/{acct['chk']['id']}", {"check_style_id": style["id"]})
+    # ---- Donations module (2.1.0, #312): a made-up EIN and address, and two donors with addresses
+    admin.put("/api/donations/setup", {"config": {"ein": "00-0000000", "org_address": ["400 Elm Street",
+                                                                                     "Cedar Valley, IA 50000"],
+                                                  "signer_name": "Jamie Ellison", "signer_title": "Treasurer"}})
+    for name in DONORS:
+        ent[name] = tr.post("/api/entities", {"entity_type": "INDIVIDUAL", "primary_contact": name,
+                                              "address_line1": "1200 Prairie Lane", "city": "Cedar Valley",
+                                              "state_region": "IA", "postal_code": "50000",
+                                              "confirmations": ["DUPLICATE_ENTITY"]})
 
-    counts = {"transactions": 0, "printed_checks": 0, "electronic_payments": 0, "fundraisers": 0, "entered_years": 0}
+    counts = {"transactions": 0, "printed_checks": 0, "electronic_payments": 0, "fundraisers": 0, "entered_years": 0,
+              "donation_receipts": 0}
     check_no = iter(range(2101, 9999))
     budget_ids: dict[str, dict[str, int]] = {}
 
@@ -400,6 +411,20 @@ def main(base: str, start_month: int = 7, backup: str | None = None, summary: st
                      [("5000", "75.00", "Entered twice")], cleared=False)
             if dl:
                 tr.post(f"/api/transactions/{dl['id']}/delete", {"reason": "Duplicate entry"})
+            # a deposit from two donors (one bought a gala dinner), marked as donations; both receipts printed
+            dn = txn(leaf, "chk", D, min(today, fy.date(0, 24)), None,
+                     [("4100", "500.00", "Gift", {"entity_id": ent[DONORS[0]]["id"]}),
+                      ("4100", "150.00", "Gala dinner ticket", {"entity_id": ent[DONORS[1]]["id"]})], cleared=False)
+            if dn:
+                lines = [x["id"] for x in dn["allocations"]]
+                tr.put(f"/api/donations/transactions/{dn['id']}/lines", {"lines": [
+                    {"allocation_id": lines[0], "donation": True, "purpose": "Building fund"},
+                    {"allocation_id": lines[1], "donation": True, "goods_cents": 6000,
+                     "goods_description": "Gala dinner"}]})
+                for name in DONORS:
+                    tr.call("POST", f"/api/donations/transactions/{dn['id']}/receipts",
+                            {"donor_entity_id": ent[name]["id"], "confirmations": []})
+                    counts["donation_receipts"] += 1
             tr.post("/api/transfers", {"from_account_id": acct["chk"]["id"], "to_account_id": acct["sav"]["id"],
                                        "amount": "5000.00", "transaction_date": min(today, fy.date(0, 28)).isoformat(),
                                        "clear_date": min(today, fy.date(0, 28)).isoformat(),

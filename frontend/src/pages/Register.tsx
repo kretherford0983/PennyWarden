@@ -4,6 +4,7 @@ import { allocationLabel, Attachments, EntityPicker, ErrorBox, Field, Loading, M
 import { useMe } from "../App";
 import { EntityForm } from "./Entities";
 import { PrintCheckDialog } from "./CheckPrint";
+import { DonationReceiptDialog } from "./Donations";
 import { AmountPreview } from "./checkShared";
 
 // 2.1.0 (#262): the register sorts by Date or Cleared, ascending or descending, remembered per user
@@ -184,7 +185,7 @@ export default function Register() {
                       <td>{t.attachment_count ? <span aria-label={`${t.attachment_count} attachments`}>📎{t.attachment_count}</span> : ""}</td>
                     </tr>
                     {open === t.id ? (
-                      <tr className="detail-row"><td colSpan={12}><TxnDetail t={t} manage={manage} canPrintChecks={!!me.modules?.checks && can("checks.print")} onPrintCheck={() => setModal({ kind: "printcheck", txn: t })} onEdit={() => setModal({ kind: t.transfer ? "legedit" : "txn", txn: t })} onVoid={() => setModal({ kind: "void", txn: t })} onVoidDate={() => setModal({ kind: "voiddate", txn: t })} onVoidCheck={() => setModal({ kind: "voidcheck", txn: t })} onChanged={load} /></td></tr>
+                      <tr className="detail-row"><td colSpan={12}><TxnDetail t={t} manage={manage} canPrintChecks={!!me.modules?.checks && can("checks.print")} onPrintCheck={() => setModal({ kind: "printcheck", txn: t })} canDonations={!!me.modules?.donations && can("donation.view")} onDonation={() => setModal({ kind: "donation", txn: t })} onEdit={() => setModal({ kind: t.transfer ? "legedit" : "txn", txn: t })} onVoid={() => setModal({ kind: "void", txn: t })} onVoidDate={() => setModal({ kind: "voiddate", txn: t })} onVoidCheck={() => setModal({ kind: "voidcheck", txn: t })} onChanged={load} /></td></tr>
                     ) : null}
                   </Fragment>
                 ))}
@@ -200,13 +201,14 @@ export default function Register() {
       {modal?.kind === "voiddate" ? <VoidDateForm txn={modal.txn} fys={fys} onClose={() => setModal(null)} onSaved={() => { setModal(null); load(); }} /> : null}
       {modal?.kind === "voidcheck" ? <VoidCheckForm txn={modal.txn} onClose={() => setModal(null)} onSaved={() => { setModal(null); load(); }} /> : null}
       {modal?.kind === "recon" ? <ReconModal title={modal.title} recon={modal.recon} label={modal.label} onClose={() => setModal(null)} /> : null}
+      {modal?.kind === "donation" ? <DonationReceiptDialog txn={modal.txn} onClose={() => setModal(null)} onChanged={load} /> : null}
       {modal?.kind === "printcheck" ? <PrintCheckDialog txn={modal.txn} onClose={() => setModal(null)} onChanged={load} /> : null}
       {modal?.kind === "zero" ? <ZeroVoidForm account={acct} initial={modal.initial} fys={fys} onClose={() => setModal(null)} onSaved={() => { setModal(null); load(); }} /> : null}
     </div>
   );
 }
 
-function TxnDetail({ t, manage, canPrintChecks, onPrintCheck, onEdit, onVoid, onVoidDate, onVoidCheck, onChanged }: { t: any; manage: boolean; canPrintChecks: boolean; onPrintCheck: () => void; onEdit: () => void; onVoid: () => void; onVoidDate: () => void; onVoidCheck: () => void; onChanged: () => void }) {
+function TxnDetail({ t, manage, canPrintChecks, onPrintCheck, canDonations, onDonation, onEdit, onVoid, onVoidDate, onVoidCheck, onChanged }: { t: any; manage: boolean; canPrintChecks: boolean; onPrintCheck: () => void; canDonations: boolean; onDonation: () => void; onEdit: () => void; onVoid: () => void; onVoidDate: () => void; onVoidCheck: () => void; onChanged: () => void }) {
   const [note, setNote] = useState("");
   const [err, setErr] = useState<unknown>(null);
   const editable = manage && t.status === "ACTIVE" && !t.closed_fiscal_year_protected;
@@ -253,6 +255,8 @@ function TxnDetail({ t, manage, canPrintChecks, onPrintCheck, onEdit, onVoid, on
               {/* build 13 (product owner, 2026-10-14): one button - the print screen in a dialog over the register */}
               <button onClick={onPrintCheck}>{t.electronic_payment ? "Letter or envelope…" : t.check_printed ? "Reprint check or letter…" : "Create payment…"}</button>
             </> : null}
+        {/* 2.1.0 (#312): Donations module - a deposit's donation lines and receipts (void deposits show their receipts as void) */}
+        {canDonations && t.transaction_type === "DEPOSIT" && !t.transfer ? <button onClick={onDonation}>Donation receipt…</button> : null}
         {editable ? <button className="danger" onClick={onVoid}>Void…</button> : null}
         {manage && t.status === "VOID" && !t.closed_fiscal_year_protected ? <button onClick={onVoidDate}>Correct date…</button> : null}
         {manage && t.status === "VOID" && t.transaction_type === "WITHDRAWAL" && !t.transfer && !t.closed_fiscal_year_protected ? <button onClick={onVoidCheck}>Correct check number…</button> : null}
