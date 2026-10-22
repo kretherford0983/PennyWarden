@@ -41,6 +41,13 @@ PennyWarden 2.1.0 (in progress).
   affected). The table now fits the page and shows up to the last 6 years: fewer only when very large amounts would
   otherwise wrap, and the report says how many are shown. *Historical results* still lists every year. (#295)
 
+### Payments
+- **Fold marks on cover letters.** A letter template can print small, barely visible ticks at the page edges where the
+  letter folds in even thirds for a #10 envelope. They go on the front, or on the back of the first sheet for
+  two-sided printers. Their length, distance from the edge, weight and shade can be tuned. Each user can set their
+  own default, and the print screen can change it for one letter. New window-envelope letters have them on; existing
+  letters print as before. (#247)
+
 ### Budget planning (Budget Managers)
 - **Budget Prep report** (Reports → Budget Prep). Every budget of a Fiscal Year with its history over earlier years —
   budgeted, actual and the difference in dollars and percent, marked *over* or *under* — following the budget

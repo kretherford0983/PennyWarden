@@ -201,6 +201,20 @@ $1,000 check. In **Manage** on the line, tick **Charge less a credit** next to t
 counts for the line, so the fundraiser's totals still match the register. It works the same on income — a $200
 sponsorship less a $6 card fee. The Less amount can equal the charge (a fully comped item, net $0) but not exceed it.
 
+## Payments
+
+### Fold marks on cover letters
+A cover letter can print **fold marks**: four small, faint ticks at the left and right edges where the page is folded
+in even thirds for a #10 envelope, on the first sheet only.
+- **Administrators** set it on the letter template (*Payments Setup → Cover letters → Fold marks*): *No*, *On the
+  front of the page*, or *On the back of the page* (needs two-sided printing), with the tick length, distance from the
+  edge, line weight and shade. New window-envelope letters start with marks on the front.
+- **Your own default:** on the print screen, **My letter printer settings** → *Fold marks on my letters*. For example,
+  choose *On the back* when your printer prints two-sided.
+- **One letter:** the **Fold marks** choice next to the letter changes it for that letter only.
+
+With marks on the back, the print screen shows a banner: print on both sides of the paper (flip on long edge). (#247)
+
 ## For whoever runs a Linux server
 
 ### Changed `config.toml`? Run `sudo pennywarden apply-config`

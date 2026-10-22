@@ -48,6 +48,27 @@ could not otherwise be corrected. Scope and safeguards:
 - Audited as `TRANSACTION_VOID_DATE_CORRECTED` with before/after snapshots and the reason.
 - Tests: `backend/tests/test_cr001_void_date.py` (5 tests) and E2E "CR-001".
 
+**2.1.0 — fold marks on cover letters (#247, decided by Kyle 2026-10-15; built 2026-10-21).**
+- `LetterConfig` gains `fold_marks` (NONE / FRONT / BACK, default NONE, so 2.0.0 templates are unchanged),
+  `fold_length` and `fold_edge` (0.1–0.5 in; defaults 0.15 and 0.25), `fold_weight` (HAIRLINE 0.25 pt / THIN 0.5 /
+  MEDIUM 0.9) and `fold_shade` (LIGHT / MEDIUM / DARK gray). These live in the template's JSON config, so no migration
+  is needed. The WINDOW preset starts with FRONT, and the editor sets FRONT when a *new* draft chooses a window layout.
+- `documents.fold_ticks()` draws four ticks at `FOLD_LINES`. `letter_pdf(fold=...)` draws them in `onFirstPage` for
+  FRONT. For BACK, `_with_back_pages()` uses pypdf to put a ticks page after page 1 and a blank page after each other
+  page. The output is deterministic (reportlab `invariant`), so a reprint's record copy is still de-duplicated by
+  SHA-256. The test print and preview pass through `sample_letter_pdf`, so they show the ticks as well as the
+  labeled window marks.
+- **Levels:**
+  - letter: `LetterIn.fold_marks`;
+  - user: `check_printer_setting.fold_marks` on a row with `feed_key "letter"` and no style or template (migration
+    `0044`; empty = TEMPLATE; GET/PUT `/api/checks/my-printer/letter`, audited `CHECK_PRINTER_SETTINGS`);
+  - template.
+
+  `letter_fold_default()` resolves user, then template. The print-screen documents list returns `fold_default` per
+  letter and `my_letter_fold`. `CHECK_LETTER_PRINTED` records the `fold_marks` used.
+- Tests: `backend/tests/test_v210_fold_marks.py` (8 tests: tick positions from the content stream, address page,
+  back pages, tuning and limits, test print, user and letter levels, audit, access) and the E2E letter steps.
+
 **2.1.0 — scheduled backups: Kept as (#233, Kyle 2026-10-14; built 2026-10-21).**
 - `scheduled_backup.keep_levels(runs, daily, weekly, monthly)` returns each kept run's reasons ("Daily", "Weekly",
   "Monthly", or "Latest" when only being the newest keeps it). `keep_set()` is now `set(keep_levels(...))`, so

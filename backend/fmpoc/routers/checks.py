@@ -508,6 +508,7 @@ class DocTestIn(In):
 class LetterIn(In):
     document_id: int
     signer_id: int | None = None
+    fold_marks: Literal["NONE", "FRONT", "BACK"] | None = None   # 2.1.0 (#247): this letter only (default: user/template)
     confirmations: list[str] = Field(default_factory=list, max_length=10)
 
 
@@ -678,11 +679,29 @@ def document_preview_image(doc_id: int, body: DocTestIn, db: Session = Depends(g
 def transaction_documents(txn_id: int, db: Session = Depends(get_db), ctx: Ctx = Depends(print_ctx)):
     """Letter and envelope templates for the print screen, with the user's envelope printer settings."""
     svc.get_printable(db, ctx, txn_id, for_check=False)
-    letters = [svc.doc_out(d, full=False) for d in svc.list_documents(db, ctx, "LETTER", False)]
+    letters = [{**svc.doc_out(d, full=False), "fold_default": svc.letter_fold_default(db, ctx, d)}
+               for d in svc.list_documents(db, ctx, "LETTER", False)]
     envs = []
     for d in svc.list_documents(db, ctx, "ENVELOPE", False):
         envs.append({**svc.doc_out(d, full=False), "printer": svc.envelope_options(db, ctx, d)})
-    return {"letters": letters, "envelopes": envs}
+    return {"letters": letters, "envelopes": envs, "my_letter_fold": svc.my_letter_fold(db, ctx)}
+
+
+class LetterFoldIn(In):
+    fold_marks: Literal["TEMPLATE", "FRONT", "BACK"]
+
+
+@router.get("/my-printer/letter")
+def my_letter_printer(db: Session = Depends(get_db), ctx: Ctx = Depends(print_ctx)):
+    """2.1.0 (#247): the user's own cover-letter fold-mark default (My Printer Settings)."""
+    return {"fold_marks": svc.my_letter_fold(db, ctx)}
+
+
+@router.put("/my-printer/letter")
+def save_my_letter_printer(body: LetterFoldIn, db: Session = Depends(get_db), ctx: Ctx = Depends(print_ctx)):
+    v = svc.save_my_letter_fold(db, ctx, body.fold_marks)
+    db.commit()
+    return {"fold_marks": v}
 
 
 @router.post("/transactions/{txn_id}/letter")
@@ -690,7 +709,8 @@ def print_letter(txn_id: int, body: LetterIn, request: Request, db: Session = De
                  ctx: Ctx = Depends(print_ctx)):
     t = svc.get_printable(db, ctx, txn_id, for_check=False)
     d = svc.get_document(db, ctx, body.document_id, "LETTER")
-    pdf = svc.print_letter(db, ctx, request.app.state.settings, t, d, body.signer_id, body.confirmations)
+    pdf = svc.print_letter(db, ctx, request.app.state.settings, t, d, body.signer_id, body.confirmations,
+                           fold=body.fold_marks)
     return _pdf(ctx, pdf, f"letter-{t.check_number or t.id}.pdf")
 
 

@@ -906,6 +906,9 @@ class CheckPrinterSetting(Base):
     dx_mils: Mapped[int] = mapped_column(Integer, default=0)                  # thousandths of an inch, check coordinates
     dy_mils: Mapped[int] = mapped_column(Integer, default=0)
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    # 2.1.0 (#247): on the user's letter row (feed_key "letter", no style or template): cover-letter fold marks
+    # FRONT | BACK; empty = use the template's setting
+    fold_marks: Mapped[str | None] = mapped_column(String(10), nullable=True)
 
 
 class CheckDocument(Base):

@@ -2525,6 +2525,10 @@ test("#165-#166: Administrator sets up a cover letter and an envelope; a Registe
   await page.getByLabel("Address for a window envelope").selectOption("LETTER");
   await expect(page.getByLabel("Payee address – right (in)")).toBeVisible();
   await page.getByLabel("Address for a window envelope").selectOption("NONE");
+  // 2.1.0 (#247): fold marks (a saved template: choosing a window doesn't change them) - on the front, a longer tick
+  await expect(page.getByLabel("Print fold marks")).toHaveValue("NONE");
+  await page.getByLabel("Print fold marks").selectOption("FRONT");
+  await page.getByLabel("Tick length").fill("0.2");
   await page.getByRole("button", { name: "+ Add line" }).click();
   await page.getByLabel("Letterhead line 2", { exact: true }).fill("100 Example Street, Sampletown");
   await page.getByLabel("Name when there is no signer").fill("Pat Example");
@@ -2577,6 +2581,20 @@ test("#165-#166: Administrator sets up a cover letter and an envelope; a Registe
   await dlg.getByLabel("Type the check number again").fill("8301");
   await dlg.getByRole("button", { name: "Record check number" }).click();
   await expect(dlg.getByText("Check number #8301 is recorded for this payment.")).toBeVisible();
+  // 2.1.0 (#247): the letter's fold marks start from the template; on the back shows the two-sided banner
+  await expect(dlg.getByLabel("Fold marks", { exact: true })).toHaveValue("FRONT");
+  await dlg.getByLabel("Fold marks", { exact: true }).selectOption("BACK");
+  await expect(dlg.getByTestId("fold-back-banner")).toContainText("Print on both sides of the paper");
+  await page.screenshot({ path: "e2e-screenshots/light-letter-fold-marks.png" });
+  await dlg.getByRole("button", { name: "My letter printer settings" }).click();
+  await dlg.getByLabel("Fold marks on my letters").selectOption("BACK");
+  await dlg.getByRole("button", { name: "Save my setting" }).click();
+  await expect(dlg.getByRole("button", { name: "Hide (adjusted)" })).toBeVisible();
+  await dlg.getByLabel("Fold marks on my letters").selectOption("TEMPLATE");
+  await dlg.getByRole("button", { name: "Save my setting" }).click();
+  await expect(dlg.getByRole("button", { name: "Hide", exact: true })).toBeVisible();
+  await dlg.getByLabel("Fold marks", { exact: true }).selectOption("FRONT");
+  await expect(dlg.getByTestId("fold-back-banner")).toHaveCount(0);
   // the payee has no address: printing asks first
   await dlg.getByRole("button", { name: "Print cover letter" }).click();
   const cf = page.getByRole("dialog", { name: "Confirmation required" });
@@ -2827,6 +2845,7 @@ test("#217: several cover letters and envelopes, Duplicate, the window-envelope 
   await letters.getByRole("button", { name: "New window-envelope letter" }).click();
   await expect(page.getByRole("heading", { name: "Cover letter: Window envelope letter" })).toBeVisible();
   await expect(page.getByLabel("Address for a window envelope")).toHaveValue("LETTER");
+  await expect(page.getByLabel("Print fold marks")).toHaveValue("FRONT");          // #247: on for new window letters
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.getByRole("status").filter({ hasText: "Saved." })).toBeVisible();
   await page.getByRole("button", { name: "Back to Payments Setup" }).click();
