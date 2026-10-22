@@ -107,6 +107,33 @@ could not otherwise be corrected. Scope and safeguards:
 - Tests: `backend/tests/test_v210_fold_marks.py` (8 tests: tick positions from the content stream, address page,
   back pages, tuning and limits, test print, user and letter levels, audit, access) and the E2E letter steps.
 
+**2.1.0 — Donations module, part 1: receipt letters (#312, Kyle 2026-10-22; part of #256).**
+- Module switch `workspace.donations_enabled` (migration `0045`, off), the same pattern as Fundraisers and Payments:
+  `services/donations.module_enabled/require_module/set_module` (audit `MODULE_ENABLED`/`MODULE_DISABLED`,
+  entity "donations"), `ModulesIn.donations`, `/api/auth/me` `modules.donations`, diagnostics.
+- Permissions: `donation.setup` (Administrator), `donation.print` (Register User), `donation.view` (Budget Manager,
+  Budget User, Register User, Auditor). Every `/api/donations` route also needs the module (404 MODULE_DISABLED).
+- Setup: `donation_settings.config_json` validated by `ReceiptConfig` (EIN `^\d{2}-\d{7}$`, up to 4 address lines,
+  font, size, date format, title/salutation/body/closing as `RECEIPT` patterns, signer name and title). Audit
+  `DONATION_SETUP_UPDATED` with before/after. Preview, preview-image (PNG via `raster`) and test print use sample data
+  only (`DONATION_RECEIPT_TEST` audited); printing is refused until the EIN and address are set (409
+  SETUP_INCOMPLETE).
+- Marking: `donation_line` per allocation (unique), purpose, goods value and description (value ≤ the line's amount,
+  description required with a value). Only on an active deposit outside a Closed Fiscal Year; transfers are not
+  deposits here (409 NOT_A_DEPOSIT). Audit `DONATION_MARKED` per change (unmarking deletes the row; before/after in
+  the event).
+- Receipts: one per donor (the allocation's entity, else the transaction's). The content hash covers donor, name,
+  address, amount, date received, goods and purposes. Same hash as the donor's last numbered receipt → DUPLICATE
+  (same number, `replaces_id` = that receipt); different → CORRECTED (new number, confirmation
+  `CORRECTED_RECEIPT`); none → ORIGINAL. Numbers `R-<year of the deposit date>-<seq>` per workspace. Confirmations
+  `EMPTY_VARIABLES`, `NO_DONOR_ADDRESS`. Void/deleted deposit → 409 NOT_PRINTABLE and the receipts show `void`.
+  The PDF (ReportLab, `invariant`) is attached as a system-generated `DONATION_RECEIPT` via `_store_doc_copy`
+  (de-duplicated by SHA-256); audit `DONATION_RECEIPT_PRINTED`. The acknowledgment box and goods statement are
+  drawn by `receipt_pdf()`, not the template.
+- UI: `pages/Donations.tsx` — `DonationSetup` (`/donation-setup`, Administrator menu) and `DonationReceiptDialog`
+  (Register → deposit → *Donation receipt…*), About → Optional modules.
+- Tests: `backend/tests/test_v210_donations.py` (11) and the E2E "#312" test.
+
 **2.1.0 — scheduled backups: Kept as (#233, Kyle 2026-10-14; built 2026-10-21).**
 - `scheduled_backup.keep_levels(runs, daily, weekly, monthly)` returns each kept run's reasons ("Daily", "Weekly",
   "Monthly", or "Latest" when only being the newest keeps it). `keep_set()` is now `set(keep_levels(...))`, so

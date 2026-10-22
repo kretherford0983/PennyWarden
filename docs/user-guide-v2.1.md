@@ -2,7 +2,8 @@
 
 *2.1.0: fundraiser reporting (a stakeholder report as PDF or Word, a slide deck, fundraisers across years with
 year over year, and a Fiscal Year fundraising report), the Budget Review and the Fiscal Year Planning Sheet, electronic
-payments and other register improvements, fold marks on cover letters and more voucher check layouts. The full list is
+payments and other register improvements, fold marks on cover letters, more voucher check layouts, and the optional
+Donations module for donation receipt letters. The full list is
 in the [changelog](../CHANGELOG.md).*
 
 ## Register
@@ -236,6 +237,48 @@ in even thirds for a #10 envelope, on the first sheet only.
 - **One letter:** the **Fold marks** choice next to the letter changes it for that letter only.
 
 With marks on the back, the print screen shows a banner: print on both sides of the paper (flip on long edge). (#247)
+
+## Donations (optional module)
+
+Donation receipt letters, printed from the deposits in the register. (The year-end giving statement and a donor report
+are planned for 2.2.)
+
+### Turning it on and setting it up (Administrator)
+1. **System/About → General → Optional modules → Donations module.** It works with the Payments module on or off.
+2. **Donations Setup** (in the menu):
+   - **EIN** (as 12-3456789) and the **mailing address**. Receipts can't be printed until both are entered; the
+     organization's name comes from System/About.
+   - **Receipt letter**: title, salutation, thank-you text and closing, with `{VARIABLES}` — type `{` for the list
+     (`{DONOR_NAME}`, `{AMOUNT}`, `{DATE_RECEIVED}`, `{PURPOSE}`, `{ORG_NAME}`, `{ORG_EIN}`, `{RECEIPT_NO}`…) — and the
+     signer's **name and title** (there is room above the name to sign by hand).
+   - The preview updates as you type; **Test print** prints it with sample data, marked SAMPLE – NOT A RECEIPT.
+
+Every receipt prints a box with the organization's name and EIN, the donor, the date received, the amount, the
+purpose and the receipt number, followed by the **goods or services statement**. These can't be removed from the
+template. Confirm the wording with your organization's own tax advisor.
+
+### Marking donations and printing receipts (Register Users)
+Open a deposit in the register and choose **Donation receipt…**:
+1. Tick **Donation** on each line that is a donation. A line's donor is the line's entity, else the deposit's. Add a
+   **purpose** if you like, and, if the donor received something in return (a dinner, raffle tickets), its **value
+   and a description**. Then **Save donation lines**. Every change is in the audit log.
+2. Each donor gets **one receipt** for all of their donation lines on the deposit: **Print receipt**. Receipts are
+   numbered per calendar year of the deposit: R-2026-0001, R-2026-0002…
+3. The receipt is attached to the deposit.
+
+Without goods or services the statement reads *"No goods or services were provided in exchange for this
+contribution."*; otherwise *"Goods or services valued at $X were provided in exchange for this contribution
+(description)."*
+
+**Reprints and changes:**
+- **Print duplicate:** nothing changed since the last receipt. It has the same number and is marked DUPLICATE.
+- **Print corrected receipt:** the amount, donor, date, purpose or goods changed. After you confirm, it gets a new
+  number, is marked CORRECTED, and names the receipt it replaces. The list shows the earlier one as *Replaced*.
+- A **voided** deposit: its receipts show as *Void*, and no receipt can be printed. Deposits in a Closed Fiscal Year
+  can't be changed or printed; their receipts stay attached.
+
+Budget Managers, Budget Users and Auditors open the same dialog read-only. Administrators never see deposits or donors.
+(#312)
 
 ## For whoever runs a Linux server
 

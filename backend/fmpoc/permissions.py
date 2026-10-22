@@ -63,6 +63,12 @@ PERMISSIONS: dict[str, set[str]] = {
     # Budget Managers and Auditors have no access to the module.
     "checks.setup": {ADMINISTRATOR},
     "checks.print": {REGISTER_USER},
+    # 2.1.0 (#312): Donations module (optional). Administrators set up the receipt (EIN, address, template) and test
+    # print with sample data only (BR-003); Register Users mark deposit lines as donations and print receipts; the
+    # other financial roles and Auditors see a deposit's donations and receipts.
+    "donation.setup": {ADMINISTRATOR},
+    "donation.print": {REGISTER_USER},
+    "donation.view": {BUDGET_MANAGER, BUDGET_USER, REGISTER_USER, AUDITOR},
     # 2.0.0 (#126-#129): System/About administration. Auditors may view the effective settings and the sessions
     # (read-only, BR-004); everything else is the Administrator's.
     "system.view": {ADMINISTRATOR, AUDITOR},

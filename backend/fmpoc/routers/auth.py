@@ -20,6 +20,7 @@ from ..services.charts import charts_for
 from ..services.dashboard_layout import encode as encode_layout
 from ..services.dashboard_layout import is_customized, layout_for
 from ..services.checkprint.service import module_enabled as checks_enabled
+from ..services.donations import module_enabled as donations_enabled
 from ..services.fundraisers import module_enabled
 from ..services.register import DEFAULT_REGISTER_SORT
 
@@ -66,7 +67,8 @@ def me_payload(ctx: Ctx) -> dict:
             "dashboard_layout": layout_for(u), "dashboard_layout_customized": is_customized(u),
             "register_sort": u.register_sort or DEFAULT_REGISTER_SORT,   # 2.1.0 (#262)
             "modules": {"fundraisers": module_enabled(object_session(u), u.workspace_id),  # v1.6.0 CR-033
-                        "checks": checks_enabled(object_session(u), u.workspace_id)},  # 2.0.0 (#156)
+                        "checks": checks_enabled(object_session(u), u.workspace_id),  # 2.0.0 (#156)
+                        "donations": donations_enabled(object_session(u), u.workspace_id)},  # 2.1.0 (#312)
             "sign_in_notices": recovery.sign_in_notices(u),  # 1.8.0 (#113)
             "first_name": u.first_name, "last_name": u.last_name,   # 2.0.0 (#134)
             # 2.0.0 (#134): an Administrator completes the missing names before continuing

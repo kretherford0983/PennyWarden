@@ -148,7 +148,8 @@ def build(db: Session, settings, ctx) -> tuple[bytes, str]:
         "settings": _settings_rows(settings),
         "storage": storage(db, settings),
         "counts": {"users": users, "active_users": active_users, "active_sessions": sessions},
-        "modules": {"fundraisers": bool(ws.fundraisers_enabled), "payments": bool(ws.checks_enabled)} if ws else {},
+        "modules": {"fundraisers": bool(ws.fundraisers_enabled), "payments": bool(ws.checks_enabled),
+                    "donations": bool(ws.donations_enabled)} if ws else {},
         "log": {"file": LOG_FILE, "lines": recent_log_lines(settings),
                 "note": "Scrubbed: secrets, long tokens, amounts, long numbers and email addresses are replaced."},
     }

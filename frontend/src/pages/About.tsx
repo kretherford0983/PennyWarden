@@ -116,7 +116,7 @@ function ModulesPanel() {
   const [err, setErr] = useState<unknown>(null);
   const [saved, setSaved] = useState(false);
   useEffect(() => { api.get("/api/system/modules").then(setM, setErr); }, []);
-  const toggle = async (key: "fundraisers" | "checks", on: boolean) => {
+  const toggle = async (key: "fundraisers" | "checks" | "donations", on: boolean) => {
     setErr(null);
     setSaved(false);
     const before = m;
@@ -136,6 +136,11 @@ function ModulesPanel() {
           <p className="hint">Check printing, payments, cover letters and envelopes. Adds <b>Payments Setup</b> to the Administrator's menu (check styles,
             signatures, letter and envelope templates, test prints), and <b>Payments</b> and a <b>Print check</b> action on withdrawals for Register Users. For
             printable check stock that already carries the bank numbers. Turning it off hides the module; settings are kept.</p>
+          {/* 2.1.0 (#312) */}
+          <label className="check"><input type="checkbox" checked={!!m.donations} onChange={(e) => toggle("donations", e.target.checked)} /> Donations module</label>
+          <p className="hint">Donation receipt letters. Adds <b>Donations Setup</b> to the Administrator's menu (EIN, mailing address, receipt letter, test
+            print), and a <b>Donation receipt</b> action on deposits in the register: Register Users mark donations and print receipts; Budget Managers,
+            Budget Users and Auditors see them. Works with the Payments module on or off. Turning it off hides the module; receipts and settings are kept.</p>
           {saved ? <p className="hint" role="status">Saved.</p> : null}
         </>
       ) : null}
