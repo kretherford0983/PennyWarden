@@ -1802,8 +1802,13 @@ test("CR-035: fundraiser report PDF; Audit and Close reports can include fundrai
   await page.getByRole("button", { name: "Report…" }).first().click();
   const rd = page.getByRole("dialog", { name: "Fundraiser report" });
   await rd.getByLabel(/Show contributor names/).uncheck();
+  // 2.1.0 (#300): Harvest Dinner is in a series - year over year can be left out (report and presentation)
+  await expect(rd.getByLabel(/Include year over year/)).toBeChecked();
+  await rd.getByLabel(/Include year over year/).uncheck();
+  expect(await rd.getByRole("link", { name: "Presentation" }).getAttribute("href")).toContain("history=false");
   const href = await rd.getByRole("link", { name: "Report (PDF)" }).getAttribute("href");
   expect(href).toContain("names=false");
+  expect(href).toContain("history=false");
   const pdf = await page.request.get(href!);
   expect(pdf.status()).toBe(200);
   expect(pdf.headers()["content-type"]).toBe("application/pdf");

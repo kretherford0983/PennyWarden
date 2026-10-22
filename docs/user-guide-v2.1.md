@@ -161,6 +161,11 @@ series* section. Each year's figures are shown with the change on the year befor
 percent), so the committee can see how an event is trending when deciding whether to keep it. A year entered by hand
 with only the amount raised shows — for income, expenses and margin.
 
+To report on **this year's fundraiser only**, untick **Include year over year** in the fundraiser's *Report…* dialog.
+The PDF, the Word file and the presentation then leave out the *Year over year* section, its slide and the
+"Net proceeds were up/down…" takeaway; everything else is the same. The option shows only for a fundraiser in a
+series, and the Fiscal Year report always includes its history.
+
 ### Bucket categories
 On a fundraiser's page, **New category** adds a heading such as *Sponsorships* or *Day-of event*. In a bucket's
 **Edit**, choose its **Category** (or *No category*). The Buckets table then shows each category with its buckets

@@ -599,10 +599,12 @@ function StakeholderReport({ f, manage, onChanged, onOpen }: { f: any; manage: b
 }
 
 function ReportDialog({ f, onClose }: { f: any; onClose: () => void }) {
-  const [o, setO] = useState({ itemized: true, names: true, plain_lines: false });
+  const [o, setO] = useState({ itemized: true, names: true, plain_lines: false, history: true });
   const hasBuckets = f.buckets.items.length > 0;
+  const inSeries = !!f.series_link?.series;   // #300: year over year exists only for a fundraiser in a series
+  const history = String(!inSeries || o.history);
   const href = (format: string, download = false) => {
-    const p = new URLSearchParams({ format, itemized: String(o.itemized), names: String(o.names), plain_lines: String(!hasBuckets && o.plain_lines) });
+    const p = new URLSearchParams({ format, itemized: String(o.itemized), names: String(o.names), plain_lines: String(!hasBuckets && o.plain_lines), history });
     if (download) p.set("download", "true");
     return `/api/fundraisers/${f.id}/summary-report?${p.toString()}`;
   };
@@ -615,9 +617,12 @@ function ReportDialog({ f, onClose }: { f: any; onClose: () => void }) {
         <label className="check"><input type="checkbox" checked={o.plain_lines} onChange={(e) => setO({ ...o, plain_lines: e.target.checked })} /> Plain line list <span className="muted">(this fundraiser has no buckets)</span></label>
       )}
       <label className="check"><input type="checkbox" checked={o.names} onChange={(e) => setO({ ...o, names: e.target.checked })} /> Show contributor names <span className="muted">(off: “Contributor 1, 2…”, for reports that go outside the organization)</span></label>
+      {inSeries ? (
+        <label className="check"><input type="checkbox" checked={o.history} onChange={(e) => setO({ ...o, history: e.target.checked })} /> Include year over year <span className="muted">(off: only this year's fundraiser — no comparison with the earlier years of {f.series_link.series.name})</span></label>
+      ) : null}
       <div className="actions">
         <button onClick={onClose}>Done</button>
-        <a className="button" href={`/api/fundraisers/${f.id}/presentation?itemized=${o.itemized}&names=${o.names}`}>Presentation</a>
+        <a className="button" href={`/api/fundraisers/${f.id}/presentation?itemized=${o.itemized}&names=${o.names}&history=${history}`}>Presentation</a>
         <a className="button" href={href("docx")}>Report (Word)</a>
         <a className="button primary" href={href("pdf")} target="_blank" rel="noopener">Report (PDF)</a>
       </div>
