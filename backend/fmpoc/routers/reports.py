@@ -168,7 +168,8 @@ def _pdf_response(path: str, fname: str, download: bool) -> FileResponse:
                         background=BackgroundTask(lambda: os.path.exists(path) and os.unlink(path)))
 
 
-@router.get("/budget-prep/projection-choices")
+@router.get("/budget-review/projection-choices")
+@router.get("/budget-prep/projection-choices", include_in_schema=False)       # 2.1.0 (#283): the old path still works
 def projection_choices(fiscal_year_id: int = Query(...), db: Session = Depends(get_db),
                        ctx: Ctx = Depends(require("budget.manage"))):
     """The budgets the person can project or leave unprojected, with their remembered choice (or the default)."""
@@ -176,7 +177,8 @@ def projection_choices(fiscal_year_id: int = Query(...), db: Session = Depends(g
     return plan.choices_view(db, ctx, fy)
 
 
-@router.put("/budget-prep/projection-choices")
+@router.put("/budget-review/projection-choices")
+@router.put("/budget-prep/projection-choices", include_in_schema=False)
 def save_projection_choices(body: ProjectionChoicesIn, db: Session = Depends(get_db),
                             ctx: Ctx = Depends(require("budget.manage"))):
     fy = get_scoped(db, FiscalYear, body.fiscal_year_id, ctx, "Fiscal Year")
@@ -185,33 +187,35 @@ def save_projection_choices(body: ProjectionChoicesIn, db: Session = Depends(get
     return out
 
 
-@router.get("/budget-prep")
-def budget_prep(fiscal_year_id: int = Query(...), years: int = Query(3, ge=-1, le=plan.MAX_YEARS),
+@router.get("/budget-review")
+@router.get("/budget-prep", include_in_schema=False)
+def budget_review(fiscal_year_id: int = Query(...), years: int = Query(3, ge=-1, le=plan.MAX_YEARS),
                 projected: bool = False, include_next: bool = False, budget_id: int | None = None,
                 parent_budget_id: int | None = None, as_of: dt.date | None = None,
                 format: Literal["json", "pdf", "csv"] = "json", download: bool = False,
                 db: Session = Depends(get_db), ctx: Ctx = Depends(require("budget.manage"))):
-    """#257 Budget Prep report: each budget of the year with its linked history, YTD actuals and (optionally) the
-    projection and the next year's continuing budget. years=-1 shows every linked year."""
+    """#257 Budget Review report (named Budget Prep until #283): each budget of the year with its linked history and
+    averages, YTD actuals and (optionally) the projection and the next year's continuing budget. years=-1 shows every
+    linked year."""
     fy = get_scoped(db, FiscalYear, fiscal_year_id, ctx, "Fiscal Year")
-    rep = plan.budget_prep(db, ctx, fy, years=years, projected=projected, include_next=include_next,
-                           budget_id=budget_id, parent_budget_id=parent_budget_id, as_of=as_of)
-    summary = {"report": "BUDGET_PREP", "format": format, "years": len(rep["years"]), "as_of": rep["as_of"],
+    rep = plan.budget_review(db, ctx, fy, years=years, projected=projected, include_next=include_next,
+                             budget_id=budget_id, parent_budget_id=parent_budget_id, as_of=as_of)
+    summary = {"report": "BUDGET_REVIEW", "format": format, "years": len(rep["years"]), "as_of": rep["as_of"],
                "projected": projected, "include_next": include_next, "budget_id": budget_id,
                "parent_budget_id": parent_budget_id}
     if projected:
         summary["not_projected"] = [r["id"] for s in ("income", "expense") for r in rep[s]
                                     if (r["projection"] or {}).get("state") == "NOT_PROJECTED"]
     if format == "pdf":
-        path, fname, pages = plan.budget_prep_pdf(db, ctx, rep)
+        path, fname, pages = plan.budget_review_pdf(db, ctx, rep)
         summary["pages"] = pages
     audit.record(db, ctx, "REPORT_GENERATED", "fiscal_year", fy.id, None, summary)
     db.commit()
     if format == "pdf":
         return _pdf_response(path, fname, download)
     if format == "csv":
-        return Response(plan.budget_prep_csv(rep), media_type="text/csv; charset=utf-8",
-                        headers={"Content-Disposition": _disposition("attachment", f"budget-prep-{plan._safe(fy.display_name)}.csv"),
+        return Response(plan.budget_review_csv(rep), media_type="text/csv; charset=utf-8",
+                        headers={"Content-Disposition": _disposition("attachment", f"budget-review-{plan._safe(fy.display_name)}.csv"),
                                  "Cache-Control": "private, no-store"})
     return rep
 
@@ -224,12 +228,15 @@ def planning_sheet_context(db: Session = Depends(get_db), ctx: Ctx = Depends(req
 
 @router.get("/planning-sheet")
 def planning_sheet(fiscal_year_id: int | None = None, as_of: dt.date | None = None, download: bool = False,
-                   db: Session = Depends(get_db), ctx: Ctx = Depends(require("budget.manage"))):
+                   include_review: bool = False, db: Session = Depends(get_db),
+                   ctx: Ctx = Depends(require("budget.manage"))):
     """#261 Fiscal Year Planning Sheet: the printed form for the budget planning meeting. Without fiscal_year_id
     (the Fiscal Years page) the year being planned is worked out: a Draft year and the year before it, else the
     current year."""
     fy = get_scoped(db, FiscalYear, fiscal_year_id, ctx, "Fiscal Year") if fiscal_year_id is not None else None
     path, fname, summary = plan.planning_sheet(db, ctx, fy, as_of)
+    if include_review:      # 2.1.0 (#283): the Budget Review pages after the sheet, in one PDF
+        path, summary = plan.append_review(db, ctx, path, summary, as_of)
     audit.record(db, ctx, "REPORT_GENERATED", "fiscal_year", summary["fiscal_year_id"], None, summary)
     db.commit()
     return _pdf_response(path, fname, download)

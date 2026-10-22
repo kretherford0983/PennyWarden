@@ -844,16 +844,16 @@ test("2.1.0 (#262, #260, #259): register sort, electronic payment, reorder attac
   await logout(page);
 });
 
-test("2.1.0 (#257, #261): Budget Prep report with projection choices; the Planning Sheet from the Fiscal Years page", async ({ page }) => {
-  // Budget Managers only: a Register User has no Budget Prep tab
+test("2.1.0 (#257, #261, #283): Budget Review with projection choices; the Planning Sheet from the Fiscal Years page", async ({ page }) => {
+  // Budget Managers only: a Register User has no Budget Review tab
   await login(page, "ru1", "Brand-New-Pass-99");
   await page.goto("/reports");
   await expect(page.getByRole("tab", { name: "Financial Flow" })).toBeVisible();
-  await expect(page.getByRole("tab", { name: "Budget Prep" })).toHaveCount(0);
+  await expect(page.getByRole("tab", { name: "Budget Review" })).toHaveCount(0);
   await logout(page);
   await login(page, "bm1");
   await page.goto("/reports");
-  await page.getByRole("tab", { name: "Budget Prep" }).click();
+  await page.getByRole("tab", { name: "Budget Review" }).click();
   await page.getByLabel("Projected column").check();
   const choices = page.locator("fieldset.projection-choices");
   await expect(choices).toContainText("Projected budgets");
@@ -863,15 +863,18 @@ test("2.1.0 (#257, #261): Budget Prep report with projection choices; the Planni
   await expect(choices.getByRole("status")).toHaveText("Saved.");
   await page.getByLabel("Next year's budget").check();
   await page.getByRole("button", { name: "Run report" }).click();
-  const rep = page.locator(".budget-prep");
-  await expect(rep.getByRole("heading", { name: /Budget Prep — / })).toBeVisible();
+  const rep = page.locator(".budget-review");
+  await expect(rep.getByRole("heading", { name: /Budget Review — / })).toBeVisible();
   await expect(rep).toContainText("Complete: no projection");
-  await expect(rep).toContainText(/Budgeted \$/);
+  // #283: a block per budget - Budgeted, Actual and Difference rows, an Avg column
+  const table = rep.getByRole("table", { name: "Budget Review" });
+  await expect(table.getByRole("rowheader", { name: "Budgeted" }).first()).toBeVisible();
+  await expect(table.getByRole("rowheader", { name: "Difference" }).first()).toBeVisible();
   await expect(rep.getByRole("link", { name: "Download CSV" })).toHaveAttribute("href", /format=csv/);
   const pdf = await page.request.get((await rep.getByRole("link", { name: "Open PDF" }).getAttribute("href"))!);
   expect(pdf.status()).toBe(200);
   expect(pdf.headers()["content-type"]).toBe("application/pdf");
-  await page.screenshot({ path: "e2e-screenshots/light-budget-prep.png", fullPage: true });
+  await page.screenshot({ path: "e2e-screenshots/light-budget-review.png", fullPage: true });
   // back to the defaults, so later tests see the usual figures
   await choices.getByRole("button", { name: "Back to defaults" }).click();
   await expect(choices.getByRole("status")).toHaveText("Saved.");
@@ -885,6 +888,13 @@ test("2.1.0 (#257, #261): Budget Prep report with projection choices; the Planni
   const sheet = await page.request.get(href!);
   expect(sheet.status()).toBe(200);
   expect(sheet.headers()["content-type"]).toBe("application/pdf");
+  // #283: the Budget Review can follow the sheet in the same PDF
+  await dlg.getByLabel(/Include the Budget Review/).check();
+  const withReview = await dlg.getByRole("link", { name: "Open planning sheet PDF" }).getAttribute("href");
+  expect(withReview).toContain("include_review=true");
+  const both = await page.request.get(withReview!);
+  expect(both.status()).toBe(200);
+  expect((await both.body()).length).toBeGreaterThan((await sheet.body()).length);
   await dlg.getByRole("button", { name: "Done" }).click();
   await expect(dlg).toHaveCount(0);
   await logout(page);

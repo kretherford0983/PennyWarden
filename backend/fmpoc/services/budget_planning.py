@@ -324,7 +324,7 @@ def adjacent_years(db: Session, ws_id: int, fy: FiscalYear) -> tuple[list[Fiscal
 
 
 # ------------------------------------------------------------------ Budget Prep report (#257)
-def budget_prep(db: Session, ctx, fy: FiscalYear, *, years: int = 3, projected: bool = False,
+def budget_review(db: Session, ctx, fy: FiscalYear, *, years: int = 3, projected: bool = False,
                 include_next: bool = False, budget_id: int | None = None, parent_budget_id: int | None = None,
                 as_of: dt.date | None = None) -> dict:
     as_of = as_of or dt.date.today()
@@ -379,6 +379,16 @@ def budget_prep(db: Session, ctx, fy: FiscalYear, *, years: int = 3, projected: 
         d = parse_amount(pr["projected"], allow_negative=True) - budgeted
         return {**pr, "difference": fmt(d), "difference_pct": pct(d, budgeted), "direction": direction(d)}
 
+    def average(cells: list) -> dict | None:
+        """#283: the average budgeted, actual and difference of the prior years shown that the budget existed."""
+        got = [c for c in cells if c is not None]
+        if not got:
+            return None
+        from ..money import parse_amount
+        b = _round(Fraction(sum(parse_amount(c["budgeted"], allow_negative=True) for c in got), len(got)))
+        a = _round(Fraction(sum(parse_amount(c["actual"], allow_negative=True) for c in got), len(got)))
+        return {**compare(b, a), "years": len(got)}
+
     sections: dict[str, list[dict]] = {}
     for key, rows in struct.items():
         out = []
@@ -396,7 +406,8 @@ def budget_prep(db: Session, ctx, fy: FiscalYear, *, years: int = 3, projected: 
                 h, note = history(k, kcode)
                 row = {"id": k.id, "level": "sub", "parent_id": p.id, "code": kcode, "name": k.name,
                        "budget_type": k.budget_type, "status": k.status, "state": bsvc.state(k), "is_other": k.is_other,
-                       "history": h, "history_note": note, "current": compare(k.amount_cents, k_ytd),
+                       "history": h, "history_note": note, "average": average(h),
+                       "current": compare(k.amount_cents, k_ytd),
                        "projection": None, "next": nxt(k), "choosable": True}
                 if projected:
                     pr, v = leaf_projection(k, k_ytd)
@@ -407,7 +418,7 @@ def budget_prep(db: Session, ctx, fy: FiscalYear, *, years: int = 3, projected: 
             h, note = history(p, code)
             prow = {"id": p.id, "level": "parent", "parent_id": None, "code": code, "name": p.name,
                     "budget_type": p.budget_type, "status": p.status, "state": bsvc.state(p), "is_other": False, "history": h,
-                    "history_note": note, "current": compare(p.amount_cents, p_ytd), "projection": None,
+                    "history_note": note, "average": average(h), "current": compare(p.amount_cents, p_ytd), "projection": None,
                     "next": nxt(p), "choosable": not kids}
             if projected:
                 if kids:
@@ -447,13 +458,14 @@ def _us(d: str | dt.date) -> str:
 PROJ_TEXT = {"NOT_PROJECTED": "Complete: no projection", "TOO_EARLY": "too early to project"}
 
 
-def budget_prep_csv(rep: dict) -> str:
+def budget_review_csv(rep: dict) -> str:
     buf = io.StringIO()
     w = csv.writer(buf)
     head = ["Section", "Level", "Code", "Budget", "Status"]
     for y in rep["years"]:
         n = y["display_name"]
         head += [f"{n} code", f"{n} budgeted", f"{n} actual", f"{n} difference", f"{n} difference %", f"{n} status"]
+    head += ["Avg budgeted", "Avg actual", "Avg difference", "Avg years"]          # #283
     cur = rep["fiscal_year"]["display_name"]
     head += [f"{cur} budgeted", f"{cur} actual YTD {rep['as_of']}", f"{cur} difference", f"{cur} difference %",
              "History note"]
@@ -471,6 +483,8 @@ def budget_prep_csv(rep: dict) -> str:
                 line += (["", "—", "—", "", "", ""] if c is None else
                          [c["code"], c["budgeted"], c["actual"], c["difference"], c["difference_pct"] or "n/a",
                           STATUS_TEXT.get(c["status"], c["status"])])
+            av = r.get("average")
+            line += (["", "", "", 0] if av is None else [av["budgeted"], av["actual"], av["difference"], av["years"]])
             cu = r["current"]
             line += [cu["budgeted"], cu["actual"], cu["difference"], cu["difference_pct"] or "n/a", r["history_note"] or ""]
             if rep["projected"]:
@@ -489,41 +503,6 @@ def budget_prep_csv(rep: dict) -> str:
 
 
 _IND = ParagraphStyle("bp_ind", parent=S["cell"], leftIndent=10)
-
-
-def _cmp_cell(c: dict | None, actual_word: str = "Actual") -> object:
-    if c is None:
-        return PM("—", "cell")
-    extra = []
-    if c.get("renumbered"):
-        extra.append(escape(c["code"]))
-    if c.get("status") and c["status"] != "APPROVED":
-        extra.append(STATUS_TEXT.get(c["status"], c["status"]))
-    tail = f"<br/><font size=6>{' · '.join(extra)}</font>" if extra else ""
-    return PM(f"Budgeted {money(c['budgeted'])}<br/>{actual_word} {money(c['actual'])}<br/>{escape(diff_text(c))}{tail}",
-              "cell")
-
-
-def _proj_cell(pr: dict | None) -> object:
-    if not pr:
-        return PM("", "cell")
-    st = pr["state"]
-    if st in PROJ_TEXT:
-        tail = f"<br/>YTD {money(pr['projected'])}" if st == "NOT_PROJECTED" else ""
-        return PM(f"<i>{PROJ_TEXT[st]}</i>{tail}", "cell")
-    word = {"PROJECTED": "projected", "ROLLUP": "sum of sub-budgets", "YEAR_ENDED": "year ended: actual"}[st]
-    return PM(f"{money(pr['projected'])}<br/>{escape(diff_text(pr))}<br/><i>{word}</i>", "cell")
-
-
-def _next_cell(n: dict | None) -> object:
-    if n is None:
-        return PM("—", "cell")
-    ch = {"change": n["change"], "change_pct": n["change_pct"]}
-    word = "no change" if n["change"] in ("0.00", "-0.00") else (
-        f"{'+' if not n['change'].startswith('-') else '−'}{money(n['change'].lstrip('-'))} "
-        f"({'n/a' if ch['change_pct'] is None else ch['change_pct'].lstrip('-') + '%'})")
-    return PM(f"{escape(n['code'])} · {STATUS_TEXT.get(n['status'], n['status'])}<br/>{money(n['amount'])}<br/>"
-              f"change {word}", "cell")
 
 
 def _chart(rep: dict, row: dict) -> Drawing:
@@ -564,42 +543,99 @@ def _chart(rep: dict, row: dict) -> Drawing:
     return d
 
 
-def budget_prep_pdf(db: Session, ctx, rep: dict) -> tuple[str, str, int]:
-    ws = db.get(Workspace, ctx.workspace_id)
-    fyn = rep["fiscal_year"]["display_name"]
-    printed = _us(dt.date.today())
-    title = f"{ws.name}  ·  Budget Prep report — {fyn}  ·  printed {printed}"
-    buf = io.BytesIO()
-    page = landscape(letter)
-    doc = _AuditDoc(buf, pagesize=page, title="Budget Prep report", author=ws.name)
-    frame_w = page[0] - 2 * MARGIN - 12
-    name_w, col_w = 2.3 * inch, 1.2 * inch
-    per_band = max(1, int((frame_w - name_w) // col_w))
+_RIGHT = ParagraphStyle("br_right", parent=S["cell"], alignment=2)
+_LABEL = ParagraphStyle("br_label", parent=S["cell"], textColor=colors.HexColor("#4a5560"))
+_HEAD = ParagraphStyle("br_head", parent=S["cell"], alignment=2, textColor=colors.white)
+_BAND_C = colors.HexColor("#1f3a5f")
+_PARENT_C = colors.HexColor("#e8ecf1")
+_SUB_C = colors.HexColor("#f6f8fa")
+
+
+def _r(text: str) -> object:
+    return PM(text, "cell") if not text else Paragraph(text, _RIGHT)
+
+
+def _diff_short(c: dict | None, key: str = "difference") -> str:
+    return escape(diff_text(c, key)) if c else "—"
+
+
+def _review_columns(rep: dict) -> list[tuple[str, callable]]:
+    """#283 (layout A): one column per year, then Avg, the current year (YTD) and the optional Projected and next-year
+    columns. Each column gives (Budgeted, Actual, Difference) for a row."""
     cols: list[tuple[str, callable]] = []
     for i, y in enumerate(rep["years"]):
-        cols.append((f"<b>{escape(y['display_name'])}</b><br/><font size=6>budgeted · actual · difference</font>",
-                     (lambda r, i=i: _cmp_cell(r["history"][i]) if r["history"][i] is not None or not r["history_note"]
-                      else PM("<i>history on parent</i>", "cell"))))
-    cols.append((f"<b>{escape(fyn)}</b> (current)<br/><font size=6>budgeted · actual YTD {_us(rep['as_of'])} · "
-                 f"difference</font>", lambda r: _cmp_cell(r["current"], "YTD")))
+        def cell(r, i=i):
+            c = r["history"][i]
+            if c is None:
+                note = "<i>history on parent</i>" if r["history_note"] else "—"
+                return (note, "", "")
+            extra = []
+            if c.get("renumbered"):
+                extra.append(escape(c["code"]))
+            if c.get("status") and c["status"] != "APPROVED":
+                extra.append(STATUS_TEXT.get(c["status"], c["status"]))
+            tail = f"<br/><font size=6>{' · '.join(extra)}</font>" if extra else ""
+            return (money(c["budgeted"]) + tail, money(c["actual"]), _diff_short(c))
+        cols.append((escape(y["display_name"]), cell))
+    if rep["years"]:
+        cols.append(("Avg", lambda r: ("—", "", "") if not r.get("average") else
+                     (money(r["average"]["budgeted"]), money(r["average"]["actual"]), _diff_short(r["average"]))))
+    fyn = rep["fiscal_year"]["display_name"]
+    cols.append((f"{escape(fyn)}<br/><font size=6>YTD {_us(rep['as_of'])}</font>",
+                 lambda r: (money(r["current"]["budgeted"]), money(r["current"]["actual"]), _diff_short(r["current"]))))
     if rep["projected"]:
-        cols.append((f"<b>Projected</b> to {_us(rep['fiscal_year']['end_date'])}<br/><font size=6>projected · "
-                     f"difference</font>", lambda r: _proj_cell(r["projection"])))
+        def proj(r):
+            pr = r["projection"] or {}
+            st = pr.get("state")
+            if st in PROJ_TEXT:
+                return (money(r["current"]["budgeted"]), f"<i>{PROJ_TEXT[st]}</i>", "")
+            word = {"PROJECTED": "projected", "ROLLUP": "sum of sub-budgets", "YEAR_ENDED": "year ended: actual"}.get(st, "")
+            return (money(r["current"]["budgeted"]), f"{money(pr['projected'])}<br/><font size=6><i>{word}</i></font>",
+                    _diff_short(pr))
+        cols.append((f"Projected<br/><font size=6>to {_us(rep['fiscal_year']['end_date'])}</font>", proj))
     if rep["include_next"]:
         nn = rep["next_fiscal_year"]["display_name"] if rep["next_fiscal_year"] else "Next year"
-        cols.append((f"<b>{escape(nn)}</b><br/><font size=6>continuing budget · change</font>",
-                     lambda r: _next_cell(r["next"])))
-    bands = [cols[i:i + per_band] for i in range(0, len(cols), per_band)]
 
-    f: list = [_Mark(doc, "Budget Prep report"), PM("Budget Prep report", "h1"),
-               PM(f"{escape(ws.name)} — Fiscal Year <b>{escape(fyn)}</b> ({_us(rep['fiscal_year']['start_date'])} to "
+        def nxt(r):
+            n = r["next"]
+            if n is None:
+                return ("—", "", "")
+            ch = n["change"]
+            word = "no change" if ch in ("0.00", "-0.00") else (
+                f"{'+' if not ch.startswith('-') else '−'}{money(ch.lstrip('-'))} "
+                f"({'n/a' if n['change_pct'] is None else n['change_pct'].lstrip('-') + '%'}) vs this year")
+            return (f"{money(n['amount'])}<br/><font size=6>{escape(n['code'])} · "
+                    f"{STATUS_TEXT.get(n['status'], n['status'])}</font>", "", escape(word))
+        cols.append((f"{escape(nn)}<br/><font size=6>next year's budget</font>", nxt))
+    return cols
+
+
+def _review_flowables(db: Session, ctx, rep: dict, doc) -> list:
+    """The Budget Review pages (layout A, #283): a block per budget - its heading, then Budgeted, Actual and
+    Difference with the years across - in an Income and an Expense section."""
+    ws = db.get(Workspace, ctx.workspace_id)
+    fyn = rep["fiscal_year"]["display_name"]
+    frame_w = doc.pagesize[0] - 2 * MARGIN - 12
+    label_w, min_col = 0.95 * inch, 1.0 * inch
+    cols = _review_columns(rep)
+    per_band = max(1, int((frame_w - label_w) // min_col))
+    bands = [cols[i:i + per_band] for i in range(0, len(cols), per_band)]
+    band = Table([[Paragraph(f"<b>{escape(ws.name)}</b>", ParagraphStyle("brb", parent=S["body"], textColor=colors.white)),
+                   Paragraph(f"<b>Budget Review — {escape(fyn)}</b>", ParagraphStyle("brt", parent=S["body"], alignment=2,
+                                                                                    textColor=colors.white))]],
+                 colWidths=[frame_w / 2, frame_w / 2])
+    band.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), _BAND_C), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                              ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
+                              ("LEFTPADDING", (0, 0), (-1, -1), 8), ("RIGHTPADDING", (0, 0), (-1, -1), 8)]))
+    f: list = [_Mark(doc, "Budget Review"), band, Spacer(1, 6),
+               PM(f"Fiscal Year <b>{escape(fyn)}</b> ({_us(rep['fiscal_year']['start_date'])} to "
                   f"{_us(rep['fiscal_year']['end_date'])}). Actuals year-to-date as of {_us(rep['as_of'])}. "
                   f"Prior years shown: {len(rep['years'])} of {rep['available_years']}.", "body"), Spacer(1, 4)]
-    notes = ["Difference = actual − budgeted, marked over or under; n/a when nothing was budgeted. Actuals are ACTIVE "
+    notes = ["Difference = actual − budgeted, marked over or under; n/a when nothing was budgeted. Avg = the average of "
+             "the prior years shown in which the budget existed (the current year is not included). Actuals are ACTIVE "
              "transactions only, as on the Budgets page; a budget's actual includes its sub-budgets.",
              "History follows the budget continuation links, so a renumbered budget stays on one line (its earlier code "
-             "is printed in that year's cell). Each budget continues at most one earlier budget: for budgets that were "
-             "split or merged only the linked line is followed. — means no linked budget that year."]
+             "is printed under that year's amount). — means no linked budget that year."]
     if rep["projected"]:
         pb = rep["projection_basis"]
         notes.append("Projected = YTD ÷ elapsed months × months in the Fiscal Year "
@@ -610,40 +646,59 @@ def budget_prep_pdf(db: Session, ctx, rep: dict) -> tuple[str, str, int]:
         rows = rep[sec]
         if not rows:
             continue
+        f.append(CondPageBreak(1.6 * inch))
         f.append(PM(sec.title(), "h2"))
-        for bi, band in enumerate(bands):
+        for bi, bcols in enumerate(bands):
             if len(bands) > 1:
                 f.append(P(f"Columns {bi + 1} of {len(bands)}", "small"))
-            data = [[PM("<b>Budget</b>", "cell")] + [PM(h, "cell") for h, _fn in band]]
+            cw = min(1.35 * inch, (frame_w - label_w) / len(bcols))
+            n = len(bcols) + 1
+            head = [Paragraph("", _HEAD)] + [Paragraph(f"<b>{h}</b>", _HEAD) for h, _fn in bcols]
+            data, style = [head], [("BACKGROUND", (0, 0), (-1, 0), _BAND_C), ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                                   ("LEFTPADDING", (0, 0), (-1, -1), 3), ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                                   ("TOPPADDING", (0, 0), (-1, -1), 1.5), ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5)]
             for r in rows:
                 status = "" if r["status"] == "APPROVED" else f" <font size=6>({STATUS_TEXT.get(r['status'], r['status'])})</font>"
                 label = f"{escape(r['code'])} {escape(r['name'])}{status}"
-                cell = Paragraph(label, _IND) if r["level"] == "sub" else Paragraph(f"<b>{label}</b>", S["cell"])
-                data.append([cell] + [fn(r) for _h, fn in band])
-            cw = min(1.6 * inch, (frame_w - name_w) / len(band))
-            t = Table(data, colWidths=[name_w] + [cw] * len(band), repeatRows=1, hAlign="LEFT")
-            t.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#9aa3ad")),
-                                   ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e8ecf1")),
-                                   ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                                   ("LEFTPADDING", (0, 0), (-1, -1), 3), ("RIGHTPADDING", (0, 0), (-1, -1), 3),
-                                   ("TOPPADDING", (0, 0), (-1, -1), 2), ("BOTTOMPADDING", (0, 0), (-1, -1), 2)]
-                                  + [("BACKGROUND", (0, i + 1), (-1, i + 1), colors.HexColor("#f6f8fa"))
-                                     for i, r in enumerate(rows) if r["level"] == "parent"]))
-            f += [t, Spacer(1, 6)]
-    single = rep["filter"]["budget_id"] is not None
-    if single:
+                i = len(data)
+                data.append([Paragraph(f"<b>{label}</b>" if r["level"] == "parent" else "&nbsp;&nbsp;&nbsp;" + label,
+                                       S["cell"])] + [""] * (n - 1))
+                style += [("SPAN", (0, i), (-1, i)), ("BACKGROUND", (0, i), (-1, i), _PARENT_C if r["level"] == "parent" else _SUB_C),
+                          ("LINEABOVE", (0, i), (-1, i), 0.4, colors.HexColor("#9aa3ad"))]
+                vals = [fn(r) for _h, fn in bcols]
+                for k, word in enumerate(("Budgeted", "Actual", "Difference")):
+                    data.append([Paragraph(word, _LABEL)] + [_r(v[k]) for v in vals])
+                style += [("LINEBELOW", (1, i + 3), (-1, i + 3), 0.25, colors.HexColor("#d5dbe1")),
+                          ("NOSPLIT", (0, i), (-1, i + 3))]           # a budget's block stays on one page
+            t = Table(data, colWidths=[label_w] + [cw] * len(bcols), repeatRows=1, hAlign="LEFT")
+            t.setStyle(TableStyle(style))
+            f += [t, Spacer(1, 8)]
+    if rep["filter"]["budget_id"] is not None:
         row = (rep["income"] + rep["expense"])[0]
         f += [KeepTogether([PM("Budgeted and actual per year", "h2"), _chart(rep, row)])]
     f += [Spacer(1, 8), P(f"Generated {utcnow():%Y-%m-%d %H:%M} UTC by {ctx.user.username} — {ws.name}", "small")]
-    doc.build(f)
-    fd, path = tempfile.mkstemp(prefix="fmpoc-budget-prep-", suffix=".pdf")
+    return f
+
+
+def budget_review_pdf(db: Session, ctx, rep: dict) -> tuple[str, str, int]:
+    ws = db.get(Workspace, ctx.workspace_id)
+    fyn = rep["fiscal_year"]["display_name"]
+    title = f"{ws.name}  ·  Budget Review — {fyn}  ·  printed {_us(dt.date.today())}"
+    buf = io.BytesIO()
+    doc = _AuditDoc(buf, pagesize=landscape(letter), title="Budget Review", author=ws.name)
+    doc.build(_review_flowables(db, ctx, rep, doc))
+    fd, path = tempfile.mkstemp(prefix="fmpoc-budget-review-", suffix=".pdf")
     os.close(fd)
     try:
         pages = _stamp_and_write(buf.getvalue(), doc, path, title)
     except Exception:
         os.unlink(path)
         raise
-    return path, f"budget-prep-{_safe(fyn)}.pdf", pages
+    return path, f"budget-review-{_safe(fyn)}.pdf", pages
+
+
+# 2.1.0 (#283): the report was called Budget Prep (#257); the old names stay for callers
+budget_prep, budget_prep_csv, budget_prep_pdf = budget_review, budget_review_csv, budget_review_pdf
 
 
 def _safe(s: str) -> str:
@@ -900,3 +955,29 @@ def planning_sheet(db: Session, ctx, fy: FiscalYear | None, as_of: dt.date | Non
                "draft_fiscal_year_id": draft.id if draft else None, "pages": pages,
                "rows": len(data["income"]) + len(data["expense"])}
     return path, f"planning-sheet-{_safe(fy.display_name)}.pdf", summary
+
+
+def append_review(db: Session, ctx, sheet_path: str, summary: dict, as_of: dt.date | None) -> tuple[str, dict]:
+    """2.1.0 (#283): the Planning Sheet with the Budget Review of the same year appended (last 3 years, projected with
+    the person's projection choices, and the Draft year's budgets when there is one). Each part keeps its own page
+    numbers. Returns the new file and the summary with the review's details."""
+    from pypdf import PdfReader, PdfWriter
+    fy = db.get(FiscalYear, summary["fiscal_year_id"])
+    draft = _draft_next(db, ctx.workspace_id, fy)
+    rep = budget_review(db, ctx, fy, years=3, projected=True, include_next=draft is not None, as_of=as_of)
+    review_path, _name, pages = budget_review_pdf(db, ctx, rep)
+    fd, out = tempfile.mkstemp(prefix="fmpoc-planning-review-", suffix=".pdf")
+    os.close(fd)
+    try:
+        w = PdfWriter()
+        for part in (sheet_path, review_path):
+            for page in PdfReader(part).pages:
+                w.add_page(page)
+        w.add_metadata({"/Title": "Fiscal Year Planning Sheet and Budget Review", "/Creator": "PennyWarden"})
+        with open(out, "wb") as fh:
+            w.write(fh)
+    finally:
+        for part in (sheet_path, review_path):
+            if os.path.exists(part):
+                os.unlink(part)
+    return out, {**summary, "include_review": True, "review_pages": pages, "review_years": len(rep["years"])}

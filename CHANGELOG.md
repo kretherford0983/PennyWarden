@@ -9,7 +9,7 @@ PennyWarden 2.1.0 is mostly about **fundraisers**:
 - a Fiscal Year fundraising report with year-over-year comparisons;
 - bucket categories, *Charge less a credit*, and a different contributor name on the reports.
 
-Budget Managers get a **Budget Prep report** and a **Fiscal Year Planning Sheet**. The register adds electronic
+Budget Managers get a **Budget Review** report and a **Fiscal Year Planning Sheet**. The register adds electronic
 payments, sorting by date or cleared, and an attachments filter. Cover letters can print **fold marks**, and voucher
 checks can have the check in the middle or at the bottom.
 
@@ -66,10 +66,12 @@ letters, and a fundraiser's report includes year over year only once earlier yea
   letters print as before. (#247)
 
 ### Budget planning (Budget Managers)
-- **Budget Prep report** (Reports → Budget Prep). Every budget of a Fiscal Year with its history over earlier years —
-  budgeted, actual and the difference in dollars and percent, marked *over* or *under* — following the budget
-  continuation links, so a renumbered budget stays on one line. Choose how many earlier years to show (or all). The
-  current year shows the actual **year-to-date**, dated. Optional columns:
+- **Budget Review** (Reports → Budget Review). Every budget of a Fiscal Year with its history over earlier years,
+  following the budget continuation links, so a renumbered budget stays on one line. Each budget is a block: its
+  name, then **Budgeted**, **Actual** and **Difference** rows (the difference in dollars and percent, marked *over* or
+  *under*), with the years across and an **Avg** column (the average of the earlier years shown). Choose how many
+  earlier years to show (or all). The current year shows the actual **year-to-date**, dated. Named *Budget Prep* in
+  the first test builds (#283). Optional columns:
   - **Projected** — the average monthly activity so far carried to the Fiscal Year end. Untick a budget known to be
     complete (a finished fundraiser, say); it then shows *Complete: no projection*. Budgets of fundraisers that have
     ended start unticked, and your choices are remembered for the year.
@@ -88,7 +90,8 @@ letters, and a fundraiser's report includes year over year only once earlier yea
   appear as *Proposed* on the row of the budget they continue (or that has the same code), with a blank *Proposed
   Revision* column; new draft budgets are listed, and budgets not carried into the draft are marked *not in draft*.
   A table that would start low on a page (in its bottom 35%) starts on the next page. The scanned sheet can be
-  attached to the new Fiscal Year; it is not a required document. (#261, #286)
+  attached to the new Fiscal Year; it is not a required document. **Include the Budget Review** adds the review's
+  pages after the sheet, in the same PDF. (#261, #286, #283)
 
 ### Fundraisers
 - **Stakeholder report.** *Report…* on a fundraiser's page now produces a clean **Financial & Proceeds Statement** for

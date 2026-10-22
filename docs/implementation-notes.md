@@ -48,6 +48,26 @@ could not otherwise be corrected. Scope and safeguards:
 - Audited as `TRANSACTION_VOID_DATE_CORRECTED` with before/after snapshots and the reason.
 - Tests: `backend/tests/test_cr001_void_date.py` (5 tests) and E2E "CR-001".
 
+**2.1.0 — Budget Review (#283, Kyle 2026-10-20; built 2026-10-21 with layout A, the issue's recommendation).**
+- Renamed from Budget Prep. `budget_review()`, `budget_review_csv()` and `budget_review_pdf()` are the new names;
+  `budget_prep*` stay as aliases. The routes are `/api/reports/budget-review` and `/budget-review/projection-choices`,
+  and the `/budget-prep` paths still answer, hidden from the schema. The audit name is `report: BUDGET_REVIEW` (older
+  events keep `BUDGET_PREP`). Files are `budget-review-*.pdf/.csv`. The table `budget_projection_choice` is unchanged.
+- The figures are unchanged from #257. Each row adds `average`: the mean budgeted and actual of the prior years shown
+  that have a linked budget, with `compare()` for the difference (actual − budgeted, Kyle 2026-10-20) and `years`.
+  The CSV adds Avg budgeted / actual / difference / years.
+- **PDF, layout A:** a title band. For each budget, a heading row (spanning, shaded) and Budgeted / Actual /
+  Difference rows. The columns are the prior years, Avg, the current year (YTD), and optionally Projected (Budgeted =
+  the current budget, Actual = the projection) and Next year (its budget, and the change in the Difference row).
+  Each block is `NOSPLIT`, and the columns split into bands when there are many years. The screen
+  (`BudgetReview.tsx`, was `BudgetPrep.tsx`) shows the same layout.
+- **Planning Sheet:** `include_review=true` makes `append_review()` build the review of the same year (3 years,
+  projected with the person's choices, the Draft year's budgets when there is one) and append it with pypdf. Each
+  part keeps its own page numbers. Recorded in the sheet's `REPORT_GENERATED` (`include_review`, `review_pages`,
+  `review_years`).
+- Tests: `backend/tests/test_v210_budget_review.py` (alias, averages, CSV, PDF layout, Planning Sheet with the review,
+  access); `test_v210_budget_prep.py` (figures) is updated only for the name and layout; the E2E Budget Review steps.
+
 **2.1.0 — voucher layouts (#246, decided by Kyle 2026-10-15/21; built 2026-10-21).**
 - The 2.0.0 config model already allowed any `check_tops[0]` and one or two stubs anywhere that don't overlap
   (`StyleConfig._check_stubs`), and the renderer draws stubs at their own tops. What was missing was the presets and
@@ -378,7 +398,7 @@ budget, so per Fiscal Year). Reinitialize wipes it with the budgets.
 
   Each report is audited `REPORT_GENERATED` on the Fiscal Year.
 - PDF output:
-  - `_AuditDoc` takes a `pagesize`, so the Budget Prep report is landscape Letter; year columns split into bands when
+  - `_AuditDoc` takes a `pagesize`, so the Budget Review (then Budget Prep) report is landscape Letter; year columns split into bands when
     they don't fit.
   - The footer title carries the organization and print date.
   - The single-budget chart is a reportlab `VerticalBarChart`, with the legend in words.
@@ -393,7 +413,7 @@ budget, so per Fiscal Year). Reinitialize wipes it with the budgets.
     `/planning-sheet`.
   - `_successor()` falls back to a next-year budget with the **same code, type and level that continues nothing**,
     when the current budget isn't continued by anything. Hand-entered drafts therefore line up instead of appearing
-    twice (*not in draft* + *new in draft*). The Budget Prep next-year column uses the same rule.
+    twice (*not in draft* + *new in draft*). The Budget Review next-year column uses the same rule.
   - The Expense table starts on a new page when less than 35% of the page is left (`CondPageBreak(0.35 * BODY_H)`).
 - Tests: `test_v210_budget_prep.py`, `test_v210_planning_sheet.py` (negative role tests for Budget User, Register
   User, Auditor and Administrator) and the E2E "2.1.0 (#257, #261)".

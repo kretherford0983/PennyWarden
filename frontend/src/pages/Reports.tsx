@@ -3,7 +3,7 @@ import { Fragment, useEffect, useState } from "react";
 import { api, money, qs } from "../api";
 import { EntityPicker, ErrorBox, Field, Loading } from "../components";
 import { useMe } from "../App";
-import BudgetPrep from "./BudgetPrep";
+import BudgetReview from "./BudgetReview";
 import FlowReport from "./FlowReport";
 import { SIG_EMPTY, SignatureOptions, signatureProblem, type SigState } from "./SignatureOptions";
 
@@ -30,14 +30,14 @@ export default function Reports() {
           <button role="tab" aria-selected={tab === "entity"} className={tab === "entity" ? "primary" : ""} onClick={() => setTab("entity")}>Entity activity</button>
           <button role="tab" aria-selected={tab === "flow"} className={tab === "flow" ? "primary" : ""} onClick={() => setTab("flow")}>Financial Flow</button>
           {me.modules?.fundraisers ? <button role="tab" aria-selected={tab === "frdetail"} className={tab === "frdetail" ? "primary" : ""} onClick={() => setTab("frdetail")}>Fundraiser detail (audit)</button> : null}
-          {can("budget.manage") ? <button role="tab" aria-selected={tab === "prep"} className={tab === "prep" ? "primary" : ""} onClick={() => setTab("prep")}>Budget Prep</button> : null}
+          {can("budget.manage") ? <button role="tab" aria-selected={tab === "prep"} className={tab === "prep" ? "primary" : ""} onClick={() => setTab("prep")}>Budget Review</button> : null}
         </div>
       </div>
       {tab === "audit" ? <AuditReport fys={fys} accounts={accounts} /> : null}
       {tab === "close" ? <CloseReport fys={fys} /> : null}
       {tab === "entity" ? <EntityReport fys={fys} accounts={accounts} /> : null}
       {tab === "flow" ? <FlowReport accounts={accounts} /> : null}
-      {tab === "prep" && can("budget.manage") ? <BudgetPrep fys={fys} /> : null}
+      {tab === "prep" && can("budget.manage") ? <BudgetReview fys={fys} /> : null}
       {tab === "frdetail" ? <FundraiserDetailReport fys={fys} /> : null}
       <RestoreReports />
     </div>

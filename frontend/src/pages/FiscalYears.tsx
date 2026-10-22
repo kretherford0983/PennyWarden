@@ -3,7 +3,7 @@ import { api, money, qs } from "../api";
 import { ErrorBox, Field, FyStatus, Loading, Modal, useConfirmable, GuardedForm } from "../components";
 import { useMe } from "../App";
 import { Link, useRouter } from "../router";
-import { PlanningSheetDialog } from "./BudgetPrep";
+import { PlanningSheetDialog } from "./BudgetReview";
 
 export default function FiscalYears() {
   const { can } = useMe();
