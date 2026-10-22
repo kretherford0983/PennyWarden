@@ -48,6 +48,17 @@ could not otherwise be corrected. Scope and safeguards:
 - Audited as `TRANSACTION_VOID_DATE_CORRECTED` with before/after snapshots and the reason.
 - Tests: `backend/tests/test_cr001_void_date.py` (5 tests) and E2E "CR-001".
 
+**2.1.0 — scheduled backups: Kept as (#233, Kyle 2026-10-14; built 2026-10-21).**
+- `scheduled_backup.keep_levels(runs, daily, weekly, monthly)` returns each kept run's reasons ("Daily", "Weekly",
+  "Monthly", or "Latest" when only being the newest keeps it). `keep_set()` is now `set(keep_levels(...))`, so
+  retention and the column share one calculation. `_retained_runs()` and `_keep_args()` are shared by
+  `apply_retention()` and `kept_as()`.
+- `out()` adds `kept_as` to each history row: the levels; *Removed* (deleted by retention); *Removed at the next
+  backup* (managed but no longer kept after the settings changed); *Not managed (another folder)*; empty for failed
+  or running ones. Nothing new is stored.
+- Tests: `backend/tests/test_v210_backup_kept_as.py` (levels, Latest, 40 daily runs and a settings change before and
+  after the next run) and the E2E scheduled-backup test.
+
 **2.1.0 — contributor override for lines in no bucket (#303, Kyle 2026-10-21).**
 - New table `fundraiser_line_contributor` (migration `0043`): one row per fundraiser and line, holding the
   contributor shown for the part of the line in no bucket. Bucket parts keep `fundraiser_bucket_line.contributor_override`
