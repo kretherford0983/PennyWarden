@@ -3254,6 +3254,7 @@ test("#214: form rows line up - one control height, buttons and checkboxes centr
 
 // Keep this test LAST: it removes the financial data the other tests use.
 test("#312: Donations module - Administrator sets up the receipt; a Register User marks a deposit's donations and prints receipts (duplicate, corrected); an Auditor sees them", async ({ page }) => {
+  test.setTimeout(180_000);   // three sign-ins and five printed PDFs
   await login(page, "admin");
   await page.getByRole("link", { name: "System/About" }).click();
   await aboutTab(page, "General");
