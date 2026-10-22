@@ -29,6 +29,14 @@ def data(env, base):
     style = env.admin.post("/api/checks/styles", {"preset_key": "STANDARD_3UP"})
     assert style.status_code == 201
     env.ru.put("/api/me/preferences", {"theme": "dark"})
+    # 2.1.0 (#312): a deposit marked as a donation, with its printed receipt
+    env.admin.put("/api/system/modules", {"donations": True})
+    env.admin.put("/api/donations/setup", {"config": {"ein": "12-3456789", "org_address": ["1 Example Street"]}})
+    d = env.txn(acct, "DEPOSIT", [{"budget_id": base["inc_leaf"], "amount": "25.00", "entity_id": ent["id"]}])
+    assert env.ru.put(f"/api/donations/transactions/{d['id']}/lines", {"lines": [
+        {"allocation_id": d["allocations"][0]["id"], "donation": True}]}).status_code == 200
+    assert env.ru.post(f"/api/donations/transactions/{d['id']}/receipts",
+                       {"donor_entity_id": ent["id"], "confirmations": ["NO_DONOR_ADDRESS"]}).status_code == 200
     return {"txn": t, "entity": ent}
 
 
@@ -54,7 +62,7 @@ def test_confirmation_is_checked_before_anything(env, data):
 
 def test_reinitialize_removes_financial_data_keeps_users(env, data):
     info = env.admin.get("/api/system/reinitialize").json()
-    assert info["counts"]["transactions"] == 1 and info["cooldown_until"] is None
+    assert info["counts"]["transactions"] == 2 and info["cooldown_until"] is None
     next_number_before = env.bm.post("/api/entities", {"entity_type": "ORGANIZATION", "organization_name": "N1",
                                                        "confirmations": ["DUPLICATE_ENTITY"]}).json()["entity_number"]
     j = start(env)
@@ -80,13 +88,17 @@ def test_reinitialize_removes_financial_data_keeps_users(env, data):
     assert env.admin.get("/api/system/status").json()["workspace_name"] == "Acme Org"
     assert env.admin.get("/api/system/modules").json()["checks"] is True        # module switches kept
     assert env.admin.get("/api/checks/setup").json()["styles"] == []             # Payments data removed
+    assert env.admin.get("/api/donations/setup").json()["saved"] is False       # Donations setup removed (#312)
+    import sqlite3
+    db = sqlite3.connect(env.settings.data_dir / "database" / "fmpoc.sqlite3")
+    assert [db.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0] for t in ("donation_line", "donation_receipt")] == [0, 0]
     # the Multiple entity is there; new entities and Fiscal Years can be created; numbers continue
     new = bm.post("/api/entities", {"entity_type": "ORGANIZATION", "organization_name": "After",
                                     "confirmations": ["DUPLICATE_ENTITY"]})
     assert new.status_code == 201 and new.json()["entity_number"] > next_number_before
     # the audit log is kept and has the event
     ev = env.admin.get("/api/audit-events?action=REINITIALIZE").json()["items"][0]
-    assert ev["after"]["safety_backup"] == res["filename"] and ev["before"]["counts"]["transactions"] == 1
+    assert ev["after"]["safety_backup"] == res["filename"] and ev["before"]["counts"]["transactions"] == 2
     assert env.admin.get("/api/audit-events?action=SYSTEM_INITIALIZED").json()["items"]
     # the safety backup is recoverable by the server and verified
     pre = env.settings.data_dir / reinit.PRE_DIR / res["filename"]

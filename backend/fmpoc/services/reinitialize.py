@@ -31,7 +31,8 @@ from sqlalchemy.orm import Session
 
 from .. import audit
 from ..models import (Attachment, AuditEvent, BankAccount, BankAccountBalance, Budget, BudgetProjectionChoice, CheckAccount,
-                      CheckDocument, CheckNumberAcknowledgement, CheckPrinterSetting, CheckSigner, CheckStyle, Entity,
+                      CheckDocument, CheckNumberAcknowledgement, CheckPrinterSetting, CheckSigner, CheckStyle, DonationLine,
+                      DonationReceipt, DonationSettings, Entity,
                       FiscalYear, FiscalYearReview, Fundraiser, FundraiserBucket, FundraiserBucketCategory, FundraiserBucketLine, FundraiserBudget,
                       FundraiserFyReportNote, FundraiserSeries, FundraiserSeriesResult,
                       FundraiserClassification, FundraiserExclusion, FundraiserLineContributor, RegisterTransaction, Reminder,
@@ -45,11 +46,11 @@ CONFIRM_WORD = "reinitialize"
 COOLDOWN = dt.timedelta(hours=24)
 
 # children first
-WIPE = (FundraiserBucketLine, FundraiserLineContributor, FundraiserClassification, FundraiserExclusion, FiscalYearReview, Attachment,
+WIPE = (DonationReceipt, DonationLine, FundraiserBucketLine, FundraiserLineContributor, FundraiserClassification, FundraiserExclusion, FiscalYearReview, Attachment,
         TransactionAllocation, RegisterTransaction, CheckNumberAcknowledgement, CheckAccount, CheckPrinterSetting,
         BankAccountBalance, BankAccount, FundraiserBucket, FundraiserBucketCategory, FundraiserBudget, Fundraiser, FundraiserSeriesResult,
         FundraiserSeries, FundraiserFyReportNote, BudgetProjectionChoice, Budget, FiscalYear,
-        CheckDocument, CheckSigner, CheckStyle, RequestKey)
+        CheckDocument, CheckSigner, CheckStyle, DonationSettings, RequestKey)   # 2.1.0 (#312): donations
 
 
 class ReinitError(Exception):
