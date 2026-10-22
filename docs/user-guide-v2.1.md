@@ -238,6 +238,28 @@ in even thirds for a #10 envelope, on the first sheet only.
 
 With marks on the back, the print screen shows a banner: print on both sides of the paper (flip on long edge). (#247)
 
+## Organization profile
+
+**System/About → General → Organization** (Administrators) now holds the organization's **address, phone, email and
+EIN** next to its name. Save once and they are available everywhere `{VARIABLES}` are used — cover letters, envelopes,
+check memos and stubs, donation receipts:
+
+| Variable | Prints |
+|---|---|
+| `{ORG.NAME}` (or `{ORG}`) | the organization's name |
+| `{ORG.ADDRESS}` | the whole address, several lines (letters, envelopes, receipts) |
+| `{ORG.ADDRESS1}`, `{ORG.ADDRESS2}`, `{ORG.CITY}`, `{ORG.STATE}`, `{ORG.ZIP}`, `{ORG.COUNTRY}` | one part of the address |
+| `{ORG.PHONE}`, `{ORG.EMAIL}`, `{ORG.EIN}` | phone, email, EIN |
+
+Capitalization doesn't matter (`{Org.Name}` works). For example, a letterhead line `{ORG.ADDRESS1}, {ORG.CITY},
+{ORG.STATE} {ORG.ZIP}` no longer has to be retyped when the organization moves. Test prints and previews of check and
+letter templates still use a sample organization.
+
+**The organization is an entity too.** It is listed in Entities with a *Your organization* badge and can be chosen
+wherever an entity is chosen — for example for cash collected at an event, when no single person gave it. It is
+changed only in System/About and can't be inactivated. If you created an entity for your organization by hand before,
+you can keep using it or inactivate it. (A line recorded as the organization's can't be marked as a donation.) (#314)
+
 ## Donations (optional module)
 
 Donation receipt letters, printed from the deposits in the register. (The year-end giving statement and a donor report
@@ -245,11 +267,11 @@ are planned for 2.2.)
 
 ### Turning it on and setting it up (Administrator)
 1. **System/About → General → Optional modules → Donations module.** It works with the Payments module on or off.
-2. **Donations Setup** (in the menu):
-   - **EIN** (as 12-3456789) and the **mailing address**. Receipts can't be printed until both are entered; the
-     organization's name comes from System/About.
+2. **System/About → General → Organization:** the **EIN** (as 12-3456789) and the **address** (see *Organization
+   profile* below). Receipts can't be printed until both are entered.
+3. **Donations Setup** (in the menu):
    - **Receipt letter**: title, salutation, thank-you text and closing, with `{VARIABLES}` — type `{` for the list
-     (`{DONOR_NAME}`, `{AMOUNT}`, `{DATE_RECEIVED}`, `{PURPOSE}`, `{ORG_NAME}`, `{ORG_EIN}`, `{RECEIPT_NO}`…) — and the
+     (`{DONOR_NAME}`, `{AMOUNT}`, `{DATE_RECEIVED}`, `{PURPOSE}`, `{ORG.NAME}`, `{ORG.EIN}`, `{RECEIPT_NO}`…) — and the
      signer's **name and title** (there is room above the name to sign by hand).
    - The preview updates as you type; **Test print** prints it with sample data, marked SAMPLE – NOT A RECEIPT.
 

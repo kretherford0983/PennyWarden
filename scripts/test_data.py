@@ -184,10 +184,14 @@ def main(base: str, start_month: int = 7, backup: str | None = None, summary: st
     cfg.update(memo_default="{BUDGET_CODE}, INVOICE {INVOICE}", default_signer_id=signer["id"])
     admin.put(f"/api/checks/styles/{style['id']}", {"name": "Voucher checks", "config": cfg})
     tr.put(f"/api/checks/accounts/{acct['chk']['id']}", {"check_style_id": style["id"]})
-    # ---- Donations module (2.1.0, #312): a made-up EIN and address, and two donors with addresses
-    admin.put("/api/donations/setup", {"config": {"ein": "00-0000000", "org_address": ["400 Elm Street",
-                                                                                     "Cedar Valley, IA 50000"],
-                                                  "signer_name": "Jamie Ellison", "signer_title": "Treasurer"}})
+    # ---- the organization profile (2.1.0, #314): a made-up address, phone, email and EIN; the organization's own
+    # entity records the lump raffle cash below
+    admin.put("/api/system/organization", {"name": ORG, "address_line1": "400 Elm Street", "city": "Cedar Valley",
+                                           "state_region": "IA", "postal_code": "50000", "phone": "555-555-0142",
+                                           "email": "treasurer@example.org", "ein": "00-0000000"})
+    ent[ORG] = {"id": admin.get("/api/system/organization")["id"]}
+    # ---- Donations module (2.1.0, #312): the receipt signer, and two donors with addresses
+    admin.put("/api/donations/setup", {"config": {"signer_name": "Jamie Ellison", "signer_title": "Treasurer"}})
     for name in DONORS:
         ent[name] = tr.post("/api/entities", {"entity_type": "INDIVIDUAL", "primary_contact": name,
                                               "address_line1": "1200 Prairie Lane", "city": "Cedar Valley",
@@ -381,7 +385,7 @@ def main(base: str, start_month: int = 7, backup: str | None = None, summary: st
             tr.call("PATCH", f"/api/fundraiser-series/{a}", {"name": "Pancake Breakfast"})
             series_ids["pancake"] = a
         raffle_day = fy.date(5, 12)
-        txn(leaf, "chk", D, raffle_day, "Community donors", [("4230", amt(4350, k, 15), "Holiday raffle tickets")])
+        txn(leaf, "chk", D, raffle_day, ORG, [("4230", amt(4350, k, 15), "Holiday raffle tickets")])
         txn(leaf, "chk", W, raffle_day - dt.timedelta(days=30), "Cedar Valley Hardware",
             [("5430", amt(1100, k), "Raffle prizes - grill and gift cards")])
         fundraiser("raffle", {"name": f"Holiday Raffle {raffle_day.year}", "start_date": raffle_day.isoformat(),

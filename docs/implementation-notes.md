@@ -107,14 +107,35 @@ could not otherwise be corrected. Scope and safeguards:
 - Tests: `backend/tests/test_v210_fold_marks.py` (8 tests: tick positions from the content stream, address page,
   back pages, tuning and limits, test print, user and letter levels, audit, access) and the E2E letter steps.
 
+**2.1.0 — organization profile (#314, Kyle 2026-10-22; part (a) of #318).**
+- `entity.is_organization` and `entity.ein` (migration `0046`). One Organization entity per workspace, created by
+  `bootstrap.initialize` and, for existing workspaces, by the migration (named like the workspace, numbered from
+  `next_entity_number`). The migration moves the EIN and address lines saved in Donations Setup (#312) onto it
+  (a last line "City, ST 12345[-6789]" is split) and removes them from `donation_settings.config_json`;
+  `ReceiptConfig` drops the two old keys if a backup still has them.
+- `services/organization.py`: `get`, `ensure`, `values()` (`ORG.*` plus the older `ORG`, `ORG_NAME`, `ORG_ADDRESS`,
+  `ORG_EIN`), `SAMPLE` (test prints), `profile_out`, `update` (fields left out keep their value; EIN `^\d{2}-\d{7}$`;
+  phone through `entities.clean_phone`). `GET /api/system/organization` (`system.view`), `PUT` (`system.manage`; the
+  2.0.0 `{name}` body still works). `rename_organization` keeps the entity's name in step. Audit
+  `ORGANIZATION_UPDATED` on the workspace (so the Administrator sees it; it is not transaction content, BR-003).
+- Entities: `PATCH`/inactivate/restore of the organization entity → 409 `ORGANIZATION_ENTITY`; `is_organization`
+  is not writable (BR-098). Reinitialize keeps it.
+- Patterns: dotted names (`_NAME` allows one `.`), `ORG.*` in every context, `ORG.ADDRESS` only where line breaks are
+  allowed. Check printing adds the real `ORG.*` values in `variable_values`; the `SAMPLE_VALUES` carry the sample
+  organization. Donations read the EIN and address from the profile (`missing_setup(db, ws_id)`) and refuse a line
+  whose donor is the organization entity.
+- UI: `OrganizationPanel` (System/About → General), the Entities badge, Donations Setup shows the profile read-only
+  with a link; the variable picker completes dotted names.
+- Tests: `backend/tests/test_v210_organization.py` (6, including the data migration) and the E2E #126 and #312 steps.
+
 **2.1.0 — Donations module, part 1: receipt letters (#312, Kyle 2026-10-22; part of #256).**
 - Module switch `workspace.donations_enabled` (migration `0045`, off), the same pattern as Fundraisers and Payments:
   `services/donations.module_enabled/require_module/set_module` (audit `MODULE_ENABLED`/`MODULE_DISABLED`,
   entity "donations"), `ModulesIn.donations`, `/api/auth/me` `modules.donations`, diagnostics.
 - Permissions: `donation.setup` (Administrator), `donation.print` (Register User), `donation.view` (Budget Manager,
   Budget User, Register User, Auditor). Every `/api/donations` route also needs the module (404 MODULE_DISABLED).
-- Setup: `donation_settings.config_json` validated by `ReceiptConfig` (EIN `^\d{2}-\d{7}$`, up to 4 address lines,
-  font, size, date format, title/salutation/body/closing as `RECEIPT` patterns, signer name and title). Audit
+- Setup: `donation_settings.config_json` validated by `ReceiptConfig` (the EIN and address
+  moved to the organization profile in #314; font, size, date format, title/salutation/body/closing as `RECEIPT` patterns, signer name and title). Audit
   `DONATION_SETUP_UPDATED` with before/after. Preview, preview-image (PNG via `raster`) and test print use sample data
   only (`DONATION_RECEIPT_TEST` audited); printing is refused until the EIN and address are set (409
   SETUP_INCOMPLETE).

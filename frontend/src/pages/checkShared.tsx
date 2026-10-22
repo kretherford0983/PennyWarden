@@ -172,7 +172,7 @@ export function PatternInput({ value, onChange, variables, label, id, placeholde
     const i = before.lastIndexOf("{");
     if (i < 0 || before.slice(i).includes("}") || (i > 0 && before[i - 1] === "{")) return null; // "{{" is a literal brace
     const typed = before.slice(i + 1);
-    if (!/^[A-Za-z_]*$/.test(typed)) return null;
+    if (!/^([A-Za-z_][A-Za-z0-9_]*\.?)?[A-Za-z0-9_]*$/.test(typed)) return null;   // 2.1.0 (#314): ORG.NAME
     const list = variables.filter((v) => v.name.startsWith(typed.toUpperCase()));
     return list.length ? { start: i, typed, list } : null;
   }, [value, caret, variables]);

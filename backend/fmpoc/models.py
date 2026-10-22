@@ -234,6 +234,9 @@ class Entity(Base):
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_financial_institution: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     is_system: Mapped[bool] = mapped_column(Boolean, default=False)
+    # 2.1.0 (#314): the organization itself - one per workspace, maintained by Administrators in System/About
+    is_organization: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
+    ein: Mapped[str | None] = mapped_column(String(10), nullable=True)       # 12-3456789 (#314; other entities #315)
     active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     name_key: Mapped[str] = mapped_column(String(200), index=True)  # normalized name for duplicate search
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)

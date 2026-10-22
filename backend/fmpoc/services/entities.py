@@ -23,7 +23,8 @@ def name_key(s: str | None) -> str:
 
 def snapshot(e: Entity) -> dict:
     return {"id": e.id, "entity_number": e.entity_number, "display_name": e.display_name,
-            **{f: getattr(e, f) for f in FIELDS}, "active": e.active, "is_system": e.is_system}
+            **{f: getattr(e, f) for f in FIELDS}, "active": e.active, "is_system": e.is_system,
+            "is_organization": bool(e.is_organization), "ein": e.ein}
 
 
 def clean_phone(typed: str | None, current: str | None = None) -> str | None:
@@ -111,7 +112,15 @@ def _check_fi_permission(ctx, e: Entity) -> None:
         raise forbidden("Only a Budget Manager may edit, inactivate or restore a Financial Institution Entity.")
 
 
+def _check_not_organization(e: Entity) -> None:
+    """2.1.0 (#314): the organization's own entity is maintained by Administrators in System/About."""
+    if e.is_organization:
+        raise AppError(409, "ORGANIZATION_ENTITY", "This is your organization's own entity. An Administrator changes "
+                       "its details in System/About → General → Organization; it can't be inactivated.")
+
+
 def update(db: Session, ctx, e: Entity, data) -> Entity:
+    _check_not_organization(e)
     _check_fi_permission(ctx, e)
     before = snapshot(e)
     fields = data.model_fields_set - {"confirmations"}
@@ -138,6 +147,7 @@ def update(db: Session, ctx, e: Entity, data) -> Entity:
 
 
 def set_active(db: Session, ctx, e: Entity, active: bool, reason: str | None) -> Entity:
+    _check_not_organization(e)
     _check_fi_permission(ctx, e)
     if e.active == active:
         raise AppError(409, "INVALID_STATE", "Entity is already " + ("active." if active else "inactive."))

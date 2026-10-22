@@ -31,7 +31,9 @@ def data(env, base):
     env.ru.put("/api/me/preferences", {"theme": "dark"})
     # 2.1.0 (#312): a deposit marked as a donation, with its printed receipt
     env.admin.put("/api/system/modules", {"donations": True})
-    env.admin.put("/api/donations/setup", {"config": {"ein": "12-3456789", "org_address": ["1 Example Street"]}})
+    env.admin.put("/api/donations/setup", {"config": {"signer_name": "Pat Example"}})
+    env.admin.put("/api/system/organization", {"name": "Acme Org", "ein": "12-3456789",
+                                               "address_line1": "1 Example Street"})      # #314
     d = env.txn(acct, "DEPOSIT", [{"budget_id": base["inc_leaf"], "amount": "25.00", "entity_id": ent["id"]}])
     assert env.ru.put(f"/api/donations/transactions/{d['id']}/lines", {"lines": [
         {"allocation_id": d["allocations"][0]["id"], "donation": True}]}).status_code == 200

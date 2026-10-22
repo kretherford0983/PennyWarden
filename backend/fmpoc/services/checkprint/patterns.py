@@ -47,18 +47,29 @@ VARIABLES: dict[str, tuple[str, tuple[str, ...]]] = {
     "DONOR_ADDRESS": ("Donor's address from the entity (several lines)", (RECEIPT,)),
     "DATE_RECEIVED": ("Date the donation was received (the deposit's date)", (RECEIPT,)),
     "PURPOSE": ("Purpose of the donation (as marked on the deposit)", (RECEIPT,)),
-    "ORG_NAME": ("Organization name", (RECEIPT,)),
-    "ORG_ADDRESS": ("Organization's mailing address (several lines)", (RECEIPT,)),
-    "ORG_EIN": ("Organization's EIN", (RECEIPT,)),
+    "ORG_NAME": ("Organization name (same as {ORG.NAME})", (RECEIPT,)),
+    "ORG_ADDRESS": ("Organization's address, several lines (same as {ORG.ADDRESS})", (RECEIPT,)),
+    "ORG_EIN": ("Organization's EIN (same as {ORG.EIN})", (RECEIPT,)),
     "RECEIPT_NO": ("Receipt number, e.g. R-2026-0001", (RECEIPT,)),
 }
+# 2.1.0 (#314): the organization profile, everywhere (the address, several lines, where line breaks are allowed)
+EVERYWHERE = ALL + (RECEIPT,)
+for _k, _d in (("NAME", "Organization name"), ("ADDRESS1", "Organization's street address"),
+               ("ADDRESS2", "Organization's address, second line"), ("CITY", "Organization's city"),
+               ("STATE", "Organization's state"), ("ZIP", "Organization's ZIP code"),
+               ("COUNTRY", "Organization's country"), ("PHONE", "Organization's phone"),
+               ("EMAIL", "Organization's email"), ("EIN", "Organization's EIN")):
+    VARIABLES[f"ORG.{_k}"] = (_d + " (System/About → Organization)", EVERYWHERE)
+VARIABLES["ORG.ADDRESS"] = ("Organization's address, several lines (System/About → Organization)",
+                            (LETTER, ENVELOPE, RECEIPT))
+VARIABLES["ORG"] = (VARIABLES["ORG"][0], VARIABLES["ORG"][1] + (RECEIPT,))
 for _k in ("TODAY", "AMOUNT", "SIGNER", "SIGNER_TITLE"):        # shared with the receipt, described for it below
     VARIABLES[_k] = (VARIABLES[_k][0], VARIABLES[_k][1] + (RECEIPT,))
 RECEIPT_DESCRIPTIONS = {"AMOUNT": "Amount of this donor's donation, e.g. 100.00",
                         "SIGNER": "Name of the person signing the receipt",
                         "SIGNER_TITLE": "Title of the person signing the receipt"}
 MULTILINE = (LETTER, ENVELOPE, RECEIPT)     # contexts whose text may contain line breaks
-_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
+_NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?")    # 2.1.0 (#314): ORG.NAME
 
 
 class PatternError(ValueError):

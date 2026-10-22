@@ -1,5 +1,5 @@
 /** 2.1.0 (#312): the Donations module, part 1 - donation receipt letters.
- * - DonationSetup (Administrators): the organization's EIN and mailing address, the receipt template and signer, a live
+ * - DonationSetup (Administrators): the receipt template and signer (the EIN and address: System/About, #314), a live
  *   preview and a test print with sample data only.
  * - DonationReceiptDialog (from a deposit in the register): Register Users mark lines as donations and print one receipt
  *   per donor; Budget Managers, Budget Users and Auditors see the donation lines and receipts. */
@@ -7,6 +7,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import { ErrorBox, Field, Loading, Modal, useConfirmable } from "../components";
 import { useMe } from "../App";
+import { Link } from "../router";
 import { LivePreview, PatternInput, PdfViewer, Section, usePdf } from "./checkShared";
 
 const FONTS: [string, string][] = [["CARLITO", "Carlito (Calibri-compatible)"], ["SANS", "Liberation Sans (Arial-compatible)"], ["SERIF", "Liberation Serif (Times-compatible)"]];
@@ -34,32 +35,23 @@ export default function DonationSetup() {
     try { setPdf(await api.postBlob("/api/donations/setup/test-print", { config: cfg }), "receipt-test-print.pdf"); setViewing(true); } catch (x) { setErr(x); }
   };
   const vars = s.variables;
-  const address: string[] = cfg.org_address.length ? cfg.org_address : [""];
   return (
     <div className="page donation-setup">
       <h1>Donations Setup</h1>
       <p className="hint">Donation receipts are printed by Register Users from a deposit in the register (<b>Donation receipt…</b>). Here you set what every
         receipt carries. The preview and the test print use sample data only.</p>
       <ErrorBox error={err} />
-      {s.missing.length ? <div className="alert warn" role="alert" data-testid="setup-missing">Receipts can't be printed until you enter {s.missing.join(" and ")}.</div> : null}
+      {s.missing.length ? <div className="alert warn" role="alert" data-testid="setup-missing">Receipts can't be printed until you enter {s.missing.join(" and ")} in{" "}
+        <Link to="/about/general">System/About → Organization</Link>.</div> : null}
       <div className="setup-grid">
         <div>
           <Section id="org" scope="pw-donations" title="Organization">
-            <div className="row form-row">
-              <Field label="EIN (Employer Identification Number)" hint="9 digits, as 12-3456789">
-                <input value={cfg.ein} maxLength={10} placeholder="12-3456789" onChange={(e) => set("ein", e.target.value)} />
-              </Field>
-            </div>
-            <fieldset>
-              <legend>Mailing address</legend>
-              {address.map((l, i) => (
-                <Field key={i} label={`Address line ${i + 1}`}>
-                  <input value={l} maxLength={200} onChange={(e) => set("org_address", address.map((x, j) => (j === i ? e.target.value : x)))} />
-                </Field>
-              ))}
-              {address.length < 4 ? <button type="button" className="link small" onClick={() => set("org_address", [...address, ""])}>Add a line</button> : null}
-            </fieldset>
-            <p className="hint">The organization's name comes from System/About. Every receipt prints the organization's name and EIN, the donor, the amount,
+            <dl className="dl" data-testid="donation-org">
+              <dt>Name</dt><dd>{s.organization.name}</dd>
+              <dt>Address</dt><dd>{s.organization.address.length ? s.organization.address.map((l: string, i: number) => <div key={i}>{l}</div>) : <span className="muted">Not entered</span>}</dd>
+              <dt>EIN</dt><dd>{s.organization.ein || <span className="muted">Not entered</span>}</dd>
+            </dl>
+            <p className="hint">These come from <Link to="/about/general">System/About → Organization</Link>, where you change them. Every receipt prints the organization's name and EIN, the donor, the amount,
               the date received, the receipt number and the goods or services statement – these can't be removed.</p>
           </Section>
           <Section id="tpl" scope="pw-donations" title="Receipt letter">
@@ -82,7 +74,7 @@ export default function DonationSetup() {
           <div className="actions left">
             <button className="primary" onClick={save} disabled={!dirty}>Save</button>
             <button onClick={testPrint}>Test print (sample data)</button>
-            <button onClick={() => { setCfg({ ...s.defaults, ein: cfg.ein, org_address: cfg.org_address, signer_name: cfg.signer_name, signer_title: cfg.signer_title }); setSaved(false); }}>Default wording</button>
+            <button onClick={() => { setCfg({ ...s.defaults, signer_name: cfg.signer_name, signer_title: cfg.signer_title }); setSaved(false); }}>Default wording</button>
             {saved && !dirty ? <span className="hint" role="status">Saved.</span> : dirty ? <span className="hint">Unsaved changes</span> : null}
           </div>
         </div>
@@ -101,7 +93,7 @@ export default function DonationSetup() {
 }
 
 // ------------------------------------------------------------------ a deposit's donations (register)
-type Line = { allocation_id: number; donor: string; donor_entity_id: number | null; description: string; amount: string; donation: boolean; purpose: string; goods: string; goods_description: string };
+type Line = { allocation_id: number; donor: string; donor_entity_id: number | null; donor_is_organization: boolean; description: string; amount: string; donation: boolean; purpose: string; goods: string; goods_description: string };
 
 const cents = (s: string): number | null => {
   const t = s.replace(/[$,\s]/g, "");
@@ -122,7 +114,7 @@ export function DonationReceiptDialog({ txn, onClose, onChanged }: { txn: any; o
   const { run, dialog } = useConfirmable();
   const take = (x: any) => {
     setD(x);
-    setLines(x.lines.map((l: any) => ({ allocation_id: l.allocation_id, donor: l.donor, donor_entity_id: l.donor_entity_id, description: l.description, amount: l.amount,
+    setLines(x.lines.map((l: any) => ({ allocation_id: l.allocation_id, donor: l.donor, donor_entity_id: l.donor_entity_id, donor_is_organization: !!l.donor_is_organization, description: l.description, amount: l.amount,
       donation: l.donation, purpose: l.purpose || "", goods: l.goods_cents ? (l.goods_cents / 100).toFixed(2) : "", goods_description: l.goods_description || "" })));
   };
   const load = () => api.get(`/api/donations/transactions/${txn.id}`).then(take, setErr);
@@ -164,7 +156,8 @@ export function DonationReceiptDialog({ txn, onClose, onChanged }: { txn: any; o
             <tbody>
               {lines.map((l, i) => (
                 <tr key={l.allocation_id}>
-                  <td><input type="checkbox" aria-label={`Donation: ${l.donor || "no donor"} ${l.amount}`} checked={l.donation} disabled={!editable || (!l.donor_entity_id && !l.donation)}
+                  <td><input type="checkbox" aria-label={`Donation: ${l.donor || "no donor"} ${l.amount}`} checked={l.donation} disabled={!editable || ((!l.donor_entity_id || l.donor_is_organization) && !l.donation)}
+                             title={l.donor_is_organization ? "Your own organization can't be the donor: record the donor as the line's entity" : undefined}
                              onChange={(e) => setLine(i, { donation: e.target.checked })} /></td>
                   <td>{l.donor || <span className="muted">No entity</span>}</td>
                   <td>{l.description}</td>

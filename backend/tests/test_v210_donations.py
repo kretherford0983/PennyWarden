@@ -9,8 +9,10 @@ import io
 import pytest
 from pypdf import PdfReader
 
-SETUP = {"ein": "12-3456789", "org_address": ["100 Sample Avenue", "Sample Town, US 55555"],
-         "signer_name": "Jordan Sample", "signer_title": "Treasurer"}
+SETUP = {"signer_name": "Jordan Sample", "signer_title": "Treasurer"}
+# 2.1.0 (#314): the EIN and address are on the organization profile (System/About)
+ORG = {"name": "Acme Org", "ein": "12-3456789", "address_line1": "100 Sample Avenue", "city": "Sample Town",
+       "state_region": "US", "postal_code": "55555"}
 
 
 def text(pdf: bytes) -> str:
@@ -24,6 +26,8 @@ def enable(env, on=True):
 
 
 def setup(env, **kw):
+    r = env.admin.put("/api/system/organization", ORG)
+    assert r.status_code == 200, r.text
     cfg = dict(env.admin.get("/api/donations/setup").json()["config"], **SETUP, **kw)
     r = env.admin.put("/api/donations/setup", {"config": cfg})
     assert r.status_code == 200, r.text
@@ -87,9 +91,10 @@ def test_setup_is_administrator_only_and_validated(env, base):
     for c in (env.ru, env.bm, env.auditor):
         assert c.get("/api/donations/setup").status_code == 403
     s = env.admin.get("/api/donations/setup").json()
-    assert s["missing"] == ["the organization's EIN", "the organization's mailing address"]
-    assert {v["name"] for v in s["variables"]} >= {"DONOR_NAME", "AMOUNT", "ORG_EIN", "RECEIPT_NO", "SIGNER"}
-    bad = env.admin.put("/api/donations/setup", {"config": {**s["config"], "ein": "123456789"}})
+    assert s["missing"] == ["the organization's EIN", "the organization's address"]
+    assert {v["name"] for v in s["variables"]} >= {"DONOR_NAME", "AMOUNT", "ORG.EIN", "ORG.NAME", "RECEIPT_NO",
+                                                   "SIGNER"}
+    bad = env.admin.put("/api/system/organization", {**ORG, "ein": "123456789"})
     assert bad.status_code == 422 and "12-3456789" in bad.json()["error"]["message"]
     bad = env.admin.put("/api/donations/setup", {"config": {**s["config"], "body": "Thanks {DONOR_NAM}"}})
     assert bad.status_code == 422 and "DONOR_NAM" in bad.text

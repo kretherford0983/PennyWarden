@@ -12,13 +12,14 @@ PennyWarden 2.1.0 is mostly about **fundraisers**:
 Budget Managers get a **Budget Review** report and a **Fiscal Year Planning Sheet**. The register adds electronic
 payments, sorting by date or cleared, and an attachments filter. Cover letters can print **fold marks**, and voucher
 checks can have the check in the middle or at the bottom. A new optional **Donations module** prints donation receipt
-letters from deposits.
+letters from deposits, and the organization now has a **profile** (address, phone, email, EIN) of its own.
 
-**Upgrading from 2.0.0.** The database is updated automatically (migrations `0035` to `0045`: columns and tables
+**Upgrading from 2.0.0.** The database is updated automatically (migrations `0035` to `0046`: columns and tables
 added, no existing value changed). Going back to 2.0.0 needs the data snapshot the installer takes before upgrading
 (docs/upgrade.md). Existing check styles, letter templates and reports work as before. Fold marks are off on existing
 letters, and a fundraiser's report includes year over year only once earlier years are linked or entered. The
-Donations module is off until an Administrator turns it on.
+Donations module is off until an Administrator turns it on. Each organization gets its own entity (named like the
+organization) for the new organization profile.
 
 ### Register
 - **Sort by Date or Cleared.** Click the *Date* or *Cleared* heading to sort by it; click again for newest first. Each
@@ -67,10 +68,22 @@ Donations module is off until an Administrator turns it on.
   own default, and the print screen can change it for one letter. New window-envelope letters have them on; existing
   letters print as before. (#247)
 
+### Organization profile (new)
+- **The organization's own details in one place.** *System/About → General → Organization* now holds the
+  organization's address, phone, email and EIN beside its name (Administrators). Letters, envelopes, check memos and
+  stubs, and donation receipts can use them as `{ORG.NAME}`, `{ORG.ADDRESS}` (several lines, in letters, envelopes and
+  receipts), `{ORG.ADDRESS1}`, `{ORG.ADDRESS2}`, `{ORG.CITY}`, `{ORG.STATE}`, `{ORG.ZIP}`, `{ORG.COUNTRY}`,
+  `{ORG.PHONE}`, `{ORG.EMAIL}` and `{ORG.EIN}` (any capitalization). `{ORG}` still works. Test prints keep using a
+  sample organization.
+- **The organization is an entity.** It appears in Entities with a *Your organization* badge and can be chosen
+  wherever an entity is chosen, e.g. for cash collected at an event, so you no longer need to create an entity for
+  your own organization. It is changed only in System/About and can't be inactivated. If you created one by hand, you
+  can keep using it or inactivate it. (#314)
+
 ### Donations module (optional, new)
 - **Donation receipt letters** (part 1 of the Donations module; the year-end giving statement and the donor report
-  follow in 2.2). An Administrator turns the module on in *System/About* and, in **Donations Setup**, enters the
-  organization's **EIN** and mailing address, the receipt letter's wording (with `{VARIABLES}` such as
+  follow in 2.2). An Administrator turns the module on in *System/About*, enters the organization's **EIN** and
+  address in the organization profile, and, in **Donations Setup**, the receipt letter's wording (with `{VARIABLES}` such as
   `{DONOR_NAME}` and `{AMOUNT}`) and the signer's name and title, with a live preview and a test print with sample
   data only. In the register, **Donation receipt…** on a deposit marks its lines as donations (with an optional
   purpose and any goods or services given in exchange) and prints **one receipt per donor**, numbered
