@@ -138,3 +138,19 @@ def test_migration_creates_the_entity_and_moves_the_donation_ein(tmp_path):
         assert c.exec_driver_sql("SELECT next_entity_number FROM workspace WHERE id = 1").scalar() == 8
         left = json.loads(c.exec_driver_sql("SELECT config_json FROM donation_settings").scalar())
         assert left == {"title": "Thanks"}
+
+
+def test_a_several_line_address_prints_as_lines_on_envelopes_and_letterheads():
+    """{ORG.ADDRESS} in a one-line field (envelope return address, letterhead line) gives one printed line per
+    address line - not both on one line with a control character between them."""
+    from fmpoc.services.checkprint import documents
+    from fmpoc.services.checkprint import service as svc
+    env_cfg = documents.parse("ENVELOPE", documents.default_config("ENVELOPE")).model_copy(
+        update={"return_lines": ["{ORG.NAME}", "{ORG.ADDRESS}"]})
+    ret, _to, _e = documents.envelope_lines(env_cfg, dict(svc.SAMPLE_VALUES["NORMAL"]), ["X"], True)
+    assert ret == ["Sample Organization", "100 Sample Avenue", "Sample Town, US 55555"]
+    assert "\x00" not in text(svc.sample_envelope_pdf(env_cfg))
+    letter_cfg = documents.parse("LETTER", documents.default_config("LETTER")).model_copy(
+        update={"letterhead": ["{ORG.NAME}", "{ORG.ADDRESS}"]})
+    lines = PdfReader(io.BytesIO(svc.sample_letter_pdf(letter_cfg))).pages[0].extract_text().split("\n")
+    assert lines[:3] == ["Sample Organization", "100 Sample Avenue", "Sample Town, US 55555"]
