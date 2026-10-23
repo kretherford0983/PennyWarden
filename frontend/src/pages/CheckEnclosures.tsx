@@ -19,6 +19,9 @@ export function EnclosuresPanel({ txnId, signerId, onChanged, intro }: { txnId: 
   const [done, setDone] = useState<Set<string>>(new Set());
   const [adjust, setAdjust] = useState(false);
   const [envAnyway, setEnvAnyway] = useState(false);
+  // 2.1.0 (#247): fold marks for this letter - filled in from the user's own default, else the template's
+  const [fold, setFold] = useState("NONE");
+  const [foldSettings, setFoldSettings] = useState(false);
   const { run, dialog } = useConfirmable();
   const load = () => api.get(`/api/checks/transactions/${txnId}/documents`).then((d) => {
     setDocs(d);
@@ -28,6 +31,8 @@ export function EnclosuresPanel({ txnId, signerId, onChanged, intro }: { txnId: 
     setEnvId((cur) => { const id = cur || (e ? String(e.id) : ""); const en = d.envelopes.find((x: any) => String(x.id) === id); if (en && !cur) setUseReturn(!!en.return_address); return id; });
   }, setErr);
   useEffect(() => { load(); }, [txnId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const foldDefault = docs?.letters.find((x: any) => String(x.id) === letterId)?.fold_default || "NONE";
+  useEffect(() => { setFold(foldDefault); }, [letterId, foldDefault]);
   if (!docs) return err ? <ErrorBox error={err} /> : <Loading />;
   if (!docs.letters.length && !docs.envelopes.length) return null;
   const env = docs.envelopes.find((x: any) => String(x.id) === envId);
@@ -39,7 +44,7 @@ export function EnclosuresPanel({ txnId, signerId, onChanged, intro }: { txnId: 
   const printLetter = async () => {
     setErr(null);
     try {
-      const blob = await run((c) => api.postBlob(`/api/checks/transactions/${txnId}/letter`, { document_id: Number(letterId), signer_id: signerId, confirmations: c }));
+      const blob = await run((c) => api.postBlob(`/api/checks/transactions/${txnId}/letter`, { document_id: Number(letterId), signer_id: signerId, fold_marks: fold, confirmations: c }));
       if (!blob) return;
       setPdf(blob, "cover-letter.pdf"); setViewing("letter"); setDone((s) => new Set(s).add("letter")); onChanged();
     } catch (x) { setErr(x); }
@@ -66,10 +71,27 @@ export function EnclosuresPanel({ txnId, signerId, onChanged, intro }: { txnId: 
           <Field label="Cover letter">
             <select value={letterId} onChange={(e) => setLetterId(e.target.value)}>{docs.letters.map((d: any) => <option key={d.id} value={d.id}>{d.name}</option>)}</select>
           </Field>
+          <Field label="Fold marks">
+            <select value={fold} onChange={(e) => setFold(e.target.value)} aria-label="Fold marks">
+              <option value="NONE">None</option>
+              <option value="FRONT">On the front</option>
+              <option value="BACK">On the back (two-sided)</option>
+            </select>
+          </Field>
           <button onClick={printLetter} disabled={!letterId}>{done.has("letter") ? "Print the cover letter again" : "Print cover letter"}</button>
           {done.has("letter") ? <span className="badge green">Attached</span> : null}
         </div>
       ) : null}
+      {docs.letters.length && include && fold === "BACK" ? (
+        <div className="alert warn" role="alert" data-testid="fold-back-banner"><b>Print on both sides of the paper (flip on long edge).</b> The fold
+          marks print on the back of the first sheet. Make sure the printer can print two-sided and is set to; printed one-sided,
+          the fold marks come out on a separate sheet.</div>
+      ) : null}
+      {docs.letters.length && include ? (
+        <p className="hint">Fold marks: small ticks at the edges to fold the letter in even thirds.{" "}
+          <button className="link small" onClick={() => setFoldSettings((v) => !v)}>{foldSettings ? "Hide" : "My letter printer settings"}{docs.my_letter_fold !== "TEMPLATE" ? " (adjusted)" : ""}</button></p>
+      ) : null}
+      {foldSettings ? <LetterPrinter current={docs.my_letter_fold} onSaved={load} /> : null}
       {windowLetter ? (
         <p className="hint" data-testid="window-letter-note"><b>Window envelope letter:</b> the addresses print on the letter and show
           through a #10 double-window envelope, so there is no envelope to print.
@@ -103,6 +125,31 @@ export function EnclosuresPanel({ txnId, signerId, onChanged, intro }: { txnId: 
       ) : null}
       {dialog}
     </section>
+  );
+}
+
+/** 2.1.0 (#247): the user's own default for cover-letter fold marks (My Printer Settings). */
+function LetterPrinter({ current, onSaved }: { current: string; onSaved: () => void }) {
+  const [v, setV] = useState(current);
+  const [err, setErr] = useState<unknown>(null);
+  const [saved, setSaved] = useState(false);
+  const save = async () => {
+    setErr(null); setSaved(false);
+    try { await api.put("/api/checks/my-printer/letter", { fold_marks: v }); setSaved(true); onSaved(); } catch (x) { setErr(x); }
+  };
+  return (
+    <div className="card subtle" data-testid="letter-printer">
+      <p className="hint">This setting is yours only. Choose <i>On the back</i> only if your printer prints two-sided.</p>
+      <ErrorBox error={err} />
+      <Field label="Fold marks on my letters">
+        <select value={v} onChange={(e) => { setV(e.target.value); setSaved(false); }} aria-label="Fold marks on my letters">
+          <option value="TEMPLATE">Use the template's setting</option>
+          <option value="FRONT">On the front</option>
+          <option value="BACK">On the back (my printer prints two-sided)</option>
+        </select>
+      </Field>
+      <div className="row form-row"><button onClick={save}>Save my setting</button>{saved ? <span className="hint" role="status">Saved.</span> : null}</div>
+    </div>
   );
 }
 

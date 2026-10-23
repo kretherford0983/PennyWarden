@@ -6,7 +6,8 @@
 # Layout:  /opt/pennywarden/releases/<timestamp>/  binaries (replaceable)   /opt/pennywarden/current -> active release
 #          /var/lib/pennywarden/                    APP_DATA_DIR: database, attachments, secrets, logs, config.toml
 #          /var/backups/pennywarden/                automatic data snapshot taken before every upgrade
-# The app listens on 127.0.0.1 only; publish it through Cloudflare Tunnel or a local HTTPS reverse proxy.
+# The app listens on 127.0.0.1 by default (host / Bind Address in config.toml); publish it through Cloudflare Tunnel or
+# a local HTTPS reverse proxy. 2.1.0 (#236): the health check and the final message use the configured Bind Address.
 #
 # The application was renamed twice: 1.7.0 - PennyWarden (1.6.6 to 1.6.8: service "fundwarden", /opt/fundwarden,
 # /var/lib/fundwarden) and 1.6.6 - Fundwarden (before: service "fmpoc", /opt/fmpoc, /var/lib/fmpoc). When this
@@ -60,6 +61,12 @@ install -d -m 0755 "$REL"
 tar -xzf "$TARBALL" -C "$REL" --strip-components=1 --no-same-owner
 chown -R root:root "$REL"; chmod -R go-w "$REL"
 "$REL/pennywarden" --version >/dev/null
+# 2.1.0 (#237): check the existing config.toml with the new release BEFORE anything is stopped or migrated
+CHECK_DIR="$DATA"; [ "$MIGRATE" = 1 ] && CHECK_DIR="$OLD_DATA"
+if [ -f "$CHECK_DIR/config.toml" ] && ! "$REL/pennywarden" apply-config --dry-run --data-dir "$CHECK_DIR" >/dev/null; then
+  echo "Fix $CHECK_DIR/config.toml (see above) and run the installer again."
+  rm -rf "$REL"; exit 1
+fi
 
 if [ "$MIGRATE" = 1 ]; then
   echo "==> found an installation under the old name ($OLD_SVC, $OLD_DATA): migrating it to PennyWarden"
@@ -105,16 +112,13 @@ secure_cookies = "true"     # browsers reach the app over HTTPS (Cloudflare edge
 trusted_proxies = "127.0.0.1"
 # folders an Administrator may choose for scheduled backups, as a list, e.g.
 #   backup_folders = ["/srv/pennywarden-backups", "/mnt/nas/pennywarden"]
-# They must be outside /home; the installer lets the service write to them (run it again after changing this list).
+# They must be outside /home. After changing this list run: sudo pennywarden apply-config
 backup_folders = []
 CFG
   chown "$USER_:$USER_" "$DATA/config.toml"; chmod 0600 "$DATA/config.toml"
 fi
-# health check port: --port, else the port of the existing config.toml (never changed by an upgrade), else 8765
-if [ -z "$PORT" ]; then
-  PORT="$(sed -n 's/^[[:space:]]*port[[:space:]]*=[[:space:]]*\([0-9][0-9]*\).*/\1/p' "$DATA/config.toml" | head -1)"
-  [ -n "$PORT" ] || PORT=8765
-fi
+# --port only sets the port of a NEW config.toml; an existing one is never changed by an upgrade. The health check
+# reads host and port from config.toml (2.1.0, #236: apply-config --show-url).
 
 cat > /etc/systemd/system/$SVC.service <<UNIT
 [Unit]
@@ -151,36 +155,6 @@ WantedBy=multi-user.target
 UNIT
 
 ln -sfn "$REL" "$OPT/current"
-# 2.0.0 build 13: the service may write only to its data folder (ProtectSystem=strict), so the scheduled-backup folders
-# listed in config.toml (backup_folders) are added to its write list in a drop-in; a missing folder ("-") does not stop
-# the service from starting. Rewritten on every run; a manual "systemctl edit" override is left alone.
-DROPIN=/etc/systemd/system/$SVC.service.d
-FOLDERS="$("$REL/python/bin/python3" -I - "$DATA/config.toml" <<'PY' 2>/dev/null || true
-import sys, tomllib
-try:
-    v = tomllib.load(open(sys.argv[1], "rb")).get("server", {}).get("backup_folders", [])
-except Exception:
-    sys.exit(0)
-v = v if isinstance(v, list) else [p for p in str(v).replace("\n", ":").split(":")]
-for p in v:
-    p = str(p).strip()
-    if p.startswith("/") and "\n" not in p:
-        print(p)
-PY
-)"
-if [ -n "$FOLDERS" ]; then
-  install -d -m 0755 "$DROPIN"
-  { echo "# Written by install-server.sh from backup_folders in $DATA/config.toml - run the installer again after changing it."
-    echo "[Service]"
-    printf '%s\n' "$FOLDERS" | while IFS= read -r f; do
-      case "$f" in /home/*|/root/*|/run/user/*) echo "# $f is under a protected home folder (ProtectHome) - the service can't use it; choose another folder" ;;
-                   *) printf 'ReadWritePaths="-%s"\n' "$(printf %s "$f" | sed 's/\\/\\\\/g; s/"/\\"/g')" ;; esac
-    done
-  } > "$DROPIN/backup-folders.conf"
-  echo "==> scheduled-backup folders the service may write to:"; grep -E '^(ReadWritePaths|# /)' "$DROPIN/backup-folders.conf" | sed 's/^/    /'
-else
-  rm -f "$DROPIN/backup-folders.conf"
-fi
 # 2.0.0 build 13: the host commands (sudo pennywarden restore | reinitialize | reset-password | reset-mfa ...) on the
 # PATH. A wrapper, not a symlink: it always runs the current release.
 CMD=/usr/local/bin/pennywarden
@@ -196,13 +170,29 @@ CMDSH
 else
   echo "NOTE: $CMD exists and was not written by this installer; left unchanged (use $OPT/current/pennywarden)."
 fi
+# 2.0.0 build 13: the service may write only to its data folder (ProtectSystem=strict), so the scheduled-backup folders
+# in config.toml (backup_folders) are added to its write list in the drop-in pennywarden.service.d/backup-folders.conf.
+# 2.1.0 (#237): written by the same command the server owner runs after changing backup_folders, so the two can't
+# drift apart. A manual "systemctl edit" override is left alone.
+if ! "$REL/pennywarden" apply-config --no-restart --installer --data-dir "$DATA"; then
+  echo "==> apply-config failed - fix $DATA/config.toml, then: sudo pennywarden apply-config"
+  if [ "$MIGRATE" = 1 ]; then
+    systemctl disable --now "$SVC" >/dev/null 2>&1 || true
+    mv "$DATA" "$DATA.failed-migration-$STAMP"
+    systemctl enable --now "$OLD_SVC" >/dev/null 2>&1 || true
+    echo "    the old service '$OLD_SVC' is running again on its unchanged data; the copy is in $DATA.failed-migration-$STAMP"
+  fi
+  exit 1
+fi
+# 2.1.0 (#236): connect to the configured Bind Address (0.0.0.0 -> 127.0.0.1, a specific address as is)
+URL="$("$REL/pennywarden" apply-config --show-url --data-dir "$DATA")"
 systemctl daemon-reload
 systemctl enable --now "$SVC" >/dev/null
 systemctl restart "$SVC"
 
 echo -n "==> waiting for health"
 for i in $(seq 1 60); do
-  if "$REL/python/bin/python3" -c "import urllib.request,sys; urllib.request.urlopen('http://127.0.0.1:$PORT/api/health', timeout=2)" 2>/dev/null; then echo " OK"; break; fi
+  if "$REL/python/bin/python3" -c "import urllib.request,sys; urllib.request.urlopen('$URL/api/health', timeout=2)" 2>/dev/null; then echo " OK"; break; fi
   echo -n "."; sleep 1
   if [ "$i" = 60 ]; then
     echo " FAILED"; journalctl -u "$SVC" -n 40 --no-pager || true
@@ -218,10 +208,11 @@ for i in $(seq 1 60); do
 done
 # keep the three newest releases
 ls -1dt "$OPT"/releases/* | tail -n +4 | xargs -r rm -rf
-"$REL/python/bin/python3" -c "import urllib.request; print(urllib.request.urlopen('http://127.0.0.1:$PORT/api/system/status').read().decode())"
+"$REL/python/bin/python3" -c "import urllib.request; print(urllib.request.urlopen('$URL/api/system/status').read().decode())"
 echo "Installed. Service: systemctl status $SVC | logs: journalctl -u $SVC -f | data: $DATA"
 echo "Host commands: sudo pennywarden restore --list | restore FILE | reinitialize | reset-password --user NAME | reset-mfa --user NAME (add --data-dir $DATA)"
-echo "Point your tunnel/reverse proxy at http://127.0.0.1:$PORT"
+echo "After changing config.toml (e.g. backup_folders): sudo pennywarden apply-config"
+"$REL/pennywarden" apply-config --show-endpoints --data-dir "$DATA"
 if [ "$MIGRATE" = 1 ]; then
   echo
   echo "MIGRATED from the old name. Your tunnel/reverse proxy needs no change (same port)."

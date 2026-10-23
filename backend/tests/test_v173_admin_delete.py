@@ -162,10 +162,11 @@ def test_register_admin_deletes_an_uncleared_transaction(env, base, admins):
     assert env.ru.get(f"/api/register?bank_account_id={a}&status=deleted").status_code == 422   # nobody else
     ev = env.auditor.get(f"/api/audit-events?action=TRANSACTION_DELETED&object_id={t['id']}").json()["items"]
     assert len(ev) == 1 and ev[0]["after"]["delete_reason"] == "Entered twice"
-    # the check number stays used
+    # 2.1.0 (#289, changed on purpose): deleting releases the check number - another record can use it
     r = env.ru.post("/api/transactions", {"bank_account_id": a, "transaction_type": "WITHDRAWAL", "transaction_date": "2026-08-01",
                                           "check_number": "1001", "allocations": [{"budget_id": base["exp_leaf"], "amount": "1.00"}]})
-    assert r.status_code == 409 and "deleted transaction" in r.json()["error"]["message"]
+    assert r.status_code == 201, r.text
+    assert got[0]["check_number"] == "1001"            # the deleted record keeps it for the Auditors
     # a deleted transaction cannot be edited or voided
     assert admins["ra"].post(f"/api/transactions/{t['id']}/delete", {"reason": "again"}).status_code == 404
 

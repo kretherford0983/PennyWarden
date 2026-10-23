@@ -536,3 +536,85 @@ button.small, label.button { display: inline-flex; align-items: center; justify-
   padding: 6px 14px; color: var(--muted); font-weight: 600; min-height: var(--control-h); }
 .page-tabs [role=tab]:hover { color: var(--text); background: var(--surface-2); }
 .page-tabs [role=tab].current { color: var(--primary); border-bottom-color: var(--primary); }
+
+/* 2.1.0 (#262): sortable register headings (Date, Cleared) */
+.table th .sort-head { background: none; border: none; padding: 0; font: inherit; font-weight: inherit; color: inherit;
+  cursor: pointer; white-space: nowrap; min-height: 0; }
+.table th .sort-head:hover { text-decoration: underline; }
+.table th .sort-head:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
+.table th .sort-arrow.idle { opacity: 0.45; }
+.sort-note { margin: 4px 0 6px; }
+/* 2.1.0 (#260): electronic payment - the kind of number and the number side by side */
+/* 2.1.0 (#260, build 2 feedback): checkbox spanning two rows | Paid by (across) / kind of number | the number */
+.electronic-payment { margin: 4px 0 8px; }
+.electronic-payment.on { display: grid; grid-template-columns: auto minmax(13em, 16em) minmax(12em, 1fr);
+  column-gap: 16px; align-items: start; }
+.electronic-payment.on .ep-toggle { grid-row: 1 / span 2; grid-column: 1; align-self: center; }
+.electronic-payment .ep-method { grid-row: 1; grid-column: 2 / span 2; }
+.electronic-payment .ep-method.with-other { grid-column: 2; }
+.electronic-payment .ep-other { grid-row: 1; grid-column: 3; }
+.electronic-payment .ep-kind { grid-row: 2; grid-column: 2; }
+.electronic-payment .ep-number { grid-row: 2; grid-column: 3; }
+.electronic-payment .ep-method select, .electronic-payment .ep-kind select, .electronic-payment .ep-number input,
+.electronic-payment .ep-other input { width: 100%; }
+@media (max-width: 720px) {
+  .electronic-payment.on { grid-template-columns: 1fr; }
+  .electronic-payment.on > * { grid-row: auto !important; grid-column: 1 !important; }
+}
+/* 2.1.0 (#259): reordering attachments */
+.attachments h3 .att-reorder { margin-left: 10px; vertical-align: middle; font-weight: normal; }
+.att-order li { display: flex; align-items: center; gap: 8px; padding: 4px 6px; border: 1px solid var(--border);
+  border-radius: 6px; margin-bottom: 4px; background: var(--bg); }
+.att-order li.dragging { opacity: 0.6; }
+.att-order .drag-handle { cursor: grab; user-select: none; color: var(--muted, #888); }
+.att-order .att-name { flex: 1 1 auto; overflow-wrap: anywhere; }
+.att-order .att-move { display: inline-flex; gap: 4px; }
+
+/* 2.1.0 (#257, #261) Budget Prep report and projection choices */
+.budget-prep td.indent, .projection-choices td.indent, .budget-review th.indent { padding-left: 24px; }
+.budget-prep tr.section-row th, .projection-choices tr.section-row th, .budget-review tr.section-row th { text-align: left; background: var(--surface-2, #eef1f5); }
+.budget-prep tr.parent-row td { background: var(--surface-2, #f6f8fa); }
+.budget-prep td { vertical-align: top; }
+.budget-prep .cmp { white-space: nowrap; line-height: 1.35; }
+/* 2.1.0 (#283): Budget Review, a block per budget (heading, then Budgeted / Actual / Difference rows) */
+.budget-review tr.budget-head th { text-align: left; font-weight: 600; background: var(--surface-2, #f6f8fa); border-top: 1px solid var(--border, #c3cad3); }
+.budget-review tr.budget-head.parent-row th { background: var(--surface-3, #e8ecf1); }
+.budget-review tbody th[scope="row"] { font-weight: 400; padding-left: 16px; white-space: nowrap; }
+.budget-review td.num { white-space: nowrap; }
+.budget-review .small { font-size: 0.8em; }
+.budget-prep .small, .projection-choices .small { font-size: 0.8em; }
+.projection-choices { border: 1px solid var(--border, #d0d7de); border-radius: 6px; padding: 8px 12px; margin: 10px 0; }
+.projection-choices table { max-width: 720px; }
+
+/* 2.1.0 (#278): bucket categories and Charge / Less */
+.fr-bucket-table tr.category-row th { text-align: left; background: var(--surface-2); font-size: 13px; color: var(--text); }
+.fr-bucket-table td.indent { padding-left: 24px; }
+.fr-bucket-row .fr-bucket-buttons { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.fr-bucket-row.with-credit { align-items: flex-start; border: 1px solid var(--border); border-radius: 6px; padding: 6px 8px; }
+.fr-bucket-row .fr-credit { flex: 1; }
+.fr-bucket-row .fr-credit .row.fields { flex-wrap: wrap; }
+label.check.small { font-size: 12px; }
+.fr-final-btn { margin-left: 10px; }
+.fr-bucket-row { flex-wrap: wrap; }
+.fr-bucket-row .fr-who { flex-basis: 100%; }
+
+/* 2.1.0 (#312): Donations Setup - the settings beside the live preview on wide screens */
+.donation-setup .setup-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; }
+@media (min-width: 1200px) { .donation-setup .setup-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; } }
+.donation-dialog input.narrow { width: 7em; }
+.donation-dialog td .row { gap: 0.4rem; flex-wrap: nowrap; }
+/* 2.1.0 (#314): the organization profile fields wrap two or three to a line */
+.org-fields > .field { flex: 1 1 15em; }
+/* 2.1.0: the donation lines fit the dialog; on a narrow screen the table scrolls inside it */
+.donation-dialog .table-scroll { overflow-x: auto; max-width: 100%; }
+.donation-dialog .donation-lines input[type="date"] { width: 9.5em; }
+.donation-dialog .donation-lines input[aria-label="Purpose"] { width: 10em; }
+.donation-dialog .donation-lines input[aria-label="Goods or services description"] { width: 11em; }
+/* 2.1.0 (Kyle, 2026-10-23): the receipt dialog reads top to bottom - lines, each donor's block (details), then
+   Save / Preview / Print at the bottom */
+.donation-dialog .donation-donor { border: 1px solid var(--border); border-radius: 6px; padding: 0.5rem 0.75rem; margin-bottom: 0.6rem; }
+.donation-dialog .donation-donor > .table { margin-bottom: 0.4rem; }
+.donation-dialog .donation-donor > .table td { border-bottom: none; }
+.donation-dialog .donation-actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.donation-dialog .donation-actions .spacer { flex: 1; }
+.donation-dialog details.donation-printed { margin: 0.5rem 0 0.75rem; }

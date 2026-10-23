@@ -4,7 +4,7 @@
 organizations and similar bodies that keep a checkbook, a budget and an annual audit. PennyWarden runs on your own
 Windows PC, Mac or Linux server; your data stays in one folder you control. No subscription, no cloud account.
 
-Current release: **2.0.0** (called *Fundwarden* from 1.6.6 to 1.6.8) · [pennywarden.org](https://pennywarden.org) · [Download](https://github.com/kretherford0983/PennyWarden/releases/latest) ·
+**[Latest release and downloads](https://github.com/kretherford0983/PennyWarden/releases/latest)** (called *Fundwarden* from 1.6.6 to 1.6.8) · [pennywarden.org](https://pennywarden.org) ·
 [Install](#install) · [Documentation](#documentation) · [Changelog](CHANGELOG.md)
 
 <p align="center">
@@ -13,12 +13,17 @@ Current release: **2.0.0** (called *Fundwarden* from 1.6.6 to 1.6.8) · [pennywa
 
 <sub>All screenshots show a made-up organization (`scripts/demo_data.py`).</sub>
 
-> **New in 2.0 — the Payments module.** Enter a bill once and PennyWarden records it in the register and prints its
-> check on your own printer, with a cover letter listing the invoices and a #10 envelope
-> ([more below](#payments-and-check-printing-optional-payments-module-200)). Also new: tools for the people who run
-> PennyWarden — System/About in tabs, a security overview, maintenance mode, restore from the server's command line,
-> a readable audit log you can export, and a one-step Windows server installer.
-> [What's new in 2.0](docs/user-guide-v2.0.md) · [Changelog](CHANGELOG.md)
+> **New in 2.1 — fundraiser reporting.**
+> - A fundraiser's results as a stakeholder report (PDF or Word) and a slide deck with charts.
+> - Fundraisers linked across years, with years before PennyWarden entered by hand.
+> - A Fiscal Year fundraising report with year-over-year comparisons.
+>
+> Also new: a Budget Review report and Fiscal Year Planning Sheet, electronic payments in the register, fold marks on
+> cover letters, more voucher check layouts, an organization profile, and an optional Donations module for donation
+> receipt letters. 2.0 added
+> the optional
+> [Payments module](#payments-and-check-printing-optional-payments-module-200).
+> [What's new in 2.1](docs/user-guide-v2.1.md) · [What's new in 2.0](docs/user-guide-v2.0.md) · [Changelog](CHANGELOG.md)
 
 ## Why PennyWarden
 
@@ -72,8 +77,9 @@ documents. A closed year can no longer be changed.
 ### Fundraisers <sub>(optional module)</sub>
 
 Follow an event from the first poster to the last deposit: which budgets it uses, income and expenses, the net
-result, a breakdown by offering (tickets, auction, food…), the cash float, a fundraiser report — and a printable
-**cash count sheet** for the people counting the cash box.
+result, a breakdown by offering (tickets, auction, food…), the cash float, a printable **cash count sheet** for the
+people counting the cash box — and, since 2.1, a **stakeholder report** (PDF or Word) and a **slide deck** for the
+committee, the same event **across years** with year-over-year comparisons, and a **Fiscal Year fundraising report**.
 
 <p align="center">
   <img src="docs/screenshots/readme/fundraiser.png" alt="A fundraiser with income, expenses, net result, buckets and charts" width="600">
@@ -95,6 +101,16 @@ office stubs, and styles can have **two signature lines** ([docs/check-printing.
   <img src="docs/screenshots/readme/check-print.png" alt="The print screen: a voucher check drawn to scale with the payee, the amount in words, the memo and the signature line" width="420">
 </p>
 
+### Donations <sub>(optional Donations module, 2.1.0)</sub>
+
+Thank donors properly: mark a deposit's lines as donations and print a **donation receipt letter** for each donor.
+It carries the acknowledgment details a donor needs (the organization and its EIN, the donor, the amount, the date
+received and the goods-or-services statement), the date each gift was received, an optional write-up for the gift
+(`{DETAILS}`), and the receipt number. **Preview** it before it is printed. A reprint is marked *Duplicate*, a
+changed one *Corrected*, and every receipt is attached to its deposit. The organization's address, phone, email and
+EIN are kept once, in its **organization profile**, and used by receipts, letters and envelopes (`{ORG.ADDRESS}`,
+`{ORG.EIN}`…).
+
 ### Reminders
 
 Personal reminders and reminders for the whole organization, shown on the dashboard and behind the bell until
@@ -108,16 +124,17 @@ return every quarter, renew the insurance every year — so duties survive a cha
 | | |
 |---|---|
 | **Fiscal Years and budgets** | Hierarchical income and expense budgets, quarterly actuals, approval and lock, unlock with a reason, Fiscal Year close with a stored Close report |
-| **Registers** | Checking, savings and investment accounts; split allocations; transfers; cleared dates; void lifecycle; duplicate and check-number protection; missing-check review |
+| **Registers** | Checking, savings and investment accounts; split allocations; transfers; electronic payments; cleared dates and the bank (cleared) balance; void lifecycle; duplicate and check-number protection; missing-check review |
 | **Documentation** | Attachments on transactions and on single allocations; typed Fiscal Year documents (approval, audit signoff); documentation review; "no attachment" with a stated reason |
-| **Reports** | End of Year Audit PDF with signature page and account start/end pages; Fiscal Year Close report; Entity activity report with CSV export; fundraiser report; cash count sheet |
+| **Reports** | End of Year Audit PDF with signature page and account start/end pages; Fiscal Year Close report; Entity activity report with CSV export; Budget Review and Fiscal Year Planning Sheet; fundraiser stakeholder report (PDF, Word) and presentation; Fiscal Year fundraising report and presentation; cash count sheet |
 | **Dashboard** | Bank balances, budget progress, items needing attention, charts; each user chooses and arranges their own sections; light and dark mode |
-| **Fundraisers** | Budgets, offerings ("buckets"), cash float, exclusions, documents, cancelled events, events spanning two Fiscal Years |
-| **Payments module** | Check styles from presets, field layout with a scale preview, built-in fonts, amounts in words with protective fill, memo patterns, encrypted signatures with an amount limit, two signature lines, voucher checks with stubs, sheet and single-check feed, reprint and spoiled checks, record copies, per-user printer adjustment; payments, cover letters, #10 envelopes, handwritten checks |
+| **Fundraisers** | Budgets, offerings ("buckets") in categories, charge less a credit, contributor shown on reports, cash float, exclusions, documents, cancelled events, events spanning two Fiscal Years, series across years with earlier years entered by hand |
+| **Payments module** | Check styles from presets, field layout with a scale preview, built-in fonts, amounts in words with protective fill, memo patterns, encrypted signatures with an amount limit, two signature lines, voucher checks with the check on top, in the middle or at the bottom, sheet and single-check feed, reprint and spoiled checks, record copies, per-user printer adjustment; payments, cover letters with optional fold marks, #10 envelopes, handwritten checks |
+| **Donations module** | Donation lines marked on deposits, a receipt per donor with the required acknowledgment, date received per line, an optional `{DETAILS}` write-up, preview before printing, receipt numbers, Duplicate / Corrected reprints, void deposits, record copies |
 | **Reminders** | Personal and organization reminders, show-before days, links to a Fiscal Year, budget or account, repeating organization reminders |
-| **People and vendors** | Entities for organizations and individuals, a person's position (offered as the title when they sign) |
+| **People and vendors** | Entities for organizations and individuals, a person's position (offered as the title when they sign); your own organization as an entity, chosen like any other (e.g. for cash collected at an event) |
 | **Roles** | Administrator, Budget Manager, Budget User, Register User and read-only Auditor; administration is kept strictly apart from financial work |
-| **Administration** | System/About in tabs: settings with their sources (editable on a server), organization name, optional modules, signed-in sessions, security overview, system health and diagnostics, maintenance mode, reinitialize with a safety backup |
+| **Administration** | System/About in tabs: settings with their sources (editable on a server), the organization profile (name, address, phone, email, EIN, used as `{ORG.*}` in templates), optional modules, signed-in sessions, security overview, system health and diagnostics, maintenance mode, reinitialize with a safety backup |
 | **Security** | Argon2id passwords, two-step verification (TOTP) with recovery codes, server-side sessions, CSRF protection, AES-256-GCM encrypted bank account numbers, an append-only audit log of every change that reads in plain words and exports to CSV and PDF |
 | **Your data** | One folder on your machine; encrypted backups by hand or on a schedule, restore from inside the application or the server's command line; moves between Windows, Mac and Linux; upgrades never touch data or configuration |
 | **Where it runs** | Single user on a Windows PC or a Mac (Apple Silicon); several users on a Linux or Windows server behind HTTPS, or in Docker |
@@ -150,7 +167,7 @@ report) · [1.4](docs/user-guide-v1.4.md) (audit signatures, two-step verificati
 reminders) · [1.7](docs/user-guide-v1.7.md) (the new name) · [1.8](docs/user-guide-v1.8.md) (budget history, Financial
 Flow Report, forgotten passwords) · [1.9](docs/user-guide-v1.9.md) (one person on a local install, automatic backups) ·
 [1.10](docs/user-guide-v1.10.md) (pennywarden.org, update notification) · [2.0](docs/user-guide-v2.0.md) (check printing; full
-guide: [docs/check-printing.md](docs/check-printing.md)).
+guide: [docs/check-printing.md](docs/check-printing.md)) · [2.1](docs/user-guide-v2.1.md) (fundraiser reports and presentations, year over year, Budget Review, electronic payments).
 
 **Running PennyWarden**
 - [docs/deployment.md](docs/deployment.md) — local and server installation, HTTPS reverse proxy, Docker, data portability
@@ -170,6 +187,8 @@ guide: [docs/check-printing.md](docs/check-printing.md)).
 - `scripts/demo_data.py` and `scripts/readme_screenshots.mjs` — fill a new, empty installation with a made-up
   organization and retake the screenshots on this page; `scripts/macos_install_mockups.mjs` redraws the
   illustrations of [docs/install-macos.md](docs/install-macos.md)
+- [docs/test-data.md](docs/test-data.md) — the private test data set: a workflow-built, encrypted backup of a made-up
+  organization for refreshing a test server (`scripts/demo_data.py --profile test`)
 
 **Origin.** PennyWarden started as an implementation of the *Financial Management POC Agent-Agnostic Benchmark v1.1*.
 The specification is kept unchanged in [`spec/`](spec/); [docs/acceptance-results.md](docs/acceptance-results.md),

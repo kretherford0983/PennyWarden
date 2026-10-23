@@ -7,6 +7,13 @@ const RouterCtx = createContext<{ path: string; search: string; navigate: (to: s
   navigate: () => {},
 });
 
+/** 2.1.0 (CodeQL js/xss-through-dom, alert #11): the one rule for every in-app address - a same-site path
+ * ("/..."), never another site ("//host"), a scheme ("javascript:") or a backslash trick. null when it isn't one. */
+export function sitePath(to: unknown): string | null {
+  if (typeof to !== "string" || !to.startsWith("/") || to.startsWith("//") || to.includes("\\")) return null;
+  return to;
+}
+
 export function Router({ children }: { children: ReactNode }) {
   const [loc, setLoc] = useState({ path: window.location.pathname, search: window.location.search });
   useEffect(() => {
@@ -16,7 +23,7 @@ export function Router({ children }: { children: ReactNode }) {
   }, []);
   const navigate = (to: string, opts?: { replace?: boolean }) => {
     // only same-origin relative paths are navigable
-    if (!to.startsWith("/") || to.startsWith("//") || to.includes("\\")) return;
+    if (sitePath(to) === null) return;
     if (opts?.replace) window.history.replaceState({}, "", to);
     else window.history.pushState({}, "", to);
     const u = new URL(to, window.location.origin);
@@ -38,8 +45,12 @@ export function Link({ to, children, className, ...rest }: { to: string; childre
     navigate(to);
   };
   const active = path === to || (to !== "/" && path.startsWith(to + "/"));
+  // the address in the page follows the same rule as navigation (a middle-click or "open in new tab" uses it
+  // directly): anything that isn't a same-site path becomes a harmless "#"; the constant "/" prefix keeps it a path
+  const safe = sitePath(to);
+  const href = safe === null ? "#" : "/" + safe.slice(1);
   return (
-    <a href={to} onClick={onClick} className={`${className || ""}${active ? " active" : ""}`} aria-current={active ? "page" : undefined} {...rest}>
+    <a href={href} onClick={onClick} className={`${className || ""}${active ? " active" : ""}`} aria-current={active ? "page" : undefined} {...rest}>
       {children}
     </a>
   );

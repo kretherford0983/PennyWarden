@@ -44,6 +44,7 @@ export function measure(text: string, family: string, bold: boolean, sizePt: num
 export type StubDrawing = {
   texts: { x: number; y: number; text: string; font: string; bold: boolean; size: number; anchor: "start" | "end" }[];
   lines: { x1: number; y1: number; x2: number; y2: number; dash: boolean }[];
+  top?: number;       // 2.1.0 (#246): the highest stub (a stub can be above the check)
   bottom: number;
 };
 
@@ -60,7 +61,8 @@ export function CheckPreview({ cfg, fonts, texts, highlight, showBoxes = true, s
   const sx = (cw - (cfg.stock.paper_width ?? cw)) / 2, sy = -(cfg.stock.check_tops?.[0] ?? 0);
   const vx = stubs ? Math.min(0, sx) : 0;
   const vw = stubs ? Math.max(cw, (cfg.stock.paper_width ?? cw)) : cw;
-  const vh = stubs ? Math.max(ch, stubs.bottom + sy) : ch;
+  const vy = stubs ? Math.min(0, (stubs.top ?? 0) + sy) : 0;   // #246: stubs above the check
+  const vh = (stubs ? Math.max(ch, stubs.bottom + sy) : ch) - vy;
   const fi = (k: string) => fonts.find((f) => f.key === k) || fonts[0];
   const font = (name: string) => {
     const f = cfg.fields[name];
@@ -114,7 +116,7 @@ export function CheckPreview({ cfg, fonts, texts, highlight, showBoxes = true, s
   if (cfg.stock.signature_lines === 2 && cfg.fields.signature2) sigs.push([cfg.fields.signature2, signature2 ?? "SIGNATURE 2"]);
   const boxes = [...TEXT_FIELDS, "signature", ...(cfg.stock.signature_lines === 2 && cfg.fields.signature2 ? ["signature2"] : [])];
   return (
-    <svg className="check-preview" viewBox={`${vx - 0.05} -0.05 ${vw + 0.1} ${vh + 0.1}`} role="img" aria-label="Check preview drawn to scale"
+    <svg className="check-preview" viewBox={`${vx - 0.05} ${vy - 0.05} ${vw + 0.1} ${vh + 0.1}`} role="img" aria-label="Check preview drawn to scale"
          style={{ width: "100%", maxWidth: 900, display: "block", background: "var(--surface-2, #f7f5ee)" }}>
       <rect x={0} y={0} width={cw} height={ch} fill="none" stroke="currentColor" strokeWidth={0.01} opacity={0.5} />
       <rect x={0} y={ch - CLEAR_ZONE} width={cw} height={CLEAR_ZONE} fill="currentColor" opacity={0.08} />
@@ -170,7 +172,7 @@ export function PatternInput({ value, onChange, variables, label, id, placeholde
     const i = before.lastIndexOf("{");
     if (i < 0 || before.slice(i).includes("}") || (i > 0 && before[i - 1] === "{")) return null; // "{{" is a literal brace
     const typed = before.slice(i + 1);
-    if (!/^[A-Za-z_]*$/.test(typed)) return null;
+    if (!/^([A-Za-z_][A-Za-z0-9_]*\.?)?[A-Za-z0-9_]*$/.test(typed)) return null;   // 2.1.0 (#314): ORG.NAME
     const list = variables.filter((v) => v.name.startsWith(typed.toUpperCase()));
     return list.length ? { start: i, typed, list } : null;
   }, [value, caret, variables]);

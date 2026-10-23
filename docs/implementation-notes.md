@@ -48,6 +48,493 @@ could not otherwise be corrected. Scope and safeguards:
 - Audited as `TRANSACTION_VOID_DATE_CORRECTED` with before/after snapshots and the reason.
 - Tests: `backend/tests/test_cr001_void_date.py` (5 tests) and E2E "CR-001".
 
+**2.1.0 — Budget Review (#283, Kyle 2026-10-20; built 2026-10-21 with layout A, the issue's recommendation).**
+- Renamed from Budget Prep. `budget_review()`, `budget_review_csv()` and `budget_review_pdf()` are the new names;
+  `budget_prep*` stay as aliases. The routes are `/api/reports/budget-review` and `/budget-review/projection-choices`,
+  and the `/budget-prep` paths still answer, hidden from the schema. The audit name is `report: BUDGET_REVIEW` (older
+  events keep `BUDGET_PREP`). Files are `budget-review-*.pdf/.csv`. The table `budget_projection_choice` is unchanged.
+- The figures are unchanged from #257. Each row adds `average`: the mean budgeted and actual of the prior years shown
+  that have a linked budget, with `compare()` for the difference (actual − budgeted, Kyle 2026-10-20) and `years`.
+  The CSV adds Avg budgeted / actual / difference / years.
+- **PDF, layout A:** a title band. For each budget, a heading row (spanning, shaded) and Budgeted / Actual /
+  Difference rows. The columns are the prior years, Avg, the current year (YTD), and optionally Projected (Budgeted =
+  the current budget, Actual = the projection) and Next year (its budget, and the change in the Difference row).
+  Each block is `NOSPLIT`, and the columns split into bands when there are many years. The screen
+  (`BudgetReview.tsx`, was `BudgetPrep.tsx`) shows the same layout.
+- **Planning Sheet:** `include_review=true` makes `append_review()` build the review of the same year (3 years,
+  projected with the person's choices, the Draft year's budgets when there is one) and append it with pypdf. Each
+  part keeps its own page numbers. Recorded in the sheet's `REPORT_GENERATED` (`include_review`, `review_pages`,
+  `review_years`).
+- Tests: `backend/tests/test_v210_budget_review.py` (alias, averages, CSV, PDF layout, Planning Sheet with the review,
+  access); `test_v210_budget_prep.py` (figures) is updated only for the name and layout; the E2E Budget Review steps.
+
+**2.1.0 — voucher layouts (#246, decided by Kyle 2026-10-15/21; built 2026-10-21).**
+- The 2.0.0 config model already allowed any `check_tops[0]` and one or two stubs anywhere that don't overlap
+  (`StyleConfig._check_stubs`), and the renderer draws stubs at their own tops. What was missing was the presets and
+  the UI.
+- `presets.VOUCHER_LAYOUTS` holds the six layouts (check top, stubs as top, height and copy, and a stock note).
+  `voucher_config()` builds the five new presets from `VOUCHER_TOP`, which itself is unchanged.
+  `presets.voucher_layouts()` is served in `/api/checks/setup` for the setup screen's Check position and Stubs. With
+  two stubs, VENDOR (invoice) is the stub next to the check.
+- `render._draw_stub(outline=True)` dashes a stub's top edge when it isn't the sheet's top, and its bottom edge when the
+  check starts there (a stub above the check). The real check never draws outlines, so 2.0.0 voucher prints are
+  unchanged. `stub_drawing()` returns `top`, and the preview's viewBox extends upward for stubs above the check.
+- UI labels: *Invoice stub* / *Office stub* (Kyle 2026-10-21). The printed copy label stays *OFFICE COPY*.
+- Positions are the issue's starting presets, to be checked against real sheets (Kyle 2026-10-21). The 7-inch stub
+  is 3.5–10.5 in with a 0.5 in strip.
+- Tests: `backend/tests/test_v210_voucher_layouts.py` (presets, capacity, validation with the check anywhere, printing
+  each new layout with positions on the check and record copy, calibration perforations, setup and access) and the
+  E2E voucher steps.
+
+**2.1.0 — fold marks on cover letters (#247, decided by Kyle 2026-10-15; built 2026-10-21).**
+- `LetterConfig` gains `fold_marks` (NONE / FRONT / BACK, default NONE, so 2.0.0 templates are unchanged),
+  `fold_length` and `fold_edge` (0.1–0.5 in; defaults 0.15 and 0.25), `fold_weight` (HAIRLINE 0.25 pt / THIN 0.5 /
+  MEDIUM 0.9) and `fold_shade` (LIGHT / MEDIUM / DARK gray). These live in the template's JSON config, so no migration
+  is needed. The WINDOW preset starts with FRONT, and the editor sets FRONT when a *new* draft chooses a window layout.
+- `documents.fold_ticks()` draws four ticks at `FOLD_LINES`. `letter_pdf(fold=...)` draws them in `onFirstPage` for
+  FRONT. For BACK, `_with_back_pages()` uses pypdf to put a ticks page after page 1 and a blank page after each other
+  page. The output is deterministic (reportlab `invariant`), so a reprint's record copy is still de-duplicated by
+  SHA-256. The test print and preview pass through `sample_letter_pdf`, so they show the ticks as well as the
+  labeled window marks.
+- **Levels:**
+  - letter: `LetterIn.fold_marks`;
+  - user: `check_printer_setting.fold_marks` on a row with `feed_key "letter"` and no style or template (migration
+    `0044`; empty = TEMPLATE; GET/PUT `/api/checks/my-printer/letter`, audited `CHECK_PRINTER_SETTINGS`);
+  - template.
+
+  `letter_fold_default()` resolves user, then template. The print-screen documents list returns `fold_default` per
+  letter and `my_letter_fold`. `CHECK_LETTER_PRINTED` records the `fold_marks` used.
+- Tests: `backend/tests/test_v210_fold_marks.py` (8 tests: tick positions from the content stream, address page,
+  back pages, tuning and limits, test print, user and letter levels, audit, access) and the E2E letter steps.
+
+**2.1.0 — organization profile (#314, Kyle 2026-10-22; part (a) of #318).**
+- `entity.is_organization` and `entity.ein` (migration `0046`). One Organization entity per workspace, created by
+  `bootstrap.initialize` and, for existing workspaces, by the migration (named like the workspace, numbered from
+  `next_entity_number`). The migration moves the EIN and address lines saved in Donations Setup (#312) onto it
+  (a last line "City, ST 12345[-6789]" is split) and removes them from `donation_settings.config_json`;
+  `ReceiptConfig` drops the two old keys if a backup still has them.
+- `services/organization.py`: `get`, `ensure`, `values()` (`ORG.*` plus the older `ORG`, `ORG_NAME`, `ORG_ADDRESS`,
+  `ORG_EIN`), `SAMPLE` (test prints), `profile_out`, `update` (fields left out keep their value; EIN `^\d{2}-\d{7}$`;
+  phone through `entities.clean_phone`). `GET /api/system/organization` (`system.view`), `PUT` (`system.manage`; the
+  2.0.0 `{name}` body still works). `rename_organization` keeps the entity's name in step. Audit
+  `ORGANIZATION_UPDATED` on the workspace (so the Administrator sees it; it is not transaction content, BR-003).
+- Entities: `PATCH`/inactivate/restore of the organization entity → 409 `ORGANIZATION_ENTITY`; `is_organization`
+  is not writable (BR-098). Reinitialize keeps it.
+- Patterns: dotted names (`_NAME` allows one `.`), `ORG.*` in every context, `ORG.ADDRESS` only where line breaks are
+  allowed. Check printing adds the real `ORG.*` values in `variable_values`; the `SAMPLE_VALUES` carry the sample
+  organization. Donations read the EIN and address from the profile (`missing_setup(db, ws_id)`) and refuse a line
+  whose donor is the organization entity.
+- UI: `OrganizationPanel` (System/About → General), the Entities badge, Donations Setup shows the profile read-only
+  with a link; the variable picker completes dotted names.
+- Tests: `backend/tests/test_v210_organization.py` (6, including the data migration) and the E2E #126 and #312 steps.
+
+**2.1.0 — Donations module, part 1: receipt letters (#312, Kyle 2026-10-22; part of #256).**
+- Module switch `workspace.donations_enabled` (migration `0045`, off), the same pattern as Fundraisers and Payments:
+  `services/donations.module_enabled/require_module/set_module` (audit `MODULE_ENABLED`/`MODULE_DISABLED`,
+  entity "donations"), `ModulesIn.donations`, `/api/auth/me` `modules.donations`, diagnostics.
+- Permissions: `donation.setup` (Administrator), `donation.print` (Register User), `donation.view` (Budget Manager,
+  Budget User, Register User, Auditor). Every `/api/donations` route also needs the module (404 MODULE_DISABLED).
+- Setup: `donation_settings.config_json` validated by `ReceiptConfig` (the EIN and address
+  moved to the organization profile in #314; font, size, date format, title/salutation/body/closing as `RECEIPT` patterns, signer name and title). Audit
+  `DONATION_SETUP_UPDATED` with before/after. Preview, preview-image (PNG via `raster`) and test print use sample data
+  only (`DONATION_RECEIPT_TEST` audited); printing is refused until the EIN and address are set (409
+  SETUP_INCOMPLETE).
+- Marking: `donation_line` per allocation (unique), purpose, goods value and description (value ≤ the line's amount,
+  description required with a value). Only on an active deposit outside a Closed Fiscal Year; transfers are not
+  deposits here (409 NOT_A_DEPOSIT). Audit `DONATION_MARKED` per change (unmarking deletes the row; before/after in
+  the event).
+- Receipts: one per donor (the allocation's entity, else the transaction's). The content hash covers donor, name,
+  address, amount, date received, goods and purposes. Same hash as the donor's last numbered receipt → DUPLICATE
+  (same number, `replaces_id` = that receipt); different → CORRECTED (new number, confirmation
+  `CORRECTED_RECEIPT`); none → ORIGINAL. Numbers `R-<year of the deposit date>-<seq>` per workspace. Confirmations
+  `EMPTY_VARIABLES`, `NO_DONOR_ADDRESS`. Void/deleted deposit → 409 NOT_PRINTABLE and the receipts show `void`.
+  The PDF (ReportLab, `invariant`) is attached as a system-generated `DONATION_RECEIPT` via `_store_doc_copy`
+  (de-duplicated by SHA-256); audit `DONATION_RECEIPT_PRINTED`. The acknowledgment box and goods statement are
+  drawn by `receipt_pdf()`, not the template.
+- UI: `pages/Donations.tsx` — `DonationSetup` (`/donation-setup`, Administrator menu) and `DonationReceiptDialog`
+  (Register → deposit → *Donation receipt…*), About → Optional modules.
+- Polish (Kyle, 2026-10-22, migration `0047`): `donation_line.date_received` (empty = the deposit's date; not after it).
+  A donor's dates are listed on the receipt (`dates_text`), the receipt number's year is the first date's, and the
+  content hash includes them. `donation_detail` holds the `{DETAILS}` text per deposit and donor (`DonorIn` in the
+  lines PUT; validated as `RECEIPT` text without `{DETAILS}`; audit `DONATION_DETAILS_UPDATED`); `values_for`
+  resolves its variables. An empty `{DETAILS}` is not an empty-variable warning, its own paragraph is dropped and
+  inside a sentence it leaves no double space. `details_enabled` tells the dialog whether the template uses it.
+- Preview (Kyle, 2026-10-23): `POST /api/donations/transactions/{id}/receipts/preview` with the donor and, optionally,
+  the unsaved lines and details. They are applied with `set_lines`/`set_details` and rolled back after `_compose()`
+  (shared with printing), so the preview validates like a save. The receipt is watermarked *PREVIEW - NOT A RECEIPT*;
+  a new receipt's number shows as *(assigned when printed)*. Nothing is attached and no number is taken. Audited
+  `DONATION_RECEIPT_PREVIEW` (after the rollback). Headers `X-Receipt-Kind` / `X-Receipt-Replaces`.
+- Dialog: the donor blocks are computed on screen from the ticked lines; Save / Preview / Print sit at the bottom for
+  one donor, and in each block with several. Print saves first.
+- Tests: `backend/tests/test_v210_donations.py` (14) and the E2E "#312" test.
+
+**2.1.0 — scheduled backups: Kept as (#233, Kyle 2026-10-14; built 2026-10-21).**
+- `scheduled_backup.keep_levels(runs, daily, weekly, monthly)` returns each kept run's reasons ("Daily", "Weekly",
+  "Monthly", or "Latest" when only being the newest keeps it). `keep_set()` is now `set(keep_levels(...))`, so
+  retention and the column share one calculation. `_retained_runs()` and `_keep_args()` are shared by
+  `apply_retention()` and `kept_as()`.
+- `out()` adds `kept_as` to each history row: the levels; *Removed* (deleted by retention); *Removed at the next
+  backup* (managed but no longer kept after the settings changed); *Not managed (another folder)*; empty for failed
+  or running ones. Nothing new is stored.
+- Tests: `backend/tests/test_v210_backup_kept_as.py` (levels, Latest, 40 daily runs and a settings change before and
+  after the next run) and the E2E scheduled-backup test.
+
+**2.1.0 — contributor override for lines in no bucket (#303, Kyle 2026-10-21).**
+- New table `fundraiser_line_contributor` (migration `0043`): one row per fundraiser and line, holding the
+  contributor shown for the part of the line in no bucket. Bucket parts keep `fundraiser_bucket_line.contributor_override`
+  (`0042`).
+- `set_line` takes a line-level `contributor_override`. It is saved with the rest of the line and appears in the
+  `FUNDRAISER_LINE_UPDATED` before/after, and it is deleted when the line is excluded. `_lines()` puts it on each row
+  (none for an excluded line).
+- `fundraiser_summary`: `line()` uses the bucket's override for a bucket part, and the line's own for the *Other* part.
+  The plain line list uses the line's own. With names off, `who()` numbers it as its own *Contributor N*, as before.
+- The table is also covered by `has_management_data` (a fundraiser with one is archived, not deleted), by
+  `_drop_orphan_adjustments` and by reinitialize's wipe.
+- Tests: `backend/tests/test_v210_line_contributor.py` (5 tests) and the E2E fundraiser line test.
+
+**2.1.0 — private test data set (#272, Kyle 2026-10-20/21).**
+- `scripts/test_data.py` is called as `scripts/demo_data.py --profile test`; the demo profile is unchanged.
+  - It reuses the demo's API client and makes everything through the web API of a new installation, so every rule
+    and the audit trail apply. It refuses an initialized installation.
+  - `PW_TESTDATA_PASSWORD` is the sign-in password and the security answers; `PW_TESTDATA_PASSPHRASE` is the backup
+    passphrase. Both come from the environment only. GitHub masks them in Actions (they come from `secrets.*`). They are
+    redacted from API error text and never printed: the script doesn't print them even to mask them (CodeQL).
+  - Fiscal Years are relative to today, July–June by default (`--fy-start-month`): two closed, the current approved,
+    the next a Draft with `continues_budget_id` links.
+- Kyle's decisions (2026-10-21):
+  - The test users enroll two-step verification again after each restore. There are no fixed seeds: the API makes up
+    the secret, and writing one into the database would bypass it.
+  - The sign-ins are admin, budgetmgr, bookkeeper, auditor and treasurer. treasurer also has Register Admin, so the
+    data set can include a deleted transaction.
+  - The workflow can build from any branch, `test` by default.
+  - The data covers several years.
+- The two-a-year Pancake Breakfasts can't continue from each other: "Continues from" needs an earlier Fiscal Year. In
+  the first year, each starts a series (#292) and the two are merged. Later years continue from the previous year's.
+- `--backup` uses the backup API (`POST /api/system/backups`, `recoverable: false`, since the runner's server key is
+  thrown away) and downloads the `.fmbak`. `--summary` writes JSON without secrets for the run summary.
+- `.github/workflows/test-data.yml`:
+  - runs on `workflow_dispatch` with the inputs `ref` (default `test`) and `fy_start_month`; `contents: read`;
+  - starts `python -m fmpoc` on loopback with a temporary data folder (no frontend build is needed);
+  - writes the schema from `alembic_version` into the run summary;
+  - uploads the artifact with a 7-day retention.
+
+  GitHub only lists a manual workflow once the file is on the default branch.
+- Tests: `backend/tests/test_v210_test_data.py`. It runs the generator against a live server and checks:
+  - refusals without the password variable and on an initialized installation;
+  - the data;
+  - that no secret appears in output, logs or the backup;
+  - `pennywarden restore` into a new folder, then server mode: every test user signs in and gets `mfa_pending: ENROLL`.
+
+**2.1.0 fix — Fiscal Year report PDF with 6+ years of history (#295, Kyle 2026-10-21).**
+- The *Year over year by series* table used fixed 0.95" year columns and a 1.6" change column. From 6 years that is
+  wider than the 7.13" frame, so the Series column had a negative width and ReportLab raised `ValueError`, which
+  surfaced as INTERNAL_ERROR.
+- `fundraiser_fy_report.yoy_layout(W, period, cells)` sizes a year column to the widest amount in the table (report
+  font, 7.5 pt) plus padding, at most 0.95". The change column is 1.15" and the Series column at least 1.1". Of the
+  latest 6 years, only as many as fit are shown, so amounts never wrap: $122,545.67 fits 6, $1,234,567.89 fits 5.
+- Tests: `backend/tests/test_v210_fy_report_many_years.py` covers the layout across year counts and amount sizes, and
+  the PDF and deck at 5, 7, 10 and All available with 8 years of history.
+
+**2.1.0 fix — starting a series on one fundraiser (#292, Kyle 2026-10-21; completes #277's prior years).**
+- `fundraiser_series.start_series()`: returns the fundraiser's series, or creates one named `series_name_for(name)`.
+  It is audited as `FUNDRAISER_SERIES_CREATED` plus `FUNDRAISER_SERIES_LINK_UPDATED`, and is idempotent.
+  `start_options()` lists the fundraisers in no series, newest first. Routes: `POST /api/fundraisers/{id}/series` and
+  `GET /api/fundraiser-series/start-options`, Budget Managers only, any Fiscal Year (reporting only).
+- `set_link(None)` on a fundraiser with no `continues_from_id` no longer clears its series. The edit form always sends
+  `continues_from_id: null`, so a started series, and the history entered on it, would otherwise be dropped by the
+  link dialog. Removing the link from a fundraiser that continues from another still takes it out, as before.
+- UI: **Enter prior years…** on the fundraiser (opens `/fundraiser-series?enter=<id>`) and **Start a series…** on the
+  series page. Both open the prior-year entry for the series.
+- Tests: `backend/tests/test_v210_start_fundraiser_series.py` (5 tests) and E2E "2.1.0 (#292)".
+
+**2.1.0 fix — deleted transactions release their check number (#289, Kyle 2026-10-20; amends the #53 decision).**
+- `checks.holders()` (CR-011 uniqueness) and `checks.review()` (CR-012 missing checks) leave out `status ==
+  "DELETED"`. The deleted record keeps `check_number` for the Auditors, and the duplicate message no longer mentions
+  deleted transactions.
+- `register.delete()` refuses with `CHECK_PRINTED` while `checkprint.is_reprint()` is true for a leg, i.e. the
+  current number was printed and not spoiled.
+- No migration: earlier deletions are released by the same query.
+- The 1.7.3 test asserting the number stays used was changed on purpose. Tests: `test_v210_deleted_check_number.py`.
+
+**2.1.0 — build 4–6 feedback (Kyle, 2026-10-20), on the build 7 branch.**
+- *Contributor override:* migration `0042` adds `fundraiser_bucket_line.contributor_override` (120 characters).
+  - `set_line()` takes `contributor_override` per bucket item and keeps it in the audit snapshot (`bucket_line_out`).
+  - `summary()` uses it instead of the Entity for income lines (with names on). With names off, "Contributor n" is
+    numbered per override text. For expenses it replaces the Entity before the description.
+  - Top contributors in the deck aggregate by the shown name, so all "Cash" lines add up.
+- *Headings:* `fundraiser_summary.heading()` puts a `CondPageBreak(1.3 in)` before every PDF section and itemized
+  sub-heading, in the stakeholder and the Fiscal Year report. The two-column itemized list is now one 7-column table
+  (left | gap | right) that splits by rows. Before, the nested tables could not split, so a long list jumped to the
+  next page and left its heading behind. Word: the sub-heading paragraphs keep with next.
+- *Deck axes:* `_style_chart()` gives every non-doughnut value axis a `"$"#,##0` format and a round major unit
+  (`_nice_step`, about 4 steps). The bounds are rounded to that step. Data labels keep the cents.
+
+**2.1.0 test build 7 — fundraisers across years, Fiscal Year report and deck (#277).** Migration `0041`:
+- tables `fundraiser_series` (`name`, `group_as_other`, `merged_into_id`), `fundraiser_series_result` (label, `year`,
+  net / income / expense cents, note, retired fields) and `fundraiser_fy_report_note` (one per Fiscal Year);
+- columns `fundraiser.series_id` and `continues_from_id`.
+
+The service is `services/fundraiser_series.py`; rendering is `services/fundraiser_fy_report.py` (PDF, and pptx
+through the #276 deck helpers).
+- **Years:** a Fiscal Year's number is the four-digit year in its name, else its end year. A fundraiser's year is
+  that of the Fiscal Year covering its start date (else its first budget year, else the start year). An entered
+  result's year is the first four-digit year in its label; a label without one is refused.
+- **Linking:**
+  - `set_link()` puts the fundraiser in the previous one's series, creating it as `series_name_for()` (the
+    fundraiser's name without four-digit years) and audited `FUNDRAISER_SERIES_CREATED`. `None` unlinks.
+  - The previous one must belong to an earlier year.
+  - Audited `FUNDRAISER_SERIES_LINK_UPDATED`. It goes through `PUT …/series-link`, which works in any year, or through
+    create / update (`continues_from_id`).
+  - `continue_options()` lists the latest fundraiser per series plus unlinked ones of earlier years, newest first.
+- **Next year:** `GET …/next-year` gives the pre-fill:
+  - `next_name()` moves every four-digit year on one;
+  - dates are moved a year;
+  - budgets come from `_continued_by()`.
+
+  Create with `copy_buckets_from_id` copies categories and buckets (`copy_buckets()`, audited).
+- **Series list** (`/api/fundraiser-series`, `fundraiser.manage`): rename and *group as Other* (audited
+  `FUNDRAISER_SERIES_UPDATED`), entered results (`FUNDRAISER_RESULT_ENTERED`), retire (`FUNDRAISER_RESULT_RETIRED`)
+  and merge (`FUNDRAISER_SERIES_MERGED`).
+  - A result is refused (409) for a year with a fundraiser of the series in PennyWarden, or a second active entry for
+    that year.
+  - Merge is refused when both series have an active entry for the same year. It moves the fundraisers and entries
+    and sets `merged_into_id`; reports follow merges.
+- **`fy_report()`:**
+  - Each selected fundraiser comes from `fundraiser_summary.summary()`, so it equals its stakeholder report. The
+    year total is their sum.
+  - History is keyed by series (or by the fundraiser itself when unlinked). Recorded amounts are every fundraiser
+    counted in an earlier year plus the selected ones this year; entered results are added for earlier years. Two
+    fundraisers of a series in one year add up.
+  - Period: `years` back from this year (-1 = all).
+  - Targeted: for each series without a held fundraiser this year (none, or only PLANNED ones), the average of its
+    last `avg_years` active years less its YTD, as a separate estimate.
+  - Share: series marked *Group as Other* or under 5% of the period total become *Other*, with members listed.
+  - Averages: the total over the period ÷ the series' active years (years with a recorded or entered amount, $0
+    included).
+  - Footnotes: two-year fundraisers, Entered vs Recorded, the estimate rule, the Other members.
+  - The default selection (`…/fy-report/selection`) is every non-archived, non-cancelled fundraiser whose start year
+    is this year.
+- **Endpoints:**
+  - `GET /api/fundraisers/fy-report?fiscal_year_id&ids&years&targeted&avg_years&format=pdf|pptx|json`
+    (`fundraiser.view`; audit `REPORT_GENERATED {report: FUNDRAISER_FY_SUMMARY | FUNDRAISER_FY_PRESENTATION}` with the
+    ids and options; json is not audited);
+  - notes: `PUT /api/fundraisers/fy-report/notes` (`fundraiser.manage`, audited `FUNDRAISER_FY_REPORT_NOTES_UPDATED`).
+- Frontend:
+  - `Fundraisers.tsx`: list checkboxes and `FyReportDialog`; `FundraiserForm` gains *Continues from* and the
+    pre-fill; the detail page gets *Series* with *Change…* (`SeriesLinkDialog`) and *Create next year's…*.
+  - New page `pages/FundraiserSeries.tsx` at `/fundraiser-series`.
+- **Year over year** (Kyle's feedback on the build 7 screenshots, 2026-10-20):
+  - `series_history(f)` gives every year of the fundraiser's series up to its own year. A year is the sum of the
+    series' fundraisers counted in it (`summary(…, history=False)`, so there is no recursion) or its entered result.
+    Revenue, expenses and margin are `None` when an entered result has only the net.
+  - `summary()` returns `year_over_year` (when there is more than one year) and adds a "Net proceeds were up/down …
+    on <year>" takeaway.
+  - The stakeholder PDF / Word get a *Year over year* table; the deck gets a column chart and table slide.
+  - `fy_report()` returns `year_over_year` per series: values per period year, and the change on the most recent
+    earlier year. The FY PDF shows a table (the last 6 years); the deck shows a multi-line chart and a change table.
+- Tests: `test_v210_fundraiser_series.py` (15 tests) and the E2E "2.1.0 (#277)".
+
+**2.1.0 test build 6 — fundraiser presentation (#276).** No migration. New dependencies `python-pptx` 1.0.2 (MIT) and
+`XlsxWriter` 3.2.9 (BSD, the embedded chart workbooks). They are pinned, in THIRD-PARTY-NOTICES, pip-audit clean, and
+in the PyInstaller specs (`collect_data_files("pptx")` for the default template). The router imports
+`services/fundraiser_deck.py` at start-up.
+- `fundraiser_deck.build(summary)` works from `fundraiser_summary.summary()`, so the figures equal the report. The
+  summary gained `cumulative` (income and net by transaction date).
+- The deck is 16:9 (12192000 × 6858000 EMU), on the blank layout, Arial everywhere.
+  - Charts: column (revenue → proceeds), doughnut (revenue share; the legend labels carry the amount and percent),
+    clustered bar (net by category; expenses), and line with markers (cumulative).
+  - Every chart has data labels and no chart title.
+  - Tables are capped at 12 rows per slide; top contributors at 10, with "and N more".
+  - Every slide has speaker notes.
+  - `_strip_template_extras()` drops the default template's printer settings (a `.bin` part) and thumbnail picture,
+    so the package holds only XML, the chart workbooks and no media.
+- Slides left out:
+  - without buckets: revenue by category, category detail, net, top contributors and expenses;
+  - without names or itemized revenue: top contributors;
+  - revenue over time when there is only one date.
+- The gold coin is drawn with two ovals, not an image. Organization branding is #280.
+- `GET /api/fundraisers/{id}/presentation?itemized&names` (`fundraiser.view`; always `attachment`; audit
+  `REPORT_GENERATED {report: FUNDRAISER_PRESENTATION, format: PPTX, options}`).
+- Tests: `test_v210_fundraiser_deck.py`:
+  - slide titles, chart types and data labels, chart data equal to the figures, notes on every slide, 16:9;
+  - no media, binaries, embedded fonts, external relationships, transitions or animations;
+  - no Entity name anywhere with names off;
+  - markup kept as plain text.
+
+  The CR-035 E2E downloads the deck. Manual checks in PowerPoint (Windows and Mac), Google Slides and Keynote are
+  Kyle's, per build.
+
+**2.1.0 test build 5 — fundraiser stakeholder report (#275).** Migration `0040`: `fundraiser.summary_notes`,
+`results_final_at`, `results_final_by_user_id`. New dependency `python-docx` 1.2.0 (+ `lxml`), pinned through
+`requirements.in`, in THIRD-PARTY-NOTICES, pip-audit clean, and in the three PyInstaller specs
+(`collect_data_files("docx")` for its default template, `collect_submodules("docx"/"lxml")`).
+`routers/fundraisers.py` imports `services/fundraiser_summary.py`, which imports `docx`, at start-up, so a package
+built without it fails its smoke test.
+- `fundraiser_summary.summary()` computes everything once from `fundraisers._lines()`, without excluded lines:
+  - totals: gross deposits, float returned/out, net revenue (counted income), expenses, net, margin
+    (net ÷ revenue), ROI (as on the page) and credits (sum of Less on expenses);
+  - groups: categories in order, then uncategorized buckets, each with its buckets' income and expense lines (bucket
+    nets; Charge / Less as detail);
+  - `other` = the unassigned part of each line;
+  - per-Fiscal-Year rows, takeaways and the plain line list.
+
+  #276 and #277 are to use the same function.
+- Contributor: the Entity (not system ones), else the line description. With names off, income lines become
+  "Contributor n" (numbered in date order, one number per Entity), and expenses show the line description only.
+- `report_status()`:
+  - CANCELLED wins;
+  - then FINAL (marked, or every Fiscal Year of the fundraiser Closed);
+  - then INTERIM (planned / in progress) or POST_EVENT.
+
+  The fundraiser detail returns it as `report_status`.
+- Endpoints:
+  - `GET /api/fundraisers/{id}/summary-report?format=pdf|docx&itemized&names&plain_lines` (`fundraiser.view`; audit
+    `REPORT_GENERATED {report: FUNDRAISER_SUMMARY, format, options}`);
+  - `PUT …/summary-notes` and `PUT …/results-final` (`fundraiser.manage`; audited
+    `FUNDRAISER_SUMMARY_NOTES_UPDATED` and `FUNDRAISER_RESULTS_FINAL_MARKED/UNMARKED`). Both are allowed in a closed
+    year, since they are reporting only;
+  - the former `GET …/report` (audit section) is unchanged and is linked from Reports → *Fundraiser detail (audit)*.
+- PDF: portrait, `_AuditDoc`. The footer is "Prepared for committee & stakeholders · Generated … · status ·
+  Transaction-level evidence is in the Audit report". Itemized lists of more than 12 lines use two side-by-side
+  tables.
+- DOCX: Letter, Arial, a shaded title band, tiles and tables. The footer has PAGE/NUMPAGES fields. User text goes in
+  as plain runs (BR-096). No pictures, macros or external links. The tests read it back with python-docx.
+- Tests: `test_v210_fundraiser_summary.py` and the CR-035 E2E (dialog, Word, notes, final, Fundraiser detail).
+
+**2.1.0 test build 4 — fundraiser buckets (#278; all questions resolved 2026-10-20).** Migration `0039`: table
+`fundraiser_bucket_category` (`name`, `description`, `display_order`); `fundraiser_bucket.category_id` (no DB-level
+FK, like `continues_budget_id`) and `display_order` (existing buckets numbered by `(name, id)` — the old listing
+order); `fundraiser_bucket_line.charge_cents` (= `amount_cents`), `less_cents` (0), `less_description`.
+- `amount_cents` stays the **net** (charge − less), so `_lines()`, totals, ROI, bucket nets and every report are
+  unchanged; `charge_cents`/`less_cents` are detail only (`bucket_line_out()`; a `None` charge = the amount).
+- `set_line()` bucket items take `amount` (as before: charge = amount, less = 0) or `charge` + `less` +
+  `less_description` (`_bucket_amounts()`): charge > 0, 0 ≤ less ≤ charge, description required when less > 0; the
+  nets must not exceed the counted amount. The audit snapshot carries charge, less and description per bucket.
+- Categories: `create/update/delete_category()`, audited `FUNDRAISER_CATEGORY_CREATED/UPDATED/DELETED` (delete
+  lists the bucket ids that became uncategorized). `reorder(what, ids)` needs every id exactly once and audits
+  `FUNDRAISER_CATEGORIES_REORDERED` / `FUNDRAISER_BUCKETS_REORDERED` (no-op when unchanged). Categories, a bucket's
+  category and the order are presentation only: allowed in a closed year (`update_bucket` applies `_require_open`
+  only when the name or description changes). Permission `fundraiser.lines`; categories count as management data (a
+  fundraiser with categories can't be deleted, only archived) and are wiped by Reinitialize.
+- `_bucket_summary()` returns `items` in display order (with `category_id`, `credits_income/expense` = sum of Less),
+  `categories` (in order, with `bucket_ids` and subtotals) and `uncategorized_ids`. Uncategorized buckets are listed
+  after the categories. The Audit/Close fundraiser section prints the same grouping and "(charge less amount
+  description)" on bucket assignments.
+- Frontend: `BucketTable`, `CategoryDialog`, `OrderDialog` and the *Charge less a credit* toggle in `LineDialog`
+  (`Fundraisers.tsx`).
+- Tests: `test_v210_bucket_categories.py` (incl. the migration keeping figures) and the E2E "2.1.0 (#278)".
+
+**2.1.0 test build 3 — budget planning (#257, #261; Budget Managers only, proposed items approved 2026-10-20).**
+Migration `0038` adds the table `budget_projection_choice` (`user_id`, `budget_id`, `project`; unique per user and
+budget, so per Fiscal Year). Reinitialize wipes it with the budgets.
+- `services/budget_planning.py` holds both. Projection: `months_between(start, stop)` counts whole months from the
+  Fiscal Year's start day (`add_months`, clamped) plus the partial month as days / days in that month.
+  - `basis()` counts the report date as elapsed (`as_of + 1 day`); under one month the state is `TOO_EARLY`, and on
+    or after the last day `YEAR_ENDED` (projected = actual).
+  - `project()` = YTD × months / elapsed, rounded half away from zero to the cent.
+- YTD = ACTIVE allocations dated on or before `as_of`, with no lower bound, so with today's date it equals the Budgets
+  page actual (which includes allocations dated outside the year).
+- Choices are made on rows that carry activity: a parent without sub-budgets, or each sub-budget, Other included. A
+  parent with sub-budgets projects as the sum of its sub-budgets (projected or YTD) plus any unlisted remainder.
+  - The default is *project*, except when every fundraiser linked to the budget (or to its parent) is ENDED,
+    CANCELLED or ARCHIVED (`fundraisers.status_of`).
+  - `PUT /api/reports/budget-prep/projection-choices` saves `{budget_id, project}` items; `reset` forgets them. It is
+    not audited, like the register sort preference. The REPORT_GENERATED summary lists the unprojected ids.
+- History: `_predecessors()` walks `continues_budget_id` back (deleted budgets skipped).
+  - A sub-budget without its own link has no line (`history on parent`).
+  - Other has no link of its own (BR-017), so it takes the Other of each earlier parent on its parent's line.
+  - Next year: `_continued_by()` in the next Fiscal Year (by start date). For Other, only when that parent has
+    explicit sub-budgets; otherwise the amount is on the parent's row, and the Planning Sheet doesn't mark that Other
+    *not in draft*.
+- Structure comes from `budgets.tree()` (Budget 0 excluded; zero Other hidden unless it has activity, BR-019).
+  - The report keeps rejected and inactive budgets, labelled.
+  - The Planning Sheet leaves them off, and their children with them.
+  - A draft budget that continues nothing is listed after the current rows: under its parent's row when its draft
+    parent continues a current parent, otherwise at the end of the section.
+- Endpoints, all `require("budget.manage")`:
+  - `GET /api/reports/budget-prep` (`format=json|pdf|csv`, `years` with -1 = all, `projected`, `include_next`,
+    `budget_id` or `parent_budget_id`, `as_of`);
+  - `GET`/`PUT /api/reports/budget-prep/projection-choices`;
+  - `GET /api/reports/planning-sheet`.
+
+  Each report is audited `REPORT_GENERATED` on the Fiscal Year.
+- PDF output:
+  - `_AuditDoc` takes a `pagesize`, so the Budget Review (then Budget Prep) report is landscape Letter; year columns split into bands when
+    they don't fit.
+  - The footer title carries the organization and print date.
+  - The single-budget chart is a reportlab `VerticalBarChart`, with the legend in words.
+- Frontend: `pages/BudgetPrep.tsx` holds the report tab (shown only with `budget.manage`), the shared
+  `ProjectionChoices` checklist and `PlanningSheetDialog`.
+- Build 3 feedback (Kyle, 2026-10-20):
+  - The sheet is printed from the **Fiscal Years page**. `planning_context()` picks one planning at a time:
+    - the latest Draft year that has an earlier year → plan it from the year before;
+    - else the non-draft year covering today;
+    - else the latest non-draft year, else the latest year.
+  - `GET /api/reports/planning-sheet/context` tells the dialog which; `fiscal_year_id` is optional on
+    `/planning-sheet`.
+  - `_successor()` falls back to a next-year budget with the **same code, type and level that continues nothing**,
+    when the current budget isn't continued by anything. Hand-entered drafts therefore line up instead of appearing
+    twice (*not in draft* + *new in draft*). The Budget Review next-year column uses the same rule.
+  - The Expense table starts on a new page when less than 35% of the page is left (`CondPageBreak(0.35 * BODY_H)`).
+- Tests: `test_v210_budget_prep.py`, `test_v210_planning_sheet.py` (negative role tests for Budget User, Register
+  User, Auditor and Administrator) and the E2E "2.1.0 (#257, #261)".
+
+**2.1.0 test build 2 — register (#262, #258, #260, #259; proposed items approved 2026-10-19).** Migrations
+`0035`–`0037`, additions only.
+- *#262 sort:* `app_user.register_sort` (`"<column>:<asc|desc>"`, `None` = `transaction_date:asc`), set through
+  `PUT /api/me/preferences` (`register_sort` / `reset_register_sort`) and returned by `/api/auth/me`. The Clear-date
+  key is `(uncleared, clear_date, transaction_date, entry_timestamp, id)` and descending reverses the whole list, so
+  ties read in entry order both ways. Sorted by Cleared the row's `running_balance` is the cleared balance (opening +
+  ACTIVE cleared items in clear order; `None` on uncleared rows) and the response says `running_balance_kind`. The
+  frontend keeps the choice in the Me context (`patchMe`) so navigating back keeps it without a reload.
+- *#258 filter:* `documentation.categories()` runs the review's `classify()` for the register's rows (ACTIVE only);
+  `missing` (and the 1.6.7 value `no`) keeps rows with a category, `marked` rows with a transaction- or
+  allocation-level mark. Every row carries `documentation` for the badge. The 1.6.7 backend test was changed on
+  purpose: a mark with a reason is documented, so it is no longer under "no".
+- *#260 electronic payment:* `register_transaction.electronic_payment`, `payment_method`, `payment_method_other`,
+  `payment_reference`. `register.electronic_values()` validates create and edit (withdrawals only; method required;
+  OTHER needs a description; check number **or** reference). References are unique per account case-insensitively,
+  in their own namespace (`DUPLICATE_PAYMENT_REFERENCE`), and never reach `checks.py` (CR-011/CR-012 read
+  `check_number` only). The fields count as financial edits (cleared confirmation, closed-year lock) and are in the
+  audit snapshot. Interlock: turning electronic on is refused (`CHECK_PRINTED`) while the current check number is the
+  last printed one (`checkprint.is_reprint`); a spoil moves the number on, after which it is allowed.
+  `get_printable(..., for_check=True)` refuses electronic payments for prepare/print/spoil/hand-written; options,
+  documents, letter, envelope and envelope-test use `for_check=False`, and `PrintCheckDialog` then shows only
+  `EnclosuresPanel`. `register.payment_text()` is what the Audit/Close and Entity Activity reports print.
+- *#259 order:* `attachment.sort_order`; `attachments.DISPLAY_ORDER = (COALESCE(sort_order, id), id)` is used by the
+  lists (active first, then removed), the Audit/Close report, the fundraiser report and the fundraiser lines.
+  `reorder()` takes every active attachment of the owner (a Fiscal Year: its Unspecified ones) and numbers them after
+  the owner's current maximum, so they never tie with attachments still in upload order; `_next_position()` puts new
+  uploads, check copies, letters, envelopes and the Close report after them once an owner has been reordered.
+  Rights = `check_manage` (the add-attachment permission per owner type); Closed Fiscal Year / deleted transaction /
+  closed fundraiser refused; VOID allowed (BR-070); no `CLEARED_EDIT` (documentation). Audit `ATTACHMENTS_REORDERED`
+  on the owner's object type, before/after `attachment_order` (id + filename); an unchanged order is a no-op.
+
+**2.1.0 test build 1 — pipeline and installer (#240, #236, #237, #226; decided in chat 2026-10-19).** No migration.
+- *#240 release dates:* `check_promotion.sh` no longer refuses `## <version> — unreleased` into main (the 1.7.3 rule);
+  it still needs the section and refuses a tagged version, and pull requests into test/main fail while an *earlier*
+  tagged version still says `unreleased`. `scripts/release_notes.sh` never printed the heading, so the published
+  notes (GitHub release, `releases.json`, *What's new*) already carry only the publish date — nothing to rewrite in the
+  build. `scripts/date_changelog.sh <version>` reads `published_at` of release `v<version>` from the GitHub API
+  (`PENNYWARDEN_GITHUB_API`/`PENNYWARDEN_REPO` for tests, `--date` offline) and rewrites only that heading; it is the
+  first commit of the next version. README links to the latest release instead of naming it. Tests:
+  `test_v210_release_dates.py` (the real scripts in a throw-away repo with a bare `origin` carrying tags).
+- *#237 `pennywarden apply-config`:* `cli_apply_config.py`. Order: parse and check `config.toml` (backup folders
+  absolute, outside `/home`, `/root`, `/run/user`; mode, host, port, `trusted_proxies`, `secure_cookies`; every other
+  value coerced like `load_settings`) → refuse to replace a `backup-folders.conf` without a PennyWarden header → write
+  or remove the drop-in (2.0.0 format, new header) → unless `--no-restart`: `daemon-reload`, `restart`, wait up to
+  60 s for `/api/health` on the configured address; on failure the previous drop-in is written back and the service
+  restarted. `override.conf` is only read (a note when it lists `ReadWritePaths`). Audited as `CONFIG_APPLIED`
+  (Security, object `server_config`) when a database exists, then `match_ownership` hands database/logs back to the
+  data folder's owner. The data folder defaults to the installed unit's `--data-dir`. Without a systemd unit it only
+  checks. Read-only `--show-url` / `--show-endpoints` serve the installer. `install-server.sh` runs `--dry-run`
+  right after unpacking (before anything is stopped or migrated), `--no-restart --installer` where its inline
+  Python/shell writer was, then `--show-url` for the health and status calls and `--show-endpoints` for the last
+  lines. Verified end-to-end in a container with a fake `systemctl` (fresh install, upgrade with `0.0.0.0` and two
+  folders, a specific address, the standalone command through the `/usr/local/bin` wrapper, a broken `config.toml`).
+- *#236 Bind Address:* `connect_host` maps `0.0.0.0` → `127.0.0.1`, `::` → `[::1]`, IPv6 in brackets, anything else
+  as is; `endpoints` lists `hostname -I` addresses (no loopback/link-local) for all-interfaces bindings.
+
 **1.7.1 Display name required and shown in the top bar (issues #47, #46, #50).** `services/users.clean_display_name`
 (trimmed, at least 3 characters, messages as agreed in #47) on create and on every update that sends the field;
 `bootstrap` gives the first Administrator the username. Migration `0017` copies the username where the name is

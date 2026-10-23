@@ -4,14 +4,27 @@ import { allocationLabel, Attachments, EntityPicker, ErrorBox, Field, Loading, M
 import { useMe } from "../App";
 import { EntityForm } from "./Entities";
 import { PrintCheckDialog } from "./CheckPrint";
+import { DonationReceiptDialog } from "./Donations";
 import { AmountPreview } from "./checkShared";
 
+// 2.1.0 (#262): the register sorts by Date or Cleared, ascending or descending, remembered per user
+const DEFAULT_SORT = "transaction_date:asc";
+
 export default function Register() {
-  const { me, can } = useMe();
+  const { me, can, patchMe } = useMe();
+  const [sortKey, setSortKey] = useState<string>(me.register_sort || DEFAULT_SORT);
+  const [sortCol, sortDir] = sortKey.split(":") as ["transaction_date" | "clear_date", "asc" | "desc"];
+  const chooseSort = (next: string) => {
+    setSortKey(next);
+    patchMe({ register_sort: next });
+    api.put("/api/me/preferences", next === DEFAULT_SORT ? { reset_register_sort: true } : { register_sort: next }).catch(() => undefined);
+  };
+  const clickSort = (col: "transaction_date" | "clear_date") =>
+    chooseSort(`${col}:${col === sortCol ? (sortDir === "asc" ? "desc" : "asc") : "asc"}`);
   const isAuditor = me.roles.includes("AUDITOR"); // 1.7.3 (#53): only Auditors can list deleted transactions
   const [accounts, setAccounts] = useState<any[] | null>(null);
   const [fys, setFys] = useState<any[]>([]);
-  const [f, setF] = useState({ bank_account_id: "", fiscal_year_id: "", transaction_type: "", status: "", date_from: "", date_to: "", search: "", attachments: "", budget_id: "" });
+  const [f, setF] = useState({ bank_account_id: "", fiscal_year_id: "", transaction_type: "", status: "", date_from: "", date_to: "", search: "", attachments: "", budget_id: "", payment: "" });
   // 1.7.3 (#104): the Budget filter's choices follow the Fiscal Year filter (every year's budgets for "All dates")
   const [budgetOpts, setBudgetOpts] = useState<any[]>([]);
   const [defaultFy, setDefaultFy] = useState(""); // 1.6.7: what "Clear" goes back to (the current Fiscal Year)
@@ -58,9 +71,9 @@ export default function Register() {
   }, []);
   const load = () => {
     if (!f.bank_account_id) return;
-    api.get(`/api/register${qs(f)}`).then(setData, setErr);
+    api.get(`/api/register${qs({ ...f, sort: sortCol, direction: sortDir })}`).then(setData, setErr);
   };
-  useEffect(() => { load(); }, [f]);
+  useEffect(() => { load(); }, [f, sortKey]);
   useEffect(() => {
     if (!accounts) return;
     api.get(`/api/budgets/filter-options${qs({ fiscal_year_id: f.fiscal_year_id })}`).then(setBudgetOpts, setErr);
@@ -78,7 +91,7 @@ export default function Register() {
   const acct = data?.bank_account;
   const set = (k: string) => (e: any) => setF({ ...f, [k]: e.target.value });
   // 1.6.7: "Clear" puts every filter back to how the register opens; the chosen bank account stays
-  const defaults = { fiscal_year_id: defaultFy, transaction_type: "", status: "", date_from: "", date_to: "", search: "", attachments: "", budget_id: "" };
+  const defaults = { fiscal_year_id: defaultFy, transaction_type: "", status: "", date_from: "", date_to: "", search: "", attachments: "", budget_id: "", payment: "" };
   // the chosen budget stays listed even when the Fiscal Year filter no longer includes it (it is only removed by hand
   // or by Clear)
   const budgetChoices = f.budget_id && data?.budget && !budgetOpts.some((b) => String(b.id) === f.budget_id)
@@ -122,7 +135,8 @@ export default function Register() {
             {budgetChoices.map((b) => <option key={b.id} value={b.id}>{b.label}</option>)}
           </select>
         </Field>
-        <Field label="Attachments"><select value={f.attachments} onChange={set("attachments")}><option value="">All</option><option value="yes">Yes</option><option value="no">No</option></select></Field>
+        <Field label="Payment"><select value={f.payment} onChange={set("payment")}><option value="">All</option><option value="check">Check</option><option value="electronic">Electronic</option><option value="none">No check # (withdrawals)</option></select></Field>
+        <Field label="Attachments"><select value={f.attachments} onChange={set("attachments")} title="Missing = what the Fiscal Year documentation review warns about; Marked = 'no attachment will be provided'"><option value="">All</option><option value="yes">Yes</option><option value="missing">Missing</option><option value="marked">Marked</option></select></Field>
         <Field label="From"><input type="date" value={f.date_from} onChange={set("date_from")} /></Field>
         <Field label="To"><input type="date" value={f.date_to} onChange={set("date_to")} /></Field>
         <Field label="Search"><input value={f.search} onChange={set("search")} placeholder="Entity, description, invoice, check #, amount" /></Field>
@@ -142,10 +156,17 @@ export default function Register() {
       ) : null}
       {data && acct ? (
         <>
+          {sortKey !== DEFAULT_SORT ? (
+            <p className="muted sort-note">
+              Sorted by {sortCol === "clear_date" ? "Cleared" : "Date"}, {sortDir === "asc" ? "oldest first" : "newest first"}
+              {sortCol === "clear_date" ? " (uncleared transactions " + (sortDir === "asc" ? "last" : "first") + "; the balance column is the bank balance)" : ""}.{" "}
+              <button type="button" className="link" onClick={() => chooseSort(DEFAULT_SORT)}>Reset to default</button>
+            </p>
+          ) : null}
           <div className="table-wrap">
             <table className="table register">
               <thead>
-                <tr><th /><th>Date</th><th>Cleared</th><th>Entity</th><th>Check #</th><th>Invoice #</th><th>Description</th><th className="num">Deposit</th><th className="num">Withdrawal</th><th className="num">Balance</th><th>Status</th><th title="Attachments">📎</th></tr>
+                <tr><th /><SortTh col="transaction_date" label="Date" sortCol={sortCol} sortDir={sortDir} onSort={clickSort} /><SortTh col="clear_date" label="Cleared" sortCol={sortCol} sortDir={sortDir} onSort={clickSort} /><th>Entity</th><th>Check #</th><th>Invoice #</th><th>Description</th><th className="num">Deposit</th><th className="num">Withdrawal</th><th className="num" title={data.running_balance_kind === "cleared" ? "Sorted by Cleared: the bank (cleared) balance after each cleared item; blank while uncleared" : "Running balance in Date order (everything written or deposited)"}>{data.running_balance_kind === "cleared" ? "Cleared balance" : "Balance"}</th><th>Status</th><th title="Attachments">📎</th></tr>
               </thead>
               <tbody>
                 {data.transactions.length === 0 ? <tr><td colSpan={12} className="muted">No transactions match.</td></tr> : null}
@@ -153,18 +174,18 @@ export default function Register() {
                   <Fragment key={t.id}>
                     <tr id={`txn-${t.id}`} className={`${t.status === "VOID" ? "void" : ""}${t.status === "DELETED" ? " deleted" : ""} ${t.has_pending_review ? "review" : ""} ${focused === t.id ? "linked" : ""}`}>
                       <td><button className="small" aria-expanded={open === t.id} aria-label={`Details for transaction ${t.id}`} onClick={() => setOpen(open === t.id ? null : t.id)}>{open === t.id ? "▾" : "▸"}</button></td>
-                      <td>{t.transaction_date}</td><td>{t.clear_date || ""}</td><td>{t.entity?.display_name || ""}</td><td>{t.check_number || ""}</td>
+                      <td>{t.transaction_date}</td><td>{t.clear_date || ""}</td><td>{t.entity?.display_name || ""}</td><td>{t.check_number || ""}{t.payment_reference ? <span className="muted" title="Payment reference"> ref. {t.payment_reference}</span> : null}</td>
                       <td>{t.invoice_numbers.join(", ")}</td>
                       <td>{t.is_split ? `Split (${t.allocations.length})` : t.allocations[0]?.description || t.allocations[0]?.budget.label}</td>
                       {/* 1.7.3 (#104): with the Budget filter, the budget's share of the transaction ("$40.00 of $100.00") */}
                       <td className="num">{t.deposit ? (byBudget ? <Share part={t.budget_share} total={t.deposit} /> : money(t.deposit)) : ""}</td>
                       <td className="num">{t.withdrawal ? (byBudget ? <Share part={t.budget_share} total={t.withdrawal} /> : money(t.withdrawal)) : ""}</td>
-                      <td className="num">{money(t.running_balance)}</td>
-                      <td>{t.status === "DELETED" ? <span className="badge grey">Deleted</span> : t.status === "VOID" ? <span className="badge red">VOID</span> : t.cleared ? "Cleared" : "Uncleared"}{t.has_pending_review ? <span className="badge yellow">Review</span> : null}{t.transfer ? <span className="badge blue">Transfer</span> : null}{t.check_printed ? <span className="badge green" title="A check was printed for this transaction (record copy attached)">Check printed</span> : null}{t.no_attachment ? <span className="badge grey" title={t.no_attachment_reason || ""}>No attachment</span> : null}</td>
+                      <td className="num">{t.running_balance == null ? "" : money(t.running_balance)}</td>
+                      <td>{t.status === "DELETED" ? <span className="badge grey">Deleted</span> : t.status === "VOID" ? <span className="badge red">VOID</span> : t.cleared ? "Cleared" : "Uncleared"}{t.has_pending_review ? <span className="badge yellow">Review</span> : null}{t.transfer ? <span className="badge blue">Transfer</span> : null}{t.electronic_payment ? <span className="badge blue" title={`Paid electronically: ${t.payment_method_label}`}>Electronic</span> : null}{t.check_printed ? <span className="badge green" title="A check was printed for this transaction (record copy attached)">Check printed</span> : null}{t.no_attachment ? <span className="badge grey" title={t.no_attachment_reason || ""}>No attachment</span> : null}{f.attachments === "missing" && t.documentation ? <span className="badge yellow" title="Listed in the Fiscal Year documentation review">{t.documentation === "NO_ATTACHMENT_MARKED" ? "Marked: no reason" : "Missing attachment"}</span> : null}</td>
                       <td>{t.attachment_count ? <span aria-label={`${t.attachment_count} attachments`}>📎{t.attachment_count}</span> : ""}</td>
                     </tr>
                     {open === t.id ? (
-                      <tr className="detail-row"><td colSpan={12}><TxnDetail t={t} manage={manage} canPrintChecks={!!me.modules?.checks && can("checks.print")} onPrintCheck={() => setModal({ kind: "printcheck", txn: t })} onEdit={() => setModal({ kind: t.transfer ? "legedit" : "txn", txn: t })} onVoid={() => setModal({ kind: "void", txn: t })} onVoidDate={() => setModal({ kind: "voiddate", txn: t })} onVoidCheck={() => setModal({ kind: "voidcheck", txn: t })} onChanged={load} /></td></tr>
+                      <tr className="detail-row"><td colSpan={12}><TxnDetail t={t} manage={manage} canPrintChecks={!!me.modules?.checks && can("checks.print")} onPrintCheck={() => setModal({ kind: "printcheck", txn: t })} canDonations={!!me.modules?.donations && can("donation.view")} onDonation={() => setModal({ kind: "donation", txn: t })} onEdit={() => setModal({ kind: t.transfer ? "legedit" : "txn", txn: t })} onVoid={() => setModal({ kind: "void", txn: t })} onVoidDate={() => setModal({ kind: "voiddate", txn: t })} onVoidCheck={() => setModal({ kind: "voidcheck", txn: t })} onChanged={load} /></td></tr>
                     ) : null}
                   </Fragment>
                 ))}
@@ -180,13 +201,14 @@ export default function Register() {
       {modal?.kind === "voiddate" ? <VoidDateForm txn={modal.txn} fys={fys} onClose={() => setModal(null)} onSaved={() => { setModal(null); load(); }} /> : null}
       {modal?.kind === "voidcheck" ? <VoidCheckForm txn={modal.txn} onClose={() => setModal(null)} onSaved={() => { setModal(null); load(); }} /> : null}
       {modal?.kind === "recon" ? <ReconModal title={modal.title} recon={modal.recon} label={modal.label} onClose={() => setModal(null)} /> : null}
+      {modal?.kind === "donation" ? <DonationReceiptDialog txn={modal.txn} onClose={() => setModal(null)} onChanged={load} /> : null}
       {modal?.kind === "printcheck" ? <PrintCheckDialog txn={modal.txn} onClose={() => setModal(null)} onChanged={load} /> : null}
       {modal?.kind === "zero" ? <ZeroVoidForm account={acct} initial={modal.initial} fys={fys} onClose={() => setModal(null)} onSaved={() => { setModal(null); load(); }} /> : null}
     </div>
   );
 }
 
-function TxnDetail({ t, manage, canPrintChecks, onPrintCheck, onEdit, onVoid, onVoidDate, onVoidCheck, onChanged }: { t: any; manage: boolean; canPrintChecks: boolean; onPrintCheck: () => void; onEdit: () => void; onVoid: () => void; onVoidDate: () => void; onVoidCheck: () => void; onChanged: () => void }) {
+function TxnDetail({ t, manage, canPrintChecks, onPrintCheck, canDonations, onDonation, onEdit, onVoid, onVoidDate, onVoidCheck, onChanged }: { t: any; manage: boolean; canPrintChecks: boolean; onPrintCheck: () => void; canDonations: boolean; onDonation: () => void; onEdit: () => void; onVoid: () => void; onVoidDate: () => void; onVoidCheck: () => void; onChanged: () => void }) {
   const [note, setNote] = useState("");
   const [err, setErr] = useState<unknown>(null);
   const editable = manage && t.status === "ACTIVE" && !t.closed_fiscal_year_protected;
@@ -231,15 +253,17 @@ function TxnDetail({ t, manage, canPrintChecks, onPrintCheck, onEdit, onVoid, on
         {canPrintChecks && editable && t.transaction_type === "WITHDRAWAL" && !t.transfer && Number(t.total) > 0
           ? <>
               {/* build 13 (product owner, 2026-10-14): one button - the print screen in a dialog over the register */}
-              <button onClick={onPrintCheck}>{t.check_printed ? "Reprint check or letter…" : "Create payment…"}</button>
+              <button onClick={onPrintCheck}>{t.electronic_payment ? "Letter or envelope…" : t.check_printed ? "Reprint check or letter…" : "Create payment…"}</button>
             </> : null}
+        {/* 2.1.0 (#312): Donations module - a deposit's donation lines and receipts (void deposits show their receipts as void) */}
+        {canDonations && t.transaction_type === "DEPOSIT" && !t.transfer ? <button onClick={onDonation}>Donation receipt…</button> : null}
         {editable ? <button className="danger" onClick={onVoid}>Void…</button> : null}
         {manage && t.status === "VOID" && !t.closed_fiscal_year_protected ? <button onClick={onVoidDate}>Correct date…</button> : null}
         {manage && t.status === "VOID" && t.transaction_type === "WITHDRAWAL" && !t.transfer && !t.closed_fiscal_year_protected ? <button onClick={onVoidCheck}>Correct check number…</button> : null}
       </div>
-      <Attachments ownerType="transaction" ownerId={t.id} canUpload={manage} canRemove={editable} title="Transaction attachments" />
+      <Attachments ownerType="transaction" ownerId={t.id} canUpload={manage} canRemove={editable} canReorder={manage && !t.closed_fiscal_year_protected && t.status !== "DELETED"} title="Transaction attachments" />
       {t.allocations.length > 1 ? t.allocations.map((a: any) => (
-        <Attachments key={a.id} ownerType="allocation" ownerId={a.id} canUpload={manage} canRemove={editable} title={allocationLabel(t, a)} />
+        <Attachments key={a.id} ownerType="allocation" ownerId={a.id} canUpload={manage} canRemove={editable} canReorder={manage && !t.closed_fiscal_year_protected && t.status !== "DELETED"} title={allocationLabel(t, a)} />
       )) : null}
       {manage ? (
         <GuardedForm onSubmit={addNote} className="row">
@@ -277,6 +301,10 @@ export function TxnForm({ account, txn, initial, fys, onClose, onSaved, payment 
     transaction_date: txn?.transaction_date || todayIso(), clear_date: txn?.clear_date || "",
     entity_id: txn?.entity && !txn.entity.is_system ? String(txn.entity.id) : "", check_number: txn?.check_number || initial?.check_number || "", notes: txn?.notes || "",
     no_attachment: !!txn?.no_attachment, no_attachment_reason: txn?.no_attachment_reason || "",
+    // 2.1.0 (#260): paid electronically; the optional number is from our check sequence or a payment reference
+    electronic_payment: !!txn?.electronic_payment, payment_method: txn?.payment_method || "",
+    payment_method_other: txn?.payment_method_other || "", payment_reference: txn?.payment_reference || "",
+    number_kind: txn?.payment_reference ? "reference" : "check",
   });
   // null = closed, -1 = whole transaction, n = allocation n
   const [noAttDlg, setNoAttDlg] = useState<number | null>(null);
@@ -344,8 +372,15 @@ export function TxnForm({ account, txn, initial, fys, onClose, onSaved, payment 
     }));
     const header = {
       transaction_date: h.transaction_date, clear_date: h.clear_date || null, entity_id: h.entity_id ? Number(h.entity_id) : null,
-      check_number: type === "WITHDRAWAL" ? h.check_number || null : null, notes: h.notes || null,
+      check_number: type === "WITHDRAWAL" && !(h.electronic_payment && h.number_kind === "reference") ? h.check_number || null : null,
+      notes: h.notes || null,
       no_attachment: h.no_attachment, no_attachment_reason: h.no_attachment ? h.no_attachment_reason || null : null,
+      ...(txn?.transfer ? {} : {
+        electronic_payment: type === "WITHDRAWAL" && h.electronic_payment,
+        payment_method: type === "WITHDRAWAL" && h.electronic_payment ? h.payment_method || null : null,
+        payment_method_other: type === "WITHDRAWAL" && h.electronic_payment && h.payment_method === "OTHER" ? h.payment_method_other || null : null,
+        payment_reference: type === "WITHDRAWAL" && h.electronic_payment && h.number_kind === "reference" ? h.payment_reference || null : null,
+      }),
     };
     try {
       const r = await run((confirmations) => isNew
@@ -400,8 +435,11 @@ export function TxnForm({ account, txn, initial, fys, onClose, onSaved, payment 
           )}
           <Field label={payment ? "Check date" : "Transaction date"}><input required type="date" value={h.transaction_date} onChange={(e) => setH({ ...h, transaction_date: e.target.value })} /></Field>
           {payment ? null : <Field label="Clear/Post date (blank = uncleared)"><input type="date" value={h.clear_date} onChange={(e) => setH({ ...h, clear_date: e.target.value })} /></Field>}
-          {type === "WITHDRAWAL" ? <Field label="Check #" hint={payment ? "The number printed on the check you will use (it can also be entered when printing)." : undefined}><input value={h.check_number} onChange={(e) => setH({ ...h, check_number: e.target.value })} /></Field> : null}
+          {type === "WITHDRAWAL" && !h.electronic_payment ? <Field label="Check #" hint={payment ? "The number printed on the check you will use (it can also be entered when printing)." : undefined}><input value={h.check_number} onChange={(e) => setH({ ...h, check_number: e.target.value })} /></Field> : null}
         </div>
+        {type === "WITHDRAWAL" && !txn?.transfer ? (
+          <ElectronicFields h={h} setH={setH} />
+        ) : null}
         {nat?.no_fiscal_year ? (
           <div className="alert warn" role="alert">No Fiscal Year covers {h.transaction_date}. Closest configured Fiscal Year: <b>{nat.closest?.label || "none"}</b> (shown for reference only – not assumed correct). Allocations will be flagged for Fiscal Year review.</div>
         ) : null}
@@ -476,7 +514,7 @@ export function TxnForm({ account, txn, initial, fys, onClose, onSaved, payment 
         {h.no_attachment ? (
           <Field label="Reason no attachment is available (optional)" hint="Without a reason, this item stays in the Fiscal Year documentation review."><input maxLength={500} value={h.no_attachment_reason} onChange={(e) => setH({ ...h, no_attachment_reason: e.target.value })} placeholder="e.g. Bank interest - direct deposit" /></Field>
         ) : null}
-        <div className="actions">{!isNew ? <DeleteTxnButton txn={txn} onDeleted={onSaved} /> : null}<button type="button" onClick={onClose}>Cancel</button><button className="primary" type="submit">{payment ? "Save and print check" : "Save"}</button></div>
+        <div className="actions">{!isNew ? <DeleteTxnButton txn={txn} onDeleted={onSaved} /> : null}<button type="button" onClick={onClose}>Cancel</button><button className="primary" type="submit">{payment ? (h.electronic_payment ? "Save payment" : "Save and print check") : "Save"}</button></div>
       </GuardedForm>
       {dialog}
       {noAttDlg !== null ? (
@@ -901,6 +939,67 @@ function ReconModal({ title, recon, label, onClose }: { title: string; recon: an
 }
 
 
+/** 2.1.0 (#260): "Electronic payment" on a withdrawal - how it was paid and an optional number, which is either a
+ * check number from the organization's own sequence (counts in the missing-check review) or a payment reference. */
+const PAYMENT_METHODS: [string, string][] = [["ACH", "ACH / bill pay"], ["DEBIT_CARD", "Debit card"], ["WIRE", "Wire"], ["ONLINE_PORTAL", "Online portal"], ["OTHER", "Other…"]];
+function ElectronicFields({ h, setH }: { h: any; setH: (v: any) => void }) {
+  // 2.1.0 build 2 feedback (Kyle, 2026-10-20): the checkbox spans two rows; "Paid by" fills the first row, the kind of
+  // number and the number itself the second - so a long reference has the full width and can be checked at a glance.
+  const on = h.electronic_payment;
+  return (
+    <div className={`electronic-payment${on ? " on" : ""}`}>
+      <label className="check ep-toggle">
+        <input type="checkbox" checked={on}
+          onChange={(e) => setH({ ...h, electronic_payment: e.target.checked, ...(e.target.checked ? {} : { payment_method: "", payment_method_other: "", payment_reference: "", number_kind: "check" }) })} />
+        Electronic payment (no physical check)
+      </label>
+      {on ? (
+        <>
+          <div className={`ep-method${h.payment_method === "OTHER" ? " with-other" : ""}`}>
+            <Field label="Paid by">
+              <select required aria-label="Electronic payment method" value={h.payment_method} onChange={(e) => setH({ ...h, payment_method: e.target.value })}>
+                <option value="">Choose…</option>
+                {PAYMENT_METHODS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+            </Field>
+          </div>
+          {h.payment_method === "OTHER" ? <div className="ep-other"><Field label="Describe"><input required maxLength={60} value={h.payment_method_other} onChange={(e) => setH({ ...h, payment_method_other: e.target.value })} /></Field></div> : null}
+          <div className="ep-kind">
+            <Field label="Number (optional)">
+              <select aria-label="Kind of number" value={h.number_kind} onChange={(e) => setH({ ...h, number_kind: e.target.value })}>
+                <option value="check">Check # from our sequence</option>
+                <option value="reference">Payment reference</option>
+              </select>
+            </Field>
+          </div>
+          <div className="ep-number">
+            <Field label={h.number_kind === "check" ? "Check #" : "Payment reference"}
+              hint={h.number_kind === "check" ? "A number from your own checkbook sequence (some bill-pay services ask for one); it counts in the missing-check review." : "A bank or vendor confirmation number; never part of the check sequence."}>
+              {h.number_kind === "check"
+                ? <input aria-label="Check number" maxLength={20} value={h.check_number} onChange={(e) => setH({ ...h, check_number: e.target.value })} />
+                : <input aria-label="Payment reference" maxLength={40} value={h.payment_reference} onChange={(e) => setH({ ...h, payment_reference: e.target.value })} />}
+            </Field>
+          </div>
+        </>
+      ) : null}
+    </div>
+  );
+}
+
+/** 2.1.0 (#262): a sortable register column heading - a button (keyboard and screen readers) with aria-sort. */
+function SortTh({ col, label, sortCol, sortDir, onSort }: { col: "transaction_date" | "clear_date"; label: string;
+  sortCol: string; sortDir: "asc" | "desc"; onSort: (c: "transaction_date" | "clear_date") => void }) {
+  const active = sortCol === col;
+  const next = active && sortDir === "asc" ? "newest first" : "oldest first";
+  return (
+    <th aria-sort={active ? (sortDir === "asc" ? "ascending" : "descending") : "none"}>
+      <button type="button" className="sort-head" onClick={() => onSort(col)} title={`Sort by ${label}, ${next}`}>
+        {label}<span aria-hidden="true" className={active ? "sort-arrow" : "sort-arrow idle"}>{active ? (sortDir === "asc" ? " ▲" : " ▼") : " ↕"}</span>
+      </button>
+    </th>
+  );
+}
+
 function Share({ part, total }: { part: string; total: string }) {
   return Number(part) === Number(total) ? <>{money(total)}</> : (
     <span className="budget-share">{money(part)}<span className="muted small"> of {money(total)}</span></span>
@@ -938,7 +1037,7 @@ function DeleteTxnForm({ txn, onClose, onDeleted }: { txn: any; onClose: () => v
         <ErrorBox error={err} />
         {txn.transfer ? <div className="alert warn">This is one side of a transfer. <b>Both</b> the withdrawal and the deposit will be deleted.</div> : null}
         <div className="alert warn" role="alert"><b>The transaction will be deleted.</b> It disappears from the Register, the balances, the budgets
-          and the reports. Auditors can still see it, with your reason. This cannot be undone.{txn.check_number ? ` Check number ${txn.check_number} stays used.` : ""}</div>
+          and the reports. Auditors can still see it, with your reason. This cannot be undone.{txn.check_number ? ` Check number ${txn.check_number} is released and can be used on another record.` : ""}</div>
         <Field label="Reason (required)"><textarea required value={reason} onChange={(e) => setReason(e.target.value)} /></Field>
         <div className="actions"><button type="button" onClick={onClose}>Cancel</button><button className="primary danger" type="submit" disabled={!reason.trim()}>Delete transaction</button></div>
       </GuardedForm>

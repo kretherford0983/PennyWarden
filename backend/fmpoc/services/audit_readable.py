@@ -32,13 +32,22 @@ ACTION_LABELS = {
     "SESSION_ENDED_BY_ADMIN": "Session ended by an Administrator", "ACCOUNT_NUMBER_REVEALED": "Account number shown",
     "UPDATE_CHECK_SETTING_CHANGED": "Update check setting changed", "REPORT_GENERATED": "Report generated",
     "AUDIT_LOG_EXPORTED": "Audit log exported",
+    "CONFIG_APPLIED": "Server settings applied (pennywarden apply-config)",
+    "ATTACHMENTS_REORDERED": "Attachments reordered",
+    # 2.1.0 (#312, #314)
+    "ORGANIZATION_UPDATED": "Organization profile changed", "DONATION_SETUP_UPDATED": "Donations setup changed",
+    "DONATION_MARKED": "Donation lines changed",
+    "DONATION_DETAILS_UPDATED": "Donation details changed", "DONATION_RECEIPT_PRINTED": "Donation receipt printed",
+    "DONATION_RECEIPT_TEST": "Donation receipt test print",
+    "DONATION_RECEIPT_PREVIEW": "Donation receipt previewed",
 }
 OBJECT_LABELS = {
-    "user": "User", "workspace": "Organization", "fiscal_year": "Fiscal Year", "budget": "Budget", "entity": "Entity",
+    "user": "User", "workspace": "Organization", "server_config": "Server settings", "fiscal_year": "Fiscal Year", "budget": "Budget", "entity": "Entity",
     "bank_account": "Bank account", "register_transaction": "Transaction", "attachment": "Attachment",
     "fiscal_year_review": "Fiscal Year review", "transaction_allocation": "Transaction line", "fundraiser": "Fundraiser",
     "reminder": "Reminder", "check_style": "Check style", "check_signer": "Signer", "check_document": "Letter/envelope template",
     "signature_template": "Signature wording", "security_notice": "Security notice", "audit_log": "Audit log",
+    "donation_settings": "Donations setup",
 }
 FIELD_LABELS = {
     "id": "ID", "username": "Username", "display_name": "Display name", "first_name": "First name",
@@ -50,6 +59,8 @@ FIELD_LABELS = {
     "allocations": "Lines", "amount": "Amount", "total": "Total", "parent_code": "Code", "child_code": "Sub-code",
     "budget_type": "Budget type", "identifier": "Fiscal Year", "start_date": "Start", "end_date": "End",
     "organization_name": "Organization name", "primary_contact": "Contact", "entity_type": "Entity type",
+    "ein": "EIN", "address_line1": "Address", "address_line2": "Address line 2", "city": "City",
+    "state_region": "State", "postal_code": "ZIP", "phone": "Phone",
     "account_number_visible_suffix": "Account number (last 4)", "notes": "Notes", "description": "Description",
 }
 # ids of related records and how to name them

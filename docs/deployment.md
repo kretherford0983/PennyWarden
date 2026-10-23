@@ -39,8 +39,9 @@ default browser when a desktop session is available. Plain HTTP is acceptable be
 > choose, such as an external drive. On a server the folder must be listed by the server owner with
 > `backup_folders` in `config.toml` (a list: `backup_folders = ["/srv/pennywarden-backups"]`; e.g. a mounted NAS
 > share; in Docker, a volume mounted into the container), and the service account must be able to write to it. On the
-> Linux server install, run the installer again after changing `backup_folders`: the service is sandboxed and may
-> write only where the installer allows it (not under `/home`).
+> Linux server install, run `sudo pennywarden apply-config` after changing `backup_folders` (2.1.0): the service is
+> sandboxed and may write only to the folders this command (and the installer, which runs it) allows (not under
+> `/home`).
 
 ## Server installation (multiple users)
 
@@ -68,9 +69,14 @@ the same command — see [upgrade.md](upgrade.md).
   `curl -fsSL https://github.com/kretherford0983/PennyWarden/releases/download/<tag>/install.sh | sudo bash -s -- --version <tag>`
 - **Port:** a new installation uses 8765 (`--port N` to change); an upgrade reads the port from the existing
   `config.toml`.
-- **Also set up (since 2.0.0):** the `pennywarden` command for the host commands (`sudo pennywarden restore …`), and
-  write access for the service to the scheduled-backup folders in `backup_folders` — run the installer again after
-  changing that list.
+- **Also set up (since 2.0.0):** the `pennywarden` command for the host commands (`sudo pennywarden restore … --data-dir /var/lib/pennywarden`), and
+  write access for the service to the scheduled-backup folders in `backup_folders`. After changing that list (or any
+  other setting in `config.toml`), run `sudo pennywarden apply-config` (2.1.0) instead of the whole installer.
+- **Where it listens (2.1.0):** the installer's health check and its last message use the configured **Bind
+  Address** (`host` in `config.toml`): with `127.0.0.1` it says to point the tunnel at `http://127.0.0.1:PORT`; with
+  `0.0.0.0` (tunnel or proxy on another machine) it lists this server's network addresses and the loopback address,
+  and reminds you to restrict the port with the firewall and add the tunnel machine to `trusted_proxies`; with one
+  specific address it uses that address.
 - **Prefer to read it first?**
   `curl -fsSLO https://github.com/kretherford0983/PennyWarden/releases/download/<tag>/install.sh`, read it, then
   `sudo bash install.sh --version <tag>`.
@@ -134,8 +140,10 @@ Host commands for a locked-out user, run on the server — on the Linux server i
 the `pennywarden` command since 2.0.0, and files the commands write are handed back to the service's account); on a
 Windows server as Administrator with `C:\PennyWarden\current\PennyWarden.cmd`; see also `restore` and `reinitialize` in
 [backup-restore.md](backup-restore.md):
-`sudo pennywarden reset-mfa --user NAME` (two-step verification set up again) and, from 1.8.0,
-`sudo pennywarden reset-password --user NAME` (prints a temporary password that must be changed at the next sign-in).
+`sudo pennywarden reset-mfa --user NAME --data-dir /var/lib/pennywarden` (two-step verification set up again) and,
+from 1.8.0, `sudo pennywarden reset-password --user NAME --data-dir /var/lib/pennywarden` (prints a temporary password
+that must be changed at the next sign-in). On a server always add `--data-dir`
+([why](backup-restore.md#the-data-folder---data-dir)).
 Both also enable an account that was disabled after too many failed attempts.
 
 ## Docker (optional)

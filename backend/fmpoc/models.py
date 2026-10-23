@@ -56,6 +56,8 @@ class Workspace(Base):
     fundraisers_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
     # 2.0.0 (#156): the Payments module
     checks_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
+    # 2.1.0 (#312): the Donations module (optional; donation receipt letters)
+    donations_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
     # 2.0.0 (#126): Administrators are warned after this many days without a backup (0 = off)
     backup_warning_days: Mapped[int] = mapped_column(Integer, default=7, server_default="7", nullable=False)
     # 2.0.0 (#130): maintenance mode - on while a message is set (from maintenance_starts_at, if given): everyone but
@@ -100,6 +102,8 @@ class User(Base):
     dashboard_layout: Mapped[str | None] = mapped_column(String(200), nullable=True)  # v1.5.0 CR-031 (comma list)
     # 2.0.0 (#164): the bank account of this user's last payment (Payments module), preselected next time
     last_payment_account_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 2.1.0 (#262): the user's register sort, "<column>:<asc|desc>" (None = Date, oldest first)
+    register_sort: Mapped[str | None] = mapped_column(String(40), nullable=True)
     password_changed_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
     created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("app_user.id"), nullable=True)
@@ -230,6 +234,9 @@ class Entity(Base):
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     is_financial_institution: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
     is_system: Mapped[bool] = mapped_column(Boolean, default=False)
+    # 2.1.0 (#314): the organization itself - one per workspace, maintained by Administrators in System/About
+    is_organization: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
+    ein: Mapped[str | None] = mapped_column(String(10), nullable=True)       # 12-3456789 (#314; other entities #315)
     active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     name_key: Mapped[str] = mapped_column(String(200), index=True)  # normalized name for duplicate search
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
@@ -332,6 +339,13 @@ class RegisterTransaction(Base):
     deleted_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     deleted_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     delete_reason: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    # 2.1.0 (#260): a withdrawal paid electronically (no physical check). The optional number is either a check number
+    # from the organization's own sequence (check_number, CR-011/CR-012) or a bank/vendor reference (never in the
+    # check sequence).
+    electronic_payment: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
+    payment_method: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    payment_method_other: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    payment_reference: Mapped[str | None] = mapped_column(String(40), nullable=True)
 
     allocations: Mapped[list["TransactionAllocation"]] = relationship(
         back_populates="transaction", lazy="selectin", order_by="TransactionAllocation.id"
@@ -418,6 +432,8 @@ class Attachment(Base):
     # v1.3 CR-007: APPROVAL | AUDIT_SIGNOFF | UNSPECIFIED for Fiscal Year attachments (None otherwise)
     document_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
     system_generated: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
+    # 2.1.0 (#259): position among its owner's attachments; None = upload order (listed by COALESCE(sort_order, id))
+    sort_order: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class RequestKey(Base):
@@ -533,6 +549,13 @@ class Fundraiser(Base):
     cancelled_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     cancelled_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     cancel_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # 2.1.0 (#275): stakeholder report - narrative notes (Budget Managers) and "Mark results final"
+    summary_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    results_final_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    results_final_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 2.1.0 (#277): the same event across years ("Continues from" puts it in the previous fundraiser's series)
+    series_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    continues_from_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
     created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
@@ -559,6 +582,60 @@ class FundraiserBudget(Base):
 
 
 # ---------------------------------------------------------------- v1.6.1 CR-034 fundraiser management
+class FundraiserSeries(Base):
+    """2.1.0 (#277): one fundraising event across years (e.g. "Golf Outing"). Created behind the scenes when a
+    fundraiser continues an earlier one; renamed, grouped as Other or merged in the Fundraiser series list."""
+    __tablename__ = "fundraiser_series"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    group_as_other: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false())
+    merged_into_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class FundraiserSeriesResult(Base):
+    """2.1.0 (#277): a year's result entered by hand (years before PennyWarden). Retired, never deleted (BR-001)."""
+    __tablename__ = "fundraiser_series_result"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    series_id: Mapped[int] = mapped_column(ForeignKey("fundraiser_series.id"), index=True)
+    fiscal_year_label: Mapped[str] = mapped_column(String(40))
+    year: Mapped[int] = mapped_column(Integer)
+    net_cents: Mapped[int] = mapped_column(BigInteger)
+    income_cents: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    expense_cents: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    retired_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    retired_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    retire_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class FundraiserFyReportNote(Base):
+    """2.1.0 (#277): the Fiscal Year fundraising report's notes, remembered per Fiscal Year."""
+    __tablename__ = "fundraiser_fy_report_note"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
+    fiscal_year_id: Mapped[int] = mapped_column(ForeignKey("fiscal_year.id"), unique=True)
+    notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    updated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class FundraiserBucketCategory(Base):
+    """2.1.0 (#278): an optional heading that groups buckets of one fundraiser (presentation only)."""
+    __tablename__ = "fundraiser_bucket_category"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    fundraiser_id: Mapped[int] = mapped_column(ForeignKey("fundraiser.id"), index=True)
+    name: Mapped[str] = mapped_column(String(80))
+    description: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    display_order: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
 class FundraiserBucket(Base):
     """A sub-category of a fundraiser (e.g. food sales, raffle); holds income and expense lines by amount."""
     __tablename__ = "fundraiser_bucket"
@@ -566,6 +643,9 @@ class FundraiserBucket(Base):
     fundraiser_id: Mapped[int] = mapped_column(ForeignKey("fundraiser.id"), index=True)
     name: Mapped[str] = mapped_column(String(80))
     description: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # 2.1.0 (#278): one category or none; display order (buckets numbered in name order by migration 0039)
+    category_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    display_order: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
     created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
@@ -596,13 +676,33 @@ class FundraiserClassification(Base):
     __table_args__ = (UniqueConstraint("fundraiser_id", "allocation_id", name="uq_fundraiser_classification_line"),)
 
 
+class FundraiserLineContributor(Base):
+    """2.1.0 (#303): the contributor shown on the fundraiser reports for the part of a line that is in no bucket (the
+    "Other" lines, and every line of a fundraiser without buckets) - e.g. "Cash". Bucket parts keep their own
+    (fundraiser_bucket_line.contributor_override)."""
+    __tablename__ = "fundraiser_line_contributor"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    fundraiser_id: Mapped[int] = mapped_column(ForeignKey("fundraiser.id"), index=True)
+    allocation_id: Mapped[int] = mapped_column(ForeignKey("transaction_allocation.id"))
+    contributor_override: Mapped[str] = mapped_column(String(120))
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    __table_args__ = (UniqueConstraint("fundraiser_id", "allocation_id", name="uq_fundraiser_line_contributor"),)
+
+
 class FundraiserBucketLine(Base):
     """Amount of a line assigned to a bucket (a line can be split across buckets)."""
     __tablename__ = "fundraiser_bucket_line"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     bucket_id: Mapped[int] = mapped_column(ForeignKey("fundraiser_bucket.id"), index=True)
     allocation_id: Mapped[int] = mapped_column(ForeignKey("transaction_allocation.id"))
-    amount_cents: Mapped[int] = mapped_column(BigInteger)
+    amount_cents: Mapped[int] = mapped_column(BigInteger)   # the net (charge - less): what counts toward the line
+    # 2.1.0 (#278): the full charge and a credit taken off it ("Less: pre-paid team credit"); detail only
+    charge_cents: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    less_cents: Mapped[int] = mapped_column(BigInteger, default=0, server_default="0")
+    less_description: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # 2.1.0 (#278 feedback): shown instead of the Entity as the contributor on the fundraiser reports
+    contributor_override: Mapped[str | None] = mapped_column(String(120), nullable=True)
     __table_args__ = (UniqueConstraint("bucket_id", "allocation_id", name="uq_fundraiser_bucket_line"),)
 
 
@@ -692,6 +792,21 @@ class BackupSchedule(Base):
     last_error: Mapped[str | None] = mapped_column(String(1000), nullable=True)
     updated_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     updated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class BudgetProjectionChoice(Base):
+    """2.1.0 (#257, #261): whether a user projects a current-year budget to the Fiscal Year end (Budget Prep report,
+    Planning Sheet). No row = the default (projected, unless the budget belongs to an ended or cancelled
+    fundraiser). Remembered per user; a budget belongs to one Fiscal Year, so this is per Fiscal Year too."""
+    __tablename__ = "budget_projection_choice"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("app_user.id"), index=True)
+    budget_id: Mapped[int] = mapped_column(ForeignKey("budget.id"), index=True)
+    project: Mapped[bool] = mapped_column(Boolean)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+
+    __table_args__ = (UniqueConstraint("user_id", "budget_id", name="uq_projection_choice_user_budget"),)
 
 
 class BackupRun(Base):
@@ -796,6 +911,9 @@ class CheckPrinterSetting(Base):
     dx_mils: Mapped[int] = mapped_column(Integer, default=0)                  # thousandths of an inch, check coordinates
     dy_mils: Mapped[int] = mapped_column(Integer, default=0)
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    # 2.1.0 (#247): on the user's letter row (feed_key "letter", no style or template): cover-letter fold marks
+    # FRONT | BACK; empty = use the template's setting
+    fold_marks: Mapped[str | None] = mapped_column(String(10), nullable=True)
 
 
 class CheckDocument(Base):
@@ -818,3 +936,73 @@ class CheckDocument(Base):
     logo_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     logo_width: Mapped[int | None] = mapped_column(Integer, nullable=True)
     logo_height: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+# ---------------------------------------------------------------- 2.1.0 (#312) Donations module: receipt letters
+class DonationSettings(Base):
+    """The organization's donation receipt setup (Administrator): EIN, mailing address and the receipt template, as
+    validated JSON (services/donations.ReceiptConfig). One per workspace."""
+    __tablename__ = "donation_settings"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), unique=True)
+    config_json: Mapped[str] = mapped_column(Text)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    updated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class DonationLine(Base):
+    """A deposit allocation marked as a donation (Register User), with an optional purpose and the goods or services
+    given in exchange (value and description; none = no goods or services)."""
+    __tablename__ = "donation_line"
+    __table_args__ = (UniqueConstraint("allocation_id", name="uq_donation_line_allocation"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
+    allocation_id: Mapped[int] = mapped_column(ForeignKey("transaction_allocation.id"))
+    purpose: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    goods_cents: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    goods_description: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # 2.1.0 (Kyle, 2026-10-22): when the donation was received, if not the deposit's date (empty = the deposit's date)
+    date_received: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    updated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class DonationDetail(Base):
+    """2.1.0 (Kyle, 2026-10-22): the {DETAILS} text written for one donor's receipt on one deposit (may use the
+    receipt's {VARIABLES}); printed where the template has {DETAILS}."""
+    __tablename__ = "donation_detail"
+    __table_args__ = (UniqueConstraint("transaction_id", "donor_entity_id", name="uq_donation_detail_donor"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
+    transaction_id: Mapped[int] = mapped_column(ForeignKey("register_transaction.id"))
+    donor_entity_id: Mapped[int] = mapped_column(ForeignKey("entity.id"))
+    details: Mapped[str] = mapped_column(Text)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    updated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class DonationReceipt(Base):
+    """A printed donation receipt for one donor of one deposit. kind ORIGINAL (a new number), DUPLICATE (the same
+    content again: the original's number) or CORRECTED (a new number replacing `replaces_id`). Never deleted; a
+    voided deposit's receipts show as void."""
+    __tablename__ = "donation_receipt"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
+    transaction_id: Mapped[int] = mapped_column(ForeignKey("register_transaction.id"), index=True)
+    donor_entity_id: Mapped[int] = mapped_column(ForeignKey("entity.id"))
+    donor_name: Mapped[str] = mapped_column(String(200))
+    number: Mapped[str] = mapped_column(String(20))
+    year: Mapped[int] = mapped_column(Integer)
+    seq: Mapped[int] = mapped_column(Integer)
+    kind: Mapped[str] = mapped_column(String(10))               # ORIGINAL | DUPLICATE | CORRECTED
+    replaces_id: Mapped[int | None] = mapped_column(ForeignKey("donation_receipt.id"), nullable=True)
+    amount_cents: Mapped[int] = mapped_column(BigInteger)
+    goods_cents: Mapped[int] = mapped_column(BigInteger, default=0)
+    date_received: Mapped[dt.date] = mapped_column(Date)
+    allocation_ids: Mapped[str] = mapped_column(String(500))    # comma-separated, for the record
+    content_sha: Mapped[str] = mapped_column(String(64))
+    attachment_id: Mapped[int | None] = mapped_column(ForeignKey("attachment.id"), nullable=True)
+    printed_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    printed_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)

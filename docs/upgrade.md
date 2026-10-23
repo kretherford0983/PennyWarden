@@ -10,6 +10,7 @@ Before switching versions the installer stops the service and copies the whole d
 
 | Upgrade | Database change | Rollback |
 |---|---|---|
+| 2.0.0 → 2.1.0 | migrations `0035` to `0047`, all additions — no existing value changes: `app_user.register_sort` (empty = Date, oldest first; `0035`), four columns on `register_transaction` for electronic payments — `electronic_payment` (off for every existing transaction), `payment_method`, `payment_method_other`, `payment_reference` (`0036`) — `attachment.sort_order` (empty = upload order; `0037`) and the table `budget_projection_choice` (each user's projected / not projected choices for the Budget Review and the Planning Sheet; empty = the defaults; `0038`), and the table `fundraiser_bucket_category` with `fundraiser_bucket.category_id` (empty = uncategorized) and `display_order` (existing buckets numbered in the order they were listed: by name), and `fundraiser_bucket_line.charge_cents` (= the existing amount), `less_cents` (0) and `less_description` (`0039`; every figure stays the same), and `fundraiser.summary_notes`, `results_final_at`, `results_final_by_user_id` (empty; `0040`), and the tables `fundraiser_series`, `fundraiser_series_result`, `fundraiser_fy_report_note` with `fundraiser.series_id` / `continues_from_id` (empty; `0041`), and `fundraiser_bucket_line.contributor_override` (empty; `0042`), and the table `fundraiser_line_contributor` (empty; `0043`), and `check_printer_setting.fold_marks` (empty = each user follows the letter template, whose fold marks are off after the upgrade; `0044`), and `workspace.donations_enabled` (off) with the tables `donation_settings`, `donation_line` and `donation_receipt` (empty; `0045`), and `entity.is_organization` (off) and `entity.ein` (empty), with one new Organization entity per organization named like it — the organization profile (`0046`), and `donation_line.date_received` (empty = the deposit's date) with the table `donation_detail` (empty; `0047`) | switch binaries **and** restore the pre-upgrade data backup (2.0.0 does not know revisions 0035–0047) |
 | 1.10.0 → 2.0.0 | migrations `0025` to `0034`, all additions — no existing value is changed or removed. Tables: `check_style`, `check_signer`, `check_account`, `check_printer_setting` (`0025`) and `check_document` (`0027`) for the Payments module. Columns: `workspace` — `checks_enabled` (off; `0025`), `backup_warning_days` (7; `0029`), four for maintenance mode (`0031`) and five for reinitialize (`0032`); `app_user` — `last_payment_account_id` (`0026`), `first_name`, `last_name` (`0033`); `transaction_allocation.invoice_date` (`0027`); `check_printer_setting.document_id` (`0027`); four logo columns on `check_document` (`0028`); `auth_session.client_ip` (`0030`); `audit_event` — `actor_name` (`0033`) and `labels` (`0034`; existing audit events are never rewritten). See *2.0.0: after the upgrade* below | switch binaries **and** restore the pre-upgrade data backup (1.10.0 does not know revisions 0025–0034) |
 | 1.9.0 → 1.10.0 | migration `0024` — creates the table `update_check` (the update notification: on/off and the last result); no existing data changes | switch binaries **and** restore the pre-upgrade data backup (1.9.0 does not know revision 0024) |
 | 1.8.0 → 1.9.0 | migration `0023` — creates the tables `backup_schedule` and `backup_run` (scheduled backups); no existing data changes. On a local install new installations give the first user every role; existing users keep their roles | switch binaries **and** restore the pre-upgrade data backup (1.8.0 does not know revision 0023) |
@@ -131,7 +132,8 @@ For 1.1.1 → 1.1.0 (no schema change) switching the symlink alone is enough.
 
 - The installer rewrites `/etc/systemd/system/pennywarden.service` on every run. Put any service customisations in a
   drop-in (`sudo systemctl edit pennywarden`), which is preserved. (Since 2.0.0 the installer also writes its own
-  drop-in, `backup-folders.conf`, from `backup_folders`; don't edit that one — it is rewritten.)
+  drop-in, `backup-folders.conf`, from `backup_folders`; don't edit that one — it is rewritten. Since 2.1.0
+  `sudo pennywarden apply-config` writes it, from the installer and on its own.)
 - Old backups in `/var/backups/pennywarden/` are not pruned automatically; remove ones you no longer need.
 
 ## Windows server
@@ -156,6 +158,22 @@ Data lives in `%LOCALAPPDATA%\PennyWarden` and is separate from the program fold
 
 To roll back: stop the app, restore the backed-up data folder, and run the old program folder.
 
+## 2.1.0: after the upgrade
+
+- **Linux server: `sudo pennywarden apply-config`** (#237). After changing `config.toml` (for example `backup_folders`),
+  run this instead of the whole installer. It first checks the file without stopping anything (it must parse; backup
+  folders must be absolute and outside `/home`; host, port, `trusted_proxies` and `secure_cookies` must be valid) and
+  changes nothing if there is a problem. Then it writes the drop-in `backup-folders.conf`, restarts the service and
+  waits until it answers on the configured Bind Address; if it doesn't, the previous drop-in is put back. `--dry-run`
+  shows what it would write; `--no-restart` only writes. It never edits your own `override.conf` (`systemctl edit`),
+  but tells you when that file still lists `ReadWritePaths` lines you added by hand before 2.0.0 — those can go now.
+  Each run is recorded in the audit log (*Server settings applied*). The installer runs the same command, so the two
+  always agree.
+- **Linux server: the installer follows the Bind Address** (#236). With `host = "0.0.0.0"` (tunnel on another
+  machine) its last lines list this server's network addresses; with one specific address the health check now uses
+  that address (before 2.1.0 the install was reported as failed). `config.toml` is still never changed by the
+  installer.
+
 ## 2.0.0: after the upgrade
 
 - **Real names.** The first Administrator to sign in is asked for the first and last name of every account that has
@@ -163,8 +181,8 @@ To roll back: stop the app, restore the backed-up data folder, and run the old p
   needed*; nobody else is held up.
 - **Linux server: the installer does two new things.** It adds the `pennywarden` command, so host commands are
   `sudo pennywarden …` from any folder. It also lets the sandboxed service write to the folders in `backup_folders`
-  (a drop-in, `/etc/systemd/system/pennywarden.service.d/backup-folders.conf`, rewritten on every run). **Run the
-  installer again whenever you change `backup_folders` in `config.toml`.** Folders under `/home` can't be used: the
+  (a drop-in, `/etc/systemd/system/pennywarden.service.d/backup-folders.conf`, rewritten on every run). Whenever you change `backup_folders` in `config.toml`, run the installer again — **from 2.1.0:
+  `sudo pennywarden apply-config`**. Folders under `/home` can't be used: the
   service can't see `/home`. An existing `config.toml` is not changed; add `backup_folders = ["/srv/…"]` yourself if you
   use scheduled backups.
 - **Windows server:** from now on, upgrade an installation made by `install-windows-server.ps1` by running the script
@@ -404,5 +422,5 @@ sudo pennywarden reset-mfa --user <username> --data-dir /var/lib/pennywarden
 ```
 
 (since 2.0.0; files it writes are handed back to the service account afterwards. On an older installation without the
-`pennywarden` command: `sudo -u pennywarden /opt/pennywarden/current/pennywarden reset-mfa …`). The reset is
+`pennywarden` command: `sudo -u pennywarden /opt/pennywarden/current/pennywarden reset-mfa --user <username> --data-dir /var/lib/pennywarden`). The reset is
 recorded in the audit log; the user sets up two-step verification again at the next sign-in.

@@ -1,0 +1,33 @@
+# PennyWarden's direct Python dependencies (2.1.0, #226). Edit THIS file, then compile the fully pinned
+# requirements.txt (every package, transitive ones included) with Python 3.12, the version the packages ship:
+#
+#     pip install pip-tools
+#     cd backend && pip-compile requirements.in
+#
+# Every build, test run and the Docker image installs requirements.txt; THIRD-PARTY-NOTICES.txt lists exactly what it
+# pins (regenerate with: python scripts/third_party_notices.py). Dependabot updates this file and re-compiles
+# requirements.txt, so packages that must move together (pydantic + pydantic_core) are updated together.
+# Check for advisories with: pip-audit -r backend/requirements.txt
+fastapi==0.143.3
+starlette==1.8.0
+pydantic==2.14.0
+uvicorn==0.54.0
+SQLAlchemy==2.1.5
+alembic==1.20.0
+argon2-cffi==25.1.0
+cryptography==50.0.2
+python-multipart==0.0.32
+pillow==13.0.0
+reportlab==5.0.1
+pypdf==6.21.2
+pyotp==2.10.0
+segno==1.6.6
+# v1.6.0 CR-033: linear-time regular expressions for the fundraiser filter (no catastrophic backtracking)
+google-re2==1.1.20251105
+# 2.0.0 build 11 (#217): PDFium renders the Payments Setup previews as pictures (Safari shows inline PDFs blank)
+pypdfium2==5.14.0
+# 2.1.0 (#275): the fundraiser stakeholder report as an editable Word document (.docx); MIT, uses lxml
+python-docx==1.2.0
+# 2.1.0 (#276): the fundraiser presentation (.pptx with native charts); MIT, XlsxWriter (BSD) writes the chart data
+python-pptx==1.0.2
+XlsxWriter==3.2.9

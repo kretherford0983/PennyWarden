@@ -1,0 +1,112 @@
+# 2.1.0 (#272): the private TEST data set - an encrypted backup of a made-up organization, for refreshing a test
+# server (System/About -> Backups -> Restore, or `pennywarden restore`). Run by hand (Actions -> Build test data).
+#
+# Never published: the file is only a workflow artifact, kept 7 days, and it is encrypted with the backup passphrase.
+# The credentials come from repository secrets only - PW_TESTDATA_PASSWORD (every test user's sign-in password and
+# security answers) and PW_TESTDATA_PASSPHRASE (the backup passphrase) - and are masked in the log.
+#
+# Restore refuses a backup made by a newer schema than the server's, so build from the branch the server runs (test by
+# default); the run summary shows the version and schema (Alembic revision) the file needs. See docs/test-data.md.
+name: Build test data
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Branch (or tag) to build the data with - use the one the test server runs"
+        type: string
+        default: test
+      fy_start_month:
+        description: "First month of the Fiscal Year (1 = January ... 7 = July)"
+        type: choice
+        default: "7"
+        options: ["1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11", "12"]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: test-data
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: build test data
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements*.txt
+      - name: Install dependencies
+        run: pip install -r backend/requirements-dev.txt
+      - name: Check the secrets are set
+        env:
+          PW_TESTDATA_PASSWORD: ${{ secrets.PW_TESTDATA_PASSWORD }}
+          PW_TESTDATA_PASSPHRASE: ${{ secrets.PW_TESTDATA_PASSPHRASE }}
+        run: |
+          missing=0
+          [ -n "$PW_TESTDATA_PASSWORD" ] || { echo "::error::Repository secret PW_TESTDATA_PASSWORD is not set."; missing=1; }
+          [ -n "$PW_TESTDATA_PASSPHRASE" ] || { echo "::error::Repository secret PW_TESTDATA_PASSPHRASE is not set."; missing=1; }
+          exit $missing
+      - name: Start a fresh PennyWarden (local mode, loopback only)
+        run: |
+          DATA="$RUNNER_TEMP/pw-data"
+          mkdir -p "$DATA"
+          echo "PW_DATA=$DATA" >> "$GITHUB_ENV"
+          cd backend
+          nohup python -m fmpoc --no-browser --port 8790 --data-dir "$DATA" > "$RUNNER_TEMP/server.log" 2>&1 &
+          for i in $(seq 1 120); do
+            curl -sf http://127.0.0.1:8790/api/system/status > /dev/null && exit 0
+            sleep 0.5
+          done
+          echo "::error::PennyWarden did not start."; tail -50 "$RUNNER_TEMP/server.log"; exit 1
+      - name: Fill it with the test data set and make the backup
+        env:
+          PW_TESTDATA_PASSWORD: ${{ secrets.PW_TESTDATA_PASSWORD }}
+          PW_TESTDATA_PASSPHRASE: ${{ secrets.PW_TESTDATA_PASSPHRASE }}
+          FY_START_MONTH: ${{ inputs.fy_start_month }}
+        run: |
+          mkdir -p out
+          NAME="pennywarden-test-data-$(date -u +%Y%m%d)-run${GITHUB_RUN_NUMBER}.fmbak"
+          python scripts/demo_data.py --profile test --fy-start-month "$FY_START_MONTH" \
+            --backup "out/$NAME" --summary "$RUNNER_TEMP/summary.json" http://127.0.0.1:8790
+          echo "PW_BACKUP=$NAME" >> "$GITHUB_ENV"
+      - name: Run summary (no secrets)
+        env:
+          REF: ${{ inputs.ref }}
+        run: |
+          python - "$RUNNER_TEMP/summary.json" "$PW_DATA/database/fmpoc.sqlite3" >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+          import json, os, sqlite3, sys
+          s = json.load(open(sys.argv[1]))
+          rev = sqlite3.connect(sys.argv[2]).execute("SELECT version_num FROM alembic_version").fetchone()[0]
+          sha = os.environ.get("GITHUB_SHA", "")[:7]
+          print("## Test data backup\n")
+          print(f"- **File:** `{s['backup']['file']}` ({s['backup']['size']:,} bytes), in this run's artifacts for 7 days")
+          print(f"- **Built from:** `{os.environ['REF']}` at `{sha}`. PennyWarden **{s['app_version']}**, "
+                f"schema `{rev}`. Restore needs a server at this schema or newer.")
+          print(f"- **Organization:** {s['organization']} (synthetic)")
+          print("- **Fiscal Years:** " + ", ".join(f"{y['label']} {y['status']} ({y['start']} – {y['end']})"
+                                                   for y in s["fiscal_years"]))
+          print("- **Sign-ins:** " + ", ".join(f"`{u}`" for u in s["sign_ins"])
+                + ". The password is the PW_TESTDATA_PASSWORD secret. Each user enrolls two-step verification at "
+                  "the first sign-in after a restore on a server.")
+          print("- **Contents:** " + ", ".join(f"{v} {k.replace('_', ' ')}" for k, v in s["counts"].items()))
+          print("\nRestoring **replaces everything** on the server (one pre-restore copy is kept). "
+                "See docs/test-data.md.")
+          EOF
+          cat "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: test-data-${{ github.run_number }}
+          path: out/${{ env.PW_BACKUP }}
+          retention-days: 7
+          if-no-files-found: error
+      - name: Server log on failure
+        if: failure()
+        run: tail -100 "$RUNNER_TEMP/server.log" || true

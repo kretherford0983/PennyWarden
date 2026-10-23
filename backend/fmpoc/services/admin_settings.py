@@ -320,6 +320,8 @@ def rename_organization(db: Session, ctx, name: str) -> Workspace:
         return ws
     before = ws.name
     ws.name = name
+    from . import organization            # 2.1.0 (#314): the organization entity carries the name too
+    organization.sync_name(db, ws)
     db.flush()
     audit.record(db, ctx, "ORGANIZATION_RENAMED", "workspace", ws.id, {"name": before}, {"name": name})
     return ws

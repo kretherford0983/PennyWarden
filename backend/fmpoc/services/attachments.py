@@ -16,7 +16,7 @@ import uuid
 from pathlib import Path
 
 from PIL import Image
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .. import audit
@@ -132,7 +132,7 @@ def store_system_fy_document(db: Session, ctx, settings, fy: FiscalYear, filenam
     att = Attachment(workspace_id=ctx.workspace_id, original_filename=sanitize_filename(filename), storage_key=key,
                      mime_type="application/pdf", size_bytes=len(data), sha256=hashlib.sha256(data).hexdigest(),
                      uploaded_by_user_id=ctx.user.id, active=True, fiscal_year_id=fy.id, document_type=document_type,
-                     system_generated=True)
+                     system_generated=True, sort_order=_next_position(db, "fiscal_year", fy.id))
     db.add(att)
     db.flush()
     audit.record(db, ctx, "ATTACHMENT_ADDED", "attachment", att.id, None, snapshot(att))
@@ -167,7 +167,8 @@ def store(db: Session, ctx, settings, owner_type: str, owner_id: int, filename: 
     try:
         att = Attachment(workspace_id=ctx.workspace_id, original_filename=clean, storage_key=key, mime_type=detected,
                          size_bytes=len(data), sha256=hashlib.sha256(data).hexdigest(),
-                         uploaded_by_user_id=ctx.user.id, active=True, document_type=document_type)
+                         uploaded_by_user_id=ctx.user.id, active=True, document_type=document_type,
+                         sort_order=_next_position(db, owner_type, owner.id))
         setattr(att, OWNER_COLUMN[owner_type], owner.id)
         db.add(att)
         db.flush()
@@ -201,12 +202,67 @@ def store(db: Session, ctx, settings, owner_type: str, owner_id: int, filename: 
     return att
 
 
+# 2.1.0 (#259): the one order every list, report and download uses - the saved order, else upload order
+DISPLAY_ORDER = (func.coalesce(Attachment.sort_order, Attachment.id), Attachment.id)
+REORDERABLE_FY_TYPES = ("UNSPECIFIED",)   # Approval and Audit signoff keep their fixed place
+AUDIT_OBJECT = {"transaction": "register_transaction", "allocation": "transaction_allocation",
+                "fiscal_year": "fiscal_year", "fundraiser": "fundraiser"}
+
+
+def _next_position(db: Session, owner_type: str, owner_id: int) -> int | None:
+    """New uploads go to the end once an owner's attachments have been reordered (None = upload order is enough)."""
+    col = getattr(Attachment, OWNER_COLUMN[owner_type])
+    if db.scalar(select(func.count(Attachment.id)).where(col == owner_id, Attachment.sort_order.is_not(None))) == 0:
+        return None
+    return (db.scalar(select(func.max(func.coalesce(Attachment.sort_order, Attachment.id))).where(col == owner_id))
+            or 0) + 1
+
+
+def reorder(db: Session, ctx, owner_type: str, owner_id: int, ids: list[int]) -> list[Attachment]:
+    """2.1.0 (#259): save the order of an owner's active attachments (all of them; for a Fiscal Year its Unspecified
+    documents). Same rights as adding attachments there; not in a Closed Fiscal Year (BR-012), not on a deleted
+    transaction; allowed on a VOID one while its year is open (BR-070). Audited with the order before and after.
+    Ordering is a documentation change, never a financial edit (no cleared-transaction confirmation)."""
+    check_manage(ctx, owner_type)
+    owner, txn, _fy = _resolve_owner(db, ctx, owner_type, owner_id)
+    if owner_type == "fiscal_year":
+        if owner.status == "CLOSED":
+            raise conflict("FISCAL_YEAR_CLOSED", "Closed Fiscal Year documentation cannot be reordered.")
+    elif owner_type == "fundraiser":
+        _fundraiser_open(db, ctx, owner)
+    else:
+        if txn.status == "DELETED":
+            raise conflict("TRANSACTION_DELETED", "Attachments of a deleted transaction cannot be reordered.")
+        if is_closed_protected(db, txn):
+            raise conflict("FISCAL_YEAR_CLOSED", "Attachments on Closed Fiscal Year transactions cannot be reordered.")
+    col = getattr(Attachment, OWNER_COLUMN[owner_type])
+    q = select(Attachment).where(col == owner.id, Attachment.active.is_(True)).order_by(*DISPLAY_ORDER)
+    current = list(db.scalars(q))
+    if owner_type == "fiscal_year":
+        current = [a for a in current if (a.document_type or "UNSPECIFIED") in REORDERABLE_FY_TYPES]
+    if len(ids) != len(set(ids)) or sorted(ids) != sorted(a.id for a in current):
+        raise validation("List every attachment shown here exactly once, in the new order.", "attachment_ids")
+    before = [{"id": a.id, "name": a.original_filename} for a in current]
+    if [a.id for a in current] == ids:
+        return current
+    by_id = {a.id: a for a in current}
+    # positions after everything the owner has, so they never tie with an attachment still in upload order
+    base = db.scalar(select(func.max(func.coalesce(Attachment.sort_order, Attachment.id))).where(col == owner.id)) or 0
+    for pos, aid in enumerate(ids, start=1):
+        by_id[aid].sort_order = base + pos
+    db.flush()
+    after = [{"id": i, "name": by_id[i].original_filename} for i in ids]
+    audit.record(db, ctx, "ATTACHMENTS_REORDERED", AUDIT_OBJECT[owner_type], owner.id,
+                 {"attachment_order": before}, {"attachment_order": after})
+    return [by_id[i] for i in ids]
+
+
 def snapshot(a: Attachment) -> dict:
     return {"id": a.id, "original_filename": a.original_filename, "mime_type": a.mime_type, "size_bytes": a.size_bytes,
             "sha256": a.sha256, "fiscal_year_id": a.fiscal_year_id, "transaction_id": a.transaction_id,
             "allocation_id": a.allocation_id, "fundraiser_id": a.fundraiser_id, "active": a.active,
             "document_type": a.document_type,
-            "system_generated": bool(a.system_generated)}
+            "system_generated": bool(a.system_generated)}  # sort_order is not snapshotted: reorders have their own event
 
 
 def out(a: Attachment) -> dict:
@@ -218,7 +274,8 @@ def out(a: Attachment) -> dict:
 def list_for(db: Session, ctx, owner_type: str, owner_id: int, include_removed: bool) -> list[Attachment]:
     owner, _t, _f = _resolve_owner(db, ctx, owner_type, owner_id)
     col = getattr(Attachment, OWNER_COLUMN[owner_type])
-    q = select(Attachment).where(col == owner.id).order_by(Attachment.id)
+    # removed ones (history) after the active ones, each in display order (#259)
+    q = select(Attachment).where(col == owner.id).order_by(Attachment.active.desc(), *DISPLAY_ORDER)
     if not include_removed:
         q = q.where(Attachment.active.is_(True))
     return list(db.scalars(q))

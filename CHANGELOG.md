@@ -2,6 +2,237 @@
 
 Versions are `Breaking.Major.Minor` from 1.6.0 (docs/branching.md).
 
+## 2.1.0 — unreleased
+PennyWarden 2.1.0 is mostly about **fundraisers**:
+- a stakeholder report as PDF or Word, and a slide deck with charts;
+- fundraisers linked across years, with years before PennyWarden entered by hand;
+- a Fiscal Year fundraising report with year-over-year comparisons;
+- bucket categories, *Charge less a credit*, and a different contributor name on the reports.
+
+Budget Managers get a **Budget Review** report and a **Fiscal Year Planning Sheet**. The register adds electronic
+payments, sorting by date or cleared, and an attachments filter. Cover letters can print **fold marks**, and voucher
+checks can have the check in the middle or at the bottom. A new optional **Donations module** prints donation receipt
+letters from deposits, and the organization now has a **profile** (address, phone, email, EIN) of its own.
+
+**Upgrading from 2.0.0.** The database is updated automatically (migrations `0035` to `0047`: columns and tables
+added, no existing value changed). Going back to 2.0.0 needs the data snapshot the installer takes before upgrading
+(docs/upgrade.md). Existing check styles, letter templates and reports work as before. Fold marks are off on existing
+letters, and a fundraiser's report includes year over year only once earlier years are linked or entered. The
+Donations module is off until an Administrator turns it on. Each organization gets its own entity (named like the
+organization) for the new organization profile.
+
+### Register
+- **Sort by Date or Cleared.** Click the *Date* or *Cleared* heading to sort by it; click again for newest first. Each
+  user's choice is remembered (in any browser). Sorted by *Cleared*, uncleared transactions come last (first when
+  newest first) and the balance column shows the **bank (cleared) balance** after each cleared item — the figure on
+  your bank statement. *Reset to default* goes back to Date, oldest first. (#262)
+- **Attachments filter: All / Yes / Missing / Marked.** *Missing* lists exactly what the Fiscal Year documentation
+  review warns about — no attachment, or "no attachment will be provided" without a reason — so a transaction such as
+  bank interest marked with a reason no longer shows up. *Marked* lists everything marked "no attachment will be
+  provided". Old links with *No* open *Missing*. (#258)
+- **Electronic payments.** Tick *Electronic payment* on a withdrawal paid by ACH / bill pay, debit card, wire or an
+  online portal, so it is clear why there is no check. An optional number is either a check number from your own
+  sequence (counted in the missing-check review) or the bank's or vendor's reference (never in the check sequence).
+  The register shows an *Electronic* badge and a *Payment* filter; the Audit and Close reports show *Electronic
+  (method)* where the check number would be. In the Payments module an electronic payment is recorded without
+  printing a check (a cover letter and envelope stay optional). (#260)
+- **Reorder attachments.** *Reorder…* on a transaction's, an allocation's, a fundraiser's or a Fiscal Year's other
+  documents sets the order they are shown and printed in the Audit, Close and fundraiser reports — for example
+  invoice, receipt, approval email. New files go to the end; a closed Fiscal Year can't be reordered. (#259)
+
+### Fixed
+- **In-app links only ever point inside PennyWarden.** A link's address now follows the same rule as clicking it
+  (a same-site path), so opening a link in a new tab can never lead to another site or a `javascript:` address.
+  Found by code scanning (CodeQL alert #11); no way to exploit it was found.
+- **Deleting a transaction releases its check number.** Before, a deleted transaction kept its check number, so
+  the number couldn't be used again and nobody could correct it (Auditors see deleted transactions read-only). Now
+  the number is free for another record, and the missing-check review lists it until it is reused or confirmed. This
+  includes transactions deleted before the upgrade. The deleted record still shows the number to the Auditors.
+  Deleting is refused while a check printed with the Payments module carries the number: void the transaction, or
+  mark the check spoiled first. VOID records still keep their numbers. (#289)
+- **Years before PennyWarden can be entered for any fundraiser.** Prior years were entered on a fundraiser series,
+  but a series was only created when a fundraiser *continued from* an earlier one in PennyWarden. So an event whose
+  earlier years are all in spreadsheets had nowhere to enter them. Now **Enter prior years…** on a fundraiser, and
+  **Start a series…** on *Fundraiser series*, create the series when there is none. The entered years then appear in
+  the year over year of the fundraiser's report and presentation and in the Fiscal Year report. (#292)
+- **The Fiscal Year fundraising report (PDF) works with 6 or more years of history.** Its *Year over year by series*
+  table was wider than the page from 6 years on, so the PDF failed with an internal error (the presentation was not
+  affected). The table now fits the page and shows up to the last 6 years: fewer only when very large amounts would
+  otherwise wrap, and the report says how many are shown. *Historical results* still lists every year. (#295)
+
+### Payments
+- **More voucher check layouts.** The check can be at the top, in the middle or at the bottom of the sheet, with an
+  invoice stub and an office stub or one tall invoice stub. There are five new presets from the published layouts of
+  common voucher stock, and *Check position*, *Stubs* and *Check top* on the setup screen. The stubs are called
+  *Invoice stub* and *Office stub*. Existing voucher styles print as before. (#246)
+- **Fold marks on cover letters.** A letter template can print small, barely visible ticks at the page edges where the
+  letter folds in even thirds for a #10 envelope. They go on the front, or on the back of the first sheet for
+  two-sided printers. Their length, distance from the edge, weight and shade can be tuned. Each user can set their
+  own default, and the print screen can change it for one letter. New window-envelope letters have them on; existing
+  letters print as before. (#247)
+
+### Organization profile (new)
+- **The organization's own details in one place.** *System/About → General → Organization* now holds the
+  organization's address, phone, email and EIN beside its name (Administrators). The phone is formatted like an
+  entity's, and the EIN can be typed as 9 digits (the dash is added). Letters, envelopes, check memos and
+  stubs, and donation receipts can use them as `{ORG.NAME}`, `{ORG.ADDRESS}` (several lines, in letters, envelopes and
+  receipts), `{ORG.ADDRESS1}`, `{ORG.ADDRESS2}`, `{ORG.CITY}`, `{ORG.STATE}`, `{ORG.ZIP}`, `{ORG.COUNTRY}`,
+  `{ORG.PHONE}`, `{ORG.EMAIL}` and `{ORG.EIN}` (any capitalization). `{ORG}` still works. Test prints keep using a
+  sample organization.
+- **The organization is an entity.** It appears in Entities with a *Your organization* badge and can be chosen
+  wherever an entity is chosen, e.g. for cash collected at an event, so you no longer need to create an entity for
+  your own organization. It is changed only in System/About and can't be inactivated. If you created one by hand, you
+  can keep using it or inactivate it. (#314)
+
+### Donations module (optional, new)
+- **Donation receipt letters** (part 1 of the Donations module; the year-end giving statement and the donor report
+  follow in 2.2). An Administrator turns the module on in *System/About*, enters the organization's **EIN** and
+  address in the organization profile, and, in **Donations Setup**, the receipt letter's wording (with `{VARIABLES}` such as
+  `{DONOR_NAME}` and `{AMOUNT}`) and the signer's name and title, with a live preview and a test print with sample
+  data only. In the register, **Donation receipt…** on a deposit marks its lines as donations (with an optional
+  purpose and any goods or services given in exchange) and prints **one receipt per donor**, numbered
+  *R-2026-0001*. Every receipt prints the organization's name and EIN, the donor, the amount, the date received, the
+  receipt number and the goods or services statement (*"No goods or services were provided in exchange for this
+  contribution."* by default); confirm the wording with your own tax advisor. Printing the same receipt again gives a
+  **DUPLICATE** with the same number; after a change (amount, donor, date, purpose or goods) it gives a **CORRECTED**
+  receipt with a new number that replaces the earlier one. A voided deposit's receipts show as void and can't be
+  reprinted. Printed receipts are attached to the deposit. Register Users mark and print; Budget Managers, Budget
+  Users and Auditors see the donations and receipts; Administrators never see deposits. Works with the Payments
+  module on or off. (#312)
+- **Date received and a write-up per donation.** Each donation line has a *Date received* (the deposit's date unless
+  changed; it can't be after the deposit), and the receipt prints the date(s) the donor gave. Put `{DETAILS}` in the
+  receipt letter and the *Donation receipt* dialog offers a **Details** box per donor, for example how the gift will
+  be used; it can use the receipt's variables such as `{AMOUNT}`, and when it's left empty its paragraph is left out.
+  New receipt letters include `{DETAILS}`.
+- **Preview before printing, and a top-to-bottom dialog.** **Preview** shows the receipt exactly as it would print,
+  from what is on the screen, marked *PREVIEW – NOT A RECEIPT*. Nothing is saved, attached or numbered, so mistakes
+  are fixed before the first real receipt instead of with a corrected one. Ticking a line shows the donor's block
+  (amount, dates, Details) at once; **Save**, **Preview** and **Print** are at the bottom, and Print saves first. With
+  several donors, each donor's block has its own Preview and Print. Printed receipts are listed at the top.
+
+### Budget planning (Budget Managers)
+- **Budget Review** (Reports → Budget Review). Every budget of a Fiscal Year with its history over earlier years,
+  following the budget continuation links, so a renumbered budget stays on one line. Each budget is a block: its
+  name, then **Budgeted**, **Actual** and **Difference** rows (the difference in dollars and percent, marked *over* or
+  *under*), with the years across and an **Avg** column (the average of the earlier years shown). Choose how many
+  earlier years to show (or all). The current year shows the actual **year-to-date**, dated. Named *Budget Prep* in
+  the first test builds (#283). Optional columns:
+  - **Projected** — the average monthly activity so far carried to the Fiscal Year end. Untick a budget known to be
+    complete (a finished fundraiser, say); it then shows *Complete: no projection*. Budgets of fundraisers that have
+    ended start unticked, and your choices are remembered for the year.
+  - **Next year** — the next Fiscal Year's budget that continues each one, with the change.
+
+  It can be limited to one parent budget or one budget (with a chart of budgeted and actual per year). On screen, as a
+  landscape PDF, or CSV. (#257)
+- **Fiscal Year Planning Sheet** (Fiscal Years page → *Planning sheet…*, before or after next year is created). A
+  portrait form for the budget meeting:
+  - this year's Income and Expense budgets with the previous budgeted amount, the actual year-to-date and the
+    projection, and a blank *Proposed Budget* column;
+  - blank rows, and a second page of blank tables, for new budgets;
+  - lines for the new Fiscal Year, the attendees and the meeting date.
+
+  When a Draft next Fiscal Year exists, the sheet plans it: its name and dates are filled in, the draft amounts
+  appear as *Proposed* on the row of the budget they continue (or that has the same code), with a blank *Proposed
+  Revision* column; new draft budgets are listed, and budgets not carried into the draft are marked *not in draft*.
+  A table that would start low on a page (in its bottom 35%) starts on the next page. The scanned sheet can be
+  attached to the new Fiscal Year; it is not a required document. **Include the Budget Review** adds the review's
+  pages after the sheet, in the same PDF. (#261, #286, #283)
+
+### Fundraisers
+- **Stakeholder report.** *Report…* on a fundraiser's page now produces a clean **Financial & Proceeds Statement** for
+  the committee and stakeholders, as a **PDF or an editable Word document**:
+  - three headline figures (net revenue, expenses, net proceeds with the net margin) and a financial summary from
+    gross deposits to net proceeds;
+  - revenue and expense breakdowns by category and bucket, with *Other (not in a bucket)* so they add up, itemized
+    revenue, charge-less-credit detail and a net-by-category table;
+  - key takeaways worked out from the figures and optional summary notes.
+
+  Options: summary only (no itemized revenue), hide contributor names ("Contributor 1, 2…") for reports that go
+  outside the organization, and a plain line list for a fundraiser without buckets. A section heading never sits
+  alone at the bottom of a page; long itemized lists run on across pages in two columns. It has no transaction numbers,
+  accounts, budgets or attachments. Budget Managers can write the **summary notes** and **Mark results final**; the
+  report reads *Interim*, *Post-event*, *Final* or *Cancelled*. The previous detailed report (lines, excluded lines,
+  documents and attachments) is now **Reports → Fundraiser detail (audit)**. (#275)
+- **Fundraiser presentation.** *Presentation* in the same dialog gives the report as a 16:9 slide deck (`.pptx`)
+  that opens in PowerPoint, Google Slides and Keynote. It has highlights, a revenue-to-proceeds column chart, revenue
+  by category (doughnut), category detail, net by category, revenue over time, top contributors, expenses with
+  charge-less-credit detail, key takeaways and summary notes. The charts are native and editable, with amounts on
+  them (whole-dollar axes with round steps, so labels don't run into each other), and every slide's speaker notes give
+  the exact figures and how they are worked out. Slides with nothing to
+  show are left out; with contributor names off, no name appears anywhere in the file. (#276)
+- **Fundraisers across years.** *Continues from (previous fundraiser)* on the fundraiser form links it with the same
+  event in an earlier year — a skipped year still links — and *Create next year's…* on a fundraiser pre-fills next
+  year's: the name with the year moved on, description, filter, the continuing budgets, the buckets and categories
+  (without amounts) and the link, all editable. **Fundraiser series** (Budget Managers) lists each event across years:
+  rename it, group it as *Other* in the charts, enter results of years before PennyWarden (*Entered*; retired, never
+  deleted) and merge two series started separately. The link can be changed even in a closed year. (#277)
+- **Fiscal Year fundraising report and presentation.** On *Fundraisers*, tick the fundraisers of a Fiscal Year (all
+  of that year's, cancelled ones unticked, by default) and choose *Fiscal Year report…*. It covers:
+  - this year by fundraiser, with net revenue, expenses, net proceeds, margin and share;
+  - growth versus last year and the first year shown, the top fundraiser, the cumulative total and the peak year;
+  - the annual trend (with an optional *targeted* estimate for events still to come), share by series (small ones
+    as *Other*), the average per active year, and the history marked *Recorded* or *Entered*.
+
+  Notes are remembered per year. Available as a PDF and a `.pptx` deck with charts and speaker notes. No contributor
+  names. (#277)
+- **Year over year.** When earlier years are known (linked fundraisers or entered results), the fundraiser's report
+  and presentation add a *Year over year* section: each year's net revenue, expenses, net proceeds and margin, and
+  the change on the year before. The Fiscal Year report and deck add *Year over year by series*, with a line per
+  event and the change on the year before, to help decide which fundraisers to keep offering. (#277)
+  To report on this year's fundraiser only, untick **Include year over year** in the fundraiser's *Report…* dialog.
+  It applies to the PDF, the Word file and the presentation. (#300)
+- **Different contributor on reports, also outside buckets.** *Manage line* can now show a different contributor for
+  the part of a line in no bucket, or for the whole line when the fundraiser has no buckets. It is shown under *Other
+  (not in a bucket)* and in the plain line list, like the per-bucket override (e.g. "Cash"). (#303)
+- **Bucket categories.** Group a fundraiser's buckets under optional categories (for example *Sponsorships*,
+  *Registrations*, *Day-of event*), one category per bucket or none. The Buckets table shows each category with its
+  buckets beneath and a subtotal of income, expenses and net, and so does the fundraiser section of the Audit and
+  Close reports. Deleting a category leaves its buckets uncategorized; no figure changes. A bucket can still hold both
+  income and expenses (*Food Sales* with its sales and its supplies). (#278)
+- **Contributor shown on the reports.** When assigning part of a line to a bucket, *Different contributor on
+  reports* replaces the line's Entity on the fundraiser reports and presentations. Use it for lump cash the
+  organization collected ("Cash", so it doesn't look as if the organization gave to itself), for the name people
+  know a business by, or when someone handed in money collected from others. It is set per bucket part and recorded
+  in the audit log. (#278)
+- **Reorder categories and buckets** with *Reorder…*. The order is used on the page and in the reports. Existing
+  buckets keep their alphabetical order until reordered; new ones go to the end. Categories and order are presentation
+  only, so they can be changed in a closed Fiscal Year too. (#278)
+- **Charge less a credit.** When assigning part of a line to a bucket, tick *Charge less a credit* to record the full
+  charge, the amount taken off and why — a $1,500 venue invoice less a $500 pre-paid team credit, or a $200 sponsorship
+  less a $6 card fee. The net (charge − less) is what counts, so every total still matches the register; the charge
+  and the credit show as detail on the line and in the reports. A fully credited item (net $0) is allowed. (#278)
+
+### For whoever runs the server
+- **Scheduled backups show why each backup is kept.** The *Recent backups* table has a **Kept as** column (*Daily*,
+  *Weekly*, *Monthly*, *Latest*, *Removed*), worked out with the same rules that delete old backups, so it's easy to
+  check the keep settings do what you expect. (#233)
+- **Backup and restore guide:** restoring with `--data-dir`, which backups the server key can restore, running a
+  scheduled restore from the command line, `--list`, and undoing a restore from `pre-restore/`. (#265)
+- **`sudo pennywarden apply-config`** applies `config.toml` on a Linux server without running the whole installer:
+  after changing `backup_folders` (or another setting), it checks the file first and changes nothing if there is a
+  problem, lets the service write to the listed backup folders, restarts the service and waits until it answers —
+  putting the previous settings back if it doesn't. `--dry-run` shows what it would do. Recorded in the audit log. The
+  installer uses the same command, and now checks `config.toml` before it stops anything. (#237)
+- **The Linux installer follows the Bind Address.** With `host = "0.0.0.0"` (tunnel or proxy on another machine) its
+  last lines list the server's network addresses to point the tunnel at; with one specific address the install no
+  longer fails its health check. (#236)
+### Behind the scenes
+- **Release dates are set by the pipeline.** The release is dated when it is published (GitHub, pennywarden.org,
+  *What's new*); `CHANGELOG.md` gets the date with the next version's first change. No extra round before each
+  release. README links to the latest release instead of naming a version. (#240)
+- **Test builds are cleaned up automatically.** Each test build keeps the newest 3 of its version, and the production
+  release removes all of that version's test builds (release and tag). Production releases are never touched. (#329)
+- **New dependencies:** `python-docx` (MIT, with `lxml`, BSD) writes the Word version of the fundraiser report (#275); `python-pptx` (MIT) and `XlsxWriter` (BSD) write the presentation and its chart data (#276). All are in THIRD-PARTY-NOTICES and every package.
+- **Test data for test servers.** A manual workflow, *Build test data*, builds an encrypted backup of a made-up
+  organization and keeps it as a workflow artifact for 7 days. It is never published. The data covers several years:
+  closed, current and Draft Fiscal Years, printed checks, electronic payments, and fundraiser series with years
+  before PennyWarden. Restore it on a test server. The sign-in password and the backup passphrase come from
+  repository secrets only. See `docs/test-data.md`. (#272)
+- **Security updates:** Pillow 13.0.0 (eight advisories against 12.3.0) and pypdf 6.21.2 (CVE-2026-113786, and
+  CVE-2026-115572, CVE-2026-115580 and CVE-2026-115585: crafted PDFs that take a very long time to read).
+- **Python dependencies are compiled with pip-tools** (`backend/requirements.in` → `requirements.txt`, same versions as
+  2.0.0), so automatic dependency updates move related packages together. (#226)
+
 ## 2.0.0 — 2026-10-15
 PennyWarden 2.0.0 adds the optional **Payments module** — print checks, cover letters and envelopes from the
 register — and a large set of tools for whoever runs the server: a tidier System/About in tabs, maintenance mode,

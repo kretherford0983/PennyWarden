@@ -33,6 +33,7 @@ from ...models import (Attachment, BankAccount, Budget, CheckAccount, CheckDocum
 from ...money import fmt
 from ...security import crypto
 from .. import attachments as att_svc
+from .. import organization as org_svc
 from .. import checks as checknum
 from .. import register as reg
 from ..common import budget_display_code, get_scoped
@@ -507,6 +508,7 @@ def variable_values(db: Session, t: RegisterTransaction, cfg: cfgmod.StyleConfig
         "TODAY": format_date(dt.date.today(), cfg.date_format),
         "PAYEE_ADDRESS": "\n".join(address_lines(t.parent_entity)),
         "SIGNER": "", "SIGNER_TITLE": "",
+        **{k: v for k, v in org_svc.values_for(db, t.workspace_id).items() if k.startswith("ORG.")},   # #314
     }
 
 
@@ -525,7 +527,7 @@ def address_lines(e) -> list[str]:
     return lines
 
 
-def get_printable(db: Session, ctx, txn_id: int) -> RegisterTransaction:
+def get_printable(db: Session, ctx, txn_id: int, for_check: bool = True) -> RegisterTransaction:
     """BR-065-072, BR-057: only an active withdrawal over zero, not in a Closed Fiscal Year, can be printed."""
     t = get_scoped(db, RegisterTransaction, txn_id, ctx, "Transaction")
     if t.status != "ACTIVE":
@@ -534,6 +536,9 @@ def get_printable(db: Session, ctx, txn_id: int) -> RegisterTransaction:
         raise conflict("NOT_PRINTABLE", "Only withdrawals can be printed as checks.")
     if t.total_cents <= 0:
         raise conflict("NOT_PRINTABLE", "A check must be for more than zero.")
+    if t.electronic_payment and for_check:   # 2.1.0 (#260): letters and envelopes are still allowed
+        raise conflict("NOT_PRINTABLE", "This payment was made electronically - no check is printed for it. Untick "
+                                        "Electronic payment first if a check is written after all.")
     if reg.is_closed_protected(db, t):
         raise conflict("FISCAL_YEAR_CLOSED", "The transaction belongs to a Closed Fiscal Year and cannot be printed.")
     return t
@@ -850,7 +855,8 @@ def store_transaction_document(db: Session, ctx, settings, t: RegisterTransactio
     att = Attachment(workspace_id=ctx.workspace_id, original_filename=att_svc.sanitize_filename(filename),
                      storage_key=key, mime_type="application/pdf", size_bytes=len(data),
                      sha256=hashlib.sha256(data).hexdigest(), uploaded_by_user_id=ctx.user.id, active=True,
-                     transaction_id=t.id, document_type=CHECK_COPY, system_generated=True)
+                     transaction_id=t.id, document_type=CHECK_COPY, system_generated=True,
+                     sort_order=att_svc._next_position(db, "transaction", t.id))   # #259: after reordered ones
     db.add(att)
     db.flush()
     audit.record(db, ctx, "ATTACHMENT_ADDED", "attachment", att.id, None, att_svc.snapshot(att))
@@ -905,6 +911,8 @@ SAMPLE_VALUES = {
              "DESCRIPTION": "Supplies and services delivered in September for the annual event and others",
              "NOTES": "Sample notes", "ORG": "Sample Organization", "ACCOUNT": "Checking", "CHECK_NUMBER": "1001"},
 }
+for _v in SAMPLE_VALUES.values():                  # 2.1.0 (#314): a sample organization profile
+    _v.update({k: v for k, v in org_svc.SAMPLE.items() if k.startswith("ORG.")})
 SAMPLE_CENTS = {"NORMAL": 319930, "LONG": 98765432}
 # kept for tests that draw the long sample directly
 SAMPLES = {k: render.Content(SAMPLE_CENTS[k], "", SAMPLE_VALUES[k]["PAYEE"],
@@ -1012,6 +1020,7 @@ def doc_out(d: CheckDocument, full: bool = True) -> dict:
         out["page"] = getattr(cfg, "page", None)
         out["guide"] = getattr(cfg, "guide", None)
         out["window"] = getattr(cfg, "window", None)   # build 13 (#230): a window-envelope letter needs no envelope
+        out["fold_marks"] = getattr(cfg, "fold_marks", None)   # 2.1.0 (#247): the template's setting
     return out
 
 
@@ -1152,6 +1161,7 @@ def _starting_config(db: Session, ctx, kind: str, preset: str | None) -> dict:
     if preset == "WINDOW":   # #217: a letter for a #10 double-window envelope (addresses on the letter's top panel)
         config["window"] = "LETTER"
         config["include_by_default"] = True
+        config["fold_marks"] = "FRONT"      # 2.1.0 (#247): new window-envelope letters have fold marks
     return config
 
 
@@ -1297,15 +1307,55 @@ def _store_doc_copy(db: Session, ctx, settings, t: RegisterTransaction, kind_typ
     att = Attachment(workspace_id=ctx.workspace_id, original_filename=att_svc.sanitize_filename(filename),
                      storage_key=key, mime_type="application/pdf", size_bytes=len(pdf), sha256=sha,
                      uploaded_by_user_id=ctx.user.id, active=True, transaction_id=t.id, document_type=kind_type,
-                     system_generated=True)
+                     system_generated=True, sort_order=att_svc._next_position(db, "transaction", t.id))
     db.add(att)
     db.flush()
     audit.record(db, ctx, "ATTACHMENT_ADDED", "attachment", att.id, None, att_svc.snapshot(att))
     return True, path
 
 
+# ------------------------------------------------------------------ 2.1.0 (#247): fold marks - template, user, letter
+LETTER_FEED = "letter"
+
+
+def _letter_row(db: Session, ctx) -> CheckPrinterSetting | None:
+    return db.scalar(select(CheckPrinterSetting).where(CheckPrinterSetting.user_id == ctx.user.id,
+                                                       CheckPrinterSetting.feed_key == LETTER_FEED,
+                                                       CheckPrinterSetting.document_id.is_(None),
+                                                       CheckPrinterSetting.check_style_id.is_(None)))
+
+
+def my_letter_fold(db: Session, ctx) -> str:
+    """The user's own default: TEMPLATE (use the template's setting), FRONT or BACK."""
+    p = _letter_row(db, ctx)
+    return p.fold_marks if p is not None and p.fold_marks else "TEMPLATE"
+
+
+def save_my_letter_fold(db: Session, ctx, value: str) -> str:
+    if value not in ("TEMPLATE", "FRONT", "BACK"):
+        raise validation("Choose the template's setting, on the front or on the back.", "fold_marks")
+    p = _letter_row(db, ctx)
+    before = p.fold_marks if p is not None else None
+    if p is None:
+        p = CheckPrinterSetting(workspace_id=ctx.workspace_id, user_id=ctx.user.id, feed_key=LETTER_FEED)
+        db.add(p)
+    p.fold_marks = None if value == "TEMPLATE" else value
+    p.updated_at = utcnow()
+    db.flush()
+    if p.fold_marks != before:
+        audit.record(db, ctx, "CHECK_PRINTER_SETTINGS", "check_printer_setting", p.id, {"fold_marks": before},
+                     {"feed_key": LETTER_FEED, "fold_marks": p.fold_marks})
+    return my_letter_fold(db, ctx)
+
+
+def letter_fold_default(db: Session, ctx, d: CheckDocument) -> str:
+    """The letter's starting Fold marks choice: the user's own default, or else the template's."""
+    mine = my_letter_fold(db, ctx)
+    return mine if mine != "TEMPLATE" else doc_config(d).fold_marks
+
+
 def print_letter(db: Session, ctx, settings, t: RegisterTransaction, d: CheckDocument, signer_id: int | None,
-                 confirmations: list[str]) -> bytes:
+                 confirmations: list[str], fold: str | None = None) -> bytes:
     if d.kind != "LETTER" or not d.active:
         raise conflict("TEMPLATE_INACTIVE", "Choose an active letter template.")
     cfg = doc_config(d)
@@ -1321,12 +1371,13 @@ def print_letter(db: Session, ctx, settings, t: RegisterTransaction, d: CheckDoc
         warnings.append(Warning_("NO_PAYEE_ADDRESS", "The payee has no address in the register. Print the letter "
                                  "without it?"))
     require_confirmations(warnings, confirmations)
-    pdf = documents.letter_pdf(cfg, data, logo=d.logo_png)
+    fold = fold or letter_fold_default(db, ctx, d)      # #247: this letter's choice, else the user's, else the template's
+    pdf = documents.letter_pdf(cfg, data, logo=d.logo_png, fold=fold)
     added, path = _store_doc_copy(db, ctx, settings, t, LETTER_COPY,
                                   f"letter-{t.check_number or t.id}.pdf", pdf)
     audit.record(db, ctx, "CHECK_LETTER_PRINTED", "register_transaction", t.id, None,
                  {"transaction_id": t.id, "document_id": d.id, "signer_id": signer.id if signer else None,
-                  "check_number": t.check_number, "attached": added})
+                  "check_number": t.check_number, "attached": added, "fold_marks": fold})
     _commit_or_unlink(db, path)
     return pdf
 

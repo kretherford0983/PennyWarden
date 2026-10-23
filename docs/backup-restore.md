@@ -27,8 +27,11 @@ restored from the web page.** Keep the passphrase in a password manager and the 
 When **Let this server recover the passphrase** is ticked (the default), the server also keeps a *recovery file*: the
 passphrase, encrypted with a random **server key** that never leaves this server. The backup file itself is unchanged.
 
-- Only the server's owner can use it, from the server's command line: `sudo pennywarden restore FILE --use-server-key`
-  on Linux (on Windows `C:\PennyWarden\current\PennyWarden.cmd restore …` in a terminal opened as Administrator).
+- Only the server's owner can use it, from the server's command line:
+  `sudo pennywarden restore FILE --use-server-key --data-dir /var/lib/pennywarden` on Linux (on Windows
+  `C:\PennyWarden\current\PennyWarden.cmd restore FILE --use-server-key --data-dir C:\ProgramData\PennyWarden` in a
+  terminal opened as Administrator). Scheduled backups are not covered: see *Which backups `--use-server-key` can
+  restore*.
   The web page **always** asks for the passphrase — a stolen Administrator sign-in can't restore without it.
 - It works only **on this server** and only **for this exact file** (the recovery file is bound to the file's
   fingerprint). A copy taken to another computer still needs the passphrase.
@@ -83,12 +86,75 @@ changed after the backup"): the report holds financial data. A backup from anoth
 ## Restoring from the server's command line (since 2.0.0)
 
 ```
-sudo pennywarden restore FILE.fmbak [--use-server-key | --passphrase-file PATH] [--data-dir DIR] [--stop-service] [--yes]
-sudo pennywarden restore --list [--data-dir DIR]
+sudo pennywarden restore FILE.fmbak [--use-server-key | --passphrase-file PATH] --data-dir /var/lib/pennywarden [--stop-service] [--yes]
+sudo pennywarden restore --list --data-dir /var/lib/pennywarden
 ```
 
-(Linux server shown. Windows: `C:\PennyWarden\current\PennyWarden.cmd restore …` as Administrator; a local install:
-the program itself, without `sudo`, with PennyWarden quit.)
+(Linux server shown. Windows: `C:\PennyWarden\current\PennyWarden.cmd restore … --data-dir C:\ProgramData\PennyWarden` as
+Administrator. A local install: the program itself, without `sudo` and without `--data-dir`, with PennyWarden quit.)
+
+### The data folder (`--data-dir`)
+
+**On a server install, always add `--data-dir`** to `restore`, `restore --list`, `reinitialize`, `reset-password` and
+`reset-mfa`.
+
+These commands do **not** ask the running service where its data is. They take the folder from, in this order:
+1. `--data-dir DIR`;
+2. the environment variable `FM_DATA_DIR`;
+3. the **default folder of the user who runs the command**. Under `sudo` that is root's own folder
+   (`/root/.local/share/pennywarden`), and for an Administrator on Windows it is `%LOCALAPPDATA%\PennyWarden`. Neither
+   is where a server keeps its data.
+
+The server installers give the service its folder as a command-line argument (systemd
+`ExecStart … --data-dir /var/lib/pennywarden`, NSSM `… --data-dir C:\ProgramData\PennyWarden`). The
+`/usr/local/bin/pennywarden` wrapper does not add it. The one exception is `sudo pennywarden apply-config` (2.1.0),
+which reads the folder from the installed service.
+
+| Installation | Data folder | Add |
+|---|---|---|
+| Linux server (`install-server.sh` / `install.sh`) | `/var/lib/pennywarden` | `--data-dir /var/lib/pennywarden` |
+| Windows server (`install-windows-server.ps1`) | `C:\ProgramData\PennyWarden` (or the installer's `-DataDir`) | `--data-dir C:\ProgramData\PennyWarden` |
+| Docker | `/data` on the data volume; the image sets `FM_DATA_DIR=/data` | nothing |
+| Local install, Windows | `%LOCALAPPDATA%\PennyWarden` | nothing (run as the same user, PennyWarden quit) |
+| Local install, Mac | `~/Library/Application Support/PennyWarden` | nothing |
+| Local install, Linux | `~/.local/share/pennywarden` (or `$XDG_DATA_HOME/pennywarden`) | nothing |
+
+**The symptom of leaving it out:** `--list` says *"No backups made on this server can be recovered with the server
+key"*, and `--use-server-key` says *"This server can't unlock that backup"*. Neither message mentions the folder. Check
+with `sudo pennywarden restore --list --data-dir /var/lib/pennywarden`: it should list your backups.
+
+### Which backups `--use-server-key` can restore
+
+| Backup | `--use-server-key` | Otherwise |
+|---|---|---|
+| Manual backup made on this server with *Let this server recover the passphrase* ticked | ✔ | — |
+| `pre-reinitialize/` safety backup | ✔ | — |
+| Manual backup made without recovery, or recovery removed later | ✘ | its passphrase |
+| **Scheduled backup** | ✘ | the **schedule passphrase**: the one in use when that backup was made, if it was changed later |
+| Backup from another system | ✘ | its passphrase |
+
+### Restoring a scheduled backup from the command line
+
+A scheduled backup never has a recovery file: it is locked with the schedule's key pair. Restore it with the schedule
+passphrase, either at the hidden prompt or from a file:
+
+```
+sudo pennywarden restore /srv/pennywarden-backups/pennywarden-backup-<organization>-<date>-<time>.fmbak --data-dir /var/lib/pennywarden
+sudo pennywarden restore /srv/pennywarden-backups/<file>.fmbak --passphrase-file /root/schedule-passphrase.txt --data-dir /var/lib/pennywarden
+```
+
+The file is in one of the `backup_folders`. A passphrase file holds the passphrase on one line; delete it afterwards.
+The web page's **Restore** tab works the same way with the schedule passphrase.
+
+### What `--list` shows
+
+`--list` shows only backups the server key can recover (the first two rows of the table above).
+- **A row with a full path under it** is a file kept on this server, such as a `pre-reinitialize/` backup. The command
+  printed below the list is ready to paste and already includes `--data-dir`.
+- **A row with no path** (usually a MANUAL backup) is a file that was downloaded. Pass that file from wherever you
+  keep it: it is matched by its content, not its name or folder.
+- *(was …; no longer on this server)* means the server's copy is gone. A downloaded copy still restores with the key.
+
 
 - **Rights.** On a server install (the systemd service or the Windows service `PennyWarden`, see
   [install-windows-server.md](install-windows-server.md#9-host-commands)) run it with `sudo` / from a terminal
@@ -126,6 +192,78 @@ the program itself, without `sudo`, with PennyWarden quit.)
   runs the current release, so `sudo pennywarden …` works from any folder. An installation made before 2.0.0 gets it
   with the next run of the installer; until then use `sudo /opt/pennywarden/current/pennywarden …`.
 
+## Test data for a test server (since 2.1.0)
+A synthetic organization can be built as a backup by the *Build test data* workflow (or locally) and restored here,
+to try a test build against realistic data. See [test-data.md](test-data.md).
+
+## Undoing a restore (`pre-restore/`)
+
+> **Don't run another restore before undoing.** Every restore, from the web or the command line, first moves the
+> current data to `pre-restore/` and **deletes the safety copy that was there**. Only the latest copy is kept. After a
+> restore of the wrong file, "restore the right backup first" replaces `pre-restore/`, and with it the only copy of the
+> newest data. Put `pre-restore/` back first.
+
+`pre-restore/` in the data folder holds what was in place just before the latest restore: the previous `database/`,
+`attachments/` and `secrets/`, plus a `README.txt` with the time of the restore. It is **folders, not an `.fmbak`
+file**, so it can't be restored with `pennywarden restore`. Undoing means swapping the folders back by hand. A failed
+restore puts it back by itself; this section is for a restore that succeeded with the wrong file.
+
+### Linux server
+```
+sudo systemctl stop pennywarden
+cd /var/lib/pennywarden
+sudo cat pre-restore/README.txt                              # check the time: is this the data you want back?
+sudo cp -a pre-restore /var/backups/pennywarden/pre-restore-copy-$(date +%Y%m%d-%H%M%S)   # a spare copy, outside
+sudo mkdir wrong-restore-$(date +%Y%m%d-%H%M%S)
+sudo mv database attachments secrets wrong-restore-*/        # the data from the mistaken restore, out of the way
+sudo mv pre-restore/database pre-restore/attachments pre-restore/secrets .
+sudo chown -R pennywarden:pennywarden database attachments secrets
+sudo chmod 700 secrets && sudo chmod 600 secrets/*
+sudo systemctl start pennywarden
+```
+Then sign in and check: the newest transactions are back, and System/About shows the expected organization.
+
+### Windows server
+In PowerShell as Administrator:
+```powershell
+Stop-Service PennyWarden
+Set-Location C:\ProgramData\PennyWarden
+Get-Content pre-restore\README.txt
+Copy-Item pre-restore "C:\ProgramData\PennyWarden-pre-restore-copy-$(Get-Date -Format yyyyMMdd-HHmmss)" -Recurse
+$aside = "wrong-restore-$(Get-Date -Format yyyyMMdd-HHmmss)"; New-Item -ItemType Directory $aside | Out-Null
+Move-Item database, attachments, secrets $aside
+Move-Item pre-restore\database, pre-restore\attachments, pre-restore\secrets .
+Start-Service PennyWarden
+```
+The permissions carry over: the folders stay inside `C:\ProgramData\PennyWarden`, whose access rules they inherit.
+
+### Docker
+Stop the app (`docker compose -f packaging/docker/docker-compose.yml stop app`). Make the same moves on the data volume
+from a one-off shell, for example
+`docker run --rm -it -v pennywarden-data:/data --entrypoint sh <image>`, then `cd /data` and the Linux `mv` steps
+without `sudo` and without `chown` (the image's user owns the volume). Then start the app again.
+
+### Local install
+Quit PennyWarden, then make the same moves in the data folder (see the table above) with Explorer or Finder. Start
+PennyWarden again.
+
+### Common mistakes
+- `mv pre-restore/database /` moves it to the **root of the disk**, not the data folder. Run the moves from inside the
+  data folder with `.` as the target, as shown.
+- Moving onto a folder that already exists gives *"Directory not empty"*, or puts it **inside** the existing folder
+  (`database/database`). Move the current folders aside first.
+- *"cannot stat 'pre-restore/database'"* on a second try means the first move already worked. Check with `ls`.
+
+### Afterwards
+- **Sessions and trusted browsers from before the restore work again.** Only the restored database had them revoked.
+  Sign out everywhere (System/About → Sessions) if you want everyone to sign in fresh.
+- **The undo is not in the audit log.** The `SYSTEM_RESTORED` event was written in the data you moved aside. Record what
+  happened yourself if your organization needs it, for example in a Fiscal Year note.
+- **The re-entry report** in `restore-reports/` from the mistaken restore compared the wrong data. Remove it.
+- **Clean up** once you've checked everything: delete the `wrong-restore-…` folder and the spare copy.
+
+See also *Manual recovery without the application* below.
+
 ## Scheduled backups (since 1.9.0)
 
 System/About → Backups → Backup / Restore → **Scheduled** writes backups on its own, without anyone signed in:
@@ -136,8 +274,9 @@ System/About → Backups → Backup / Restore → **Scheduled** writes backups o
   (`backup_folders = ["/mnt/nas/pennywarden", "/srv/pennywarden-backups"]` — a list in square brackets, one quoted
   path each; docs/configuration.md) and the Administrator picks one; the service account (`pennywarden` on Linux) must
   be able to write there. **Linux server:** the service runs sandboxed and may write only to its data folder and the
-  folders the installer adds for it — **run the installer again after changing `backup_folders`** (it reads the list
-  and lets the service write there; folders under `/home` can't be used). Without that, *Test* reports that the
+  folders listed in `backup_folders` — **after changing `backup_folders`, run `sudo pennywarden apply-config`** (2.1.0;
+  it checks `config.toml`, lets the service write to the listed folders, restarts it and waits until it answers;
+  folders under `/home` can't be used). The installer does the same on every install or upgrade. Without that, *Test* reports that the
   folder can't be written even when its owner, group and permissions are right. On a **local install** any folder can
   be entered.
   **Test** writes and removes a small file to check the folder. Copying backups offsite is done outside PennyWarden.
@@ -145,8 +284,9 @@ System/About → Backups → Backup / Restore → **Scheduled** writes backups o
   password confirms it). PennyWarden turns it into a key pair and keeps only the public key and the private key
   locked with the passphrase — it can **lock** each backup but cannot open one. Each file is encrypted like a manual
   backup (AES-256-GCM records) with its own random key, which is locked for the public key (X25519 + HKDF-SHA256);
-  the locked private key travels in the file header, so the **passphrase alone restores it anywhere** through the
-  normal **Restore** tab. Changing the passphrase makes a new key pair: backups made before still need the earlier
+  the locked private key travels in the file header, so the **passphrase alone restores it anywhere**: through the
+  normal **Restore** tab, or from the command line with the schedule passphrase (*Restoring a scheduled backup from
+  the command line*; `--use-server-key` does not work for scheduled backups). Changing the passphrase makes a new key pair: backups made before still need the earlier
   passphrase. A forgotten passphrase cannot be recovered.
 - **Keep:** Daily schedule — how many daily, weekly (the first backup of each week) and monthly (the first backup of
   each month) backups to keep, e.g. 3 / 2 / 2; Weekly schedule — weekly and monthly only. The newest backup is always
@@ -160,6 +300,12 @@ System/About → Backups → Backup / Restore → **Scheduled** writes backups o
 - **Run now** writes a backup immediately; the page lists the recent runs with their result, file and size. Settings
   changes, runs, failures and deletions are in the audit log (`BACKUP_SCHEDULE_UPDATED`, `BACKUP_PASSPHRASE_SET`,
   `SCHEDULED_BACKUP_CREATED/FAILED/DELETED`).
+- **Kept as** (since 2.1.0, #233) shows why each listed backup is still there, with the current keep settings:
+  *Daily*, *Weekly*, *Monthly* (one or more, e.g. *Daily, Weekly*), or *Latest* when only being the newest keeps it.
+  *Removed* means the keep rules deleted it. *Removed at the next backup* means the keep settings were lowered since
+  the last run, and the next run deletes it. *Not managed (another folder)* is a backup made into an earlier folder,
+  which the keep rules don't touch. It is worked out with the same code that does the deleting, so the column and
+  the deletions always agree.
 
 ## Moving to another server
 
@@ -171,7 +317,9 @@ running the wizard). The new server keeps its own `config.toml`.
 
 The files can also be copied by hand while the service is stopped: `database/`, `attachments/` and `secrets/` from
 the data directory (`/var/lib/pennywarden` on a Linux server). The installer's automatic snapshots before each upgrade
-(`/var/backups/pennywarden/<timestamp>/`) are such copies.
+(`/var/backups/pennywarden/<timestamp>/`) are such copies, and so is `pre-restore/`. Putting them back works like
+*Undoing a restore* above: stop the service, move the current folders aside, move the copies in, then fix the
+ownership on Linux.
 
 ## Reinitialize (keeping the users, since 2.0.0)
 
@@ -194,7 +342,7 @@ Entity numbers continue from the last one, so a new entity never reuses a number
 4. The removal happens in one database transaction (all or nothing); the attachment files are removed after it.
    Everyone else is signed out. Everyone who signs in sees a notice (who, when) until an Administrator acknowledges it.
 
-From the web it can be done once in 24 hours. On the server, `sudo pennywarden reinitialize [--data-dir DIR]
-[--passphrase-file PATH] [--stop-service] [--yes]` does the same with no time limit (a limit would only push people to
+From the web it can be done once in 24 hours. On the server, `sudo pennywarden reinitialize --data-dir
+/var/lib/pennywarden [--passphrase-file PATH] [--stop-service] [--yes]` does the same with no time limit (a limit would only push people to
 delete the data folder, which leaves no backup); it asks for the word `reinitialize` unless `--yes` is given, handles
 the service like `pennywarden restore`, and is audited via `host_cli`.

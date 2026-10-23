@@ -302,7 +302,11 @@ function LetterEditor({ setup, doc, focus, onClose, onSaved }: EditorProps) {
         <p className="hint">For #10 double-window envelopes nothing is printed on the envelope: the addresses print on this letter and show through the
           windows. Leave this at <i>None</i> for a plain envelope (printed from an envelope template).</p>
         <Field label="Address for a window envelope">
-          <select ref={winRef} value={c.window} onChange={(ev) => e.change((x) => { x.window = ev.target.value; })}>
+          <select ref={winRef} value={c.window} onChange={(ev) => e.change((x) => {
+            // 2.1.0 (#247): a new window-envelope letter starts with fold marks on the front
+            if (e.isDraft && x.window === "NONE" && ev.target.value !== "NONE" && x.fold_marks === "NONE") x.fold_marks = "FRONT";
+            x.window = ev.target.value;
+          })}>
             <option value="NONE">None (the letter goes in a plain envelope)</option>
             <option value="LETTER">On the letter: addresses at the top, the letter starts below the first fold</option>
             <option value="ADDRESS_PAGE">On a separate address page in front of the letter</option>
@@ -321,6 +325,38 @@ function LetterEditor({ setup, doc, focus, onClose, onSaved }: EditorProps) {
               <Field label="Payee address – down (in)"><input type="number" step={0.0625} min={-0.75} max={0.75} value={c.payee_dy} onChange={off("payee_dy")} /></Field>
             </div>
           </>
+        ) : null}
+      </Section>
+      <Section id="lfold" scope="pw-letter" title="Fold marks">
+        <p className="hint">Small ticks at the left and right edges where the letter is folded in even thirds for a #10 envelope — just enough to fold by,
+          and barely noticeable to the recipient. On the first sheet only. Each user can choose their own default in <i>My letter printer
+          settings</i> on the print screen, and change it for one letter.</p>
+        <Field label="Print fold marks">
+          <select aria-label="Print fold marks" value={c.fold_marks} onChange={(ev) => e.change((x) => { x.fold_marks = ev.target.value; })}>
+            <option value="NONE">No</option>
+            <option value="FRONT">On the front of the page</option>
+            <option value="BACK">On the back of the page (needs two-sided printing)</option>
+          </select>
+        </Field>
+        {c.fold_marks === "BACK" ? (
+          <p className="hint" role="note">The letter's PDF gets a back page for every page (the marks behind page 1, the others blank), so print it
+            two-sided (flip on long edge). Printed one-sided, the marks come out on a separate sheet.</p>
+        ) : null}
+        {c.fold_marks !== "NONE" ? (
+          <div className="row form-row">
+            <Field label="Tick length (in)"><input type="number" aria-label="Tick length" step={0.05} min={0.1} max={0.5} value={c.fold_length} onChange={off("fold_length")} /></Field>
+            <Field label="From the paper edge (in)"><input type="number" aria-label="Tick distance from the edge" step={0.05} min={0.1} max={0.5} value={c.fold_edge} onChange={off("fold_edge")} /></Field>
+            <Field label="Line weight">
+              <select aria-label="Tick line weight" value={c.fold_weight} onChange={(ev) => e.change((x) => { x.fold_weight = ev.target.value; })}>
+                <option value="HAIRLINE">Hairline</option><option value="THIN">Thin</option><option value="MEDIUM">Medium</option>
+              </select>
+            </Field>
+            <Field label="Shade">
+              <select aria-label="Tick shade" value={c.fold_shade} onChange={(ev) => e.change((x) => { x.fold_shade = ev.target.value; })}>
+                <option value="LIGHT">Light gray</option><option value="MEDIUM">Medium gray</option><option value="DARK">Dark gray</option>
+              </select>
+            </Field>
+          </div>
         ) : null}
       </Section>
       <Section id="lsign" scope="pw-letter" title="Signed by">

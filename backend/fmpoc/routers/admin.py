@@ -13,6 +13,7 @@ from ..deps import Ctx, get_db, require
 from ..services import admin_settings as adm
 from ..services import diagnostics as diag
 from ..services import maintenance as maint
+from ..services import organization as org
 from ..services import sessions as sess_svc
 from .backup import _check_password
 
@@ -27,10 +28,6 @@ class SettingsIn(In):
     changes: dict[str, Any] = Field(max_length=len(adm.EDITABLE))
     password: str | None = Field(default=None, max_length=256)
     confirmations: list[str] = Field(default_factory=list, max_length=10)
-
-
-class OrganizationIn(In):
-    name: str = Field(max_length=adm.ORG_NAME_MAX * 2)
 
 
 class BackupWarningIn(In):
@@ -52,11 +49,20 @@ def settings_save(body: SettingsIn, request: Request, db: Session = Depends(get_
     return {**out, **adm.effective(request.app.state.settings, True)}
 
 
+@router.get("/organization")
+def organization_view(db: Session = Depends(get_db), ctx: Ctx = Depends(require("system.view"))):
+    """2.1.0 (#314): the organization profile (its own entity): name, address, phone, email, EIN."""
+    out = org.profile_out(db, ctx.workspace_id)
+    db.commit()                      # ensure() may have created the entity
+    return out
+
+
 @router.put("/organization")
-def organization(body: OrganizationIn, db: Session = Depends(get_db), ctx: Ctx = Depends(require("system.manage"))):
-    ws = adm.rename_organization(db, ctx, body.name)
+def organization(body: org.ProfileIn, db: Session = Depends(get_db), ctx: Ctx = Depends(require("system.manage"))):
+    """#126 the name; 2.1.0 (#314) the rest of the profile. Fields left out keep their value."""
+    out = org.update(db, ctx, body)
     db.commit()
-    return {"name": ws.name}
+    return out
 
 
 @router.get("/backup-age")

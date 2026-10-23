@@ -121,7 +121,7 @@ function FyDocuments({ fy, manage, onChanged }: { fy: any; manage: boolean; onCh
       ) : null}
       <Attachments {...common} documentTypes={["AUDIT_SIGNOFF"]} title="Audit Signoff"
         hint={<p className="hint">Required to close the Fiscal Year: signoff that the audit review is complete and the year may be closed.</p>} />
-      <Attachments {...common} documentTypes={["UNSPECIFIED"]} title="Other documents" />
+      <Attachments {...common} documentTypes={["UNSPECIFIED"]} title="Other documents" canReorder={common.canRemove} />
       {!open || counts.CLOSE_REPORT ? <Attachments {...common} canUpload={false} canRemove={false} canRetype={false} documentTypes={["CLOSE_REPORT"]} title="Close report" /> : null}
       {markDlg ? <ApprovalMark fy={fy} onClose={() => setMarkDlg(false)} onDone={() => { setMarkDlg(false); changed(); }} /> : null}
     </section>

@@ -43,7 +43,8 @@ from ..money import fmt
 from . import bank_accounts as bank
 from . import budgets as bsvc
 from . import fundraisers as fsvc
-from .attachments import path_for
+from . import register as reg
+from .attachments import DISPLAY_ORDER, path_for
 from .common import budget_label
 from .documentation import review as documentation_review
 from .fiscal_years import closure_check
@@ -232,8 +233,8 @@ def _signature_page(doc: "_AuditDoc", sp) -> list:
 
 
 class _AuditDoc(SimpleDocTemplate):
-    def __init__(self, buf, **kw):
-        super().__init__(buf, pagesize=letter, leftMargin=MARGIN, rightMargin=MARGIN, topMargin=MARGIN,
+    def __init__(self, buf, pagesize=letter, **kw):   # 2.1.0 (#257): landscape for the Budget Prep report
+        super().__init__(buf, pagesize=pagesize, leftMargin=MARGIN, rightMargin=MARGIN, topMargin=MARGIN,
                          bottomMargin=MARGIN + 0.25 * inch, **kw)
         self.current_label = ""
         self.page_labels: dict[int, str] = {}
@@ -390,7 +391,7 @@ def _attachments_for(db: Session, t: RegisterTransaction) -> tuple[list[Attachme
     alloc_ids = [a.id for a in t.allocations]
     rows = list(db.scalars(select(Attachment).where(or_(Attachment.transaction_id == t.id,
                                                         Attachment.allocation_id.in_(alloc_ids or [-1])))
-                           .order_by(Attachment.id)))
+                           .order_by(*DISPLAY_ORDER)))
     parent = [a for a in rows if a.transaction_id == t.id and a.active]
     by_alloc: dict[int, list[Attachment]] = {}
     for a in rows:
@@ -508,7 +509,7 @@ def build_audit_report(db: Session, ctx, settings, fy: FiscalYear, account_id: i
     doc_items = {i["transaction_id"]: i for i in doc_review}
     fy_atts = list(db.scalars(select(Attachment).where(Attachment.fiscal_year_id == fy.id, Attachment.active.is_(True),
                                                        Attachment.system_generated.is_(False))
-                              .order_by(Attachment.id)))
+                              .order_by(*DISPLAY_ORDER)))
     order = {"APPROVAL": 0, "AUDIT_SIGNOFF": 1}
     fy_atts.sort(key=lambda a: (order.get(a.document_type or "UNSPECIFIED", 2), a.id))
     att_cache = {t.id: _attachments_for(db, t) for t in txns}
@@ -673,7 +674,9 @@ def build_audit_report(db: Session, ctx, settings, fy: FiscalYear, account_id: i
             ("Description", _txn_description(t)),
             ("Clear Date", t.clear_date or "Uncleared"),
             ("Notes", t.notes or "—")]))
-        extra = [("Status", t.status), ("Check number", t.check_number or "—"),
+        # 2.1.0 (#260): an electronic payment shows "Electronic (method)" where the check number would be
+        extra = [("Status", t.status),
+                 ("Payment", reg.payment_text(t)) if t.electronic_payment else ("Check number", t.check_number or "—"),
                  ("Entered", f"{t.entry_timestamp:%Y-%m-%d %H:%M} UTC by {users.get(t.created_by_user_id, '?')}")]
         if void:
             extra.append(("Void", f"{t.void_reason} — {t.voided_at:%Y-%m-%d %H:%M} UTC by "
@@ -852,9 +855,21 @@ def _fundraiser_section(db: Session, ctx, settings, doc: _AuditDoc, fr: Fundrais
     names = {b["id"]: b["name"] for b in d["buckets"]["items"]}
     if d["buckets"]["items"]:
         rows = [[PM(f"<b>{h}</b>", "cell") for h in ("Bucket", "Income", "Expenses", "Net")]]
-        for b in d["buckets"]["items"]:
-            rows.append([P(b["name"] + (f" — {b['description']}" if b["description"] else ""), "cell"),
+        by_id = {b["id"]: b for b in d["buckets"]["items"]}
+
+        def bucket_row(b, indent=False):
+            label = b["name"] + (f" — {b['description']}" if b["description"] else "")
+            rows.append([PM(("&nbsp;" * 4 if indent else "") + escape(label), "cell"),
                          P(money(b["income"]), "cellr"), P(money(b["expense"]), "cellr"), P(money(b["net"]), "cellr")])
+        # 2.1.0 (#278): categories (in order) with their buckets beneath and a subtotal; then uncategorized buckets
+        for c in d["buckets"].get("categories", []):
+            rows.append([PM(f"<b>{escape(c['name'])}</b>", "cell"), "", "", ""])
+            for bid in c["bucket_ids"]:
+                bucket_row(by_id[bid], indent=True)
+            rows.append([PM(f"<i>{escape(c['name'])} subtotal</i>", "cell"), P(money(c["income"]), "cellr"),
+                         P(money(c["expense"]), "cellr"), P(money(c["net"]), "cellr")])
+        for bid in d["buckets"].get("uncategorized_ids", [b["id"] for b in d["buckets"]["items"]]):
+            bucket_row(by_id[bid])
         u = d["buckets"]["unassigned"]
         rows.append([PM("<b>Unassigned</b>", "cell"), P(money(u["income"]), "cellr"), P(money(u["expense"]), "cellr"), P(money(u["net"]), "cellr")])
         f += [Spacer(1, 6), PM("Buckets", "h2"), _grid(rows, [2.4 * inch, 1.4 * inch, 1.4 * inch, 1.4 * inch])]
@@ -871,7 +886,9 @@ def _fundraiser_section(db: Session, ctx, settings, doc: _AuditDoc, fr: Fundrais
             if x["classification"]:
                 c = x["classification"]
                 desc += f"\n{c['label']} {money(c['amount'])}" + (f" ({c['note']})" if c["note"] else "")
-            bk = "; ".join(f"{names.get(b['bucket_id'], '?')} {money(b['amount'])}" for b in x["buckets"])
+            bk = "; ".join(f"{names.get(b['bucket_id'], '?')} {money(b['amount'])}"
+                           + (f" ({money(b['charge'])} less {money(b['less'])} {b['less_description'] or ''})".replace(" )", ")")
+                              if b.get("less") not in (None, "0.00") else "") for b in x["buckets"])
             rows.append([P(x["transaction_date"], "cell"), P(fy_name.get(x["fiscal_year_id"], ""), "cell"),
                          P(str(x["transaction_id"]), "cell"), P("Income" if x["kind"] == "INCOME" else "Expense", "cell"),
                          P(desc, "cell"), P(x["budget"], "cell"), P(money(x["amount"]), "cellr"),
@@ -898,7 +915,7 @@ def _fundraiser_section(db: Session, ctx, settings, doc: _AuditDoc, fr: Fundrais
 
     # ---- attachments: fundraiser documents, then the transactions' attachments
     docs = list(db.scalars(select(Attachment).where(Attachment.fundraiser_id == fr.id, Attachment.active.is_(True))
-                           .order_by(Attachment.id)))
+                           .order_by(*DISPLAY_ORDER)))
     for i, a in enumerate(docs):
         f += _attachment_flowables(doc, settings, a, f"Fundraiser document {i + 1} of {len(docs)}", users)
     seen: set[int] = set()
@@ -995,7 +1012,7 @@ def entity_activity(db: Session, ctx, *, account_id: int | None, date_from: dt.d
             g["lines"].append({"transaction_id": t.id, "transaction_date": t.transaction_date.isoformat(),
                                "account": f"{a.account_name} - {bank.masked(a)}", "type": t.transaction_type,
                                "description": al.description, "invoice_number": al.invoice_number,
-                               "check_number": t.check_number, "amount": fmt(al.amount_cents),
+                               "check_number": reg.payment_text(t), "amount": fmt(al.amount_cents),
                                "cleared": t.clear_date is not None})
     rows = []
     for g in groups.values():
@@ -1044,7 +1061,7 @@ def entity_activity_csv(report: dict) -> str:
                     report["date_from"], report["date_to"]])
     if any(r["lines"] for r in report["rows"]):
         w.writerow([])
-        w.writerow(["Entity", "Transaction #", "Date", "Account", "Type", "Description", "Invoice #", "Check #", "Amount"])
+        w.writerow(["Entity", "Transaction #", "Date", "Account", "Type", "Description", "Invoice #", "Check # / payment", "Amount"])
         for r in report["rows"]:
             for ln in r["lines"] or []:
                 w.writerow([_csv_safe(r["label"]), ln["transaction_id"], ln["transaction_date"], _csv_safe(ln["account"]),

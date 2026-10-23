@@ -2,7 +2,8 @@
 
 CR-011: a check number can be used only once per bank account. Every record keeps its number reserved - active
 transactions, VOID transactions and zero-dollar VOID records - because a voided check (lost, spoiled) is never
-reused. A number entered by mistake is released by correcting the record's check number (also allowed on VOID
+reused. 2.1.0 (#289): a **deleted** transaction (an entry made by mistake) releases its number - it keeps it in its
+own data for the Auditors, but no longer holds it, and the missing-check review ignores it. A number entered by mistake is released by correcting the record's check number (also allowed on VOID
 records, audited). Numeric check numbers compare without leading zeros ("0105" == "105"); others compare
 case-insensitively.
 """
@@ -34,7 +35,8 @@ def holders(db: Session, ws_id: int, account_id: int, number: str | None,
         return []
     q = select(RegisterTransaction).where(RegisterTransaction.workspace_id == ws_id,
                                           RegisterTransaction.bank_account_id == account_id,
-                                          RegisterTransaction.check_number.is_not(None))
+                                          RegisterTransaction.check_number.is_not(None),
+                                          RegisterTransaction.status != "DELETED")   # 2.1.0 (#289)
     if exclude_id is not None:
         q = q.where(RegisterTransaction.id != exclude_id)
     return [t for t in db.scalars(q.order_by(RegisterTransaction.id)) if check_key(t.check_number) == key]
@@ -44,7 +46,7 @@ def assert_unused(db: Session, ws_id: int, account_id: int, number: str | None, 
     used = holders(db, ws_id, account_id, number, exclude_id)
     if used:
         t = used[0]
-        state = {"VOID": "a VOID record", "DELETED": "a deleted transaction"}.get(t.status, "transaction")
+        state = {"VOID": "a VOID record"}.get(t.status, "transaction")
         raise conflict("DUPLICATE_CHECK_NUMBER",
                        f"Check number {number} is already used in this account by {state} #{t.id} "
                        f"({t.transaction_date}). If that record has the wrong number, correct it first.",
@@ -92,7 +94,8 @@ def review(db: Session, ws_id: int, account_id: int | None = None) -> dict:
         by_num: dict[int, list[RegisterTransaction]] = {}
         for t in db.scalars(select(RegisterTransaction).where(RegisterTransaction.workspace_id == ws_id,
                                                               RegisterTransaction.bank_account_id == acct.id,
-                                                              RegisterTransaction.check_number.is_not(None))
+                                                              RegisterTransaction.check_number.is_not(None),
+                                                              RegisterTransaction.status != "DELETED")
                             .order_by(RegisterTransaction.id)):
             n = numeric(t.check_number)
             if n is not None:

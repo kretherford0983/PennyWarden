@@ -68,6 +68,25 @@ def _counts(db: Session, txn_ids: list[int], alloc_ids: list[int]) -> tuple[dict
     return tc, ac
 
 
+def categories(db: Session, txns: list[RegisterTransaction]) -> dict[int, str | None]:
+    """2.1.0 (#258): the review's classification for the given transactions - the register's Attachments filter uses
+    this, so its "Missing" list is exactly what the review warns about. Only ACTIVE transactions are reviewed; others
+    map to None."""
+    active = [t for t in txns if t.status == "ACTIVE"]
+    tc, ac = _counts(db, [t.id for t in active], [a.id for t in active for a in t.live_allocations])
+    out: dict[int, str | None] = {t.id: None for t in txns}
+    for t in active:
+        children = [Child(ac.get(a.id, 0), bool(a.no_attachment), has_reason(a.no_attachment_reason))
+                    for a in t.live_allocations]
+        out[t.id] = classify(tc.get(t.id, 0), bool(t.no_attachment), children, has_reason(t.no_attachment_reason))
+    return out
+
+
+def is_marked(t: RegisterTransaction) -> bool:
+    """2.1.0 (#258): carries a "no attachment will be provided" mark, on the transaction or on any live allocation."""
+    return bool(t.no_attachment) or any(a.no_attachment for a in t.live_allocations)
+
+
 def applicable_transactions(db: Session, fy: FiscalYear) -> list[RegisterTransaction]:
     """ACTIVE transactions with at least one live allocation to a budget of this Fiscal Year."""
     ids = db.scalars(select(RegisterTransaction.id).distinct()

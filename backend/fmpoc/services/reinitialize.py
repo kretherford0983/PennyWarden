@@ -30,10 +30,13 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
 from .. import audit
-from ..models import (Attachment, AuditEvent, BankAccount, BankAccountBalance, Budget, CheckAccount,
-                      CheckDocument, CheckNumberAcknowledgement, CheckPrinterSetting, CheckSigner, CheckStyle, Entity,
-                      FiscalYear, FiscalYearReview, Fundraiser, FundraiserBucket, FundraiserBucketLine, FundraiserBudget,
-                      FundraiserClassification, FundraiserExclusion, RegisterTransaction, Reminder, RequestKey,
+from ..models import (Attachment, AuditEvent, BankAccount, BankAccountBalance, Budget, BudgetProjectionChoice, CheckAccount,
+                      CheckDocument, CheckNumberAcknowledgement, CheckPrinterSetting, CheckSigner, CheckStyle, DonationDetail, DonationLine,
+                      DonationReceipt, DonationSettings, Entity,
+                      FiscalYear, FiscalYearReview, Fundraiser, FundraiserBucket, FundraiserBucketCategory, FundraiserBucketLine, FundraiserBudget,
+                      FundraiserFyReportNote, FundraiserSeries, FundraiserSeriesResult,
+                      FundraiserClassification, FundraiserExclusion, FundraiserLineContributor, RegisterTransaction, Reminder,
+                      RequestKey,
                       TransactionAllocation, User, Workspace, utcnow)
 from . import backup as bk
 from . import server_recovery
@@ -43,10 +46,11 @@ CONFIRM_WORD = "reinitialize"
 COOLDOWN = dt.timedelta(hours=24)
 
 # children first
-WIPE = (FundraiserBucketLine, FundraiserClassification, FundraiserExclusion, FiscalYearReview, Attachment,
+WIPE = (DonationReceipt, DonationDetail, DonationLine, FundraiserBucketLine, FundraiserLineContributor, FundraiserClassification, FundraiserExclusion, FiscalYearReview, Attachment,
         TransactionAllocation, RegisterTransaction, CheckNumberAcknowledgement, CheckAccount, CheckPrinterSetting,
-        BankAccountBalance, BankAccount, FundraiserBucket, FundraiserBudget, Fundraiser, Budget, FiscalYear,
-        CheckDocument, CheckSigner, CheckStyle, RequestKey)
+        BankAccountBalance, BankAccount, FundraiserBucket, FundraiserBucketCategory, FundraiserBudget, Fundraiser, FundraiserSeriesResult,
+        FundraiserSeries, FundraiserFyReportNote, BudgetProjectionChoice, Budget, FiscalYear,
+        CheckDocument, CheckSigner, CheckStyle, DonationSettings, RequestKey)   # 2.1.0 (#312): donations
 
 
 class ReinitError(Exception):
@@ -135,9 +139,13 @@ def wipe(db: Session, ws_id: int, ctx, by: str, backup_name: str, via: str, befo
     scoped = {
         FundraiserBucketLine: FundraiserBucketLine.bucket_id.in_(bucket_ids),
         FundraiserClassification: FundraiserClassification.fundraiser_id.in_(fr_ids),
+        FundraiserLineContributor: FundraiserLineContributor.fundraiser_id.in_(fr_ids),
         FundraiserExclusion: FundraiserExclusion.fundraiser_id.in_(fr_ids),
         TransactionAllocation: TransactionAllocation.id.in_(alloc_ids),
         FundraiserBucket: FundraiserBucket.id.in_(bucket_ids),
+        FundraiserBucketCategory: FundraiserBucketCategory.fundraiser_id.in_(fr_ids),
+        FundraiserSeriesResult: FundraiserSeriesResult.series_id.in_(
+            select(FundraiserSeries.id).where(FundraiserSeries.workspace_id == ws_id)),
         FundraiserBudget: FundraiserBudget.fundraiser_id.in_(fr_ids),
         CheckAccount: CheckAccount.check_style_id.in_(style_ids),
     }
@@ -147,7 +155,8 @@ def wipe(db: Session, ws_id: int, ctx, by: str, backup_name: str, via: str, befo
             cond = model.workspace_id == ws_id
         db.execute(delete(model).where(cond).execution_options(synchronize_session=False))
     # budgets reference each other (parents, continued budgets) - already deleted together above
-    db.execute(delete(Entity).where(Entity.workspace_id == ws_id, Entity.is_system.is_(False))
+    db.execute(delete(Entity).where(Entity.workspace_id == ws_id, Entity.is_system.is_(False),
+                                    Entity.is_organization.is_(False))      # 2.1.0 (#314): the organization stays
                .execution_options(synchronize_session=False))
     db.execute(delete(Reminder).where(Reminder.workspace_id == ws_id, Reminder.scope != "PERSONAL")
                .execution_options(synchronize_session=False))
