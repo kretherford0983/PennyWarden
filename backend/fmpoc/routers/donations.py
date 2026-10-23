@@ -110,6 +110,24 @@ def set_lines(txn_id: int, body: LinesIn, db: Session = Depends(get_db), ctx: Ct
     return svc.transaction_out(db, ctx, t)
 
 
+class PreviewReceiptIn(In):
+    donor_entity_id: int
+    lines: list[svc.LineIn] = Field(default_factory=list, max_length=200)     # unsaved lines on screen (optional)
+    donors: list[svc.DonorIn] = Field(default_factory=list, max_length=200)   # unsaved details on screen (optional)
+
+
+@router.post("/transactions/{txn_id}/receipts/preview")
+def preview_receipt(txn_id: int, body: PreviewReceiptIn, db: Session = Depends(get_db), ctx: Ctx = Depends(print_ctx)):
+    """2.1.0: the receipt as it would print, from the unsaved screen, watermarked; nothing is saved or attached."""
+    t = svc.get_deposit(db, ctx, txn_id)
+    pdf, info = svc.preview_receipt(db, ctx, t, body.donor_entity_id, body.lines, body.donors)
+    resp = _pdf(ctx, pdf, "receipt-preview.pdf")
+    resp.headers["X-Receipt-Kind"] = info["kind"]
+    if info["replaces"]:
+        resp.headers["X-Receipt-Replaces"] = info["replaces"]
+    return resp
+
+
 @router.post("/transactions/{txn_id}/receipts")
 def print_receipt(txn_id: int, body: ReceiptIn, request: Request, db: Session = Depends(get_db),
                   ctx: Ctx = Depends(print_ctx)):

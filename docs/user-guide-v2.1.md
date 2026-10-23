@@ -281,7 +281,8 @@ purpose and the receipt number, followed by the **goods or services statement**.
 template. Confirm the wording with your organization's own tax advisor.
 
 ### Marking donations and printing receipts (Register Users)
-Open a deposit in the register and choose **Donation receipt…**:
+Open a deposit in the register and choose **Donation receipt…**. The dialog reads top to bottom: tick the lines, write
+the details, then **Preview** / **Print** at the bottom.
 1. Tick **Donation** on each line that is a donation. A line's donor is the line's entity, else the deposit's. Add a
    **purpose** if you like, and, if the donor received something in return (a dinner, raffle tickets), its **value
    and a description**. Then **Save donation lines**. Every change is in the audit log.
@@ -290,10 +291,13 @@ Open a deposit in the register and choose **Donation receipt…**:
 2. **Details** (when the receipt letter has `{DETAILS}`, which new letters do): once the lines are saved, each donor
    has a **Details** box for a write-up of their own, such as *"Your donation of ${AMOUNT} will provide Thanksgiving
    dinner for 4 families."* Type `{` for the variables. Left empty, that paragraph is simply left out of the letter.
-   Save, then:
-3. Each donor gets **one receipt** for all of their donation lines on the deposit: **Print receipt**. Receipts are
+   Ticking a line shows its donor's block straight away, ready for the details.
+3. **Preview** shows the receipt as it would print, marked *PREVIEW – NOT A RECEIPT*, from what's on the screen.
+   Nothing is saved, attached or numbered, so you can fix a typo before the real receipt exists.
+4. Each donor gets **one receipt** for all of their donation lines on the deposit: **Print receipt** (it saves your
+   changes first). With several donors on the deposit, each donor's block has its own Preview and Print. Receipts are
    numbered per calendar year of the deposit: R-2026-0001, R-2026-0002…
-4. The receipt is attached to the deposit.
+5. The receipt is attached to the deposit. Earlier receipts are listed under **Printed receipts** at the top.
 
 Without goods or services the statement reads *"No goods or services were provided in exchange for this
 contribution."*; otherwise *"Goods or services valued at $X were provided in exchange for this contribution

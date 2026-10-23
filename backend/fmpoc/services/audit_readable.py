@@ -39,6 +39,7 @@ ACTION_LABELS = {
     "DONATION_MARKED": "Donation lines changed",
     "DONATION_DETAILS_UPDATED": "Donation details changed", "DONATION_RECEIPT_PRINTED": "Donation receipt printed",
     "DONATION_RECEIPT_TEST": "Donation receipt test print",
+    "DONATION_RECEIPT_PREVIEW": "Donation receipt previewed",
 }
 OBJECT_LABELS = {
     "user": "User", "workspace": "Organization", "server_config": "Server settings", "fiscal_year": "Fiscal Year", "budget": "Budget", "entity": "Entity",

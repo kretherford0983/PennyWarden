@@ -101,6 +101,11 @@ organization) for the new organization profile.
   receipt letter and the *Donation receipt* dialog offers a **Details** box per donor, for example how the gift will
   be used; it can use the receipt's variables such as `{AMOUNT}`, and when it's left empty its paragraph is left out.
   New receipt letters include `{DETAILS}`.
+- **Preview before printing, and a top-to-bottom dialog.** **Preview** shows the receipt exactly as it would print,
+  from what is on the screen, marked *PREVIEW – NOT A RECEIPT*. Nothing is saved, attached or numbered, so mistakes
+  are fixed before the first real receipt instead of with a corrected one. Ticking a line shows the donor's block
+  (amount, dates, Details) at once; **Save**, **Preview** and **Print** are at the bottom, and Print saves first. With
+  several donors, each donor's block has its own Preview and Print. Printed receipts are listed at the top.
 
 ### Budget planning (Budget Managers)
 - **Budget Review** (Reports → Budget Review). Every budget of a Fiscal Year with its history over earlier years,

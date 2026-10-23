@@ -159,7 +159,14 @@ could not otherwise be corrected. Scope and safeguards:
   lines PUT; validated as `RECEIPT` text without `{DETAILS}`; audit `DONATION_DETAILS_UPDATED`); `values_for`
   resolves its variables. An empty `{DETAILS}` is not an empty-variable warning, its own paragraph is dropped and
   inside a sentence it leaves no double space. `details_enabled` tells the dialog whether the template uses it.
-- Tests: `backend/tests/test_v210_donations.py` (13) and the E2E "#312" test.
+- Preview (Kyle, 2026-10-23): `POST /api/donations/transactions/{id}/receipts/preview` with the donor and, optionally,
+  the unsaved lines and details. They are applied with `set_lines`/`set_details` and rolled back after `_compose()`
+  (shared with printing), so the preview validates like a save. The receipt is watermarked *PREVIEW - NOT A RECEIPT*;
+  a new receipt's number shows as *(assigned when printed)*. Nothing is attached and no number is taken. Audited
+  `DONATION_RECEIPT_PREVIEW` (after the rollback). Headers `X-Receipt-Kind` / `X-Receipt-Replaces`.
+- Dialog: the donor blocks are computed on screen from the ticked lines; Save / Preview / Print sit at the bottom for
+  one donor, and in each block with several. Print saves first.
+- Tests: `backend/tests/test_v210_donations.py` (14) and the E2E "#312" test.
 
 **2.1.0 — scheduled backups: Kept as (#233, Kyle 2026-10-14; built 2026-10-21).**
 - `scheduled_backup.keep_levels(runs, daily, weekly, monthly)` returns each kept run's reasons ("Daily", "Weekly",
