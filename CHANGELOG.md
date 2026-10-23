@@ -217,6 +217,8 @@ organization) for the new organization profile.
 - **Release dates are set by the pipeline.** The release is dated when it is published (GitHub, pennywarden.org,
   *What's new*); `CHANGELOG.md` gets the date with the next version's first change. No extra round before each
   release. README links to the latest release instead of naming a version. (#240)
+- **Test builds are cleaned up automatically.** Each test build keeps the newest 3 of its version, and the production
+  release removes all of that version's test builds (release and tag). Production releases are never touched. (#329)
 - **New dependencies:** `python-docx` (MIT, with `lxml`, BSD) writes the Word version of the fundraiser report (#275); `python-pptx` (MIT) and `XlsxWriter` (BSD) write the presentation and its chart data (#276). All are in THIRD-PARTY-NOTICES and every package.
 - **Test data for test servers.** A manual workflow, *Build test data*, builds an encrypted backup of a made-up
   organization and keeps it as a workflow artifact for 7 days. It is never published. The data covers several years:
