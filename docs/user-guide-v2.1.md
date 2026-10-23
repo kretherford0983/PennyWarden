@@ -285,9 +285,15 @@ Open a deposit in the register and choose **Donation receipt…**:
 1. Tick **Donation** on each line that is a donation. A line's donor is the line's entity, else the deposit's. Add a
    **purpose** if you like, and, if the donor received something in return (a dinner, raffle tickets), its **value
    and a description**. Then **Save donation lines**. Every change is in the audit log.
-2. Each donor gets **one receipt** for all of their donation lines on the deposit: **Print receipt**. Receipts are
+   **Date received** is the deposit's date unless you change it, e.g. a check given at an event and deposited
+   later. It can't be after the deposit; a donor with lines on different dates gets all the dates on the receipt.
+2. **Details** (when the receipt letter has `{DETAILS}`, which new letters do): once the lines are saved, each donor
+   has a **Details** box for a write-up of their own, such as *"Your donation of ${AMOUNT} will provide Thanksgiving
+   dinner for 4 families."* Type `{` for the variables. Left empty, that paragraph is simply left out of the letter.
+   Save, then:
+3. Each donor gets **one receipt** for all of their donation lines on the deposit: **Print receipt**. Receipts are
    numbered per calendar year of the deposit: R-2026-0001, R-2026-0002…
-3. The receipt is attached to the deposit.
+4. The receipt is attached to the deposit.
 
 Without goods or services the statement reads *"No goods or services were provided in exchange for this
 contribution."*; otherwise *"Goods or services valued at $X were provided in exchange for this contribution

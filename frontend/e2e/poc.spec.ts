@@ -3332,24 +3332,32 @@ test("#312: Donations module - Administrator sets up the receipt; a Register Use
   await dlg.getByLabel("Donation: Sample Donor Alpha $100.00").check();
   await dlg.getByLabel("Donation: Sample Donor Beta $75.00").check();
   await dlg.getByLabel("Purpose").first().fill("Building fund");
+  // the donation was received before the deposit (Kyle, 2026-10-22)
+  const earlier = new Date(Date.now() - 6 * 86400000).toISOString().slice(0, 10);
+  await dlg.getByLabel("Date received: Sample Donor Beta $75.00").fill(earlier);
+  await dlg.getByRole("button", { name: "Save donation lines" }).click();
+  await expect(dlg.getByRole("status").filter({ hasText: "Saved." })).toBeVisible();
+  await expect(dlg.getByTestId("donation-donors").getByRole("row", { name: /^Sample Donor Beta/ })).toContainText(earlier);
+  // {DETAILS} is in the default receipt letter: a write-up for this donor, with a variable
+  await dlg.getByLabel("Details for Sample Donor Alpha (optional)").fill("Your gift of ${AMOUNT} will buy new flags.");
   await dlg.getByRole("button", { name: "Save donation lines" }).click();
   await expect(dlg.getByRole("status").filter({ hasText: "Saved." })).toBeVisible();
   const byDonor = dlg.getByTestId("donation-donors");
-  await expect(byDonor.getByRole("row", { name: /Sample Donor Alpha/ })).toContainText("$100.00");
-  await byDonor.getByRole("row", { name: /Sample Donor Alpha/ }).getByRole("button", { name: "Print receipt" }).click();
+  await expect(byDonor.getByRole("row", { name: /^Sample Donor Alpha/ })).toContainText("$100.00");
+  await byDonor.getByRole("row", { name: /^Sample Donor Alpha/ }).getByRole("button", { name: "Print receipt" }).click();
   const pv = page.getByRole("dialog", { name: "Donation receipt – Sample Donor Alpha" });
   await expect(pv.getByRole("button", { name: "Print…" })).toBeVisible();
   await pv.getByRole("button", { name: "Close" }).first().click();
-  await expect(byDonor.getByRole("row", { name: /Sample Donor Alpha/ }).getByRole("button", { name: "Print duplicate" })).toBeVisible();
-  await byDonor.getByRole("row", { name: /Sample Donor Alpha/ }).getByRole("button", { name: "Print duplicate" }).click();
+  await expect(byDonor.getByRole("row", { name: /^Sample Donor Alpha/ }).getByRole("button", { name: "Print duplicate" })).toBeVisible();
+  await byDonor.getByRole("row", { name: /^Sample Donor Alpha/ }).getByRole("button", { name: "Print duplicate" }).click();
   await pv.getByRole("button", { name: "Close" }).first().click();
   // the raffle tickets were a donation too: the amount changes, so the next receipt is a corrected one
   await dlg.getByLabel("Donation: Sample Donor Alpha $40.00").check();
   await dlg.getByLabel("Goods or services value").nth(1).fill("10.00");
   await dlg.getByLabel("Goods or services description").fill("Raffle prize drawing");
   await dlg.getByRole("button", { name: "Save donation lines" }).click();
-  await expect(byDonor.getByRole("row", { name: /Sample Donor Alpha/ })).toContainText("$140.00");
-  await byDonor.getByRole("row", { name: /Sample Donor Alpha/ }).getByRole("button", { name: "Print corrected receipt" }).click();
+  await expect(byDonor.getByRole("row", { name: /^Sample Donor Alpha/ })).toContainText("$140.00");
+  await byDonor.getByRole("row", { name: /^Sample Donor Alpha/ }).getByRole("button", { name: "Print corrected receipt" }).click();
   const conf = page.getByRole("dialog", { name: "Confirmation required" });
   await expect(conf).toContainText("Print a corrected receipt");
   await conf.getByLabel("I have reviewed these warnings and explicitly confirm.").check();

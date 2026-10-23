@@ -421,10 +421,14 @@ def main(base: str, start_month: int = 7, backup: str | None = None, summary: st
                       ("4100", "150.00", "Gala dinner ticket", {"entity_id": ent[DONORS[1]]["id"]})], cleared=False)
             if dn:
                 lines = [x["id"] for x in dn["allocations"]]
+                received = (dt.date.fromisoformat(dn["transaction_date"]) - dt.timedelta(days=5)).isoformat()
                 tr.put(f"/api/donations/transactions/{dn['id']}/lines", {"lines": [
-                    {"allocation_id": lines[0], "donation": True, "purpose": "Building fund"},
+                    {"allocation_id": lines[0], "donation": True, "purpose": "Building fund", "date_received": received},
                     {"allocation_id": lines[1], "donation": True, "goods_cents": 6000,
                      "goods_description": "Gala dinner"}]})
+                tr.put(f"/api/donations/transactions/{dn['id']}/lines", {"lines": [], "donors": [
+                    {"entity_id": ent[DONORS[0]]["id"],
+                     "details": "Your gift of ${AMOUNT} will help repaint the community hall this spring."}]})
                 for name in DONORS:
                     tr.call("POST", f"/api/donations/transactions/{dn['id']}/receipts",
                             {"donor_entity_id": ent[name]["id"], "confirmations": []})

@@ -605,3 +605,8 @@ label.check.small { font-size: 12px; }
 .donation-dialog td .row { gap: 0.4rem; flex-wrap: nowrap; }
 /* 2.1.0 (#314): the organization profile fields wrap two or three to a line */
 .org-fields > .field { flex: 1 1 15em; }
+/* 2.1.0: the donation lines fit the dialog; on a narrow screen the table scrolls inside it */
+.donation-dialog .table-scroll { overflow-x: auto; max-width: 100%; }
+.donation-dialog .donation-lines input[type="date"] { width: 9.5em; }
+.donation-dialog .donation-lines input[aria-label="Purpose"] { width: 10em; }
+.donation-dialog .donation-lines input[aria-label="Goods or services description"] { width: 11em; }

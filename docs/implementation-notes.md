@@ -153,7 +153,13 @@ could not otherwise be corrected. Scope and safeguards:
   drawn by `receipt_pdf()`, not the template.
 - UI: `pages/Donations.tsx` — `DonationSetup` (`/donation-setup`, Administrator menu) and `DonationReceiptDialog`
   (Register → deposit → *Donation receipt…*), About → Optional modules.
-- Tests: `backend/tests/test_v210_donations.py` (11) and the E2E "#312" test.
+- Polish (Kyle, 2026-10-22, migration `0047`): `donation_line.date_received` (empty = the deposit's date; not after it).
+  A donor's dates are listed on the receipt (`dates_text`), the receipt number's year is the first date's, and the
+  content hash includes them. `donation_detail` holds the `{DETAILS}` text per deposit and donor (`DonorIn` in the
+  lines PUT; validated as `RECEIPT` text without `{DETAILS}`; audit `DONATION_DETAILS_UPDATED`); `values_for`
+  resolves its variables. An empty `{DETAILS}` is not an empty-variable warning, its own paragraph is dropped and
+  inside a sentence it leaves no double space. `details_enabled` tells the dialog whether the template uses it.
+- Tests: `backend/tests/test_v210_donations.py` (13) and the E2E "#312" test.
 
 **2.1.0 — scheduled backups: Kept as (#233, Kyle 2026-10-14; built 2026-10-21).**
 - `scheduled_backup.keep_levels(runs, daily, weekly, monthly)` returns each kept run's reasons ("Daily", "Weekly",

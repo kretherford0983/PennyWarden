@@ -24,7 +24,7 @@ runs July–June; the workflow's *Fiscal Year start month* changes that.
 | **Register** | about 120 transactions over the three years: deposits, checks, electronic payments (ACH, online portal, debit card, wire), a transfer to savings, attachments, a VOID check, a deleted transaction (its check number released, #289), and the most recent ones still uncleared |
 | **Payments** | a voucher check style with a made-up signer; two checks of the current year printed |
 | **Organization** | a made-up address, phone, email and EIN (00-0000000) in System/About; the organization's own entity records the Holiday Raffle cash deposits (2.1.0, #314) |
-| **Donations** | a current-year deposit from two donors marked as donations (one with a gala dinner as goods), and both receipts printed (2.1.0, #312) |
+| **Donations** | a current-year deposit from two donors marked as donations (one received five days before the deposit, with a `{DETAILS}` write-up; the other with a gala dinner as goods), and both receipts printed (2.1.0, #312) |
 | **Fundraisers** | three series, each recorded in PennyWarden for three years plus **four years before PennyWarden entered by hand**:<br>• **Golf Outing**, with buckets and categories, Charge / Less (a card fee) and a contributor override ("Cash" for the raffle table);<br>• **Pancake Breakfast**, held twice a year (spring and fall) and merged into one series;<br>• **Holiday Raffle**.<br>Also an upcoming fundraiser and a cancelled one. |
 | **Other** | entities, organization and personal reminders; the Fundraisers, Payments and Donations modules are on |
 
