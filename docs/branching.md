@@ -38,6 +38,11 @@ permanent copy), so Actions artifact storage stays well within the GitHub Pro al
   says `unreleased`: the next version's first feature branch dates it (*Release dates*).
 - The version in `backend/fmpoc/config.py` and `frontend/package.json` must always match.
 - A version is released only once; a test pre-release is not created for a version that is already released.
+- **Test builds are removed automatically** (since 2.1.0, #329; `scripts/prune_test_builds.sh`):
+  - each new test build keeps only the newest 3 test builds of its version;
+  - the production release `v<version>` removes all of that version's test builds (release and tag);
+  - other versions and production releases are never touched;
+  - it runs after publishing and can't fail the build; the run summary lists what was kept and removed.
 
 ## Day-to-day flow
 1. **Start an enhancement** – make sure your local `develop` is current (`git checkout develop && git pull`), then ask

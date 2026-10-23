@@ -285,6 +285,24 @@ jobs:
             gh release create "$TAG" release/* --target "$GITHUB_SHA" --latest \
               --title "PennyWarden $VERSION" --notes-file notes.md
           fi
+      # 2.1.0 (#329): keep the test builds tidy - while testing, the newest 3 of this version; at the production
+      # release, none of this version (other versions and production releases are never touched). Runs after the
+      # release is published and before the pages refresh (the site job), and can never fail the build.
+      - name: Remove old test builds
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.package.outputs.version }}
+        run: |
+          if [ "$GITHUB_REF_NAME" = "main" ]; then
+            if gh api "repos/$GITHUB_REPOSITORY/releases/tags/v$VERSION" --jq .tag_name >/dev/null 2>&1; then
+              bash scripts/prune_test_builds.sh "$VERSION" release
+            else
+              echo "::warning::v$VERSION is not published - its test builds were kept."
+            fi
+          else
+            bash scripts/prune_test_builds.sh "$VERSION" test 3
+          fi
 
   # 1.10.0 (#83 / #58): refresh pennywarden.org - the release data files list the new release (production) or test
   # build (test channel). Started on main, so the live page is always the released one.
