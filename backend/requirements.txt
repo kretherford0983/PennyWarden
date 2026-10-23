@@ -26,7 +26,7 @@ click==8.5.0
     # via uvicorn
 cryptography==50.0.2
     # via -r requirements.in
-fastapi==0.143.3
+fastapi==0.156.4
     # via -r requirements.in
 google-re2==1.1.20251105
     # via -r requirements.in
@@ -51,11 +51,11 @@ pillow==13.0.0
     #   reportlab
 pycparser==3.11
     # via cffi
-pydantic==2.14.0
+pydantic==2.14.1
     # via
     #   -r requirements.in
     #   fastapi
-pydantic-core==2.50.0
+pydantic-core==2.50.1
     # via pydantic
 pyotp==2.10.0
     # via -r requirements.in
@@ -77,7 +77,7 @@ sqlalchemy==2.1.5
     # via
     #   -r requirements.in
     #   alembic
-starlette==1.8.0
+starlette==1.9.0
     # via
     #   -r requirements.in
     #   fastapi
