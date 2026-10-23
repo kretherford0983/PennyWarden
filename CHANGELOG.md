@@ -41,6 +41,9 @@ organization) for the new organization profile.
   invoice, receipt, approval email. New files go to the end; a closed Fiscal Year can't be reordered. (#259)
 
 ### Fixed
+- **In-app links only ever point inside PennyWarden.** A link's address now follows the same rule as clicking it
+  (a same-site path), so opening a link in a new tab can never lead to another site or a `javascript:` address.
+  Found by code scanning (CodeQL alert #11); no way to exploit it was found.
 - **Deleting a transaction releases its check number.** Before, a deleted transaction kept its check number, so
   the number couldn't be used again and nobody could correct it (Auditors see deleted transactions read-only). Now
   the number is free for another record, and the missing-check review lists it until it is reused or confirmed. This
