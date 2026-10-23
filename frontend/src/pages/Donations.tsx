@@ -3,7 +3,7 @@
  *   preview and a test print with sample data only.
  * - DonationReceiptDialog (from a deposit in the register): Register Users mark lines as donations and print one receipt
  *   per donor; Budget Managers, Budget Users and Auditors see the donation lines and receipts. */
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { ErrorBox, Field, Loading, Modal, useConfirmable } from "../components";
 import { useMe } from "../App";
@@ -124,12 +124,23 @@ export function DonationReceiptDialog({ txn, onClose, onChanged }: { txn: any; o
     setLines(x.lines.map((l: any) => ({ allocation_id: l.allocation_id, donor: l.donor, donor_entity_id: l.donor_entity_id, donor_is_organization: !!l.donor_is_organization, description: l.description, amount: l.amount,
       donation: l.donation, purpose: l.purpose || "", goods: l.goods_cents ? (l.goods_cents / 100).toFixed(2) : "", goods_description: l.goods_description || "" })));
   };
-  const load = () => api.get(`/api/donations/transactions/${txn.id}`).then(take, setErr);
+  // each load and save is numbered; a reply is shown only if nothing newer was started since, so a reload that comes
+  // back late (after a print) can't overwrite lines saved or ticked in the meantime
+  const seq = useRef(0);
+  const latest = (fn: (x: any) => void) => { const n = ++seq.current; return (x: any) => { if (n === seq.current) fn(x); }; };
+  const edits = useRef(0);       // a reload doesn't replace lines ticked or typed while it was on its way
+  const load = () => {
+    const e0 = edits.current;
+    return api.get(`/api/donations/transactions/${txn.id}`).then(latest((x) => {
+      if (edits.current === e0) take(x);
+      else setD(x);              // receipts and donors refresh; the edited lines stay as typed
+    }), setErr);
+  };
   useEffect(() => { load(); }, [txn.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const editable = !!d && canPrint && d.printable;
   const original = d ? JSON.stringify(d.lines.map((l: any) => [l.donation, l.purpose || "", l.goods_cents ? (l.goods_cents / 100).toFixed(2) : "", l.goods_description || ""])) : "";
   const dirty = d && JSON.stringify(lines.map((l) => [l.donation, l.purpose, l.goods, l.goods_description])) !== original;
-  const setLine = (i: number, patch: Partial<Line>) => { setSaved(false); setLines(lines.map((l, j) => (j === i ? { ...l, ...patch } : l))); };
+  const setLine = (i: number, patch: Partial<Line>) => { edits.current++; setSaved(false); setLines(lines.map((l, j) => (j === i ? { ...l, ...patch } : l))); };
   const save = async () => {
     setErr(null);
     const body = lines.map((l) => {
@@ -138,7 +149,8 @@ export function DonationReceiptDialog({ txn, onClose, onChanged }: { txn: any; o
         goods_cents: g && !Number.isNaN(g) ? g : g === null ? null : -1, goods_description: l.donation ? l.goods_description || null : null };
     });
     if (body.some((b) => b.goods_cents === -1)) { setErr(new Error("Enter the goods or services value as an amount, e.g. 25.00.")); return; }
-    try { take(await api.put(`/api/donations/transactions/${txn.id}/lines`, { lines: body })); setSaved(true); onChanged(); } catch (x) { setErr(x); }
+    const apply = latest(take);
+    try { apply(await api.put(`/api/donations/transactions/${txn.id}/lines`, { lines: body })); setSaved(true); onChanged(); } catch (x) { setErr(x); }
   };
   const print = async (donor: any) => {
     setErr(null);

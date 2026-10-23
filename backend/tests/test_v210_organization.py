@@ -32,11 +32,16 @@ def test_created_at_initialization_and_edited_by_administrators(env, base):
     r = env.admin.put("/api/system/organization", PROFILE)
     assert r.status_code == 200, r.text
     assert r.json()["address"] == ["400 Elm Street", "Suite 2", "Cedar Valley, IA 50000"]
+    assert r.json()["phone_display"] == "(555) 555-0100"          # shown like an entity's phone
     # a field left out keeps its value; the name can change on its own as before (#126)
     r = env.admin.put("/api/system/organization", {"name": "Acme Community Org"})
     assert r.json()["ein"] == "12-3456789" and r.json()["city"] == "Cedar Valley"
     assert env.admin.get("/api/system/status").json()["workspace_name"] == "Acme Community Org"
-    assert env.admin.put("/api/system/organization", {"name": "Acme Org", "ein": "123456789"}).status_code == 422
+    # 9 digits without the dash are accepted and stored as 12-3456789; anything else is refused
+    assert env.admin.put("/api/system/organization", {"name": "Acme Org", "ein": "987654321"}).json()["ein"] == "98-7654321"
+    for bad in ("12345678", "1234567890", "12-345678A"):
+        assert env.admin.put("/api/system/organization", {"name": "Acme Org", "ein": bad}).status_code == 422, bad
+    env.admin.put("/api/system/organization", {"name": "Acme Org", "ein": "12-3456789"})
     ev = env.admin.get("/api/audit-events?action=ORGANIZATION_UPDATED").json()["items"]
     assert ev and ev[0]["after"]["ein"] == "12-3456789"
     assert env.admin.get("/api/audit-events?action=ORGANIZATION_RENAMED").json()["items"]

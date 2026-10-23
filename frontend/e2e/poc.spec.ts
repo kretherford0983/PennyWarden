@@ -2725,11 +2725,18 @@ test("#126: an Administrator renames the organization, sees the effective settin
   await orgPanel.getByLabel("State").fill("US");
   await orgPanel.getByLabel("ZIP code").fill("55555");
   await orgPanel.getByLabel("Email").fill("office@example.org");
-  await orgPanel.getByLabel("EIN (Employer Identification Number)").fill("12-3456789");
+  // the phone is formatted like an entity's when the field is left
+  await orgPanel.getByLabel("Phone").fill("5555550142");
+  await orgPanel.getByLabel("Phone").blur();
+  await expect(orgPanel.getByLabel("Phone")).toHaveValue("(555) 555-0142");
+  await orgPanel.getByLabel("EIN (Employer Identification Number)").fill("123456789");
+  await orgPanel.getByLabel("EIN (Employer Identification Number)").blur();
+  await expect(orgPanel.getByLabel("EIN (Employer Identification Number)")).toHaveValue("12-3456789");
   await orgPanel.getByRole("button", { name: "Save" }).click();
   await expect(orgPanel.getByRole("status")).toHaveText("Saved.");
   await expect(orgPanel.getByLabel("Street address")).toHaveValue("100 Example Street");
   await expect(orgPanel.getByLabel("City")).toHaveValue("Sampletown");
+  await expect(orgPanel.getByLabel("Phone")).toHaveValue("(555) 555-0142");
   await page.screenshot({ path: "e2e-screenshots/light-organization-profile.png" });
   await aboutTab(page, "Settings");
   const settings = page.getByRole("region", { name: "Settings" });

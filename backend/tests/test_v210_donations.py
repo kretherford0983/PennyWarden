@@ -94,7 +94,7 @@ def test_setup_is_administrator_only_and_validated(env, base):
     assert s["missing"] == ["the organization's EIN", "the organization's address"]
     assert {v["name"] for v in s["variables"]} >= {"DONOR_NAME", "AMOUNT", "ORG.EIN", "ORG.NAME", "RECEIPT_NO",
                                                    "SIGNER"}
-    bad = env.admin.put("/api/system/organization", {**ORG, "ein": "123456789"})
+    bad = env.admin.put("/api/system/organization", {**ORG, "ein": "12345678"})
     assert bad.status_code == 422 and "12-3456789" in bad.json()["error"]["message"]
     bad = env.admin.put("/api/donations/setup", {"config": {**s["config"], "body": "Thanks {DONOR_NAM}"}})
     assert bad.status_code == 422 and "DONOR_NAM" in bad.text
