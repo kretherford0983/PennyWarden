@@ -3,7 +3,7 @@
  *   preview and a test print with sample data only.
  * - DonationReceiptDialog (from a deposit in the register): Register Users mark lines as donations and print one receipt
  *   per donor; Budget Managers, Budget Users and Auditors see the donation lines and receipts. */
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { ErrorBox, Field, Loading, Modal, useConfirmable } from "../components";
 import { useMe } from "../App";
@@ -75,7 +75,8 @@ export default function DonationSetup() {
               <Field label="Signer's name"><input value={cfg.signer_name} maxLength={120} onChange={(e) => set("signer_name", e.target.value)} /></Field>
               <Field label="Signer's title"><input value={cfg.signer_title} maxLength={120} onChange={(e) => set("signer_title", e.target.value)} /></Field>
             </div>
-            <p className="hint">The signer's name and title print under the closing, with room to sign by hand. Statement when no goods or services were given:
+            <p className="hint">The signer's name and title print under the closing, with room to sign by hand. Put <code>{"{DETAILS}"}</code> where a write-up for each donation should go
+              (the Register User writes it when printing; a paragraph of only <code>{"{DETAILS}"}</code> is left out when there is none). Statement when no goods or services were given:
               <i> {s.no_goods_statement}</i> Confirm the receipt wording with your organization's own tax advisor.</p>
           </Section>
           <div className="actions left">
@@ -100,7 +101,7 @@ export default function DonationSetup() {
 }
 
 // ------------------------------------------------------------------ a deposit's donations (register)
-type Line = { allocation_id: number; donor: string; donor_entity_id: number | null; donor_is_organization: boolean; description: string; amount: string; donation: boolean; purpose: string; goods: string; goods_description: string };
+type Line = { allocation_id: number; donor: string; donor_entity_id: number | null; donor_is_organization: boolean; description: string; amount: string; donation: boolean; purpose: string; goods: string; goods_description: string; date: string };
 
 const cents = (s: string): number | null => {
   const t = s.replace(/[$,\s]/g, "");
@@ -114,6 +115,7 @@ export function DonationReceiptDialog({ txn, onClose, onChanged }: { txn: any; o
   const canPrint = can("donation.print");
   const [d, setD] = useState<any>(null);
   const [lines, setLines] = useState<Line[]>([]);
+  const [details, setDetails] = useState<Record<number, string>>({});   // {DETAILS} per donor (when the template has it)
   const [err, setErr] = useState<unknown>(null);
   const [saved, setSaved] = useState(false);
   const [pdf, setPdf] = usePdf();
@@ -122,7 +124,9 @@ export function DonationReceiptDialog({ txn, onClose, onChanged }: { txn: any; o
   const take = (x: any) => {
     setD(x);
     setLines(x.lines.map((l: any) => ({ allocation_id: l.allocation_id, donor: l.donor, donor_entity_id: l.donor_entity_id, donor_is_organization: !!l.donor_is_organization, description: l.description, amount: l.amount,
-      donation: l.donation, purpose: l.purpose || "", goods: l.goods_cents ? (l.goods_cents / 100).toFixed(2) : "", goods_description: l.goods_description || "" })));
+      donation: l.donation, purpose: l.purpose || "", goods: l.goods_cents ? (l.goods_cents / 100).toFixed(2) : "", goods_description: l.goods_description || "",
+      date: l.date_received || x.date })));
+    setDetails(Object.fromEntries(x.donors.map((o: any) => [o.entity_id, o.details || ""])));
   };
   // each load and save is numbered; a reply is shown only if nothing newer was started since, so a reload that comes
   // back late (after a print) can't overwrite lines saved or ticked in the meantime
@@ -138,19 +142,24 @@ export function DonationReceiptDialog({ txn, onClose, onChanged }: { txn: any; o
   };
   useEffect(() => { load(); }, [txn.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const editable = !!d && canPrint && d.printable;
-  const original = d ? JSON.stringify(d.lines.map((l: any) => [l.donation, l.purpose || "", l.goods_cents ? (l.goods_cents / 100).toFixed(2) : "", l.goods_description || ""])) : "";
-  const dirty = d && JSON.stringify(lines.map((l) => [l.donation, l.purpose, l.goods, l.goods_description])) !== original;
+  const original = d ? JSON.stringify([d.lines.map((l: any) => [l.donation, l.purpose || "", l.goods_cents ? (l.goods_cents / 100).toFixed(2) : "", l.goods_description || "", l.date_received || d.date]),
+    d.donors.map((o: any) => o.details || "")]) : "";
+  const dirty = d && JSON.stringify([lines.map((l) => [l.donation, l.purpose, l.goods, l.goods_description, l.date]),
+    d.donors.map((o: any) => details[o.entity_id] || "")]) !== original;
+  const setDetail = (id: number, v: string) => { edits.current++; setSaved(false); setDetails({ ...details, [id]: v }); };
   const setLine = (i: number, patch: Partial<Line>) => { edits.current++; setSaved(false); setLines(lines.map((l, j) => (j === i ? { ...l, ...patch } : l))); };
   const save = async () => {
     setErr(null);
     const body = lines.map((l) => {
       const g = l.donation ? cents(l.goods) : null;
       return { allocation_id: l.allocation_id, donation: l.donation, purpose: l.donation ? l.purpose || null : null,
-        goods_cents: g && !Number.isNaN(g) ? g : g === null ? null : -1, goods_description: l.donation ? l.goods_description || null : null };
+        goods_cents: g && !Number.isNaN(g) ? g : g === null ? null : -1, goods_description: l.donation ? l.goods_description || null : null,
+        date_received: l.donation && l.date && l.date !== d.date ? l.date : null };
     });
     if (body.some((b) => b.goods_cents === -1)) { setErr(new Error("Enter the goods or services value as an amount, e.g. 25.00.")); return; }
     const apply = latest(take);
-    try { apply(await api.put(`/api/donations/transactions/${txn.id}/lines`, { lines: body })); setSaved(true); onChanged(); } catch (x) { setErr(x); }
+    const donors = d.details_enabled ? d.donors.map((o: any) => ({ entity_id: o.entity_id, details: details[o.entity_id] || "" })) : [];
+    try { apply(await api.put(`/api/donations/transactions/${txn.id}/lines`, { lines: body, donors })); setSaved(true); onChanged(); } catch (x) { setErr(x); }
   };
   const print = async (donor: any) => {
     setErr(null);
@@ -170,8 +179,9 @@ export function DonationReceiptDialog({ txn, onClose, onChanged }: { txn: any; o
           {d.status !== "ACTIVE" ? <div className="alert warn" role="alert">This deposit is {d.status === "VOID" ? "void" : "deleted"}: its receipts are void and no receipt can be printed.</div>
             : d.closed ? <div className="alert info">This deposit belongs to a Closed Fiscal Year: its donations and receipts can be seen but not changed or printed.</div> : null}
           {d.setup_missing.length && canPrint && d.printable ? <div className="alert warn" data-testid="donation-setup-missing">An Administrator must enter {d.setup_missing.join(" and ")} in Donations Setup before receipts can be printed.</div> : null}
-          <table className="table compact">
-            <thead><tr><th>Donation</th><th>Donor</th><th>Description</th><th className="num">Amount</th><th>Purpose</th><th>Goods or services given (value, description)</th></tr></thead>
+          <div className="table-scroll">
+          <table className="table compact donation-lines">
+            <thead><tr><th>Donation</th><th>Donor</th><th>Description</th><th className="num">Amount</th><th>Date received</th><th>Purpose</th><th>Goods or services given (value, description)</th></tr></thead>
             <tbody>
               {lines.map((l, i) => (
                 <tr key={l.allocation_id}>
@@ -181,6 +191,8 @@ export function DonationReceiptDialog({ txn, onClose, onChanged }: { txn: any; o
                   <td>{l.donor || <span className="muted">No entity</span>}</td>
                   <td>{l.description}</td>
                   <td className="num">{l.amount}</td>
+                  <td>{l.donation ? <input type="date" aria-label={`Date received: ${l.donor} ${l.amount}`} value={l.date} max={d.date} disabled={!editable}
+                                           title="When the donation was received, if before the deposit" onChange={(e) => setLine(i, { date: e.target.value || d.date })} /> : null}</td>
                   <td>{l.donation ? <input aria-label="Purpose" maxLength={200} value={l.purpose} disabled={!editable} placeholder="Optional" onChange={(e) => setLine(i, { purpose: e.target.value })} /> : null}</td>
                   <td>{l.donation ? (
                     <span className="row">
@@ -191,6 +203,7 @@ export function DonationReceiptDialog({ txn, onClose, onChanged }: { txn: any; o
               ))}
             </tbody>
           </table>
+          </div>
           {editable ? (
             <div className="actions left">
               <button className="primary" onClick={save} disabled={!dirty}>Save donation lines</button>
@@ -201,12 +214,14 @@ export function DonationReceiptDialog({ txn, onClose, onChanged }: { txn: any; o
             <>
               <h3>Receipts by donor</h3>
               <table className="table compact" data-testid="donation-donors">
-                <thead><tr><th>Donor</th><th className="num">Donation</th><th>Goods or services</th><th>Receipt</th><th></th></tr></thead>
+                <thead><tr><th>Donor</th><th className="num">Donation</th><th>Received</th><th>Goods or services</th><th>Receipt</th><th></th></tr></thead>
                 <tbody>
                   {d.donors.map((x: any) => (
-                    <tr key={x.entity_id}>
+                    <Fragment key={x.entity_id}>
+                    <tr>
                       <td>{x.name}{!x.has_address ? <span className="muted"> (no address)</span> : null}</td>
                       <td className="num">{x.amount}</td>
+                      <td>{(x.dates || []).join(", ")}</td>
                       <td>{x.goods_cents ? `$${(x.goods_cents / 100).toFixed(2)}` : "None"}</td>
                       <td>{x.current_receipt || <span className="muted">Not printed</span>}</td>
                       <td>{canPrint && d.printable && !d.setup_missing.length ? (
@@ -214,9 +229,22 @@ export function DonationReceiptDialog({ txn, onClose, onChanged }: { txn: any; o
                           {x.next_kind === "ORIGINAL" ? "Print receipt" : x.next_kind === "DUPLICATE" ? "Print duplicate" : "Print corrected receipt"}
                         </button>) : null}</td>
                     </tr>
+                    {d.details_enabled ? (
+                      <tr className="donation-details-row">
+                        <td colSpan={6}>
+                          {editable ? (
+                            <PatternInput id={`details-${x.entity_id}`} label={`Details for ${x.name} (optional)`} value={details[x.entity_id] || ""}
+                                          variables={d.variables} multiline maxLength={2000} hint={false} onChange={(v) => setDetail(x.entity_id, v)} />
+                          ) : x.details ? <p className="pre"><span className="muted">Details: </span>{x.details}</p> : null}
+                        </td>
+                      </tr>
+                    ) : null}
+                    </Fragment>
                   ))}
                 </tbody>
               </table>
+              {d.details_enabled && editable ? <p className="hint"><b>Details</b> print where the receipt letter has <code>{"{DETAILS}"}</code>, for example how
+                the gift will be used; type <code>{"{"}</code> for variables such as <code>{"{AMOUNT}"}</code>. Left empty, that paragraph is left out.</p> : null}
               {dirty && canPrint ? <p className="hint">Save the donation lines before printing.</p> : null}
             </>
           ) : <p className="muted">No line is marked as a donation{canPrint && editable ? " yet" : ""}.</p>}

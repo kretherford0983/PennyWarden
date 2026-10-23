@@ -23,6 +23,7 @@ import datetime as dt
 import hashlib
 import io
 import json
+import re
 from dataclasses import dataclass, field
 from typing import Literal
 from xml.sax.saxutils import escape
@@ -36,7 +37,7 @@ from sqlalchemy.orm import Session
 
 from .. import audit
 from ..errors import AppError, Warning_, conflict, not_found, require_confirmations, validation
-from ..models import (Attachment, DonationLine, DonationReceipt, DonationSettings, Entity, RegisterTransaction, User,
+from ..models import (Attachment, DonationDetail, DonationLine, DonationReceipt, DonationSettings, Entity, RegisterTransaction, User,
                       Workspace, utcnow)
 from . import register as reg
 from .checkprint import config as cfgmod
@@ -88,7 +89,7 @@ class ReceiptConfig(BaseModel):
     title: str = Field(default="Donation Receipt", max_length=120)
     salutation: str = Field(default="Dear {DONOR_NAME},", max_length=200)
     body: str = Field(default="Thank you for your generous contribution to {ORG.NAME}. Your support makes our work "
-                              "possible.\n\nPlease keep this letter as the written acknowledgment of your "
+                              "possible.\n\n{DETAILS}\n\nPlease keep this letter as the written acknowledgment of your "
                               "contribution.", max_length=2000)
     closing: str = Field(default="With gratitude,", max_length=200)
     signer_name: str = Field(default="", max_length=120)
@@ -183,10 +184,11 @@ class ReceiptData:
     donor_name: str
     donor_address: list[str]
     amount_cents: int
-    date_received: dt.date
+    dates: list[dt.date]                 # when the donation(s) were received (each line's date, else the deposit's)
     purposes: list[str]
     goods: list[tuple[int, str]] = field(default_factory=list)       # (cents, description) per line with goods
     today: dt.date = field(default_factory=dt.date.today)
+    details: str = ""                    # the {DETAILS} text as written (may contain {VARIABLES})
 
 
 def money(cents: int) -> str:
@@ -202,12 +204,41 @@ def goods_statement(goods: list[tuple[int, str]]) -> str:
             + (f" ({desc})" if desc else "") + ".")
 
 
+def dates_text(dates: list[dt.date], fmt: str) -> str:
+    """One date, or "May 1, 2026 and May 8, 2026", or "May 1, 2026, May 8, 2026 and May 15, 2026"."""
+    parts = [format_date(d, fmt) for d in sorted(set(dates))]
+    return parts[0] if len(parts) == 1 else ", ".join(parts[:-1]) + " and " + parts[-1] if parts else ""
+
+
 def values_for(cfg: ReceiptConfig, data: ReceiptData) -> dict[str, str]:
-    return {"DONOR_NAME": data.donor_name, "DONOR_ADDRESS": "\n".join(data.donor_address),
+    vals = {"DONOR_NAME": data.donor_name, "DONOR_ADDRESS": "\n".join(data.donor_address),
             "AMOUNT": f"{data.amount_cents // 100:,}.{data.amount_cents % 100:02d}",
-            "DATE_RECEIVED": format_date(data.date_received, cfg.date_format),
+            "DATE_RECEIVED": dates_text(data.dates, cfg.date_format),
             "PURPOSE": "; ".join(data.purposes), **data.org, "RECEIPT_NO": data.number, "SIGNER": cfg.signer_name,
             "SIGNER_TITLE": cfg.signer_title, "TODAY": format_date(data.today, cfg.date_format)}
+    # the details may use the same variables (not {DETAILS} itself)
+    vals["DETAILS"] = patterns.resolve(data.details, vals, patterns.RECEIPT).text if data.details.strip() else ""
+    return vals
+
+
+def check_details(text: str) -> None:
+    """The details are receipt text: any receipt variable except {DETAILS}; 422 otherwise."""
+    try:
+        tokens = patterns.parse(text, patterns.RECEIPT)
+    except patterns.PatternError as e:
+        raise AppError(422, "PATTERN_INVALID", f"Details: {e}", variable=e.variable, suggestion=e.suggestion) from None
+    if any(t.var == "DETAILS" for t in tokens):
+        raise validation("The details can't contain {DETAILS} itself.", "details")
+
+
+def uses_details(cfg: ReceiptConfig) -> bool:
+    for name in ("title", "salutation", "body", "closing"):
+        try:
+            if any(t.var == "DETAILS" for t in patterns.parse(getattr(cfg, name), patterns.RECEIPT)):
+                return True
+        except patterns.PatternError:
+            pass
+    return False
 
 
 def receipt_texts(cfg: ReceiptConfig, data: ReceiptData) -> tuple[dict, list[str]]:
@@ -216,8 +247,10 @@ def receipt_texts(cfg: ReceiptConfig, data: ReceiptData) -> tuple[dict, list[str
     out = {}
     for name in ("title", "salutation", "body", "closing"):
         r = patterns.resolve(getattr(cfg, name), vals, patterns.RECEIPT)
-        out[name] = r.text
-        empty += [v for v in r.empty if v not in empty]
+        # empty {DETAILS} inside a sentence leaves no double space (a paragraph of its own is dropped by _paras)
+        out[name] = "\n".join(re.sub(r"[ \t]{2,}", " ", line).strip() if "DETAILS" in r.empty else line
+                              for line in r.text.split("\n"))
+        empty += [v for v in r.empty if v not in empty and v != "DETAILS"]     # details are optional
     return out, empty
 
 
@@ -267,7 +300,7 @@ def receipt_pdf(cfg: ReceiptConfig, data: ReceiptData, sample: bool = False) -> 
             story += [Paragraph(p, base), Spacer(1, size * 0.7)]
     # the acknowledgment block: always printed, not part of the template
     rows = [("Organization", data.org["ORG.NAME"]), ("EIN", data.org["ORG.EIN"]), ("Donor", data.donor_name),
-            ("Date received", format_date(data.date_received, cfg.date_format)),
+            ("Date received", dates_text(data.dates, cfg.date_format)),
             ("Amount", money(data.amount_cents))]
     if data.purposes:
         rows.append(("Purpose", "; ".join(data.purposes)))
@@ -314,7 +347,9 @@ def _org_or_placeholders(db: Session, ws_id: int) -> dict[str, str]:
 def sample_data(db: Session, ctx, cfg: ReceiptConfig) -> ReceiptData:
     return ReceiptData(number=f"R-{dt.date.today().year}-0000", kind=ORIGINAL, kind_note="",
                        org=_org_or_placeholders(db, ctx.workspace_id), donor_name=SAMPLE_DONOR[0], donor_address=SAMPLE_DONOR[1:],
-                       amount_cents=25000, date_received=dt.date.today(), purposes=["General support"])
+                       amount_cents=25000, dates=[dt.date.today()], purposes=["General support"],
+                       details="(The details written for this donation in the Donation receipt dialog: for example, "
+                               "how the gift of ${AMOUNT} will be used.)")
 
 
 def sample_pdf(db: Session, ctx, data: dict | None) -> bytes:
@@ -352,20 +387,34 @@ def _donor_groups(db: Session, t: RegisterTransaction) -> dict[int, dict]:
         e = _donor(t, a)
         if e is None:
             continue
-        g = out.setdefault(e.id, {"entity": e, "allocs": [], "amount": 0, "goods": [], "purposes": []})
+        g = out.setdefault(e.id, {"entity": e, "allocs": [], "amount": 0, "goods": [], "purposes": [], "dates": [],
+                                  "details": ""})
         g["allocs"].append(a.id)
+        when = d.date_received or t.transaction_date
+        if when not in g["dates"]:
+            g["dates"].append(when)
         g["amount"] += a.amount_cents
         if d.goods_cents:
             g["goods"].append((d.goods_cents, d.goods_description or ""))
         if d.purpose and d.purpose not in g["purposes"]:
             g["purposes"].append(d.purpose)
+    for x in _details(db, t).values():
+        if x.donor_entity_id in out:
+            out[x.donor_entity_id]["details"] = x.details
+    for g in out.values():
+        g["dates"].sort()
     return out
+
+
+def _details(db: Session, t: RegisterTransaction) -> dict[int, DonationDetail]:
+    return {x.donor_entity_id: x for x in db.scalars(select(DonationDetail).where(DonationDetail.transaction_id == t.id))}
 
 
 def _content_sha(t: RegisterTransaction, g: dict) -> str:
     e = g["entity"]
     doc = {"donor": e.id, "name": e.display_name, "address": address_lines(e), "amount": g["amount"],
-           "date": t.transaction_date.isoformat(), "goods": g["goods"], "purposes": g["purposes"]}
+           "dates": [d.isoformat() for d in g["dates"]], "goods": g["goods"], "purposes": g["purposes"],
+           "details": g["details"]}
     return hashlib.sha256(json.dumps(doc, sort_keys=True).encode()).hexdigest()
 
 
@@ -400,6 +449,7 @@ def transaction_out(db: Session, ctx, t: RegisterTransaction) -> dict:
         donors.append({"entity_id": eid, "name": g["entity"].display_name, "amount": money(g["amount"]),
                        "amount_cents": g["amount"], "goods_cents": sum(c for c, _d in g["goods"]),
                        "purposes": g["purposes"], "has_address": bool(address_lines(g["entity"])),
+                       "dates": [d.isoformat() for d in g["dates"]], "details": g["details"],
                        "current_receipt": cur.number if cur else None, "next_kind": next_kind})
     superseded = {r.replaces_id for r in receipts if r.kind == CORRECTED and r.replaces_id}
     return {
@@ -407,6 +457,8 @@ def transaction_out(db: Session, ctx, t: RegisterTransaction) -> dict:
         "total": money(t.total_cents), "printable": printable,
         "closed": reg.is_closed_protected(db, t),
         "setup_missing": missing_setup(db, ctx.workspace_id),
+        "details_enabled": uses_details(cfg),
+        "variables": [v for v in patterns.variable_options(patterns.RECEIPT) if v["name"] != "DETAILS"],
         "lines": [{"allocation_id": a.id, "donor_entity_id": (_donor(t, a).id if _donor(t, a) else None),
                    "donor": (_donor(t, a).display_name if _donor(t, a) else ""), "description": a.description or "",
                    "donor_is_organization": bool(_donor(t, a) and _donor(t, a).is_organization),
@@ -414,7 +466,9 @@ def transaction_out(db: Session, ctx, t: RegisterTransaction) -> dict:
                    "donation": a.id in lines,
                    "purpose": lines[a.id].purpose if a.id in lines else None,
                    "goods_cents": lines[a.id].goods_cents if a.id in lines else None,
-                   "goods_description": lines[a.id].goods_description if a.id in lines else None}
+                   "goods_description": lines[a.id].goods_description if a.id in lines else None,
+                   "date_received": (lines[a.id].date_received.isoformat() if a.id in lines and
+                                     lines[a.id].date_received else None)}
                   for a in t.live_allocations],
         "donors": donors,
         "receipts": [{"id": r.id, "number": r.number, "kind": r.kind, "donor_entity_id": r.donor_entity_id,
@@ -436,13 +490,21 @@ class LineIn(BaseModel):
     purpose: str | None = Field(default=None, max_length=200)
     goods_cents: int | None = Field(default=None, ge=0)
     goods_description: str | None = Field(default=None, max_length=200)
+    date_received: dt.date | None = None          # empty = the deposit's date
+
+
+class DonorIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    entity_id: int
+    details: str = Field(default="", max_length=2000)
 
 
 def _line_snap(d: DonationLine | None) -> dict | None:
     if d is None:
         return None
     return {"allocation_id": d.allocation_id, "purpose": d.purpose, "goods_cents": d.goods_cents,
-            "goods_description": d.goods_description}
+            "goods_description": d.goods_description,
+            "date_received": d.date_received.isoformat() if d.date_received else None}
 
 
 def set_lines(db: Session, ctx, t: RegisterTransaction, items: list[LineIn]) -> None:
@@ -483,17 +545,51 @@ def set_lines(db: Session, ctx, t: RegisterTransaction, items: list[LineIn]) -> 
         if not goods:
             desc = None
         purpose = (it.purpose or "").strip() or None
+        when = it.date_received if it.date_received != t.transaction_date else None
+        if when is not None and when > t.transaction_date:
+            raise validation("A donation can't be received after the deposit it was deposited in.",
+                             f"lines.{i}.date_received")
         before = _line_snap(d)
         if d is None:
             d = DonationLine(workspace_id=ctx.workspace_id, allocation_id=a.id, created_by_user_id=ctx.user.id)
             db.add(d)
-        d.purpose, d.goods_cents, d.goods_description = purpose, goods, desc
+        d.purpose, d.goods_cents, d.goods_description, d.date_received = purpose, goods, desc, when
         d.updated_by_user_id, d.updated_at = ctx.user.id, utcnow()
         db.flush()
         after = _line_snap(d)
         if before != after:
             audit.record(db, ctx, "DONATION_MARKED", "register_transaction", t.id, before,
                          {**after, "donation": True})
+
+
+def set_details(db: Session, ctx, t: RegisterTransaction, donors: list[DonorIn]) -> None:
+    """The {DETAILS} text per donor of this deposit (after the lines are saved: only current donors)."""
+    if not donors:
+        return
+    groups = _donor_groups(db, t)
+    current = _details(db, t)
+    for i, it in enumerate(donors):
+        if it.entity_id not in groups:
+            raise validation("That entity is not a donor on this deposit.", f"donors.{i}.entity_id")
+        text = (it.details or "").replace("\r\n", "\n").strip()
+        if text:
+            check_details(text)
+        x = current.get(it.entity_id)
+        before = x.details if x else ""
+        if before == text:
+            continue
+        if not text:
+            db.delete(x)
+        else:
+            if x is None:
+                x = DonationDetail(workspace_id=ctx.workspace_id, transaction_id=t.id, donor_entity_id=it.entity_id,
+                                   details=text)
+                db.add(x)
+            x.details, x.updated_by_user_id, x.updated_at = text, ctx.user.id, utcnow()
+        db.flush()
+        audit.record(db, ctx, "DONATION_DETAILS_UPDATED", "register_transaction", t.id,
+                     {"donor_entity_id": it.entity_id, "details": before},
+                     {"donor_entity_id": it.entity_id, "details": text})
 
 
 def _next_seq(db: Session, ws_id: int, year: int) -> int:
@@ -525,7 +621,7 @@ def print_receipt(db: Session, ctx, settings, t: RegisterTransaction, donor_enti
         kind, number, year, seq = DUPLICATE, cur.number, cur.year, cur.seq
         note = f"DUPLICATE of receipt {cur.number}, first printed {format_date(cur.printed_at.date(), cfg.date_format)}."
     else:
-        year = t.transaction_date.year
+        year = g["dates"][0].year                    # the (first) date the donation was received
         seq = _next_seq(db, ctx.workspace_id, year)
         number = f"R-{year}-{seq:04d}"
         kind = ORIGINAL if cur is None else CORRECTED
@@ -533,8 +629,8 @@ def print_receipt(db: Session, ctx, settings, t: RegisterTransaction, donor_enti
                                        f"{format_date(cur.printed_at.date(), cfg.date_format)}.")
     data = ReceiptData(number=number, kind=kind, kind_note=note, org=org_svc.values_for(db, ctx.workspace_id),
                        donor_name=e.display_name, donor_address=address_lines(e),
-                       amount_cents=g["amount"], date_received=t.transaction_date, purposes=g["purposes"],
-                       goods=g["goods"])
+                       amount_cents=g["amount"], dates=g["dates"], purposes=g["purposes"],
+                       goods=g["goods"], details=g["details"])
     warnings = []
     _texts, empty = receipt_texts(cfg, data)
     if empty:
@@ -557,7 +653,7 @@ def print_receipt(db: Session, ctx, settings, t: RegisterTransaction, donor_enti
     r = DonationReceipt(workspace_id=ctx.workspace_id, transaction_id=t.id, donor_entity_id=e.id,
                         donor_name=e.display_name[:200], number=number, year=year, seq=seq, kind=kind,
                         replaces_id=cur.id if cur is not None else None, amount_cents=g["amount"],
-                        goods_cents=sum(c for c, _d in g["goods"]), date_received=t.transaction_date,
+                        goods_cents=sum(c for c, _d in g["goods"]), date_received=g["dates"][0],
                         allocation_ids=",".join(str(x) for x in g["allocs"])[:500], content_sha=sha,
                         attachment_id=att.id if att else None, printed_by_user_id=ctx.user.id)
     db.add(r)

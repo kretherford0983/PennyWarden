@@ -36,7 +36,8 @@ ACTION_LABELS = {
     "ATTACHMENTS_REORDERED": "Attachments reordered",
     # 2.1.0 (#312, #314)
     "ORGANIZATION_UPDATED": "Organization profile changed", "DONATION_SETUP_UPDATED": "Donations setup changed",
-    "DONATION_MARKED": "Donation lines changed", "DONATION_RECEIPT_PRINTED": "Donation receipt printed",
+    "DONATION_MARKED": "Donation lines changed",
+    "DONATION_DETAILS_UPDATED": "Donation details changed", "DONATION_RECEIPT_PRINTED": "Donation receipt printed",
     "DONATION_RECEIPT_TEST": "Donation receipt test print",
 }
 OBJECT_LABELS = {

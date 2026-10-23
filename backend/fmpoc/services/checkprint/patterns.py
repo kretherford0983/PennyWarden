@@ -51,6 +51,8 @@ VARIABLES: dict[str, tuple[str, tuple[str, ...]]] = {
     "ORG_ADDRESS": ("Organization's address, several lines (same as {ORG.ADDRESS})", (RECEIPT,)),
     "ORG_EIN": ("Organization's EIN (same as {ORG.EIN})", (RECEIPT,)),
     "RECEIPT_NO": ("Receipt number, e.g. R-2026-0001", (RECEIPT,)),
+    "DETAILS": ("Details written for this donation in the Donation receipt dialog (a paragraph of its own is left "
+                "out when there are none)", (RECEIPT,)),
 }
 # 2.1.0 (#314): the organization profile, everywhere (the address, several lines, where line breaks are allowed)
 EVERYWHERE = ALL + (RECEIPT,)
