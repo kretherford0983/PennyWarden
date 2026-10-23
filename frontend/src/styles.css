@@ -610,3 +610,11 @@ label.check.small { font-size: 12px; }
 .donation-dialog .donation-lines input[type="date"] { width: 9.5em; }
 .donation-dialog .donation-lines input[aria-label="Purpose"] { width: 10em; }
 .donation-dialog .donation-lines input[aria-label="Goods or services description"] { width: 11em; }
+/* 2.1.0 (Kyle, 2026-10-23): the receipt dialog reads top to bottom - lines, each donor's block (details), then
+   Save / Preview / Print at the bottom */
+.donation-dialog .donation-donor { border: 1px solid var(--border); border-radius: 6px; padding: 0.5rem 0.75rem; margin-bottom: 0.6rem; }
+.donation-dialog .donation-donor > .table { margin-bottom: 0.4rem; }
+.donation-dialog .donation-donor > .table td { border-bottom: none; }
+.donation-dialog .donation-actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
+.donation-dialog .donation-actions .spacer { flex: 1; }
+.donation-dialog details.donation-printed { margin: 0.5rem 0 0.75rem; }
