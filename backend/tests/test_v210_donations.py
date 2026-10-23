@@ -281,3 +281,40 @@ def test_details_are_written_per_donor_and_dropped_when_empty(env, dep):
     assert env.ru.get(dep["url"]).json()["details_enabled"] is False
     assert env.ru.put(dep["url"] + "/lines", {"lines": [], "donors": [{"entity_id": 999999, "details": "x"}]}
                       ).status_code == 422
+
+
+# ---------------------------------------------------------------- 2.1.0 (Kyle, 2026-10-23): preview before printing
+def test_preview_shows_the_unsaved_receipt_and_saves_nothing(env, dep):
+    a1, a3 = dep["allocs"][0], dep["allocs"][2]
+    url = dep["url"] + "/receipts/preview"
+    # nothing saved yet: the preview uses the lines and details on screen
+    r = env.ru.post(url, {"donor_entity_id": dep["a"]["id"],
+                          "lines": [{"allocation_id": a1, "donation": True, "purpose": "Flags"}],
+                          "donors": [{"entity_id": dep["a"]["id"], "details": "Your gift of ${AMOUNT} buys flags."}]})
+    assert r.status_code == 200, r.text
+    assert r.headers["x-receipt-kind"] == "ORIGINAL"
+    body = text(r.content)
+    assert "PREVIEW - NOT A RECEIPT" in body and "(assigned when printed)" in body
+    assert "Your gift of $100.00 buys flags." in body and "Flags" in body
+    out = env.ru.get(dep["url"]).json()
+    assert out["donors"] == [] and out["receipts"] == [] and not any(x["donation"] for x in out["lines"])
+    atts = env.ru.get(f"/api/attachments?owner_type=transaction&owner_id={dep['t']['id']}").json()
+    assert not [x for x in atts if x.get("document_type") == "DONATION_RECEIPT"]
+    # previews never use a number: the first real receipt is still R-2026-0001
+    mark(env, dep, [{"allocation_id": a1, "donation": True}, {"allocation_id": a3, "donation": True}])
+    assert env.ru.post(url, {"donor_entity_id": dep["a"]["id"]}).status_code == 200
+    assert print_receipt(env, dep, "a").headers["x-receipt-number"] == "R-2026-0001"
+    # unchanged -> the preview says Duplicate (same number); a change on screen -> Corrected, replacing it
+    r = env.ru.post(url, {"donor_entity_id": dep["a"]["id"]})
+    assert r.headers["x-receipt-kind"] == "DUPLICATE" and "R-2026-0001" in text(r.content)
+    r = env.ru.post(url, {"donor_entity_id": dep["a"]["id"], "lines": [{"allocation_id": a1, "donation": True,
+                                                                        "purpose": "Changed"}]})
+    assert r.headers["x-receipt-kind"] == "CORRECTED" and r.headers["x-receipt-replaces"] == "R-2026-0001"
+    assert env.ru.get(dep["url"]).json()["lines"][0]["purpose"] is None                # still not saved
+    # invalid screen data is refused like a save; previews are audited; viewers can't preview
+    r = env.ru.post(url, {"donor_entity_id": dep["a"]["id"],
+                          "lines": [{"allocation_id": a1, "donation": True, "date_received": "2099-01-01"}]})
+    assert r.status_code == 422
+    ev = env.auditor.get("/api/audit-events?action=DONATION_RECEIPT_PREVIEW").json()["items"]
+    assert len(ev) == 4
+    assert env.auditor.post(url, {"donor_entity_id": dep["a"]["id"]}).status_code == 403

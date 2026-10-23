@@ -258,8 +258,11 @@ def _paras(text: str) -> list[str]:
     return ["<br/>".join(escape(x) for x in p.split("\n")) for p in text.split("\n\n") if p.strip()]
 
 
-def receipt_pdf(cfg: ReceiptConfig, data: ReceiptData, sample: bool = False) -> bytes:
-    """The receipt letter. `sample` (setup preview and test print) draws SAMPLE - NOT A RECEIPT across the page."""
+def receipt_pdf(cfg: ReceiptConfig, data: ReceiptData, sample: bool = False, watermark: str | None = None) -> bytes:
+    """The receipt letter. `sample` (setup preview and test print) draws SAMPLE - NOT A RECEIPT across the page;
+    `watermark` another text (the Register User's preview: PREVIEW - NOT A RECEIPT)."""
+    if sample and watermark is None:
+        watermark = "SAMPLE - NOT A RECEIPT"
     texts, _empty = receipt_texts(cfg, data)
     reg_f, bold = fonts.ps_name(cfg.font), fonts.ps_name(cfg.font, True)
     size = cfg.size
@@ -274,12 +277,12 @@ def receipt_pdf(cfg: ReceiptConfig, data: ReceiptData, sample: bool = False) -> 
             c.setFont(bold, 9)
             c.setFillGray(0.35)
             c.drawRightString(7.5 * PT, 10.55 * PT, data.kind)
-        if sample:
+        if watermark:
             c.setFillGray(0.86)
             c.setFont(bold, 46)
             c.translate(4.25 * PT, 5.5 * PT)
             c.rotate(35)
-            c.drawCentredString(0, 0, "SAMPLE - NOT A RECEIPT")
+            c.drawCentredString(0, 0, watermark)
         c.restoreState()
 
     story = [Paragraph(escape(data.org["ORG.NAME"]), strong)]
@@ -598,8 +601,8 @@ def _next_seq(db: Session, ws_id: int, year: int) -> int:
     return (cur or 0) + 1
 
 
-def print_receipt(db: Session, ctx, settings, t: RegisterTransaction, donor_entity_id: int,
-                  confirmations: list[str]) -> tuple[bytes, DonationReceipt]:
+def _compose(db: Session, ctx, t: RegisterTransaction, donor_entity_id: int) -> dict:
+    """Everything a receipt for this donor would be now: kind and number, the data, the warnings."""
     if t.status != "ACTIVE":
         raise conflict("NOT_PRINTABLE", "This deposit is void - its receipts are void and no receipt can be printed.")
     if reg.is_closed_protected(db, t):
@@ -643,7 +646,46 @@ def print_receipt(db: Session, ctx, settings, t: RegisterTransaction, donor_enti
     if kind == CORRECTED:
         warnings.append(Warning_("CORRECTED_RECEIPT", f"The donation changed since receipt {cur.number}. Print a "
                                  f"corrected receipt {number} that replaces it?", replaces=cur.number))
-    require_confirmations(warnings, confirmations)
+    return {"cfg": cfg, "data": data, "kind": kind, "number": number, "year": year, "seq": seq, "cur": cur,
+            "sha": sha, "g": g, "e": e, "warnings": warnings}
+
+
+PREVIEW_NUMBER = "(assigned when printed)"
+
+
+def preview_receipt(db: Session, ctx, t: RegisterTransaction, donor_entity_id: int,
+                    lines: list | None = None, donors: list | None = None) -> tuple[bytes, dict]:
+    """2.1.0 (Kyle, 2026-10-23): the receipt as it would print, from what is on screen (unsaved lines and details
+    applied in a transaction that is rolled back). Watermarked PREVIEW - NOT A RECEIPT; nothing is attached, no
+    number is used and nothing counts toward Duplicate/Corrected. The preview itself is audited."""
+    try:
+        if lines:
+            set_lines(db, ctx, t, lines)
+        if donors:
+            set_details(db, ctx, t, donors)
+        c = _compose(db, ctx, t, donor_entity_id)
+        data = c["data"]
+        if c["kind"] != DUPLICATE:
+            data.number = PREVIEW_NUMBER          # a new number is only taken when the receipt is printed
+        pdf = receipt_pdf(c["cfg"], data, watermark="PREVIEW - NOT A RECEIPT")
+        info = {"kind": c["kind"], "number": c["number"] if c["kind"] == DUPLICATE else None,
+                "replaces": c["cur"].number if c["cur"] is not None and c["kind"] == CORRECTED else None,
+                "warnings": [w.as_dict() for w in c["warnings"]], "unsaved": bool(lines or donors)}
+    finally:
+        db.rollback()                             # nothing of the unsaved changes stays
+    audit.record(db, ctx, "DONATION_RECEIPT_PREVIEW", "register_transaction", t.id, None,
+                 {"transaction_id": t.id, "donor_entity_id": donor_entity_id, "kind": info["kind"],
+                  "unsaved_changes": info["unsaved"]})
+    db.commit()
+    return pdf, info
+
+
+def print_receipt(db: Session, ctx, settings, t: RegisterTransaction, donor_entity_id: int,
+                  confirmations: list[str]) -> tuple[bytes, DonationReceipt]:
+    c = _compose(db, ctx, t, donor_entity_id)
+    cfg, data, kind, number, year, seq, cur, sha, g, e = (c[k] for k in ("cfg", "data", "kind", "number", "year",
+                                                                       "seq", "cur", "sha", "g", "e"))
+    require_confirmations(c["warnings"], confirmations)
     pdf = receipt_pdf(cfg, data)
     suffix = "-duplicate" if kind == DUPLICATE else ""
     added, path = _store_doc_copy(db, ctx, settings, t, RECEIPT_COPY, f"receipt-{number}{suffix}.pdf", pdf)
