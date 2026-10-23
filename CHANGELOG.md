@@ -41,6 +41,9 @@ organization) for the new organization profile.
   invoice, receipt, approval email. New files go to the end; a closed Fiscal Year can't be reordered. (#259)
 
 ### Fixed
+- **In-app links only ever point inside PennyWarden.** A link's address now follows the same rule as clicking it
+  (a same-site path), so opening a link in a new tab can never lead to another site or a `javascript:` address.
+  Found by code scanning (CodeQL alert #11); no way to exploit it was found.
 - **Deleting a transaction releases its check number.** Before, a deleted transaction kept its check number, so
   the number couldn't be used again and nobody could correct it (Auditors see deleted transactions read-only). Now
   the number is free for another record, and the missing-check review lists it until it is reused or confirmed. This
@@ -225,7 +228,8 @@ organization) for the new organization profile.
   closed, current and Draft Fiscal Years, printed checks, electronic payments, and fundraiser series with years
   before PennyWarden. Restore it on a test server. The sign-in password and the backup passphrase come from
   repository secrets only. See `docs/test-data.md`. (#272)
-- **Security updates:** Pillow 13.0.0 (eight advisories against 12.3.0) and pypdf 6.21.1 (CVE-2026-113786).
+- **Security updates:** Pillow 13.0.0 (eight advisories against 12.3.0) and pypdf 6.21.2 (CVE-2026-113786, and
+  CVE-2026-115572, CVE-2026-115580 and CVE-2026-115585: crafted PDFs that take a very long time to read).
 - **Python dependencies are compiled with pip-tools** (`backend/requirements.in` → `requirements.txt`, same versions as
   2.0.0), so automatic dependency updates move related packages together. (#226)
 
