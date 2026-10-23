@@ -70,7 +70,8 @@ organization) for the new organization profile.
 
 ### Organization profile (new)
 - **The organization's own details in one place.** *System/About → General → Organization* now holds the
-  organization's address, phone, email and EIN beside its name (Administrators). Letters, envelopes, check memos and
+  organization's address, phone, email and EIN beside its name (Administrators). The phone is formatted like an
+  entity's, and the EIN can be typed as 9 digits (the dash is added). Letters, envelopes, check memos and
   stubs, and donation receipts can use them as `{ORG.NAME}`, `{ORG.ADDRESS}` (several lines, in letters, envelopes and
   receipts), `{ORG.ADDRESS1}`, `{ORG.ADDRESS2}`, `{ORG.CITY}`, `{ORG.STATE}`, `{ORG.ZIP}`, `{ORG.COUNTRY}`,
   `{ORG.PHONE}`, `{ORG.EMAIL}` and `{ORG.EIN}` (any capitalization). `{ORG}` still works. Test prints keep using a

@@ -241,7 +241,8 @@ With marks on the back, the print screen shows a banner: print on both sides of 
 ## Organization profile
 
 **System/About → General → Organization** (Administrators) now holds the organization's **address, phone, email and
-EIN** next to its name. Save once and they are available everywhere `{VARIABLES}` are used — cover letters, envelopes,
+EIN** next to its name (the phone is formatted like an entity's; type the EIN as 9 digits and the dash is added).
+Save once and they are available everywhere `{VARIABLES}` are used — cover letters, envelopes,
 check memos and stubs, donation receipts:
 
 | Variable | Prints |

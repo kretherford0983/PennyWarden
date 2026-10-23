@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { ErrorBox, Field, Loading, Modal, RowMenu, useConfirmable } from "../components";
+import { formatPhone } from "./Entities";
 
 /** #126 the name; 2.1.0 (#314) the organization profile - the organization's own entity: address, phone, email, EIN.
  * Used by letters, envelopes and receipts ({ORG.*}); the entity can be chosen in the register like any other. */
@@ -10,19 +11,27 @@ const ORG_FIELDS: [string, string, number][] = [["address_line1", "Street addres
   ["city", "City", 100], ["state_region", "State", 100], ["postal_code", "ZIP code", 20], ["country", "Country (outside the US)", 100],
   ["phone", "Phone", 40], ["email", "Email", 254], ["ein", "EIN (Employer Identification Number)", 10]];
 
+/** 2.1.0 (#314): 9 digits, typed with or without the dash, shown as 12-3456789 when the field is left. */
+export function formatEin(typed: string): string {
+  const d = typed.replace(/[\s-]/g, "");
+  return /^\d{9}$/.test(d) ? `${d.slice(0, 2)}-${d.slice(2)}` : typed;
+}
+
 export function OrganizationPanel({ name, onRenamed }: { name: string; onRenamed: (n: string) => void }) {
   const [p, setP] = useState<any>(null);
   const [f, setF] = useState<Record<string, string>>({ name });
   const [err, setErr] = useState<unknown>(null);
   const [saved, setSaved] = useState(false);
-  const take = (d: any) => { setP(d); setF(Object.fromEntries([["name", d.name], ...ORG_FIELDS.map(([k]) => [k, d[k] || ""])])); };
+  // the phone is shown and typed like an entity's: (nnn) nnn-nnnn, formatted when the field is left (1.6.7)
+  const shown = (d: any) => ({ ...d, phone: d.phone_display || d.phone || "" });
+  const take = (d: any) => { const v = shown(d); setP(v); setF(Object.fromEntries([["name", v.name], ...ORG_FIELDS.map(([k]) => [k, v[k] || ""])])); };
   useEffect(() => { api.get("/api/system/organization").then(take, setErr); }, []);
   const dirty = !!p && (f.name !== p.name || ORG_FIELDS.some(([k]) => (f[k] || "") !== (p[k] || "")));
   const save = async () => {
     setErr(null); setSaved(false);
     const sent = { ...f };
     try {
-      const r = await api.put("/api/system/organization", sent);
+      const r = shown(await api.put("/api/system/organization", sent));
       setP(r);
       // what was typed while the save was on its way is kept; the rest takes the server's (normalized) value
       setF((cur) => Object.fromEntries([["name", cur.name === sent.name ? r.name : cur.name],
@@ -43,8 +52,12 @@ export function OrganizationPanel({ name, onRenamed }: { name: string; onRenamed
       </div>
       <div className="row form-row org-fields">
         {ORG_FIELDS.map(([k, label, max]) => (
-          <Field key={k} label={label} hint={k === "ein" ? "9 digits, as 12-3456789" : undefined}>
-            <input maxLength={max} value={f[k] || ""} placeholder={k === "ein" ? "12-3456789" : undefined} onChange={set(k)} />
+          <Field key={k} label={label} hint={k === "ein" ? "9 digits; the dash is added for you (12-3456789)" : undefined}>
+            <input type={k === "phone" ? "tel" : k === "email" ? "email" : "text"} maxLength={max} value={f[k] || ""}
+                   inputMode={k === "ein" ? "numeric" : undefined}
+                   placeholder={k === "ein" ? "12-3456789" : undefined} onChange={set(k)}
+                   onBlur={k === "phone" ? () => setF((cur) => ({ ...cur, phone: formatPhone(cur.phone || "") }))
+                     : k === "ein" ? () => setF((cur) => ({ ...cur, ein: formatEin(cur.ein || "") })) : undefined} />
           </Field>
         ))}
       </div>
