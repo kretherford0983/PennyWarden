@@ -12,6 +12,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from .. import audit
+from .. import phone as phone_fmt
 from ..errors import validation
 from ..models import Entity, Workspace
 from . import admin_settings as adm
@@ -20,6 +21,15 @@ from . import entities as ent_svc
 EIN_RE = re.compile(r"^\d{2}-\d{7}$")
 PROFILE_FIELDS = ("address_line1", "address_line2", "city", "state_region", "postal_code", "country", "phone", "email",
                   "ein")
+
+
+def normalize_ein(typed: str | None) -> str | None:
+    """9 digits typed with or without the dash (123456789, 12 3456789) -> 12-3456789; anything else as typed."""
+    t = (typed or "").strip()
+    if not t:
+        return None
+    d = re.sub(r"[\s-]", "", t)
+    return f"{d[:2]}-{d[2:]}" if re.fullmatch(r"\d{9}", d) else t
 
 
 class ProfileIn(BaseModel):
@@ -92,7 +102,8 @@ def profile_out(db: Session, ws_id: int) -> dict:
     ws = db.get(Workspace, ws_id)
     e = ensure(db, ws)
     return {"id": e.id, "entity_number": e.entity_number, "name": ws.name,
-            **{f: getattr(e, f) for f in PROFILE_FIELDS}, "address": address_lines(e)}
+            **{f: getattr(e, f) for f in PROFILE_FIELDS}, "address": address_lines(e),
+            "phone_display": phone_fmt.display(e.phone)}          # shown like an entity's phone (1.6.7)
 
 
 def update(db: Session, ctx, data: ProfileIn) -> dict:
@@ -102,7 +113,7 @@ def update(db: Session, ctx, data: ProfileIn) -> dict:
     adm.rename_organization(db, ctx, data.name)          # validates; audits ORGANIZATION_RENAMED when it changes
     given = data.model_fields_set                         # fields left out keep their value
     if "ein" in given:
-        ein = (data.ein or "").strip() or None
+        ein = normalize_ein(data.ein)
         if ein and not EIN_RE.match(ein):
             raise validation("The EIN is 9 digits written as 12-3456789.", "ein")
         e.ein = ein

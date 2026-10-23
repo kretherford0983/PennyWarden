@@ -36,6 +36,7 @@ class PreviewIn(In):
 
 class LinesIn(In):
     lines: list[svc.LineIn] = Field(max_length=200)
+    donors: list[svc.DonorIn] = Field(default_factory=list, max_length=200)   # {DETAILS} per donor
 
 
 class ReceiptIn(In):
@@ -104,6 +105,7 @@ def transaction(txn_id: int, db: Session = Depends(get_db), ctx: Ctx = Depends(v
 def set_lines(txn_id: int, body: LinesIn, db: Session = Depends(get_db), ctx: Ctx = Depends(print_ctx)):
     t = svc.get_deposit(db, ctx, txn_id)
     svc.set_lines(db, ctx, t, body.lines)
+    svc.set_details(db, ctx, t, body.donors)
     db.commit()
     return svc.transaction_out(db, ctx, t)
 

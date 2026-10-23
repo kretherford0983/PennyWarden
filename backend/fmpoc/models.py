@@ -961,8 +961,24 @@ class DonationLine(Base):
     purpose: Mapped[str | None] = mapped_column(String(200), nullable=True)
     goods_cents: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     goods_description: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # 2.1.0 (Kyle, 2026-10-22): when the donation was received, if not the deposit's date (empty = the deposit's date)
+    date_received: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
     created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    updated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class DonationDetail(Base):
+    """2.1.0 (Kyle, 2026-10-22): the {DETAILS} text written for one donor's receipt on one deposit (may use the
+    receipt's {VARIABLES}); printed where the template has {DETAILS}."""
+    __tablename__ = "donation_detail"
+    __table_args__ = (UniqueConstraint("transaction_id", "donor_entity_id", name="uq_donation_detail_donor"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
+    transaction_id: Mapped[int] = mapped_column(ForeignKey("register_transaction.id"))
+    donor_entity_id: Mapped[int] = mapped_column(ForeignKey("entity.id"))
+    details: Mapped[str] = mapped_column(Text)
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
     updated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 

@@ -14,7 +14,7 @@ payments, sorting by date or cleared, and an attachments filter. Cover letters c
 checks can have the check in the middle or at the bottom. A new optional **Donations module** prints donation receipt
 letters from deposits, and the organization now has a **profile** (address, phone, email, EIN) of its own.
 
-**Upgrading from 2.0.0.** The database is updated automatically (migrations `0035` to `0046`: columns and tables
+**Upgrading from 2.0.0.** The database is updated automatically (migrations `0035` to `0047`: columns and tables
 added, no existing value changed). Going back to 2.0.0 needs the data snapshot the installer takes before upgrading
 (docs/upgrade.md). Existing check styles, letter templates and reports work as before. Fold marks are off on existing
 letters, and a fundraiser's report includes year over year only once earlier years are linked or entered. The
@@ -70,7 +70,8 @@ organization) for the new organization profile.
 
 ### Organization profile (new)
 - **The organization's own details in one place.** *System/About → General → Organization* now holds the
-  organization's address, phone, email and EIN beside its name (Administrators). Letters, envelopes, check memos and
+  organization's address, phone, email and EIN beside its name (Administrators). The phone is formatted like an
+  entity's, and the EIN can be typed as 9 digits (the dash is added). Letters, envelopes, check memos and
   stubs, and donation receipts can use them as `{ORG.NAME}`, `{ORG.ADDRESS}` (several lines, in letters, envelopes and
   receipts), `{ORG.ADDRESS1}`, `{ORG.ADDRESS2}`, `{ORG.CITY}`, `{ORG.STATE}`, `{ORG.ZIP}`, `{ORG.COUNTRY}`,
   `{ORG.PHONE}`, `{ORG.EMAIL}` and `{ORG.EIN}` (any capitalization). `{ORG}` still works. Test prints keep using a
@@ -95,6 +96,11 @@ organization) for the new organization profile.
   reprinted. Printed receipts are attached to the deposit. Register Users mark and print; Budget Managers, Budget
   Users and Auditors see the donations and receipts; Administrators never see deposits. Works with the Payments
   module on or off. (#312)
+- **Date received and a write-up per donation.** Each donation line has a *Date received* (the deposit's date unless
+  changed; it can't be after the deposit), and the receipt prints the date(s) the donor gave. Put `{DETAILS}` in the
+  receipt letter and the *Donation receipt* dialog offers a **Details** box per donor, for example how the gift will
+  be used; it can use the receipt's variables such as `{AMOUNT}`, and when it's left empty its paragraph is left out.
+  New receipt letters include `{DETAILS}`.
 
 ### Budget planning (Budget Managers)
 - **Budget Review** (Reports → Budget Review). Every budget of a Fiscal Year with its history over earlier years,

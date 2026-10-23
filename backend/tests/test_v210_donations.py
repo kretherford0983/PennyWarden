@@ -94,7 +94,7 @@ def test_setup_is_administrator_only_and_validated(env, base):
     assert s["missing"] == ["the organization's EIN", "the organization's address"]
     assert {v["name"] for v in s["variables"]} >= {"DONOR_NAME", "AMOUNT", "ORG.EIN", "ORG.NAME", "RECEIPT_NO",
                                                    "SIGNER"}
-    bad = env.admin.put("/api/system/organization", {**ORG, "ein": "123456789"})
+    bad = env.admin.put("/api/system/organization", {**ORG, "ein": "12345678"})
     assert bad.status_code == 422 and "12-3456789" in bad.json()["error"]["message"]
     bad = env.admin.put("/api/donations/setup", {"config": {**s["config"], "body": "Thanks {DONOR_NAM}"}})
     assert bad.status_code == 422 and "DONOR_NAM" in bad.text
@@ -228,3 +228,56 @@ def test_marking_is_audited(env, dep):
     rows = env.auditor.get("/api/audit-events?action=DONATION_RECEIPT_PRINTED").json()
     items = rows["items"] if isinstance(rows, dict) else rows
     assert len(items) == 1
+
+
+# ---------------------------------------------------------------- 2.1.0 polish (Kyle, 2026-10-22): date received, {DETAILS}
+def test_date_received_per_line(env, dep):
+    a1, a2 = dep["allocs"][0], dep["allocs"][1]
+    r = mark(env, dep, [{"allocation_id": a1, "donation": True, "date_received": "2026-08-04"}])
+    assert r.status_code == 422 and "after the deposit" in r.json()["error"]["message"]       # deposit: 2026-08-03
+    r = mark(env, dep, [{"allocation_id": a1, "donation": True, "date_received": "2026-07-28"},
+                        {"allocation_id": a2, "donation": True}])
+    assert r.status_code == 200, r.text
+    lines = {x["allocation_id"]: x for x in r.json()["lines"]}
+    assert lines[a1]["date_received"] == "2026-07-28" and lines[a2]["date_received"] is None
+    donor = next(x for x in r.json()["donors"] if x["name"] == "Sample Donor One")
+    assert donor["dates"] == ["2026-07-28", "2026-08-03"]
+    body = text(print_receipt(env, dep, "a").content)
+    assert "July 28, 2026 and August 3, 2026" in body
+    # one line, its own date: just that date; changing it makes the next receipt a corrected one
+    mark(env, dep, [{"allocation_id": a2, "donation": False}])
+    body = text(print_receipt(env, dep, "a", ["CORRECTED_RECEIPT"]).content)
+    assert "July 28, 2026" in body and "August 3, 2026" not in body.split("Receipt No.")[1].split("Amount")[0]
+
+
+def test_details_are_written_per_donor_and_dropped_when_empty(env, dep):
+    s = env.admin.get("/api/donations/setup").json()
+    assert "{DETAILS}" in s["defaults"]["body"]
+    setup(env, body="Thank you for your gift to {ORG.NAME}.\n\n{DETAILS}\n\nPlease keep this letter.")
+    out = mark_all(env, dep)
+    assert out["details_enabled"] is True and "DETAILS" not in {v["name"] for v in out["variables"]}
+    # a bad variable or {DETAILS} itself is refused
+    for bad in ("Gift of {AMOUNTT}", "Again: {DETAILS}"):
+        r = env.ru.put(dep["url"] + "/lines", {"lines": [], "donors": [{"entity_id": dep["a"]["id"], "details": bad}]})
+        assert r.status_code == 422, bad
+    r = env.ru.put(dep["url"] + "/lines", {"lines": [], "donors": [
+        {"entity_id": dep["a"]["id"], "details": "Your donation of ${AMOUNT} will feed 4 families of 5."}]})
+    assert r.status_code == 200, r.text
+    assert next(x for x in r.json()["donors"] if x["entity_id"] == dep["a"]["id"])["details"].startswith("Your donation")
+    body = text(print_receipt(env, dep, "a").content)
+    assert "Your donation of $150.00 will feed 4 families of 5." in body
+    # the other donor has none: no empty paragraph, no "no data" warning for {DETAILS}
+    r = print_receipt(env, dep, "b")
+    assert r.status_code == 200, r.text
+    assert "Thank you for your gift to Acme Org. Please keep this letter." in text(r.content)
+    # changing the details is a change to the receipt: corrected, not a duplicate
+    env.ru.put(dep["url"] + "/lines", {"lines": [], "donors": [{"entity_id": dep["a"]["id"], "details": "Changed."}]})
+    assert next(x for x in env.ru.get(dep["url"]).json()["donors"] if x["entity_id"] == dep["a"]["id"])["next_kind"] \
+        == "CORRECTED"
+    ev = env.auditor.get("/api/audit-events?action=DONATION_DETAILS_UPDATED").json()["items"]
+    assert len(ev) == 2
+    # a template without {DETAILS}: the dialog doesn't offer them
+    setup(env, body="Thank you.")
+    assert env.ru.get(dep["url"]).json()["details_enabled"] is False
+    assert env.ru.put(dep["url"] + "/lines", {"lines": [], "donors": [{"entity_id": 999999, "details": "x"}]}
+                      ).status_code == 422
