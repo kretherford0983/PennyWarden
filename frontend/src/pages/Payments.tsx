@@ -75,7 +75,7 @@ export default function Payments() {
                   <td>{r.check_number}</td><td>{r.transaction_date}</td><td>{r.payee}</td><td className="num">{money(r.amount)}</td>
                   <td>{r.printed_at.slice(0, 10)}{r.status !== "ACTIVE" ? <span className="badge red">{r.status}</span> : null}</td>
                   <td className="actions-cell">
-                    <Link to={`/register?account=${acctId}&txn=${r.transaction_id}`} className="small-link">Open in register</Link>
+                    <Link to={`/register?account=${acct ? acct.id : ""}&txn=${r.transaction_id}`} className="small-link">Open in register</Link>
                   </td>
                 </tr>
               ))}

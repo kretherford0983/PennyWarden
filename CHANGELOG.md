@@ -2,7 +2,15 @@
 
 Versions are `Breaking.Major.Minor` from 1.6.0 (docs/branching.md).
 
-## 2.1.0 — unreleased
+## 2.1.1 — unreleased
+Security hotfix for 2.1.0. No database migration; going back to 2.1.0 is just reinstalling it.
+- **Code scanning: links built from a dropdown's value (CodeQL "DOM text reinterpreted as HTML", alerts #13–#15).**
+  The *Open detail PDF* and *Download PDF* links in **Reports → Fundraiser detail (audit)**, and the *Open in
+  register* link on **Payments**, now use the id of the fundraiser or bank account loaded from the server instead
+  of the text value of the dropdown. Not exploitable before (each link starts with a fixed path and the dropdown's
+  choices come from the server), and nothing changes on screen.
+
+## 2.1.0 — 2026-10-23
 PennyWarden 2.1.0 is mostly about **fundraisers**:
 - a stakeholder report as PDF or Word, and a slide deck with charts;
 - fundraisers linked across years, with years before PennyWarden entered by hand;
