@@ -2535,8 +2535,13 @@ test("2.1.2: changing a deposit's Entity in the edit form saves it", async ({ pa
   const oldId = await mk("Sample Bell Club Old");
   const newId = await mk("Sample Bell Club, Inc");
   const opts = await (await page.request.get("/api/budgets/selectable?fiscal_year_id=1&transaction_type=DEPOSIT")).json();
-  const tr = await post("/api/transactions", { bank_account_id: 1, transaction_type: "DEPOSIT", transaction_date: "2026-11-20", entity_id: oldId,
-    allocations: [{ budget_id: opts[0].id, amount: "360.00", description: "Cash box seed" }] });
+  const body: any = { bank_account_id: 1, transaction_type: "DEPOSIT", transaction_date: "2026-11-20", entity_id: oldId,
+    allocations: [{ budget_id: opts[0].id, amount: "360.00", description: "Cash box seed" }] };
+  let tr = await post("/api/transactions", body);
+  if (tr.status() === 409) {   // confirm whatever warnings the earlier tests' data raises (not what is tested here)
+    body.confirmations = (await tr.json()).error.warnings.map((w: any) => w.code);
+    tr = await post("/api/transactions", body);
+  }
   expect(tr.status()).toBe(201);
   const t = await tr.json();
   await page.goto(`/register?account=1&txn=${t.id}`);
