@@ -1,5 +1,6 @@
 # v1.5.0 CR-026: smoke test of a Windows build - start it with an empty data folder, check /api/health and the
-# version reported by /api/system/status, then stop it (with its child processes).
+# version reported by /api/system/status, then stop it (with its child processes). 2.1.1: first, that slide decks
+# and Word files can be made.
 #   pwsh packaging/windows/smoke_test.ps1 -Command <path to .exe or .cmd> -Version 1.5.0 -Port 8791
 param(
   [Parameter(Mandatory = $true)][string]$Command,
@@ -11,6 +12,10 @@ $ErrorActionPreference = "Stop"
 $data = Join-Path ([System.IO.Path]::GetTempPath()) ("fm-smoke-" + [guid]::NewGuid().ToString("N"))
 New-Item -ItemType Directory -Path $data | Out-Null
 $log = "$data.log"
+# 2.1.1: slide decks and Word files can be made with the bundled python-pptx / python-docx templates (they broke in
+# the macOS app; Windows resolves "..\" in their template paths by text, so it is checked here too)
+& $Command self-check-documents
+if ($LASTEXITCODE -ne 0) { Write-Host "::error::smoke test failed for ${Command}: slide decks or Word files can't be made"; exit 1 }
 $args_ = @("--no-browser", "--port", "$Port", "--data-dir", "`"$data`"")
 Write-Host "Starting $Command (data: $data)"
 $p = Start-Process -FilePath $Command -ArgumentList $args_ -PassThru -NoNewWindow -RedirectStandardOutput $log -RedirectStandardError "$log.err"

@@ -12,6 +12,9 @@ import { BrowserTips, CheckPreview, FIELD_LABELS, PatternInput, PdfViewer, useCh
 
 type Opts = any;
 
+/** 2.1.1: shown when there is no active cover letter or envelope template (the Register's button tooltip too). */
+export const NO_PAYMENT_DOCUMENTS = "There are no cover letter or envelope templates yet. An Administrator can add one under Payments Setup → Cover letters or Envelopes.";
+
 export function PrintCheckDialog({ txn, onClose, onChanged }: { txn: any; onClose: () => void; onChanged: () => void }) {
   const [o, setO] = useState<Opts | null>(null);
   const [err, setErr] = useState<unknown>(null);
@@ -26,7 +29,8 @@ export function PrintCheckDialog({ txn, onClose, onChanged }: { txn: any; onClos
       {o?.transaction?.electronic_payment ? (
         // 2.1.0 (#260): paid electronically - no check; a cover letter and envelope stay optional
         <EnclosuresPanel txnId={txn.id} signerId={defaultSigner} onChanged={onChanged}
-          intro="This payment was made electronically, so no check is printed. Print a cover letter or envelope if you send one; printed letters and envelopes are attached to the transaction." />
+          intro="This payment was made electronically, so no check is printed. Print a cover letter or envelope if you send one; printed letters and envelopes are attached to the transaction."
+          emptyMessage={NO_PAYMENT_DOCUMENTS} />
       ) : <>
       {o && o.has_documents && !reprintChoice ? (
         <div className="segmented" role="radiogroup" aria-label="How is the check made">

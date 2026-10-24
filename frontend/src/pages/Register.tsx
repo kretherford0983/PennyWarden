@@ -3,7 +3,7 @@ import { api, money, newRequestKey, qs, todayIso } from "../api";
 import { allocationLabel, Attachments, EntityPicker, ErrorBox, Field, Loading, Modal, PendingFiles, useConfirmable, GuardedForm } from "../components";
 import { useMe } from "../App";
 import { EntityForm } from "./Entities";
-import { PrintCheckDialog } from "./CheckPrint";
+import { NO_PAYMENT_DOCUMENTS, PrintCheckDialog } from "./CheckPrint";
 import { DonationReceiptDialog } from "./Donations";
 import { AmountPreview } from "./checkShared";
 
@@ -185,7 +185,7 @@ export default function Register() {
                       <td>{t.attachment_count ? <span aria-label={`${t.attachment_count} attachments`}>📎{t.attachment_count}</span> : ""}</td>
                     </tr>
                     {open === t.id ? (
-                      <tr className="detail-row"><td colSpan={12}><TxnDetail t={t} manage={manage} canPrintChecks={!!me.modules?.checks && can("checks.print")} onPrintCheck={() => setModal({ kind: "printcheck", txn: t })} canDonations={!!me.modules?.donations && can("donation.view")} onDonation={() => setModal({ kind: "donation", txn: t })} onEdit={() => setModal({ kind: t.transfer ? "legedit" : "txn", txn: t })} onVoid={() => setModal({ kind: "void", txn: t })} onVoidDate={() => setModal({ kind: "voiddate", txn: t })} onVoidCheck={() => setModal({ kind: "voidcheck", txn: t })} onChanged={load} /></td></tr>
+                      <tr className="detail-row"><td colSpan={12}><TxnDetail t={t} manage={manage} canPrintChecks={!!me.modules?.checks && can("checks.print")} paymentDocuments={data.payment_documents !== false} onPrintCheck={() => setModal({ kind: "printcheck", txn: t })} canDonations={!!me.modules?.donations && can("donation.view")} onDonation={() => setModal({ kind: "donation", txn: t })} onEdit={() => setModal({ kind: t.transfer ? "legedit" : "txn", txn: t })} onVoid={() => setModal({ kind: "void", txn: t })} onVoidDate={() => setModal({ kind: "voiddate", txn: t })} onVoidCheck={() => setModal({ kind: "voidcheck", txn: t })} onChanged={load} /></td></tr>
                     ) : null}
                   </Fragment>
                 ))}
@@ -208,7 +208,7 @@ export default function Register() {
   );
 }
 
-function TxnDetail({ t, manage, canPrintChecks, onPrintCheck, canDonations, onDonation, onEdit, onVoid, onVoidDate, onVoidCheck, onChanged }: { t: any; manage: boolean; canPrintChecks: boolean; onPrintCheck: () => void; canDonations: boolean; onDonation: () => void; onEdit: () => void; onVoid: () => void; onVoidDate: () => void; onVoidCheck: () => void; onChanged: () => void }) {
+function TxnDetail({ t, manage, canPrintChecks, paymentDocuments, onPrintCheck, canDonations, onDonation, onEdit, onVoid, onVoidDate, onVoidCheck, onChanged }: { t: any; manage: boolean; canPrintChecks: boolean; paymentDocuments: boolean; onPrintCheck: () => void; canDonations: boolean; onDonation: () => void; onEdit: () => void; onVoid: () => void; onVoidDate: () => void; onVoidCheck: () => void; onChanged: () => void }) {
   const [note, setNote] = useState("");
   const [err, setErr] = useState<unknown>(null);
   const editable = manage && t.status === "ACTIVE" && !t.closed_fiscal_year_protected;
@@ -253,7 +253,11 @@ function TxnDetail({ t, manage, canPrintChecks, onPrintCheck, canDonations, onDo
         {canPrintChecks && editable && t.transaction_type === "WITHDRAWAL" && !t.transfer && Number(t.total) > 0
           ? <>
               {/* build 13 (product owner, 2026-10-14): one button - the print screen in a dialog over the register */}
-              <button onClick={onPrintCheck}>{t.electronic_payment ? "Letter or envelope…" : t.check_printed ? "Reprint check or letter…" : "Create payment…"}</button>
+              {/* 2.1.1 (product owner, 2026-10-23): an electronic payment has only a letter or envelope to print - with no
+                  template there is nothing to show, so the button is disabled and says why */}
+              {t.electronic_payment && !paymentDocuments
+                ? <span className="disabled-hint" title={NO_PAYMENT_DOCUMENTS}><button disabled aria-describedby={`nodocs-${t.id}`}>Letter or envelope…</button><span id={`nodocs-${t.id}`} className="sr-only">{NO_PAYMENT_DOCUMENTS}</span></span>
+                : <button onClick={onPrintCheck}>{t.electronic_payment ? "Letter or envelope…" : t.check_printed ? "Reprint check or letter…" : "Create payment…"}</button>}
             </> : null}
         {/* 2.1.0 (#312): Donations module - a deposit's donation lines and receipts (void deposits show their receipts as void) */}
         {canDonations && t.transaction_type === "DEPOSIT" && !t.transfer ? <button onClick={onDonation}>Donation receipt…</button> : null}

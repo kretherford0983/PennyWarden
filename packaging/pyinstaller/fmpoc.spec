@@ -13,6 +13,12 @@ datas = [
     (os.path.join(PKG, "migrations"), "fmpoc/migrations"),
     (os.path.join(PKG, "fonts"), "fmpoc/fonts"),  # 2.0.0 (#157): built-in check printing fonts
 ] + collect_data_files("reportlab") + collect_data_files("pypdfium2") + collect_data_files("pypdfium2_raw") + collect_data_files("docx") + collect_data_files("pptx")  # fonts used by the audit report
+# 2.1.1: python-pptx and python-docx open their templates as <package>/<subfolder>/../templates/<name>.xml; one small
+# file per such subfolder makes it a real folder in the build (see pennywarden-mac.spec, where it broke).
+TEMPLATE_PARENTS = [("pptx", "oxml"), ("pptx", "shapes"), ("docx", "parts")]
+for _pkg, _sub in TEMPLATE_PARENTS:
+    _dir = os.path.join(os.path.dirname(__import__(_pkg).__file__), _sub)
+    datas.append((os.path.join(_dir, "__init__.py"), f"{_pkg}/{_sub}"))
 if os.path.isfile(os.path.join(PKG, "build_info.json")):  # v1.4 CR-022 (written by CI)
     datas.append((os.path.join(PKG, "build_info.json"), "fmpoc"))
 hidden = (collect_submodules("fmpoc") + collect_submodules("uvicorn") + collect_submodules("alembic")

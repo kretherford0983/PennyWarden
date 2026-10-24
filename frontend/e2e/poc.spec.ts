@@ -2508,6 +2508,24 @@ test("#164: a Register User enters a two-invoice payment, sees the check amount 
   await expect(page.getByRole("heading", { name: "Register", level: 1 })).toBeVisible();
 });
 
+// 2.1.1 (product owner, 2026-10-23): an electronic payment's "Letter or envelope…" opened an empty dialog when the
+// workspace had no cover letter or envelope templates - it is disabled then and says why
+async function electronicPaymentDetails(page: Page) {
+  await page.goto("/register?account=1&search=ACH-20261120");
+  const row = page.getByRole("row", { name: /2026-11-20/ });
+  await row.getByRole("button", { name: /Details for transaction/ }).click();
+  return page.getByRole("button", { name: "Letter or envelope…" });
+}
+
+test("2.1.1: without cover letter or envelope templates, an electronic payment's Letter or envelope… is disabled and says why", async ({ page }) => {
+  await login(page, "ru1", "Brand-New-Pass-99");
+  const btn = await electronicPaymentDetails(page);
+  await expect(btn).toBeDisabled();
+  await expect(page.locator(".disabled-hint")).toHaveAttribute("title", /no cover letter or envelope templates yet.*Payments Setup/);
+  await expect(btn).toHaveAccessibleDescription(/no cover letter or envelope templates yet/);
+  await logout(page);
+});
+
 // ---------------------------------------------------------------- 2.0.0 build 3: cover letters, envelopes (#165, #166)
 test("#165-#166: Administrator sets up a cover letter and an envelope; a Register User records a handwritten check and prints both", async ({ page }) => {
   await login(page, "admin");
@@ -2624,6 +2642,18 @@ test("#165-#166: Administrator sets up a cover letter and an envelope; a Registe
   await dlg.getByRole("button", { name: "Close" }).first().click();
   await page.reload();
   await expect(page.locator(`#txn-${t.id}`)).toContainText("8301");
+});
+
+test("2.1.1: once a template exists, an electronic payment's Letter or envelope… opens the cover letter and envelope choices", async ({ page }) => {
+  await login(page, "ru1", "Brand-New-Pass-99");
+  const btn = await electronicPaymentDetails(page);
+  await expect(btn).toBeEnabled();
+  await btn.click();
+  const dlg = page.getByRole("dialog", { name: /^Letter and envelope – transaction #\d+$/ });
+  await expect(dlg.getByRole("heading", { name: "Cover letter and envelope" })).toBeVisible();
+  await expect(dlg).toContainText("This payment was made electronically");
+  await dlg.getByRole("button", { name: "Close" }).first().click();
+  await logout(page);
 });
 
 // ---------------------------------------------------------------- 2.0.0 build 4: voucher checks, two signatures (#167)

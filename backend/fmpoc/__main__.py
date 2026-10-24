@@ -166,6 +166,9 @@ def main(argv: list[str] | None = None, window: bool = False) -> int:
     if argv and argv[0] == "apply-config":   # 2.1.0 (#237)
         from .cli_apply_config import main as apply_config_main
         return apply_config_main(argv[1:])
+    if argv and argv[0] == "self-check-documents":   # 2.1.1: used by the macOS smoke test
+        from .cli_selfcheck import main as selfcheck_main
+        return selfcheck_main(argv[1:])
     if argv and argv[0] == "reinitialize":   # 2.0.0 (#125)
         from .cli_restore import reinit_main
         return reinit_main(argv[1:])

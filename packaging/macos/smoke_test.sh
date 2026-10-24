@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 1.6.7: smoke test of the macOS app - start it with an empty data folder, check /api/health, the version, the web
-# interface and the bundled license, then stop it.
+# interface and the bundled license, then stop it. 2.1.1: first, that slide decks and Word files can be made.
 #   bash packaging/macos/smoke_test.sh <path to PennyWarden.app or .dmg> <version> [port] [window|headless]
 # "window" (default) starts it the way a double-click does (status window, server in a background thread);
 # "headless" sets FM_NO_WINDOW=1.
@@ -29,6 +29,11 @@ codesign --verify --deep --strict "$APP" || fail "the app's signature does not v
 file "$BIN" | grep -q arm64 || fail "the app is not arm64"
 PLIST_VERSION="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$APP/Contents/Info.plist")"
 [ "$PLIST_VERSION" = "$VERSION" ] || fail "Info.plist says version '$PLIST_VERSION', expected '$VERSION'"
+
+# 2.1.1: the bundled python-pptx / python-docx templates are found inside the app (the fundraiser deck and the Word
+# report failed on a Mac with FileNotFoundError .../pptx/oxml/../templates/notesMaster.xml)
+"$BIN" self-check-documents >"$LOG" 2>&1 || fail "slide decks or Word files can't be made in the app"
+cat "$LOG"
 
 [ "$HOW" = "headless" ] && export FM_NO_WINDOW=1
 "$BIN" --no-browser --port "$PORT" --data-dir "$DATA" >"$LOG" 2>&1 &
