@@ -15,6 +15,10 @@ Hotfix for 2.1.0. No database migration; going back to 2.1.0 is just reinstallin
   slide-deck and Word libraries use to find their built-in templates. Windows, the Linux server and Docker were not
   affected. The macOS and Windows smoke tests now make a slide deck and a Word file inside the built app
   (`PennyWarden self-check-documents`), so a build with this problem is not released.
+- **Register: *Letter or envelope…* on an electronic payment without templates.** When the organization has no
+  active cover letter or envelope template, the button opened an empty dialog. It is now disabled, and its hover
+  text says why: an Administrator can add a template under **Payments Setup → Cover letters** or **Envelopes**. (If
+  the templates are removed while the dialog is open, the dialog says so instead of staying empty.)
 
 ## 2.1.0 — 2026-10-23
 PennyWarden 2.1.0 is mostly about **fundraisers**:
