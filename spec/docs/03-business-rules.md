@@ -266,6 +266,8 @@ Withdrawal allocations may independently contain Budget, Invoice Number, Descrip
 
 A split Deposit may contain different Entities on different Allocations because multiple payments may be deposited together. The system uses the protected `Multiple` Entity at the parent level where appropriate.
 
+2.1.2 (#344): the parent Entity of a Deposit is derived from its Allocations. When the parent Entity of a Deposit is changed, Allocations that were on the previous parent Entity follow the new one; Allocations deliberately set to a different Entity keep it.
+
 ## BR-064 — Split Conversion Ignores Prior Parent Amount
 
 When a user converts an entry to split mode, any previously entered parent/single amount ceases to be authoritative. Parent total is derived from the resulting Allocations.
