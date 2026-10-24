@@ -247,6 +247,7 @@ Each child allocation affects only its selected budget; parent roll-up values de
 
 ### AC-REG-012 — Cleared edit confirmation
 Editing a cleared transaction in an open Fiscal Year requires blocking confirmation before save and creates an audit record.
+2.1.2 (#344): a save that changes nothing is accepted without the confirmation and creates no audit record.
 
 ### AC-REG-013 — Transaction type change
 Changing transaction type uses a protected confirmation flow and invalid/incompatible allocations are reselected/revalidated before save.

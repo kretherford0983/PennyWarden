@@ -591,6 +591,11 @@ def update(db: Session, ctx, t: RegisterTransaction, data) -> RegisterTransactio
                      for a in t.live_allocations]
     else:
         allocs_in = None
+    if allocs_in is not None and new_type == "DEPOSIT" and not type_changed and new_entity_id != t.parent_entity_id:
+        # 2.1.2 (#344): the deposit's Entity changed - allocations still on the previous parent Entity follow the new
+        # one (BR-063 derives the parent from the allocations, so a stale line Entity would silently put it back).
+        allocs_in = [ai.model_copy(update={"entity_id": None})
+                     if ai.entity_id is not None and ai.entity_id == t.parent_entity_id else ai for ai in allocs_in]
     parent_for_plan = new_entity_id
     if new_type == "WITHDRAWAL" and parent_for_plan is not None:
         pe = db.get(Entity, parent_for_plan)
@@ -612,7 +617,8 @@ def update(db: Session, ctx, t: RegisterTransaction, data) -> RegisterTransactio
     if t.clear_date is not None and fin_fields:
         warnings.insert(0, Warning_("CLEARED_EDIT", "This transaction has cleared the bank. Editing a cleared "
                                                     "transaction is fully audited; confirm to continue."))
-    require_confirmations(warnings, data.confirmations)
+    # 2.1.2 (#344): confirmations are checked after the edit is applied, so a save that changes nothing needs no
+    # confirmation and writes no audit entry (the request is only committed when update() returns).
     # ---- apply
     t.transaction_type, t.transaction_date, t.clear_date, t.check_number = new_type, new_date, new_clear, new_check
     t.electronic_payment, t.payment_method, t.payment_method_other, t.payment_reference = epay
@@ -639,6 +645,7 @@ def update(db: Session, ctx, t: RegisterTransaction, data) -> RegisterTransactio
                                      p.data.no_attachment_reason)
             a.updated_by_user_id = ctx.user.id
             db.flush()
+            db.expire(a, ["entity", "budget"])  # 2.1.2 (#344): the response showed the line's previous Entity
             _apply_reviews(db, ctx, a, p, natural_id)
         for aid, a in existing.items():
             if aid not in kept:
@@ -656,6 +663,10 @@ def update(db: Session, ctx, t: RegisterTransaction, data) -> RegisterTransactio
     db.refresh(t)
     if t.total_cents <= 0:
         raise validation("An active transaction must have a total greater than zero.", "allocations")
+    if snapshot(t) == before:
+        db.rollback()  # nothing changed: drop the updated-by stamp, no confirmation, no audit entry
+        return db.get(RegisterTransaction, before["id"])
+    require_confirmations(warnings, data.confirmations)
     audit.record(db, ctx, "TRANSACTION_UPDATED", "register_transaction", t.id, before,
                  {**snapshot(t), "confirmed_warnings": [w.code for w in warnings]})
     return t

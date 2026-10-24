@@ -2526,6 +2526,39 @@ test("2.1.1: without cover letter or envelope templates, an electronic payment's
   await logout(page);
 });
 
+// 2.1.2 (#344, product owner, 2026-10-23): changing a single-line deposit's Entity saved without error but changed
+// nothing - the hidden line Entity put the old one back
+test("2.1.2: changing a deposit's Entity in the edit form saves it", async ({ page }) => {
+  await login(page, "ru1", "Brand-New-Pass-99");
+  const post = await apiAs(page);
+  const mk = async (name: string) => (await (await post("/api/entities", { entity_type: "ORGANIZATION", organization_name: name, confirmations: ["DUPLICATE_ENTITY"] })).json()).id;
+  const oldId = await mk("Sample Bell Club Old");
+  const newId = await mk("Sample Bell Club, Inc");
+  const opts = await (await page.request.get("/api/budgets/selectable?fiscal_year_id=1&transaction_type=DEPOSIT")).json();
+  const body: any = { bank_account_id: 1, transaction_type: "DEPOSIT", transaction_date: "2026-11-20", entity_id: oldId,
+    allocations: [{ budget_id: opts[0].id, amount: "360.00", description: "Cash box seed" }] };
+  let tr = await post("/api/transactions", body);
+  if (tr.status() === 409) {   // confirm whatever warnings the earlier tests' data raises (not what is tested here)
+    body.confirmations = (await tr.json()).error.warnings.map((w: any) => w.code);
+    tr = await post("/api/transactions", body);
+  }
+  expect(tr.status()).toBe(201);
+  const t = await tr.json();
+  await page.goto(`/register?account=1&txn=${t.id}`);
+  const row = page.locator(`#txn-${t.id}`);
+  await expect(row.getByRole("button", { name: `Details for transaction ${t.id}` })).toHaveAttribute("aria-expanded", "true");
+  await page.getByRole("button", { name: "Edit", exact: true }).click();
+  const dlg = page.getByRole("dialog", { name: `Edit transaction #${t.id}` });
+  await dlg.getByRole("combobox", { name: "Entity (payer)" }).fill("Sample Bell Club, Inc");
+  await page.getByRole("option", { name: /Sample Bell Club, Inc/ }).click();
+  await dlg.getByRole("button", { name: "Save" }).click();
+  await expect(dlg).toHaveCount(0);
+  const saved = await (await page.request.get(`/api/transactions/${t.id}`)).json();
+  expect(saved.entity.id).toBe(newId);
+  expect(saved.allocations[0].entity.id).toBe(newId);
+  await logout(page);
+});
+
 // ---------------------------------------------------------------- 2.0.0 build 3: cover letters, envelopes (#165, #166)
 test("#165-#166: Administrator sets up a cover letter and an envelope; a Register User records a handwritten check and prints both", async ({ page }) => {
   await login(page, "admin");
