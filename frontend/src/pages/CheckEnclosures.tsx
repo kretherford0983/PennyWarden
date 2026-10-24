@@ -7,7 +7,7 @@ import { PdfViewer, usePdf } from "./checkShared";
 
 const STEP = 0.0625;
 
-export function EnclosuresPanel({ txnId, signerId, onChanged, intro }: { txnId: number; signerId: number | null; onChanged: () => void; intro?: string }) {
+export function EnclosuresPanel({ txnId, signerId, onChanged, intro, emptyMessage }: { txnId: number; signerId: number | null; onChanged: () => void; intro?: string; emptyMessage?: string }) {
   const [docs, setDocs] = useState<any>(null);
   const [err, setErr] = useState<unknown>(null);
   const [letterId, setLetterId] = useState("");
@@ -34,7 +34,8 @@ export function EnclosuresPanel({ txnId, signerId, onChanged, intro }: { txnId: 
   const foldDefault = docs?.letters.find((x: any) => String(x.id) === letterId)?.fold_default || "NONE";
   useEffect(() => { setFold(foldDefault); }, [letterId, foldDefault]);
   if (!docs) return err ? <ErrorBox error={err} /> : <Loading />;
-  if (!docs.letters.length && !docs.envelopes.length) return null;
+  // 2.1.1: where this panel is the whole dialog (an electronic payment), say why it is empty instead of showing nothing
+  if (!docs.letters.length && !docs.envelopes.length) return emptyMessage ? <p className="hint" role="status">{emptyMessage}</p> : null;
   const env = docs.envelopes.find((x: any) => String(x.id) === envId);
   // build 13 (#230): a letter for a #10 double-window envelope carries the addresses itself - choosing one hides the
   // envelope (it can still be printed on request); choosing a standard letter brings the envelope back

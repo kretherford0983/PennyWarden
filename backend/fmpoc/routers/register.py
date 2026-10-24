@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from ..deps import Ctx, get_db, require
 from ..errors import AppError
-from ..models import BankAccount, Budget, FiscalYear, FiscalYearReview, RegisterTransaction, TransactionAllocation
+from ..models import BankAccount, Budget, CheckDocument, FiscalYear, FiscalYearReview, RegisterTransaction, TransactionAllocation
 from ..schemas import (CheckAckIn, NoteIn, ReasonIn, ReviewResolveIn, TransactionCreateIn, TransactionUpdateIn, TransferIn,
                        VoidCheckNumberIn, VoidDateIn, VoidIn)
 from ..services import bank_accounts as bank_svc
@@ -55,10 +55,17 @@ def register_view(
         raise AppError(422, "NOT_REGISTER_ENABLED", "The Bank Account is not register-enabled.")
     fy = get_scoped(db, FiscalYear, fiscal_year_id, ctx, "Fiscal Year") if fiscal_year_id else None
     budget = get_scoped(db, Budget, budget_id, ctx, "Budget") if budget_id else None
-    return svc.register_view(db, ctx, acct, fiscal_year=fy, txn_type=transaction_type, status=status,
-                             date_from=date_from, date_to=date_to, search=search, sort=sort, direction=direction,
-                             attachments=attachments, budget=budget, include_deleted="AUDITOR" in ctx.roles,
-                             payment=payment)
+    out = svc.register_view(db, ctx, acct, fiscal_year=fy, txn_type=transaction_type, status=status,
+                            date_from=date_from, date_to=date_to, search=search, sort=sort, direction=direction,
+                            attachments=attachments, budget=budget, include_deleted="AUDITOR" in ctx.roles,
+                            payment=payment)
+    # 2.1.1: an electronic payment's "Letter or envelope..." has nothing to show without an active cover letter or
+    # envelope template - the Register disables the button then (product owner, 2026-10-23)
+    out["payment_documents"] = db.scalar(
+        select(CheckDocument.id).where(CheckDocument.workspace_id == ctx.workspace_id,
+                                       CheckDocument.kind.in_(("LETTER", "ENVELOPE")),
+                                       CheckDocument.active.is_(True)).limit(1)) is not None
+    return out
 
 
 @router.get("/transactions/{txn_id}")

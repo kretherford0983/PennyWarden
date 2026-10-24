@@ -168,3 +168,24 @@ def test_a_printed_check_cant_become_electronic_until_spoiled(env, setup):
     r = env.ru.patch(f"/api/transactions/{tid}", {"electronic_payment": True, "payment_method": "ACH",
                                                   "check_number": None})
     assert r.status_code == 200, r.text
+
+
+def test_register_says_whether_letter_or_envelope_templates_exist(env, base, setup):
+    """2.1.1 (product owner, 2026-10-23): an electronic payment's "Letter or envelope..." showed an empty dialog in a
+    workspace without cover letter or envelope templates - the register now reports whether any active one exists,
+    and the Register disables the button when none does."""
+    _w(env, base, electronic_payment=True, payment_method="ACH")
+    url = f"/api/register?bank_account_id={base['acct']['id']}"
+
+    def has():
+        return env.bu.get(url).json()["payment_documents"]
+    assert has() is False
+    env_doc = env.admin.post("/api/checks/documents", {"kind": "ENVELOPE", "name": "Plain #10"})
+    assert env_doc.status_code == 201, env_doc.text
+    assert has() is True
+    r = env.admin.post(f"/api/checks/documents/{env_doc.json()['id']}/flags", {"active": False})
+    assert r.status_code == 200, r.text
+    assert has() is False                                   # a deactivated template doesn't count
+    letter = env.admin.post("/api/checks/documents", {"kind": "LETTER", "name": "Invoices paid"})
+    assert letter.status_code == 201, letter.text
+    assert has() is True
