@@ -2,7 +2,18 @@
 
 Versions are `Breaking.Major.Minor` from 1.6.0 (docs/branching.md).
 
-## 2.1.1 — unreleased
+## 2.1.2 — unreleased
+Hotfix for 2.1.1. No database migration; going back to 2.1.1 is just reinstalling it.
+- **Register: changing a deposit's Entity now saves (#344).** Editing a deposit to pick a different Entity (for
+  example moving transactions to the organization entity added in 2.1.0) saved without an error but kept the old
+  Entity: the deposit's line still held the old Entity (hidden unless **Split** is on), and a deposit's Entity is
+  taken from its lines. Lines that were on the deposit's Entity now follow the new one, and the edit form leaves a
+  line on the deposit's Entity blank (*Default entity*). Lines deliberately set to a different Entity keep it.
+  Withdrawals were not affected.
+- **Register: a save that changes nothing** no longer asks for the cleared-transaction confirmation or adds an empty
+  *Transaction updated* entry to the audit log.
+
+## 2.1.1 — 2026-10-23
 Hotfix for 2.1.0. No database migration; going back to 2.1.0 is just reinstalling it.
 - **Code scanning: links built from a dropdown's value (CodeQL "DOM text reinterpreted as HTML", alerts #13–#15).**
   The *Open detail PDF* and *Download PDF* links in **Reports → Fundraiser detail (audit)**, and the *Open in

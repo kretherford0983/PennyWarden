@@ -313,7 +313,9 @@ export function TxnForm({ account, txn, initial, fys, onClose, onSaved, payment 
   // null = closed, -1 = whole transaction, n = allocation n
   const [noAttDlg, setNoAttDlg] = useState<number | null>(null);
   const [allocs, setAllocs] = useState<Alloc[]>(txn ? txn.allocations.map((a: any) => ({
-    id: a.id, fiscal_year_id: String(a.budget.fiscal_year.id), budget_id: String(a.budget.id), entity_id: a.entity ? String(a.entity.id) : "",
+    id: a.id, fiscal_year_id: String(a.budget.fiscal_year.id), budget_id: String(a.budget.id),
+    // 2.1.2 (#344): a deposit line on the parent Entity is left blank ("Default entity") so it follows a new parent
+    entity_id: a.entity && !(txn.transaction_type === "DEPOSIT" && txn.entity && a.entity.id === txn.entity.id) ? String(a.entity.id) : "",
     invoice_number: a.invoice_number || "", invoice_date: a.invoice_date || "", description: a.description || "", amount: a.amount, notes: a.notes || "",
     no_attachment: !!a.no_attachment, no_attachment_reason: a.no_attachment_reason || "", files: [],
   })) : [blankAlloc()]);
