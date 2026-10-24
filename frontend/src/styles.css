@@ -112,6 +112,9 @@ tr.linked > td:first-child { box-shadow: inset 3px 0 0 var(--primary, #1f5fbf); 
 .order-cell { white-space: nowrap; width: 1%; }
 .order-cell button.icon { min-width: 2rem; padding-left: .35rem; padding-right: .35rem; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+/* 2.1.1: a disabled button that explains itself - the hover text sits on the wrapper (disabled buttons get no mouse events) */
+.disabled-hint { display: inline-block; cursor: not-allowed; }
+.disabled-hint > button:disabled { pointer-events: none; }
 .bg-green td { background: var(--green-bg); }
 .bg-yellow td { background: var(--yellow-bg); }
 .bg-red td { background: var(--red-bg); }

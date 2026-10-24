@@ -259,6 +259,9 @@ function FundraiserDetailReport({ fys }: { fys: any[] }) {
     if (!fy) return;
     api.get(`/api/fundraisers?fiscal_year_id=${fy}&include_archived=true`).then((r) => { setList(r); setFid(r[0] ? String(r[0].id) : ""); }, () => setList([]));
   }, [fy]);
+  // 2.1.1 (CodeQL js/xss-through-dom): the links use the id of the fundraiser loaded from the server, never the
+  // dropdown's text value
+  const sel = list.find((f) => String(f.id) === fid);
   return (
     <section className="card">
       <h2>Fundraiser detail (audit)</h2>
@@ -277,8 +280,8 @@ function FundraiserDetailReport({ fys }: { fys: any[] }) {
         </Field>
       </div>
       <div className="actions left">
-        {fid ? <><a className="button primary" href={`/api/fundraisers/${fid}/report`} target="_blank" rel="noopener">Open detail PDF</a>
-          <a className="button" href={`/api/fundraisers/${fid}/report?download=true`}>Download PDF</a></>
+        {sel ? <><a className="button primary" href={`/api/fundraisers/${sel.id}/report`} target="_blank" rel="noopener">Open detail PDF</a>
+          <a className="button" href={`/api/fundraisers/${sel.id}/report?download=true`}>Download PDF</a></>
           : <button className="primary" disabled>Open detail PDF</button>}
       </div>
     </section>

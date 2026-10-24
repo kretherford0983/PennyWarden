@@ -18,6 +18,15 @@ datas = [
     (os.path.join(ROOT, "LICENSE"), "legal"),
     (os.path.join(ROOT, "THIRD-PARTY-NOTICES.txt"), "legal"),
 ] + collect_data_files("reportlab") + collect_data_files("pypdfium2") + collect_data_files("pypdfium2_raw") + collect_data_files("docx") + collect_data_files("pptx")
+# 2.1.1: python-pptx and python-docx open their templates as <package>/<subfolder>/../templates/<name>.xml. The code
+# of <subfolder> is inside the archive, so without a file there the folder doesn't exist in the app and macOS can't
+# resolve the ".." (FileNotFoundError ...pptx/oxml/../templates/notesMaster.xml for the fundraiser deck; the Word
+# report's footer the same way). One small file per such subfolder makes it a real folder. Checked in CI by
+# `PennyWarden self-check-documents` (packaging/macos/smoke_test.sh) and backend/tests/test_v211_mac_templates.py.
+TEMPLATE_PARENTS = [("pptx", "oxml"), ("pptx", "shapes"), ("docx", "parts")]
+for _pkg, _sub in TEMPLATE_PARENTS:
+    _dir = os.path.join(os.path.dirname(__import__(_pkg).__file__), _sub)
+    datas.append((os.path.join(_dir, "__init__.py"), f"{_pkg}/{_sub}"))
 if os.path.isfile(os.path.join(PKG, "build_info.json")):
     datas.append((os.path.join(PKG, "build_info.json"), "fmpoc"))
 hidden = (collect_submodules("fmpoc") + collect_submodules("uvicorn") + collect_submodules("alembic")
