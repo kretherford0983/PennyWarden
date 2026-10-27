@@ -179,7 +179,7 @@ def wipe(db: Session, ws_id: int, ctx, by: str, backup_name: str, via: str, befo
                       organization_name="Multiple", is_system=True, active=True, name_key="multiple"))
     audit.record(db, ctx, "REINITIALIZE", "workspace", ws_id, {"counts": before},
                  {"by": by, "via": via, "safety_backup": backup_name, "kept": "users, roles, two-step, organization, "
-                  "key, modules, preferences, audit log"}, category="SECURITY")
+                  "key, modules, preferences, branding, audit log"}, category="SECURITY")
 
 
 def remove_attachment_files(settings) -> None:

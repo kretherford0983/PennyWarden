@@ -7,7 +7,8 @@ A backup holds four domains (Kyle, 2026-10-22/24):
   to each other, so Data is restored or kept as one unit, attachments included.
 * **settings** - in sections: ``settings.general`` (the organization profile and name, optional modules, the audit
   review signature wording), ``settings.backups`` (backup reminder, scheduled backups and their history),
-  ``settings.payments`` (check styles, signers, letter and envelope templates), ``settings.donations``.
+  ``settings.payments`` (check styles, signers, letter and envelope templates), ``settings.donations``,
+  ``settings.branding`` (2.2.0, #280).
 * **reminders** - organization and personal reminders.
 * **users** - users, roles, passwords, two-step verification, security questions and notices, personal preferences,
   each user's printer settings.
@@ -57,6 +58,9 @@ SETTINGS_SECTIONS = {
     "settings.payments": {"tables": ("check_style", "check_signer", "check_document"), "workspace": (),
                           "label": "Payments Setup (check styles, signers, letters and envelopes)"},
     "settings.donations": {"tables": ("donation_settings",), "workspace": (), "label": "Donations Setup"},
+    # 2.2.0 (#280)
+    "settings.branding": {"tables": ("branding_settings",), "workspace": (),
+                          "label": "Branding (report and presentation colors, logos, footer text)"},
 }
 REMINDER_TABLES = ("reminder",)
 USER_TABLES = ("app_user", "user_role", "user_mfa", "mfa_recovery_code", "user_security_question", "security_notice",
@@ -143,6 +147,7 @@ def domains_in(db_path: Path) -> list[dict]:
             "settings.payments": {"check_styles": _count(con, "check_style"), "signers": _count(con, "check_signer"),
                                   "letters_and_envelopes": _count(con, "check_document")},
             "settings.donations": {"settings": _count(con, "donation_settings")},
+            "settings.branding": {"settings": _count(con, "branding_settings")},   # 2.2.0 (#280)
             "reminders": {"reminders": _count(con, "reminder")},
             "users": {"users": _count(con, "app_user")},
         }

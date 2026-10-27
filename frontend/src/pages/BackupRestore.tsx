@@ -256,7 +256,7 @@ export function BackupRestore({ maxMb }: { maxMb?: number | null }) {
 
 /** 2.2.0 (#319): What to restore - everything ticked and collapsed to All; Data is never split, Settings by section.
  * A summary of what is replaced and kept (and any users the restored records would miss) before the final confirm. */
-const SETTINGS_PARTS = ["settings.general", "settings.backups", "settings.payments", "settings.donations"];
+const SETTINGS_PARTS = ["settings.general", "settings.backups", "settings.payments", "settings.donations", "settings.branding"];
 
 function WhatToRestore({ job, onChoose }: { job: any; onChoose: (domains: string[], missingUsers: string) => void }) {
   const domains: any[] = job.result.domains || [];
@@ -293,7 +293,7 @@ function WhatToRestore({ job, onChoose }: { job: any; onChoose: (domains: string
     try { setChk(await api.post(`/api/system/restore/jobs/${job.id}/check`, { domains: list })); } catch (x) { setErr(x); } finally { setBusy(false); }
   };
   const short: Record<string, string> = { "settings.general": "General (organization profile, optional modules)", "settings.backups": "Backups (backup reminder, scheduled backups)",
-    "settings.payments": "Payments Setup", "settings.donations": "Donations Setup" };
+    "settings.payments": "Payments Setup", "settings.donations": "Donations Setup", "settings.branding": "Branding" };
   return (
     <div className="what-to-restore" role="group" aria-labelledby="wtr-h">
       <h3 id="wtr-h">What to restore</h3>

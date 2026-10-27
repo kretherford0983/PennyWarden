@@ -312,6 +312,9 @@ No application role can edit or delete Audit Events.
 ### AC-BKP-319 — Choose what to restore (2.2.0, #319)
 After a backup is decrypted and checked, the Administrator who started the restore chooses the parts to restore (Data as one unit; Settings by section; Reminders; Users) and sees what is replaced and kept before confirming; nothing changes before that. Data can't be split. Kept encrypted values are re-encrypted with the backup's key; users missing from a restored Users set are kept inactivated; users that restored records refer to are listed first and added from the backup (or Users are included). The same choices exist on the command line (`--only`, `--skip`, `FILE --list`).
 
+### AC-ADM-280 — Organization branding (2.2.0, #280)
+An Administrator chooses a ready-made palette or a custom Material 3 palette generated from a primary and a secondary color (every role and series color adjustable), a full logo and a small mark (PNG/JPEG ≤ 2 MB, re-encoded without metadata) and a one-line footer text. A text color below WCAG AA 4.5:1 is refused with the reason; similar series colors need a confirmation. Every PDF report, the fundraiser report (PDF, Word) and presentation and the Fiscal Year fundraising report and presentation use the branding (headings, bands, table headers, chart colors, logo on the first page or title slide, mark and footer text in footers); checks, letters, receipts and envelopes do not. Non-Administrators can't read or change it. Included in backups as `settings.branding`, kept through a reinitialize, audited without the image.
+
 ### AC-AUD-005 — Sensitive sanitization
 Audit snapshots never contain plaintext bank account numbers or encryption keys.
 

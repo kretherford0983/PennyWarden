@@ -78,7 +78,7 @@ ticked, collapsed to **All**; *show the parts* lists them:
 | Part | Holds | |
 |---|---|---|
 | **Data** | Fiscal Years, budgets (and history entered before PennyWarden), entities, bank accounts, the register and attachments, Payments records (printed checks, each account's check style and sheet counter), Fundraisers, Donations | always as one unit: the records refer to each other |
-| **Settings** | **General** (organization name and profile, optional modules, audit review signature wording) · **Backups** (backup reminder, scheduled backups and their history) · **Payments Setup** (check styles, signers, letter and envelope templates) · **Donations Setup** | each section on its own |
+| **Settings** | **General** (organization name and profile, optional modules, audit review signature wording) · **Backups** (backup reminder, scheduled backups and their history) · **Payments Setup** (check styles, signers, letter and envelope templates) · **Donations Setup** · **Branding** (report and presentation colors, logos, footer text; 2.2.0) | each section on its own |
 | **Reminders** | organization and personal reminders | |
 | **Users** | users, roles, passwords, two-step verification, security questions, preferences, printer settings | |
 
@@ -131,7 +131,7 @@ sudo pennywarden restore --list --data-dir /var/lib/pennywarden
 ```
 
 Since 2.2.0, `--only` and `--skip` choose the parts (comma-separated: `data`, `settings` or its sections
-`settings.general`, `settings.backups`, `settings.payments`, `settings.donations`, `reminders`, `users`; `data` is
+`settings.general`, `settings.backups`, `settings.payments`, `settings.donations`, `settings.branding`, `reminders`, `users`; `data` is
 never split). A backup made on a server in **testing mode** (2.2.0, #231) is refused on a server that isn't in testing
 mode; add `--accept-testing-backup` to restore it anyway (its audit trail may have gaps). Without them everything is restored. The command prints what is restored and kept, and any users the
 restored records refer to that aren't here (added from the backup unless `--missing-users include-users`), then asks

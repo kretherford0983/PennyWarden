@@ -6,7 +6,7 @@
 
 -   Users
 -   Audit Log
--   System/About
+-   System/About (2.2.0, #280: with a **Branding** tab — see §Organization branding below)
 
 ### Financial User
 
@@ -313,3 +313,15 @@ Provide a Light/Dark mode control with persistent per-user preference. Core scre
 Draft Fiscal Years appear in Fiscal Year list/detail, Budget Fiscal Year filters, Create Budget selection, eligible Register allocation Fiscal Year selection, and applicable dashboard/context displays. A newly created Draft Fiscal Year must immediately have a working detail route.
 
 Selectors display identity plus optional status, e.g. `FY2027 — Draft`; `(DRAFT)` alone is invalid.
+
+
+## Organization branding (2.2.0, #280)
+
+System/About → **Branding**, Administrators only (read-only for financial users once #349 is in). Applies to generated reports and presentations only: every PDF report, the fundraiser stakeholder report (PDF, Word) and presentation, the Fiscal Year fundraising report and presentation. Not to checks (MICR stock, bank layout rules), cover letters, receipts or envelopes, which keep their own letter-editor logo and letterhead. The audit-log export keeps its plain layout.
+
+- **Palette** following Material 3 color roles (primary, on-primary, primary container, secondary, surface, surface variant, outline and their "on" colors) plus eight chart series colors. Five ready-made palettes (PennyWarden — the default and the colors used before 2.2.0 —, Forest, Ocean, Plum, Ember) or **Custom**: the Administrator enters a primary and a secondary color, the browser generates the recommended palette (material-color-utilities: the source colors' tonal palettes, light scheme), and any role or series color can be changed. The server stores the resolved colors.
+- **Guardrails** (server-side, mirrored live in the browser): every text role must reach WCAG AA 4.5:1 on the colors it is drawn on (on-primary/primary, on-primary-container/primary-container, on-secondary/secondary, on-secondary-container/secondary-container, on-surface/surface and surface variant, on-surface-variant/surface, primary and on-surface on white) — otherwise the save is refused naming the pair; series colors closer than ΔE 12 need the confirmation `SIMILAR_SERIES_COLORS`; charts never rely on color alone (BR-079). Live preview; **Reset to the PennyWarden palette** (logos and footer kept).
+- **Logos**: a full logo (top right of a report's first page, in the margin; the title and closing slides, instead of the PennyWarden coin) and an optional small mark (left of every report page footer and every slide after the title; none without it). PNG or JPEG by content, at most 2 MB, 16–6000 px, re-encoded as PNG without metadata (BR-100/BR-101).
+- **Footer text**: optional, one line, at most 120 characters, no variables; printed above the page footer and on every slide after the title.
+- Where the colors go: headings and title bands (primary, text on-primary), tiles (primary container), table headers (surface variant), alternate rows (surface), lines (outline / outline variant), charts (series).
+- Organization settings (BR-003): in backups, its own partial-restore section `settings.branding`, kept through a reinitialize. Audited: `BRANDING_UPDATED` (before/after colors and footer), `BRANDING_LOGO_SET` / `BRANDING_LOGO_REMOVED` (slot, fingerprint and size; never the image).

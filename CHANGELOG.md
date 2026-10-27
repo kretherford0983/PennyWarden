@@ -33,7 +33,7 @@ PennyWarden 2.2.0 (in progress).
 
 ### Backup and restore
 - **Choose what to restore (#319).** After the backup is checked, **What to restore** lists its parts — **Data**
-  (always as one unit), **Settings** (General, Backups, Payments Setup, Donations Setup, each on its own),
+  (always as one unit), **Settings** (General, Backups, Payments Setup, Donations Setup, Branding, each on its own),
   **Reminders** and **Users** — all ticked. Untick what should stay as it is now, choose **Review** to see what will be
   replaced and kept, then restore. Everything ticked is the full restore as before.
   - A partial restore **keeps the current audit log** and records what was restored.
@@ -98,6 +98,21 @@ PennyWarden 2.2.0 (in progress).
 - **Bank accounts: *Account opened* (optional, #348).** For an account opened after PennyWarden was set up: dates
   before it count as $0, the report doesn't list it before then, and dashboard balance charts start there. Blank
   means the account existed before PennyWarden. Changes are audited.
+
+### Organization branding (#280)
+- **Your colors and logo on reports and presentations.** *System/About → Branding* (Administrators): choose a
+  ready-made palette (PennyWarden — the default —, Forest, Ocean, Plum, Ember) or a custom one generated from your
+  primary and secondary colors following Material 3, then adjust any color. Applies to every PDF report, the
+  fundraiser report (PDF and Word) and presentation, and the Fiscal Year fundraising report and presentation: headings,
+  title bands, tiles, table headers and chart colors. Checks, cover letters, receipts and envelopes are unchanged.
+- **Guardrails:** text colors must meet WCAG AA contrast (the save is refused with the reason); chart colors that are
+  too similar need a confirmation; charts keep their labels and legends. A live preview and *Reset to the PennyWarden
+  palette*.
+- **Logos:** a full logo (report headers, title slides) and an optional small mark (footers): PNG or JPEG up to 2 MB,
+  re-encoded without metadata. An optional one-line footer text (up to 120 characters).
+- In backups as its own restore section (`settings.branding`); kept through a reinitialize. Changes are audited
+  (`BRANDING_UPDATED`, `BRANDING_LOGO_SET`, `BRANDING_LOGO_REMOVED`; logos by fingerprint only).
+- The palette generator uses Google's material-color-utilities (Apache-2.0) in the browser.
 
 ### Upgrade
 - Migration `0049` adds the table `budget_history_entry` (empty); `0050` the table `testing_state` (empty); `0051`
