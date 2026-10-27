@@ -27,6 +27,9 @@ PennyWarden 2.2.0 (in progress).
   `own_key`), never the key.
 - **FastAPI 0.162.0, Starlette 1.10.0, pydantic 2.14.1 (#339).** Framework updates (Starlette's request-URL
   hardening, pydantic's validation fixes). No change in how PennyWarden behaves.
+- **Other dependency updates** (from Dependabot #352 and #353): SQLAlchemy 2.1.6, Alembic 1.20.1, ReportLab 5.1.0,
+  XlsxWriter 3.3.0, and the build tool Vite 6.4.5 (a security fix for its development server, which PennyWarden
+  doesn't ship). Bug-fix releases; no change in how PennyWarden behaves.
 
 ### Upgrade
 - Migration `0048` adds two columns to `user_mfa` (`new_key_required`, `pending_own_key`; both off). No existing value
