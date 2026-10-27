@@ -1414,7 +1414,11 @@ test("#243: the published demo - built by the script, restored on a new install,
     await expect(page.getByText("Password changed.")).toBeVisible();
     await page.getByRole("button", { name: "Sign out" }).click();
     // Reset demo data from the sign-in page: the published password works again
-    await page.getByTestId("demo-banner").getByRole("button", { name: "Reset demo data" }).click();
+    const banner = page.getByTestId("demo-banner");
+    await banner.getByRole("button", { name: "Reset demo data" }).click();
+    // "Resetting…" until the reset is done, then the page reloads with the button as before
+    await expect(banner.getByRole("button", { name: "Resetting…" })).toBeVisible();
+    await expect(banner.getByRole("button", { name: "Reset demo data" })).toBeVisible({ timeout: 30_000 });
     await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible({ timeout: 30_000 });
     await page.getByLabel("Username").fill("demo-register");
     await page.getByLabel("Password").fill("Demo-PennyWarden-2026");
