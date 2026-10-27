@@ -137,6 +137,10 @@ When explicit sub-budgets exist:
 
 `Other.amount = parent.amount - SUM(explicit child amounts)`.
 
+### 6.2 Budget History Entry (2.2.0, #284)
+
+A budget line's figures for a year **before the first Fiscal Year in PennyWarden**, entered by a Budget Manager from earlier records: Fiscal Year label (must include the year), budgeted amount, actual amount (may be negative), optional note. It is stored against the oldest budget of the line (the continuation links) and read for every budget of the line. It can be entered on any budget except Budget 0 and the system-managed `Other`; a parent without its own entry for a year shows the sum of its sub-budgets' entries (and, when both exist and differ, its own with a mismatch note). Labelled *Entered*; shown in the budget's History and the Budget Review (and so in the review appended to the Planning Sheet), not in dashboard charts. Reporting only: it never affects actuals, registers or Fiscal Year closure. Corrected or retired with a reason, never deleted; audited with before and after values. A year a Fiscal Year in PennyWarden covers is refused; an entry whose year a later-added Fiscal Year covers is kept but no longer counted.
+
 ## 7. Entity
 
 Represents a person or organization participating in financial activity.

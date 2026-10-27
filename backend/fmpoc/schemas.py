@@ -505,6 +505,27 @@ class FundraiserSeriesResultIn(In):
     note: OptStr(500) = None
 
 
+class BudgetHistoryIn(In):
+    """2.2.0 (#284): a year before PennyWarden, entered on a budget's History."""
+    fiscal_year_label: Str(40)
+    budgeted: Amount
+    actual: Amount
+    note: OptStr(500) = None
+
+
+class BudgetHistoryCorrectIn(In):
+    fiscal_year_label: Str(40) | None = None
+    budgeted: Amount | None = None
+    actual: Amount | None = None
+    note: OptStr(500) = None
+    reason: Str(500)
+
+
+class BudgetHistoryCsvIn(In):
+    fiscal_year_id: int
+    csv: str = Field(min_length=1, max_length=600_000)
+
+
 class FundraiserSeriesMergeIn(In):
     into_series_id: int
 

@@ -618,6 +618,28 @@ class FundraiserSeriesResult(Base):
     created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
+class BudgetHistoryEntry(Base):
+    """2.2.0 (#284): a budget's budgeted and actual figures for a year before PennyWarden, entered by a Budget Manager
+    (labelled *Entered*; reporting only - never part of actuals, registers or closure). Stored against the oldest
+    budget of the line (#89 links) and read for every budget of the line. Corrected or retired, never deleted."""
+    __tablename__ = "budget_history_entry"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
+    budget_id: Mapped[int] = mapped_column(ForeignKey("budget.id"), index=True)
+    fiscal_year_label: Mapped[str] = mapped_column(String(40))
+    year: Mapped[int] = mapped_column(Integer)
+    budgeted_cents: Mapped[int] = mapped_column(BigInteger)
+    actual_cents: Mapped[int] = mapped_column(BigInteger)
+    note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    retired_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    retired_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    retire_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updated_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    updated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
 class FundraiserFyReportNote(Base):
     """2.1.0 (#277): the Fiscal Year fundraising report's notes, remembered per Fiscal Year."""
     __tablename__ = "fundraiser_fy_report_note"

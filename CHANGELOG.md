@@ -31,9 +31,26 @@ PennyWarden 2.2.0 (in progress).
   XlsxWriter 3.3.0, and the build tool Vite 6.4.5 (a security fix for its development server, which PennyWarden
   doesn't ship). Bug-fix releases; no change in how PennyWarden behaves.
 
+### Budgets
+- **Budget history before PennyWarden (#284).** Budget Managers can enter the budgeted and actual figures of years
+  before the first Fiscal Year in PennyWarden, from the old spreadsheets, so a budget's history is complete:
+  - **On a budget's History** (every budget now has one for Budget Managers): *Add an earlier year* — the year,
+    budgeted, actual and an optional note. Entries can be corrected or retired (with a reason), never deleted, and
+    every change is in the audit log. They follow the budget's continuation links, so a renumbered budget keeps them.
+  - **Any level.** Enter them on a budget, its sub-budgets, or both. A budget without its own figure for a year shows
+    the sum of its sub-budgets' (marked as such); if both are entered and differ, a note says so.
+  - **From a CSV file:** *Budgets → Import earlier years…* takes *year, budget code, budgeted, actual, note*, matched
+    on the chosen Fiscal Year's codes (a template with them is offered). A preview marks each row as matched, refused
+    (with the reason) or duplicate before anything is saved.
+  - **Where they show:** the budget's History and the **Budget Review** (screen, PDF and CSV — and so the review
+    appended to the Planning Sheet), after the Fiscal Years in PennyWarden, labelled *Entered*. Not in the dashboard
+    charts. They never change actuals, registers or Fiscal Year closure.
+  - Years a Fiscal Year in PennyWarden covers are refused, so nothing is counted twice.
+
 ### Upgrade
+- Migration `0049` adds the table `budget_history_entry` (empty).
 - Migration `0048` adds two columns to `user_mfa` (`new_key_required`, `pending_own_key`; both off). No existing value
-  changes. Going back to 2.1.2 needs the pre-upgrade data backup (2.1.2 does not know revision 0048).
+  changes. Going back to 2.1.2 needs the pre-upgrade data backup (2.1.2 does not know revisions 0048 and later).
 
 ## 2.1.2 — 2026-10-23
 Hotfix for 2.1.1. No database migration; going back to 2.1.1 is just reinstalling it.

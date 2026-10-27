@@ -7,7 +7,9 @@ from sqlalchemy.orm import Session
 
 from ..deps import Ctx, get_db, require
 from ..models import Budget, FiscalYear
-from ..schemas import BudgetCreateIn, BudgetUpdateIn, ReasonIn
+from ..schemas import (BudgetCreateIn, BudgetHistoryCorrectIn, BudgetHistoryCsvIn, BudgetHistoryIn, BudgetUpdateIn,
+                       ReasonIn)
+from ..services import budget_history as hist
 from ..services import budgets as svc
 from ..services.common import get_scoped
 
@@ -51,6 +53,63 @@ def continue_options(fiscal_year_id: int = Query(...), budget_type: Literal["INC
 def history(budget_id: int, db: Session = Depends(get_db), ctx: Ctx = Depends(require("financial.view"))):
     """1.8.0 (#89): the budget's lineage across Fiscal Years, oldest first."""
     return svc.lineage(db, get_scoped(db, Budget, budget_id, ctx, "Budget"))
+
+
+# ------------------------------------------------------------------ 2.2.0 (#284) history before PennyWarden
+@router.get("/history-entries/template")
+def history_template(fiscal_year_id: int = Query(...), db: Session = Depends(get_db),
+                     ctx: Ctx = Depends(require("budget.manage"))):
+    """The CSV template: the columns and one row per budget code of the Fiscal Year."""
+    from fastapi.responses import Response as R
+    fy = get_scoped(db, FiscalYear, fiscal_year_id, ctx, "Fiscal Year")
+    return R(hist.template_csv(db, fy), media_type="text/csv",
+             headers={"Content-Disposition": 'attachment; filename="budget-history-template.csv"'})
+
+
+@router.post("/history-entries/preview")
+def history_preview(body: BudgetHistoryCsvIn, db: Session = Depends(get_db),
+                    ctx: Ctx = Depends(require("budget.manage"))):
+    """What a CSV import would do, row by row; saves nothing."""
+    return hist.preview(db, ctx, get_scoped(db, FiscalYear, body.fiscal_year_id, ctx, "Fiscal Year"), body.csv)
+
+
+@router.post("/history-entries/import")
+def history_import(body: BudgetHistoryCsvIn, db: Session = Depends(get_db),
+                   ctx: Ctx = Depends(require("budget.manage"))):
+    out = hist.import_csv(db, ctx, get_scoped(db, FiscalYear, body.fiscal_year_id, ctx, "Fiscal Year"), body.csv)
+    db.commit()
+    return out
+
+
+@router.patch("/history-entries/{entry_id}")
+def history_correct(entry_id: int, body: BudgetHistoryCorrectIn, db: Session = Depends(get_db),
+                    ctx: Ctx = Depends(require("budget.manage"))):
+    e = hist.correct(db, ctx, entry_id, body)
+    db.commit()
+    return hist.entry_out(e)
+
+
+@router.post("/history-entries/{entry_id}/retire")
+def history_retire(entry_id: int, body: ReasonIn, db: Session = Depends(get_db),
+                   ctx: Ctx = Depends(require("budget.manage"))):
+    e = hist.retire(db, ctx, entry_id, body.reason)
+    db.commit()
+    return hist.entry_out(e)
+
+
+@router.get("/{budget_id}/history/entered")
+def history_entered(budget_id: int, db: Session = Depends(get_db), ctx: Ctx = Depends(require("financial.view"))):
+    """The years before PennyWarden entered for this budget's line (Entered), for its History view."""
+    return hist.view(db, ctx, get_scoped(db, Budget, budget_id, ctx, "Budget"))
+
+
+@router.post("/{budget_id}/history/entered", status_code=201)
+def history_add(budget_id: int, body: BudgetHistoryIn, db: Session = Depends(get_db),
+                ctx: Ctx = Depends(require("budget.manage"))):
+    b = get_scoped(db, Budget, budget_id, ctx, "Budget")
+    e = hist.add(db, ctx, b, body.fiscal_year_label, body.budgeted, body.actual, body.note)
+    db.commit()
+    return hist.entry_out(e)
 
 
 @router.get("/{budget_id}")
