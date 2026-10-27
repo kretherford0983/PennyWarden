@@ -62,6 +62,7 @@ database (key check value stored in the workspace row).
 | `update_channel` | `FM_UPDATE_CHANNEL` | `auto` | 1.10.0, the update notification: `auto` follows the build (production builds look for releases, test builds for newer test builds and releases, other builds do not check); `stable`, `test` or `off` force it. Administrators turn the check on or off in System/About |
 | `update_base_url` | `FM_UPDATE_BASE_URL` | `https://pennywarden.org` | Where the release data files (`releases.json`, `releases-test.json`) are read |
 | `log_level` | `FM_LOG_LEVEL` | `INFO` | Log level |
+| `testing_mode` | `FM_TESTING_MODE` | `false` | 2.2.0, **server installs only**: a test server (for example the released app installed a second time to try new releases). Every page shows a *TESTING MODE* banner and Administrators get System/About → **Testing** to move timers and schedules (next scheduled backup, retry now, back-dating backup runs for retention, the last-backup time, the reinitialize cooldown, reminder due dates, the update check). Only here or in the environment — never from the web; shown read-only on System/About → Settings. Backups made in testing mode are marked and can't be restored by the app on a server that isn't in testing mode (`pennywarden restore FILE --accept-testing-backup` on the command line). Restart the service after changing it (`sudo pennywarden apply-config` on the Linux server) |
 
 Example `config.toml`:
 

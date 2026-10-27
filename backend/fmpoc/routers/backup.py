@@ -373,6 +373,7 @@ def run_restore(app, job, up: dict, passphrase: str, actor: dict) -> None:
             pass
         job.advance("Checking versions and the encryption key")
         facts = bk.check_compatible(work / "unpacked" / "data", _known_revisions(settings.database_url))
+        testing_backup = bk.check_testing(manifest, bool(getattr(app.state, "testing_mode", False)))   # #231
         chosen = list(pr.DOMAINS)
         missing_users = "add"
         if actor.get("choose"):
@@ -433,7 +434,8 @@ def run_restore(app, job, up: dict, passphrase: str, actor: dict) -> None:
                           "sessions_revoked": "all",
                           # 2.2.0 (#319): what was restored; a partial restore keeps the current audit log
                           "restored": chosen, "kept": [d for d in pr.DOMAINS if d not in chosen],
-                          "partial": not full, "notes": pr.report_lines(partial_facts) if not full else []},
+                          "partial": not full, "notes": pr.report_lines(partial_facts) if not full else [],
+                          "testing_backup": testing_backup},
                          category="SECURITY")
             s.commit()
         app.state.engine, app.state.session_factory = engine, factory

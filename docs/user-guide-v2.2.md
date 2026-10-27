@@ -95,3 +95,21 @@ Three common cases:
 
 If you restore Users but not Data, people added after the backup are kept but switched off (inactive); the restore
 lists them so you can switch them back on.
+
+## Testing mode (for whoever runs the server)
+
+To try new releases or settings without touching your real data, install PennyWarden a second time as a **test server**
+and add `testing_mode = true` to the `[server]` section of its `config.toml` (then restart it; on Linux
+`sudo pennywarden apply-config`). Every page then shows a **TESTING MODE** banner, and Administrators get
+**System/About → Testing**:
+- **Scheduled backups:** set when the next one runs, or *Run as if due now*; *Retry the failed backup now* instead of
+  waiting for the retry; move earlier runs back by some days to watch the daily/weekly/monthly retention at work.
+- **Backup reminder:** set the time of the last successful backup to make the "no backup for N days" warning appear.
+- **Reinitialize:** clear the 24-hour cooldown.
+- **Reminders:** move an organization reminder's due date, for example into the past so it shows now.
+- **Updates:** check for updates now.
+
+Nothing financial changes and the real clock keeps running. A backup made on the test server can't be restored onto
+your main server from the app (it is marked as a test backup); restoring your main server's backup onto the test server
+works as usual — that is the easy way to give the test server real-looking data. Local installs ignore the setting for
+now.

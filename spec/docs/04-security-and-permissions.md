@@ -145,6 +145,14 @@ back.
 Before/after snapshots are used for auditable mutations, with sensitive
 values sanitized before entering the audit record.
 
+**Testing mode (2.2.0, #231).** A server-install-only switch in `config.toml` (`testing_mode = true`, or
+`FM_TESTING_MODE`); the web UI and API can't turn it on or off. While it is on, every page shows a testing banner and
+Administrators (`system.manage`) can move timers and schedules on System/About → Testing; the endpoints answer 404
+otherwise. It never moves the real clock and changes no financial records. Testing actions are not bound by the audit
+rules (decision 2026-10-14) but are still recorded as `TESTING_*` events in the Security category. A backup made in
+testing mode is marked; the application refuses to restore it onto a server that is not in testing mode, and the
+command line requires `--accept-testing-backup` (the server owner); `SYSTEM_RESTORED` records `testing_backup`.
+
 
 ## 7. Secure Coding and Request Handling
 

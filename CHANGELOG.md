@@ -45,6 +45,20 @@ PennyWarden 2.2.0 (in progress).
   - On the command line: `pennywarden restore FILE --only data,reminders` or `--skip settings,users`, and
     `pennywarden restore FILE --list` shows the parts a backup holds. See docs/backup-restore.md.
 
+### Testing mode (server installs)
+- **A test server that doesn't make you wait (#231).** `testing_mode = true` in `config.toml` (only there — never from
+  the web) turns a server install into a test server: a striped **TESTING MODE** banner on every page, including the
+  sign-in page, and **System/About → Testing** for Administrators, which moves timers and schedules instead of waiting:
+  - the next scheduled backup (or *Run as if due now*), and *Retry the failed backup now*;
+  - backup runs moved back in time, to see what retention keeps and removes;
+  - the time of the last successful backup, to bring up (or clear) the backup reminder;
+  - clearing the reinitialize cooldown;
+  - moving an organization reminder's due date;
+  - *Check for updates now*.
+  The real clock is never moved, nothing financial changes, and every action is in the audit log as a testing action.
+  Backups made in testing mode are marked: the app won't restore one onto a server that isn't in testing mode (the
+  server owner can, with `pennywarden restore FILE --accept-testing-backup`). Local installs ignore the setting for now.
+
 ### Budgets
 - **Budget history before PennyWarden (#284).** Budget Managers can enter the budgeted and actual figures of years
   before the first Fiscal Year in PennyWarden, from the old spreadsheets, so a budget's history is complete:
@@ -62,7 +76,7 @@ PennyWarden 2.2.0 (in progress).
   - Years a Fiscal Year in PennyWarden covers are refused, so nothing is counted twice.
 
 ### Upgrade
-- Migration `0049` adds the table `budget_history_entry` (empty).
+- Migration `0049` adds the table `budget_history_entry` (empty); `0050` the table `testing_state` (empty).
 - Migration `0048` adds two columns to `user_mfa` (`new_key_required`, `pending_own_key`; both off). No existing value
   changes. Going back to 2.1.2 needs the pre-upgrade data backup (2.1.2 does not know revisions 0048 and later).
 

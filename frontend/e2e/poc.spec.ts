@@ -1322,6 +1322,55 @@ test("CR-024: a new installation is set up from the backup in the initialization
   }
 });
 
+test("#231: a server in testing mode shows the banner everywhere and the Testing tab to Administrators", async ({ page }) => {
+  const port = 8801;
+  const bundle = process.env.FM_BUNDLE;
+  const dataDir = mkdtempSync(join(tmpdir(), "fm-test-srv-"));
+  const args = ["--mode", "server", "--host", "127.0.0.1", "--no-browser", "--port", String(port), "--data-dir", dataDir];
+  const child = spawn(bundle || process.env.FM_PYTHON || "python", bundle ? args : ["-m", "fmpoc", ...args],
+    { cwd: existsSync(join(process.cwd(), "..", "backend")) ? join(process.cwd(), "..", "backend") : join(process.cwd(), "backend"),
+      stdio: "ignore", env: { ...process.env, FM_TESTING_MODE: "true" } });
+  try {
+    const base = `http://127.0.0.1:${port}`;
+    for (let i = 0; i < 120; i++) {
+      try { if ((await fetch(`${base}/api/health`)).ok) break; } catch { /* starting */ }
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    await page.goto(base + "/");
+    await page.getByLabel("Organization / Workspace Name").fill("Test Server Org");
+    await page.getByLabel("Administrator First Name").fill("Pat");
+    await page.getByLabel("Administrator Last Name").fill("Example");
+    await page.getByLabel("Administrator Username").fill("admin");
+    await page.getByLabel("Administrator Email Address").fill("admin@example.org");
+    await page.getByLabel("Password", { exact: true }).fill(PW);
+    await page.getByLabel("Password Confirmation").fill(PW);
+    await page.getByRole("button", { name: "Initialize" }).click();
+    const secret = (await page.getByTestId("mfa-secret").textContent())!.replace(/\s/g, "");
+    await page.getByLabel("Code from the app").fill(totp(secret));
+    await page.getByRole("button", { name: "Turn on two-step verification" }).click();
+    await page.getByLabel("I have saved my recovery codes").check();
+    await page.getByRole("button", { name: "Continue" }).click();
+    await setupQuestions(page);
+    await expect(page.getByTestId("testing-banner")).toContainText("TESTING MODE");
+    await page.goto(base + "/about/testing");
+    const panel = page.getByRole("region", { name: "Testing" });
+    await expect(panel).toBeVisible();
+    await expect(panel).toContainText("scheduled backups are off");
+    await panel.getByRole("button", { name: "Check for updates now" }).click();
+    await expect(panel.getByRole("status")).toContainText("Update check done.");
+    await page.screenshot({ path: "e2e-screenshots/light-testing-mode.png", fullPage: true });
+    // the setting is shown read-only
+    await page.goto(base + "/about/settings");
+    await expect(page.getByText("Testing mode (test server)")).toBeVisible();
+    // and the sign-in page carries the banner too
+    await page.getByRole("button", { name: "Sign out" }).click();
+    await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
+    await expect(page.getByTestId("testing-banner")).toBeVisible();
+  } finally {
+    child.kill();
+  }
+});
+
 // ---------------------------------------------------------------- v1.5.0 UI polish
 test("CR-028 / CR-030 / CR-029 / CR-032: account groups, chart columns, signature preview, aligned passphrase fields", async ({ page }) => {
   await login(page, "bm1");

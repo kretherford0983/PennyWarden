@@ -650,3 +650,7 @@ label.check.small { font-size: 12px; }
 .restore-tree summary { cursor: pointer; }
 .restore-tree summary > label { display: inline-flex; }
 .restore-summary { margin-top: 10px; }
+/* 2.2.0 (#231): testing mode - a striped banner on every page, so a test server is never mistaken for a live one */
+.testing-banner { background: repeating-linear-gradient(135deg, var(--warn-bg), var(--warn-bg) 12px, var(--yellow-bg) 12px, var(--yellow-bg) 24px);
+  border-color: var(--warn-border); color: var(--yellow-fg); }
+.testing-panel h3 { margin-top: 18px; }

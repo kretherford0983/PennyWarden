@@ -42,6 +42,7 @@ def status(request: Request, response: Response, db: Session = Depends(get_db)):
             "maintenance_mode": maintenance_state(ws),
             "maintenance": request.app.state.maintenance,
             "mode": s.mode, "insecure_transport_warning": request.app.state.insecure_transport_warning,
+            "testing_mode": bool(getattr(request.app.state, "testing_mode", False)),   # 2.2.0 (#231): the banner
             **legal_payload()}
 
 

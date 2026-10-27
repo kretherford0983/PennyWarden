@@ -64,6 +64,10 @@ def last_reinitialize(db: Session, ws_id: int) -> dt.datetime | None:
 
 def cooldown_until(db: Session, ws_id: int, now: dt.datetime | None = None) -> dt.datetime | None:
     last = last_reinitialize(db, ws_id)
+    from . import testing     # 2.2.0 (#231): cleared by a testing-mode Administrator
+    cleared = testing.cooldown_cleared_at(db, ws_id)
+    if last and cleared and cleared >= last:
+        return None
     if last and (now or utcnow()) < last + COOLDOWN:
         return last + COOLDOWN
     return None

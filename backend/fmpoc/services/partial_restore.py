@@ -62,7 +62,7 @@ REMINDER_TABLES = ("reminder",)
 USER_TABLES = ("app_user", "user_role", "user_mfa", "mfa_recovery_code", "user_security_question", "security_notice",
                "check_printer_setting", "trusted_device")
 # never copied from a backup in a partial restore: seed data, live state, the append-only log
-KEPT_TABLES = ("workspace", "role", "auth_session", "update_check", "audit_event", "alembic_version")
+KEPT_TABLES = ("workspace", "role", "auth_session", "update_check", "audit_event", "alembic_version", "testing_state")
 DATA_WORKSPACE_COLUMNS = ("next_entity_number",)
 
 DOMAINS = ("data", *SETTINGS_SECTIONS, "reminders", "users")

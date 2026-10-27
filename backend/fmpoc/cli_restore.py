@@ -258,10 +258,14 @@ def restore(args) -> int:
         try:
             manifest = bk.unpack(src, passphrase, work / "unpacked")
             facts = bk.check_compatible(work / "unpacked" / "data", known_revisions(settings))
+            from .services.testing import enabled_for
+            testing_backup = bk.check_testing(manifest, enabled_for(settings), args.accept_testing_backup)
         except bk.BackupError as e:
             raise CliError(f"{e} Nothing was changed.", 2) from None
         say(f"  Backup of \"{facts['workspace']}\" made {manifest.get('created_at')} with version "
             f"{manifest.get('app_version')}.")
+        if testing_backup:
+            say("  It was made on a server in TESTING MODE (its audit trail may have gaps).")
         full = pr.is_full(chosen)
         if args.list or not full:
             # 2.2.0 (#319, point 9): the backup is brought to this version in the work folder before anything else
@@ -306,7 +310,7 @@ def restore(args) -> int:
             raise CliError("PennyWarden is running on this data folder. Quit it first, then run the command again. "
                            "Nothing was changed.", 4)
         summary = run_offline_restore(settings, work / "unpacked" / "data", manifest, src.name, chosen,
-                                      missing_users)
+                                      missing_users, testing_backup)
         say("Restore complete.")
         for line in summary.get("notes") or []:
             say("  " + line)
@@ -338,7 +342,7 @@ def os_user() -> str:
 
 
 def run_offline_restore(settings, data: Path, manifest: dict, source_name: str, chosen: list[str] | None = None,
-                        missing_users: str = "add") -> dict:
+                        missing_users: str = "add", testing_backup: bool = False) -> dict:
     """Report, swap, migrate, revoke sessions and audit - with the service stopped. Rolls back on failure.
     2.2.0 (#319): chosen - the parts to restore (default everything); a partial restore keeps the rest and the
     current audit log."""
@@ -399,7 +403,8 @@ def run_offline_restore(settings, data: Path, manifest: dict, source_name: str, 
                               "report": summary.get("report"), "report_transactions": summary.get("transactions", 0),
                               "sessions_revoked": "all", "restored": chosen,
                               "kept": [d for d in pr.DOMAINS if d not in chosen], "partial": not full,
-                              "notes": pr.report_lines(facts) if not full else []}, category="SECURITY")
+                              "notes": pr.report_lines(facts) if not full else [],
+                              "testing_backup": testing_backup}, category="SECURITY")
                 s.commit()
         finally:
             engine.dispose()
@@ -459,6 +464,8 @@ def main(argv: list[str]) -> int:
     g2.add_argument("--only", help="restore only these parts: data, settings[.general|.backups|.payments|.donations], "
                                    "reminders, users (comma-separated)")
     g2.add_argument("--skip", help="restore everything except these parts")
+    p.add_argument("--accept-testing-backup", action="store_true",
+                   help="restore a backup made on a server in testing mode onto a server that isn't (2.2.0)")
     p.add_argument("--missing-users", choices=["add", "include-users"],
                    help="restored records referring to users that aren't here: add just those users from the backup "
                         "(default) or restore Users too")

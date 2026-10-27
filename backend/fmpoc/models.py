@@ -640,6 +640,18 @@ class BudgetHistoryEntry(Base):
     updated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
+class TestingState(Base):
+    """2.2.0 (#231): what a testing-mode Administrator moved that is otherwise taken from the audit log (which can't be
+    changed): the time of the last successful backup, and when the reinitialize cooldown was cleared. Read only while
+    the server is in testing mode."""
+    __tablename__ = "testing_state"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), unique=True)
+    last_backup_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    reinitialize_cooldown_cleared_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    updated_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+
+
 class FundraiserFyReportNote(Base):
     """2.1.0 (#277): the Fiscal Year fundraising report's notes, remembered per Fiscal Year."""
     __tablename__ = "fundraiser_fy_report_note"

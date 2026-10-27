@@ -22,7 +22,7 @@ from .deps import enforce_csrf, enforce_maintenance
 from .errors import install_handlers
 from .routers import (admin, attachments, audit_log, auth, backup, bank_accounts, budgets, checks, dashboard, donations,
                       entities, fiscal_years, fundraisers, pdf_preview, register, reminders, reports, system, updates,
-                      users)
+                      testing, users)
 from .security import crypto
 from .services import bootstrap
 from .services.auth import LoginRateLimiter
@@ -169,6 +169,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     from .services.backup import Jobs, cleanup_work
     app.state.jobs, app.state.uploads, app.state.maintenance = Jobs(), {}, None
     cleanup_work(settings)
+    # 2.2.0 (#231): testing mode - server installs only (a local install ignores the setting, phase 2)
+    from .services import testing as testing_svc
+    app.state.testing_mode = testing_svc.configure(settings)
 
     install_handlers(app)
     frontend_build = _frontend_build(settings.frontend_dir or STATIC_DIR)
@@ -209,7 +212,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(BodyLimitMiddleware)
 
     for r in (system, backup, auth, users, audit_log, fiscal_years, budgets, entities, bank_accounts, register,
-              attachments, dashboard, reports, fundraisers, reminders, updates, checks, donations, pdf_preview, admin):
+              attachments, dashboard, reports, fundraisers, reminders, updates, checks, donations, pdf_preview, admin,
+              testing):
         app.include_router(r.router)
 
     @app.api_route("/api/{rest:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"], include_in_schema=False)

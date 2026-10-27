@@ -132,7 +132,8 @@ sudo pennywarden restore --list --data-dir /var/lib/pennywarden
 
 Since 2.2.0, `--only` and `--skip` choose the parts (comma-separated: `data`, `settings` or its sections
 `settings.general`, `settings.backups`, `settings.payments`, `settings.donations`, `reminders`, `users`; `data` is
-never split). Without them everything is restored. The command prints what is restored and kept, and any users the
+never split). A backup made on a server in **testing mode** (2.2.0, #231) is refused on a server that isn't in testing
+mode; add `--accept-testing-backup` to restore it anyway (its audit trail may have gaps). Without them everything is restored. The command prints what is restored and kept, and any users the
 restored records refer to that aren't here (added from the backup unless `--missing-users include-users`), then asks
 before continuing. `FILE --list` shows the parts a backup holds, with counts, and changes nothing.
 

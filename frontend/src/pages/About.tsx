@@ -7,6 +7,7 @@ import { UpdateSettings } from "./Updates";
 import { useMe } from "../App";
 import { MaintenancePanel } from "./Maintenance";
 import { ReinitializePanel } from "./Reinitialize";
+import { TestingPanel } from "./Testing";
 import { BackupWarningSetting, DiagnosticsPanel, HealthPanel, OrganizationPanel, SecurityOverviewPanel, SessionsPanel, SettingsPanel } from "./AdminSettings";
 
 /** 2.0.0 build 11 (#216, docs/ui-standards.md): System/About in tabs, each at its own address (/about/<tab>, so it can
@@ -14,7 +15,7 @@ import { BackupWarningSetting, DiagnosticsPanel, HealthPanel, OrganizationPanel,
  * address shows About. */
 export const ABOUT_TABS = [
   ["about", "About"], ["general", "General"], ["settings", "Settings"], ["backups", "Backups"],
-  ["security", "Security"], ["health", "System health"], ["advanced", "Advanced"],
+  ["security", "Security"], ["health", "System health"], ["advanced", "Advanced"], ["testing", "Testing"],
 ] as const;
 export type AboutTab = (typeof ABOUT_TABS)[number][0];
 export const aboutPath = (tab: AboutTab) => (tab === "about" ? "/about" : `/about/${tab}`);
@@ -24,23 +25,24 @@ export default function About() {
   const { path, navigate } = useRouter();
   const [a, setA] = useState<any>(null);
   const [org, setOrg] = useState<string | null>(null);
+  const [testingMode, setTestingMode] = useState(false);   // 2.2.0 (#231)
   useEffect(() => {
     api.get("/api/system/about").then(setA);
-    api.get("/api/system/status").then((s) => setOrg(s.workspace_name));
+    api.get("/api/system/status").then((s) => { setOrg(s.workspace_name); setTestingMode(!!s.testing_mode); });
   }, []);
   const admin = can("system.manage");
   const viewer = can("system.view");                  // Administrators and Auditors
   const backups = !!a && a.restore_max_mb != null;     // the backup/restore permission (the server says)
   const allowed: Record<AboutTab, boolean> = {
     about: true, general: admin, settings: viewer, backups: backups || admin, security: viewer, health: admin,
-    advanced: admin || backups,
+    advanced: admin || backups, testing: admin && testingMode,
   };
   const asked = (path.split("/")[2] || "about") as AboutTab;
   const known = ABOUT_TABS.some(([k]) => k === asked);
   const tab: AboutTab = known && allowed[asked] ? asked : "about";
   useEffect(() => {   // a tab address this user can't use (or a typo) becomes /about
-    if (a && path !== aboutPath(tab) && path.startsWith("/about")) navigate(aboutPath(tab), { replace: true });
-  }, [a, path, tab]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (a && org !== null && path !== aboutPath(tab) && path.startsWith("/about")) navigate(aboutPath(tab), { replace: true });
+  }, [a, org, path, tab]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!a) return <Loading />;
   const tabs = ABOUT_TABS.filter(([k]) => allowed[k]);
   const panels: Record<AboutTab, () => ReactNode> = {
@@ -69,6 +71,7 @@ export default function About() {
     security: () => <><SecurityOverviewPanel /><SessionsPanel /></>,
     health: () => <><HealthPanel /><DiagnosticsPanel /></>,
     advanced: () => <>{admin ? <MaintenancePanel /> : null}{backups ? <ReinitializePanel /> : null}</>,
+    testing: () => <TestingPanel />,
   };
   return (
     <div>
