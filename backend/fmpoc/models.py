@@ -1005,6 +1005,10 @@ class CheckDocument(Base):
     logo_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     logo_width: Mapped[int | None] = mapped_column(Integer, nullable=True)
     logo_height: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 2.2.0 (#325): the shared envelope library - the features a template is used for and the ones it is the default
+    # for (comma-separated: PAYMENTS, DONATIONS). For Payments, is_default stays in step with default_for.
+    features: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    default_for: Mapped[str | None] = mapped_column(String(60), nullable=True)
 
 
 # ---------------------------------------------------------------- 2.1.0 (#312) Donations module: receipt letters
