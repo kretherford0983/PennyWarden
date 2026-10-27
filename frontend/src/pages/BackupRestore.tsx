@@ -183,7 +183,7 @@ export function RestorePanel({ wizard = false, maxMb }: { wizard?: boolean; maxM
   };
 
   const finish = (done: any) => {
-    if (done.state === "done") setTimeout(() => window.location.assign("/"), done.result?.report_summary || done.result?.notes?.length ? 15000 : 4000);
+    if (done.state === "done") setTimeout(() => window.location.assign("/"), done.result?.report_summary || done.result?.notes?.length ? 12000 : 4000);
     else setSent(null);
   };
   const chosen = async (domains: string[], missingUsers: string) => {
