@@ -156,6 +156,7 @@ Seed hidden system Multiple entity.
 -   interest_rate nullable
 -   opening_balance decimal nullable
 -   opening_balance_date nullable
+-   account_opened_date nullable (2.2.0, #348; migration 0052)
 -   manual_current_balance decimal nullable
 -   active boolean
 -   closed_date nullable

@@ -273,6 +273,7 @@ class BankAccountCreateIn(In):
     interest_rate: Annotated[str | None, StringConstraints(strip_whitespace=True, max_length=12)] = None
     opening_balance: Amount | None = None
     opening_balance_date: OptDate = None
+    account_opened_date: OptDate = None     # 2.2.0 (#348)
     current_balance: Amount | None = None
     notes: OptStr(4000) = None
 
@@ -287,6 +288,7 @@ class BankAccountUpdateIn(In):
     interest_rate: Annotated[str | None, StringConstraints(strip_whitespace=True, max_length=12)] = None
     opening_balance: Amount | None = None
     opening_balance_date: OptDate = None
+    account_opened_date: OptDate = None     # 2.2.0 (#348): send null to clear it
     notes: OptStr(4000) = None
 
 
@@ -626,6 +628,7 @@ class FlowReportIn(In):
     include_balances: bool = False
     compare_date: OptDate = None                # only with include_balances; earlier than the Through Date
     notes: OptStr(4000) = None
+    show_substitution_notes: bool = False       # 2.2.0 (#348): notes on substituted starting values in the PDF
 
 
 class FlowExclusionIn(In):

@@ -2468,6 +2468,27 @@ test("#106: Financial Flow Report - review, exclude a line with a reason, note a
   await expect(incTotal).toHaveText(`$${(inc0 / 100).toLocaleString("en-US", { minimumFractionDigits: 2 })}`);
 });
 
+// ---------------------------------------------------------------- 2.2.0 #348: comparisons before any data
+test("#348: a Compare Date before any data uses the earliest data, marked on the review screen", async ({ page }) => {
+  await login(page, "ru1", "Brand-New-Pass-99");
+  const today = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  await page.getByRole("link", { name: "Reports" }).click();
+  await page.getByRole("tab", { name: "Financial Flow" }).click();
+  await page.getByLabel("Title").fill("E2E compare");
+  await page.getByLabel("From Date").fill(today);
+  const notes = page.getByRole("checkbox", { name: "Show notes on substituted starting values" });
+  await expect(notes).toBeDisabled();
+  await page.getByRole("checkbox", { name: "Include Bank Balances" }).check();
+  await page.getByLabel("Compare Date").fill("2001-01-01");
+  await expect(notes).toBeEnabled();
+  await expect(notes).not.toBeChecked();                     // off by default
+  await page.getByRole("button", { name: "Review transactions" }).click();
+  const subs = page.getByTestId("flow-substitutions");
+  await expect(subs).toContainText("starting balance is the first recorded balance");
+  await expect(subs).toContainText("(no data on 2001-01-01)");
+  await expect(subs.locator(".subst-marker").first()).toHaveAttribute("title", /Opening Balance Date|Update balance/);
+});
+
 // ---------------------------------------------------------------- 1.8.0 #113: Forgot password
 test("#113: security questions at the first sign-in, Forgot password, notices for the user and the Administrators", async ({ page }) => {
   await login(page, "admin");

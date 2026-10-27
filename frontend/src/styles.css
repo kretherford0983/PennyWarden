@@ -657,3 +657,5 @@ label.check.small { font-size: 12px; }
 /* 2.2.0 (#243): the demo banner */
 .demo-banner { background: var(--info-bg); border-color: var(--link); }
 .demo-banner button.small { margin-left: 4px; }
+.substitutions { list-style: none; padding-left: 0; }
+.subst-marker { cursor: help; color: var(--accent, #2563eb); font-weight: 600; }

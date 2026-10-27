@@ -275,6 +275,8 @@ class BankAccount(Base):
     interest_rate: Mapped[str | None] = mapped_column(String(12), nullable=True)  # decimal percent string
     opening_balance_cents: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     opening_balance_date: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
+    # 2.2.0 (#348): when the account was really opened (empty = it existed before PennyWarden)
+    account_opened_date: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
     manual_current_balance_cents: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     status: Mapped[str] = mapped_column(String(10), default="ACTIVE", index=True)  # ACTIVE | CLOSED
     closed_date: Mapped[dt.date | None] = mapped_column(Date, nullable=True)

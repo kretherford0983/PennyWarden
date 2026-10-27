@@ -71,6 +71,25 @@ saved are saved.
 the review you can add to the Planning Sheet), after your PennyWarden years, with the column marked *entered*. They
 never change actuals, the registers or the Fiscal Year closure, and they are not in the dashboard charts.
 
+## Reports: comparisons to a date before any data
+
+When a Financial Flow Report compares balances with a date before an account has any data in PennyWarden, the report
+uses the account's **earliest data** instead of $0 — its first dated balance, or for a register account its opening
+balance — so the Change column shows real growth, not the whole balance.
+
+- On the review screen each such account is listed with ⓘ. Hover over (or tab to) it to see how to give the account a
+  real balance on that date: *Update balance* with that date (accounts without a register), or an earlier Opening
+  Balance Date (register accounts).
+- The option **Show notes on substituted starting values** (off by default) prints a note for each one under the
+  balances, for example: *Savings: starting balance is the first recorded balance, 2026-07-01 (no data on
+  2026-01-01).* With the option off the PDF stays clean.
+
+### Account opened (Budget Managers)
+
+*Edit* a bank account to set **Account opened** when the account really was opened after PennyWarden was set up.
+Dates before it count as $0 (the account didn't exist), the report doesn't list it for a Through Date before then, and
+the dashboard balance charts start there. Leave it blank if the account existed before PennyWarden.
+
 ## Backup and restore (Administrators)
 
 ### Choose what to restore

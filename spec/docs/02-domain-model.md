@@ -194,6 +194,7 @@ Key properties:
 - optional interest rate.
 - opening balance.
 - opening balance date.
+- optional Account opened date (2.2.0, #348): when the account was really opened; blank means it existed before PennyWarden (BR-044a).
 - manually maintained current balance for applicable non-register accounts.
 - active/inactive/closed status.
 - closed date/reason where applicable.

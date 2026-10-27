@@ -69,7 +69,7 @@ def _params(db: Session, ctx, data) -> dict:
         raise validation("The Compare Date must be earlier than the Through Date.", "compare_date")
     return {"title": data.title, "date_from": data.date_from, "date_to": date_to, "current": current,
             "accounts": accounts, "include_balances": data.include_balances, "compare_date": compare,
-            "notes": data.notes or None}
+            "notes": data.notes or None, "substitution_notes": bool(data.show_substitution_notes)}
 
 
 def _period(p: dict) -> str:
@@ -119,9 +119,11 @@ def _totals(sec: dict) -> dict:
 
 # --------------------------------------------------------------------------- balances
 def _started(db: Session, a: BankAccount, d: dt.date) -> bool:
+    if a.account_opened_date is not None and d < a.account_opened_date:
+        return False
     if not a.register_enabled:
         return bank.manual_as_of(db, a, d) is not None
-    start = a.opening_balance_date or (a.created_at.date() if a.created_at else None)
+    start = bank.register_start(a)
     return start is None or start <= d
 
 
@@ -133,20 +135,42 @@ def _section_of(account_type: str) -> str:
     return account_type if account_type in ("CHECKING", "SAVINGS") else "INVESTMENTS"
 
 
+def substitution_text(s: dict) -> str:
+    """The note for a substituted starting value (Kyle, 2026-10-24): "Savings: starting balance is the first recorded
+    balance, 2026-07-01 (no data on 2026-01-01)." """
+    return (f"{s['account']}: starting balance is the first recorded balance, {s['date'].isoformat()} "
+            f"(no data on {s['requested'].isoformat()}).")
+
+
+def _hint(db: Session, account_id: int) -> str:
+    a = db.get(BankAccount, account_id)
+    how = ("set an earlier Opening Balance Date on the account" if a.register_enabled
+           else "enter a dated balance with Update balance")
+    return f"No data on that date. To use a real balance, {how}; if the account was opened later, set Account opened."
+
+
 def balances(db: Session, ws_id: int, date_to: dt.date, compare: dt.date | None) -> dict:
     """Every account open on the Through Date, by section, with its Current (bank) balance on that date (#56 / #88)
     and, with a Compare Date, the balance then and the change."""
+    subs: list[dict] = []
+
     def bal(a, d):
-        return bank.current_cents(db, a, d) if _started(db, a, d) else 0
+        # 2.2.0 (#348): a date before any data uses the earliest available data, not $0 (unless the account was
+        # opened after that date: Account opened)
+        cents, s = bank.balance_on(db, a, d)
+        if s is not None:
+            subs.append({"id": a.id, "account": a.account_name, "date": s["date"], "requested": d})
+        return cents, s
     secs = {k: {"key": k, "label": lbl, "accounts": [], "total": 0, "compare_total": 0} for k, lbl in SECTIONS}
     for a in db.scalars(select(BankAccount).where(BankAccount.workspace_id == ws_id).order_by(*bank.listing_order())):
         if not _open_on(db, a, date_to):
             continue
         s = secs[_section_of(a.account_type)]
-        row = {"id": a.id, "label": f"{a.account_name} - {bank.masked(a)}", "balance": bal(a, date_to),
+        row = {"id": a.id, "label": f"{a.account_name} - {bank.masked(a)}", "balance": bal(a, date_to)[0],
                "interest_rate": a.interest_rate or None, "register": a.register_enabled}
         if compare is not None:
-            row["compare_balance"] = bal(a, compare)
+            row["compare_balance"], s_ = bal(a, compare)
+            row["compare_substituted"] = s_["date"] if s_ else None
             row["change"] = row["balance"] - row["compare_balance"]
             s["compare_total"] += row["compare_balance"]
         s["accounts"].append(row)
@@ -154,7 +178,7 @@ def balances(db: Session, ws_id: int, date_to: dt.date, compare: dt.date | None)
     cs = secs["CHECKING"]["total"] + secs["SAVINGS"]["total"]
     cs_c = secs["CHECKING"]["compare_total"] + secs["SAVINGS"]["compare_total"]
     inv, inv_c = secs["INVESTMENTS"]["total"], secs["INVESTMENTS"]["compare_total"]
-    out = {"date": date_to, "compare_date": compare, "sections": [secs[k] for k, _ in SECTIONS],
+    out = {"date": date_to, "compare_date": compare, "substitutions": subs, "sections": [secs[k] for k, _ in SECTIONS],
            "totals": [{"label": "Total Checking & Savings", "total": cs, "compare_total": cs_c},
                       {"label": "Total Investments", "total": inv, "compare_total": inv_c},
                       {"label": "Total Assets", "total": cs + inv, "compare_total": cs_c + inv_c}]}
@@ -199,6 +223,8 @@ def preview(db: Session, ctx, data) -> dict:
             return {**x, **{k: fmt(x[k]) for k in ("balance", "compare_balance", "change", "total", "compare_total")
                             if k in x and x[k] is not None}}
         out["balances"] = {"date": b["date"].isoformat(), "compare_date": b["compare_date"].isoformat() if b["compare_date"] else None,
+                           "substitutions": [{"id": s["id"], "text": substitution_text(s), "hint": _hint(db, s["id"])}
+                                             for s in b["substitutions"]],
                            "sections": [{**f(s), "accounts": [f(a) for a in s["accounts"]]} for s in b["sections"]],
                            "totals": [f(t) for t in b["totals"]]}
     return out
@@ -354,7 +380,10 @@ def build_pdf(db: Session, ctx, data) -> tuple[str, str, dict]:
         f += [_Mark(doc, "Account balances"), P("Account balances", "h1"),
               P(f"Current (bank) balance of every account open on {_us(b['date'])}"
                 + (f", compared with {_us(b['compare_date'])}." if b["compare_date"] else "."), "small"),
-              Spacer(1, 4), _balances_table(b), Spacer(1, 12)]
+              Spacer(1, 4), _balances_table(b)]
+        if r["substitution_notes"] and b["substitutions"]:      # 2.2.0 (#348): off by default - the PDF stays clean
+            f += [Spacer(1, 4)] + [P(substitution_text(s), "small") for s in b["substitutions"]]
+        f.append(Spacer(1, 12))
     f.append(P(f"Generated {utcnow():%Y-%m-%d %H:%M} UTC by {ctx.user.username} — {ws.name}", "small"))
     doc.build(f)
     fd, path = tempfile.mkstemp(prefix="fmpoc-flow-", suffix=".pdf")
@@ -368,6 +397,6 @@ def build_pdf(db: Session, ctx, data) -> tuple[str, str, dict]:
     summary = {"report": "FINANCIAL_FLOW", "title": r["title"], "date_from": r["date_from"].isoformat(),
                "date_to": r["date_to"].isoformat(), "through": "Current" if r["current"] else r["date_to"].isoformat(),
                "bank_account_ids": [s["id"] for s in r["sections"]], "include_balances": r["include_balances"],
-               "compare_date": r["compare_date"].isoformat() if r["compare_date"] else None, "notes": r["notes"],
+               "compare_date": r["compare_date"].isoformat() if r["compare_date"] else None, "notes": r["notes"], "show_substitution_notes": r["substitution_notes"],
                "line_notes": notes, "exclusions": excluded, "pages": pages}
     return path, f"financial-flow-{safe}.pdf", summary

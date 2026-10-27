@@ -216,6 +216,9 @@ A register-enabled account can reach closure eligibility only through register a
 ### AC-BANK-011 — Non-register account zeroing
 A non-register account must have its manually maintained balance explicitly updated to $0.00 through an audited change before closure.
 
+### AC-BANK-012 — Comparisons before any data (2.2.0, #348)
+With a Compare Date before an account's first data, the Financial Flow Report's compare balance is the earliest available data (the first dated balance, or the opening balance), not $0, and the review screen marks it with an explanation. With **Account opened** after the Compare Date, the compare balance is $0 and is not marked. The PDF carries the substitution notes only when *Show notes on substituted starting values* is on. Account opened can't be in the future, can be cleared, and its changes are audited.
+
 ## Register Transactions and Allocations
 
 ### AC-REG-001 — Parent/allocation model

@@ -88,6 +88,17 @@ PennyWarden 2.2.0 (in progress).
     charts. They never change actuals, registers or Fiscal Year closure.
   - Years a Fiscal Year in PennyWarden covers are refused, so nothing is counted twice.
 
+### Reports
+- **Comparisons to a date before any data (#348).** A Financial Flow Report compared with a date before an account's
+  first data now uses its **earliest available data** — the first dated balance, or the register's opening balance —
+  instead of $0, so the Change column no longer shows the whole balance as growth. The review screen marks each such
+  account (ⓘ, with how to give it a real balance on that date). The new report option **Show notes on substituted
+  starting values** (off by default) prints a note for each one, for example "Savings: starting balance is the first
+  recorded balance, 2026-07-01 (no data on 2026-01-01)."
+- **Bank accounts: *Account opened* (optional, #348).** For an account opened after PennyWarden was set up: dates
+  before it count as $0, the report doesn't list it before then, and dashboard balance charts start there. Blank
+  means the account existed before PennyWarden. Changes are audited.
+
 ### Upgrade
 - Migration `0049` adds the table `budget_history_entry` (empty); `0050` the table `testing_state` (empty); `0051`
   the column `workspace.demo_mode` (off).
