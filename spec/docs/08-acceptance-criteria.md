@@ -304,6 +304,11 @@ If audit persistence fails, the associated auditable business mutation is rolled
 ### AC-AUD-004 — Append-only application behavior
 No application role can edit or delete Audit Events.
 
+2.2.0 (#319): a partial restore (some of Data, Settings sections, Reminders, Users) keeps the current audit log and adds one `SYSTEM_RESTORED` event listing what was restored and kept; only a full restore replaces the log with the backup's (the safety copy keeps the replaced one).
+
+### AC-BKP-319 — Choose what to restore (2.2.0, #319)
+After a backup is decrypted and checked, the Administrator who started the restore chooses the parts to restore (Data as one unit; Settings by section; Reminders; Users) and sees what is replaced and kept before confirming; nothing changes before that. Data can't be split. Kept encrypted values are re-encrypted with the backup's key; users missing from a restored Users set are kept inactivated; users that restored records refer to are listed first and added from the backup (or Users are included). The same choices exist on the command line (`--only`, `--skip`, `FILE --list`).
+
 ### AC-AUD-005 — Sensitive sanitization
 Audit snapshots never contain plaintext bank account numbers or encryption keys.
 

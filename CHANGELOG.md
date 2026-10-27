@@ -31,6 +31,20 @@ PennyWarden 2.2.0 (in progress).
   XlsxWriter 3.3.0, and the build tool Vite 6.4.5 (a security fix for its development server, which PennyWarden
   doesn't ship). Bug-fix releases; no change in how PennyWarden behaves.
 
+### Backup and restore
+- **Choose what to restore (#319).** After the backup is checked, **What to restore** lists its parts — **Data**
+  (always as one unit), **Settings** (General, Backups, Payments Setup, Donations Setup, each on its own),
+  **Reminders** and **Users** — all ticked. Untick what should stay as it is now, choose **Review** to see what will be
+  replaced and kept, then restore. Everything ticked is the full restore as before.
+  - A partial restore **keeps the current audit log** and records what was restored.
+  - Users created after the backup are kept but inactivated when Users are restored without Data.
+  - If the restored records refer to users who aren't here, they are listed first: add just those users from the
+    backup, or restore Users too.
+  - The backup's encryption key is always used; what is kept is re-encrypted with it when the backup comes from another
+    installation (moving to a new host).
+  - On the command line: `pennywarden restore FILE --only data,reminders` or `--skip settings,users`, and
+    `pennywarden restore FILE --list` shows the parts a backup holds. See docs/backup-restore.md.
+
 ### Budgets
 - **Budget history before PennyWarden (#284).** Budget Managers can enter the budgeted and actual figures of years
   before the first Fiscal Year in PennyWarden, from the old spreadsheets, so a budget's history is complete:

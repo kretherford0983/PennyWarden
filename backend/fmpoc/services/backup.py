@@ -260,7 +260,8 @@ class Jobs:
     def new(self, kind: str) -> Job:
         with self.lock:
             now = time.time()
-            for k in [k for k, j in self._jobs.items() if j.state != "running" and now - j.created > KEEP_SECONDS]:
+            for k in [k for k, j in self._jobs.items()
+                      if j.state not in ("running", "choose") and now - j.created > KEEP_SECONDS]:
                 self._jobs.pop(k, None)
             j = Job(secrets.token_urlsafe(24), kind)
             self._jobs[j.id] = j
@@ -270,7 +271,9 @@ class Jobs:
         return self._jobs.get(job_id)
 
     def running(self, kind: str | None = None) -> Job | None:
-        return next((j for j in self._jobs.values() if j.state == "running" and (kind is None or j.kind == kind)), None)
+        # 2.2.0 (#319): a restore waiting for the What to restore choice counts as running
+        return next((j for j in self._jobs.values() if j.state in ("running", "choose")
+                     and (kind is None or j.kind == kind)), None)
 
 
 def work_dir(settings) -> Path:

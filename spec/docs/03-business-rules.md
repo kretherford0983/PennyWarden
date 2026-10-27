@@ -156,6 +156,8 @@ A full Bank Account number must be unique within the Workspace. Uniqueness is en
 
 Full Bank Account number is encrypted at rest using application-level authenticated encryption. The portable encryption key is stored separately from SQLite and is not bound to a specific OS/machine.
 
+2.2.0 (#319): every restore, full or partial, installs the backup's portable key; values a partial restore keeps from the current installation (account numbers and their fingerprints, two-step secrets, signature images) are re-encrypted with it in the same transaction when the keys differ.
+
 ## BR-037 — Account Number Masking
 
 Normal account-number display is a fixed 10-character masked representation. No more than the final four characters may be revealed in masked form, and at least 50% of the actual identifier (rounded up) must remain masked. Full reveal is available only to Budget Managers.

@@ -70,3 +70,28 @@ saved are saved.
 **Where they show.** In the budget's History and in the **Budget Review** (on screen, in the PDF and the CSV, and in
 the review you can add to the Planning Sheet), after your PennyWarden years, with the column marked *entered*. They
 never change actuals, the registers or the Fiscal Year closure, and they are not in the dashboard charts.
+
+## Backup and restore (Administrators)
+
+### Choose what to restore
+**System/About → Backups → Restore** works as before up to the passphrase, your password and *RESTORE*. Once the
+backup is checked, **What to restore** opens with everything ticked (**All**). Choose *show the parts* to untick what
+should stay as it is now:
+- **Data** — all the financial records and attachments, always together;
+- **Settings** — General, Backups, Payments Setup and Donations Setup, each on its own;
+- **Reminders**;
+- **Users** — passwords, two-step verification, security questions, preferences.
+
+**Review** lists what will be replaced and what is kept; nothing has changed yet. Then **Restore the chosen parts**.
+Everyone is signed out, as with any restore.
+
+Three common cases:
+- **Bad entries in the data.** Restore **Data** only: users keep their current passwords and authenticators, settings
+  stay as they are, and the audit log still shows what happened.
+- **A test server back to its starting point.** Back it up before testing, then restore **Data** only afterwards.
+- **Moving to a new server.** Restore **Settings and Users** first so a few people can try it, then **Data and
+  Reminders** from a fresh backup at the switch. If someone was added on the old server in between, the restore offers
+  to add them.
+
+If you restore Users but not Data, people added after the backup are kept but switched off (inactive); the restore
+lists them so you can switch them back on.

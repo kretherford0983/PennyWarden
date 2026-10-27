@@ -1265,7 +1265,20 @@ test("CR-023 / CR-025: Administrator creates an encrypted backup and restores it
   await expect(page.getByRole("button", { name: "Restore" })).toBeDisabled();
   await page.getByLabel("Type RESTORE to confirm").fill("RESTORE");
   await page.getByRole("button", { name: "Restore" }).click();
+  // 2.2.0 (#319): What to restore - everything ticked, collapsed to All; here everything but Users
+  const wtr = page.getByRole("group", { name: "What to restore" });
+  await expect(wtr).toBeVisible({ timeout: 30_000 });
+  await expect(wtr.getByLabel("Restore all")).toBeChecked();
+  await wtr.getByText("— show the parts").click();
+  await wtr.getByLabel("Restore Users").uncheck();
+  await expect(wtr.getByLabel("Restore all")).not.toBeChecked();
+  await wtr.getByRole("button", { name: "Review" }).click();
+  await expect(wtr.getByTestId("restore-summary")).toContainText("Kept as it is now: Users");
+  await expect(wtr.getByTestId("restore-summary")).toContainText("and the current audit log");
+  await page.screenshot({ path: "e2e-screenshots/light-restore-what-to-restore.png", fullPage: true });
+  await wtr.getByRole("button", { name: "Restore the chosen parts" }).click();
   await expect(page.getByRole("status")).toContainText("Restore complete", { timeout: 30_000 });
+  await expect(page.getByTestId("restore-restored")).toContainText("Restored: data, settings.general");
   await page.screenshot({ path: "e2e-screenshots/light-restore-done.png", fullPage: true });
   await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible({ timeout: 15_000 });
   await login(page, "admin");
