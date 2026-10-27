@@ -2,7 +2,40 @@
 
 Versions are `Breaking.Major.Minor` from 1.6.0 (docs/branching.md).
 
-## 2.1.2 — unreleased
+## 2.2.0 — unreleased
+PennyWarden 2.2.0 (in progress).
+
+### Security
+- **Sign-in: a refused password is cleared (#343).** After a wrong username or password (or too many attempts) the
+  password field is emptied and the cursor put back in it; the username is kept. The message still doesn't say which
+  of the two was wrong.
+- **Password requirements, ticked off as you type (#343).** *My account → Change password* shows the requirements
+  beside the fields (stacked on a phone): at least 12 characters (at most 128), a letter and a digit, not the
+  username, different from the current password, and the confirmation matches. Each is red until met, then green with
+  a check mark; screen readers hear "met" / "not met". A refused change keeps what was typed. The same list appears
+  wherever a new password is chosen (after a temporary password, *Forgot password?*, the Initialization Wizard, and
+  an Administrator creating a user or resetting a password). The requirements come from the server
+  (`GET /api/auth/password-policy`); the password rules themselves are unchanged.
+- **Two-step verification: use your own authenticator key (#327).** Setting up two-step verification offers *Use my
+  own key instead* under the generated key: the key from an authenticator entry you already have (at least 16
+  Base32 characters; a note under 32) or an `otpauth://totp/` link (6 digits, 30 seconds, SHA-1 only). After a reset
+  your existing authenticator entry keeps working. A current code made with the key is still required, a new set of
+  recovery codes is issued, and the key never appears in logs, the audit log or error messages.
+- **Reset two-step verification: *Possible compromise* (#327).** An Administrator's reset (and
+  `pennywarden reset-mfa --compromised`) can be marked as a possible compromise: the user's next setup then accepts
+  only a newly generated key. The audit log records the marking and whether a setup used an own key (`compromised`,
+  `own_key`), never the key.
+- **FastAPI 0.162.0, Starlette 1.10.0, pydantic 2.14.1 (#339).** Framework updates (Starlette's request-URL
+  hardening, pydantic's validation fixes). No change in how PennyWarden behaves.
+- **Other dependency updates** (from Dependabot #352 and #353): SQLAlchemy 2.1.6, Alembic 1.20.1, ReportLab 5.1.0,
+  XlsxWriter 3.3.0, and the build tool Vite 6.4.5 (a security fix for its development server, which PennyWarden
+  doesn't ship). Bug-fix releases; no change in how PennyWarden behaves.
+
+### Upgrade
+- Migration `0048` adds two columns to `user_mfa` (`new_key_required`, `pending_own_key`; both off). No existing value
+  changes. Going back to 2.1.2 needs the pre-upgrade data backup (2.1.2 does not know revision 0048).
+
+## 2.1.2 — 2026-10-23
 Hotfix for 2.1.1. No database migration; going back to 2.1.1 is just reinstalling it.
 - **Register: changing a deposit's Entity now saves (#344).** Editing a deposit to pick a different Entity (for
   example moving transactions to the organization entity added in 2.1.0) saved without an error but kept the old

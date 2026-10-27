@@ -289,7 +289,8 @@ C:\PennyWarden\current\PennyWarden.cmd restore FILE.fmbak --data-dir C:\ProgramD
 C:\PennyWarden\current\PennyWarden.cmd reinitialize --data-dir C:\ProgramData\PennyWarden
 ```
 
-`reset-mfa` makes a user set up two-step verification again; `reset-password` prints a temporary password that must
+`reset-mfa` makes a user set up two-step verification again (add `--compromised` after a possible compromise: the user
+must then use a newly generated key, 2.2.0); `reset-password` prints a temporary password that must
 be changed at the next sign-in (both also enable an account disabled after too many failed attempts). `restore` and
 `reinitialize` stop the service first (they ask) — see [backup-restore.md](backup-restore.md). Files these commands
 create keep the folder's permissions from step 2, so the service account can still read them. Always add `--data-dir`:

@@ -621,3 +621,20 @@ label.check.small { font-size: 12px; }
 .donation-dialog .donation-actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; }
 .donation-dialog .donation-actions .spacer { flex: 1; }
 .donation-dialog details.donation-printed { margin: 0.5rem 0 0.75rem; }
+
+/* 2.2.0 (#343): new-password fields on the left half, the requirements checklist on the right half (stacked on a
+   phone). Unmet requirements are red, met ones green with a check mark; the colors are theme tokens (AA in both). */
+.pw-split { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+.pw-fields { min-width: 0; }
+.pw-checklist ul { list-style: none; margin: 4px 0 10px; padding: 0; }
+.pw-checklist li { display: flex; gap: 6px; align-items: baseline; font-size: 13px; line-height: 20px; }
+.pw-checklist li.unmet { color: var(--red-fg); }
+.pw-checklist li.met { color: var(--green-fg); }
+.pw-checklist li.pending { color: var(--muted); }
+.pw-mark { display: inline-block; width: 1em; text-align: center; font-weight: 700; }
+@media (max-width: 640px) { .pw-split { grid-template-columns: 1fr; } }
+/* 2.2.0 (#327): "Use my own key instead" under the generated authenticator key */
+.mfa-setup .own-key { margin-top: 10px; }
+.mfa-setup details.own-key summary { cursor: pointer; font-weight: 600; color: var(--link); }
+.mfa-setup details.own-key[open] { padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; }
+.pw-checklist > p.field-label { margin: 0 0 3px; }

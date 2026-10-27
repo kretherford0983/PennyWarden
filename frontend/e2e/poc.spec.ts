@@ -355,6 +355,67 @@ test("AC-AUTH-SELF-001/004: self-service password change", async ({ page }) => {
   await login(page, "ru1", "Brand-New-Pass-99");
 });
 
+test("#343: a failed sign-in clears and focuses the password; Change password shows the requirements and keeps the fields", async ({ page }) => {
+  await page.goto("/");
+  await page.getByLabel("Username").fill("ru1");
+  await page.getByLabel("Password").fill("Not-The-Password-1");
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.getByText("Invalid username or password.")).toBeVisible();
+  await expect(page.getByLabel("Password")).toHaveValue("");
+  await expect(page.getByLabel("Password")).toBeFocused();
+  await expect(page.getByLabel("Username")).toHaveValue("ru1");
+  await page.getByLabel("Password").fill("Brand-New-Pass-99");
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await passGates(page);
+  await page.getByRole("link", { name: "My account" }).click();
+  const list = page.getByTestId("password-checklist");
+  const req = (id: string) => list.locator(`li[data-req="${id}"]`);
+  // shown before typing, from the server's policy, nothing met yet
+  await expect(req("length")).toContainText("At least 12 characters (at most 128)");
+  for (const id of ["length", "letter_digit", "not_username", "differs_current", "confirm_matches"])
+    await expect(req(id)).toHaveAttribute("data-state", "unmet");
+  await expect(req("differs_temporary")).toHaveCount(0);
+  await expect(list).toHaveAttribute("aria-live", "polite");
+  await page.getByLabel("Current password").fill("Wrong-Current-11");
+  const np = page.getByLabel("New password", { exact: true });
+  await np.fill("short1");
+  await expect(req("letter_digit")).toHaveAttribute("data-state", "met");
+  await expect(req("length")).toHaveAttribute("data-state", "unmet");
+  await expect(req("length")).toContainText("(not met)");
+  await np.fill("Another-Pass-77");
+  await expect(req("length")).toHaveAttribute("data-state", "met");
+  await expect(req("length")).toContainText("(met)");
+  await expect(req("confirm_matches")).toHaveAttribute("data-state", "unmet");
+  await page.getByLabel("Confirm new password").fill("Another-Pass-77");
+  for (const id of ["length", "letter_digit", "not_username", "differs_current", "confirm_matches"])
+    await expect(req(id)).toHaveAttribute("data-state", "met");
+  // met is green and unmet red (theme tokens)
+  const green = await req("length").evaluate((el) => getComputedStyle(el).color);
+  expect(green).not.toBe(await page.getByText("Password requirements").evaluate((el) => getComputedStyle(el).color));
+  // a refused change keeps everything that was typed
+  await page.getByRole("button", { name: "Change password" }).click();
+  await expect(page.getByText("The current password is incorrect.")).toBeVisible();
+  await expect(page.getByLabel("Current password")).toHaveValue("Wrong-Current-11");
+  await expect(np).toHaveValue("Another-Pass-77");
+  await expect(page.getByLabel("Confirm new password")).toHaveValue("Another-Pass-77");
+  const card = page.locator("form.card", { has: page.getByRole("heading", { name: "Change password" }) });
+  await card.screenshot({ path: "e2e-screenshots/light-change-password-checklist.png" });
+  await page.getByRole("button", { name: /Switch to dark mode/ }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await card.screenshot({ path: "e2e-screenshots/dark-change-password-checklist.png" });
+  await page.getByRole("button", { name: /Switch to light mode/ }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await card.scrollIntoViewIfNeeded();
+  await card.screenshot({ path: "e2e-screenshots/phone-change-password-checklist.png" });
+  // on a phone the list goes under the fields
+  const fieldsBox = (await card.locator(".pw-fields").boundingBox())!;
+  const listBox = (await card.locator(".pw-checklist").boundingBox())!;
+  expect(listBox.y).toBeGreaterThanOrEqual(fieldsBox.y + fieldsBox.height - 1);
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await logout(page);
+});
+
 test("AC-FY-004 / AC-REG-015: UI confirmation flows (gap warning, void)", async ({ page }) => {
   await login(page, "bm1");
   await page.getByRole("link", { name: "Fiscal Years" }).click();
@@ -1133,6 +1194,46 @@ test("CR-018: two-step verification — setup, recovery codes, sign-in, trusted 
   await expect(page.getByRole("row", { name: /bm1/ })).toContainText("Not set up");
   await logout(page);
   await login(page, "bm1"); // local mode: optional again, no code asked (trusted browser was removed too)
+
+  // 2.2.0 (#327): set up again with the key already in the authenticator app - no new QR code to scan
+  await page.getByRole("link", { name: "My account" }).click();
+  await sec.getByRole("button", { name: "Set up two-step verification" }).click();
+  await expect(sec.getByTestId("mfa-secret")).toBeVisible();
+  await sec.getByText("Use my own key instead").click();
+  await sec.getByLabel("Your authenticator key or otpauth link").fill("not a key 0189");
+  await sec.getByRole("button", { name: "Use this key" }).click();
+  await expect(sec.getByRole("alert")).toContainText("letters A-Z and the digits 2-7");
+  await expect(sec.getByRole("alert")).not.toContainText("0189");
+  await sec.getByLabel("Your authenticator key or otpauth link").fill(secret.toLowerCase().replace(/(.{4})/g, "$1 "));
+  await sec.getByRole("button", { name: "Use this key" }).click();
+  await expect(sec).toContainText("Using your own key.");
+  await expect(sec.getByTestId("mfa-secret")).toHaveCount(0);
+  await expect(sec.getByTestId("own-key-short")).toHaveCount(0);   // 32 characters, like PennyWarden's own
+  await sec.getByLabel("Code from the app").fill(totp(secret, 1));
+  await sec.getByRole("button", { name: "Turn on two-step verification" }).click();
+  await expect(sec.getByRole("list", { name: "Recovery codes" }).locator("code")).toHaveCount(10);
+  await sec.getByLabel("I have saved my recovery codes").check();
+  await sec.getByRole("button", { name: "Continue" }).click();
+  await expect(sec).toContainText("10 of 10 recovery codes unused");
+  await logout(page);
+
+  // a reset marked as a possible compromise: only a newly generated key
+  await login(page, "admin");
+  await page.getByRole("link", { name: "Users", exact: true }).click();
+  await rowAction(page.getByRole("row", { name: /bm1/ }), "bm1", "Reset two-step");
+  const dlg2 = page.getByRole("dialog");
+  await dlg2.getByLabel("Reason (required)").fill("Phone stolen");
+  await dlg2.getByLabel("Possible compromise").check();
+  await dlg2.getByRole("button", { name: "Reset two-step verification" }).click();
+  await expect(dlg2.getByRole("status")).toContainText("was reset");
+  await dlg2.getByRole("button", { name: "Done" }).click();
+  await logout(page);
+  await login(page, "bm1");
+  await page.getByRole("link", { name: "My account" }).click();
+  await sec.getByRole("button", { name: "Set up two-step verification" }).click();
+  await expect(sec.getByTestId("own-key-blocked")).toContainText("possible security problem");
+  await expect(sec.getByLabel("Your authenticator key or otpauth link")).toHaveCount(0);
+  await sec.getByRole("button", { name: "Cancel" }).click();
 });
 
 // ---------------------------------------------------------------- CR-023 / CR-024 / CR-025 backup and restore
