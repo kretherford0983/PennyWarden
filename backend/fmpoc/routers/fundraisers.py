@@ -18,6 +18,7 @@ from ..schemas import (ReasonIn, FundraiserBucketIn, FundraiserCategoryIn, Fundr
                        FundraiserLineIn, FundraiserLinkIn, FundraiserSeriesIn, FundraiserSeriesMergeIn, FundraiserSeriesResultIn,
                        FundraiserNotesIn, FundraiserOrderIn,
                        FundraiserPreviewIn, ModulesIn)
+from ..services import branding  # 2.2.0 (#280)
 from ..services import fundraiser_deck as deck  # 2.1.0 (#276); imports python-pptx at start-up
 from ..services import fundraiser_summary as fs  # 2.1.0 (#275); imports python-docx at start-up
 from ..services import fundraiser_fy_report as fyrep
@@ -128,13 +129,15 @@ def fy_report(fiscal_year_id: int = Query(...), ids: list[int] = Query(...), yea
         db.rollback()
         return rep
     if format == "pptx":
-        data = fyrep.build_pptx(org, rep)
+        with branding.use(db):        # 2.2.0 (#280)
+            data = fyrep.build_pptx(org, rep)
         audit.record(db, ctx, "REPORT_GENERATED", "fiscal_year", fy.id, None, summary)
         db.commit()
         return Response(data, media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
                         headers={"Content-Disposition": f'attachment; filename="{fyrep.file_stem(org, rep)}-presentation.pptx"',
                                  "Cache-Control": "private, no-store"})
-    path, fname, pages = fyrep.pdf_file(org, rep)
+    with branding.use(db):
+        path, fname, pages = fyrep.pdf_file(org, rep)
     audit.record(db, ctx, "REPORT_GENERATED", "fiscal_year", fy.id, None, {**summary, "pages": pages})
     db.commit()
     headers = {"Content-Disposition": f'{"attachment" if download else "inline"}; filename="{fname}"',
@@ -374,7 +377,8 @@ def summary_report(fid: int, format: Literal["pdf", "docx"] = "pdf", itemized: b
     s = fs.summary(db, ctx, f, itemized=itemized, names=names, plain_lines=plain_lines, history=history)
     opts = {"itemized": itemized, "names": names, "plain_lines": plain_lines, "history": history}
     if format == "docx":
-        data = fs.build_docx(s)
+        with branding.use(db):
+            data = fs.build_docx(s)
         audit.record(db, ctx, "REPORT_GENERATED", "fundraiser", f.id, None,
                      {"report": "FUNDRAISER_SUMMARY", "format": "DOCX", "options": opts})
         db.commit()
@@ -399,7 +403,8 @@ def presentation(fid: int, itemized: bool = True, names: bool = True, history: b
     history=false (#300) leaves out the year-over-year slide."""
     f = svc.get(db, ctx, fid)
     s = fs.summary(db, ctx, f, itemized=itemized, names=names, history=history)
-    data = deck.build(s)
+    with branding.use(db):
+        data = deck.build(s)
     audit.record(db, ctx, "REPORT_GENERATED", "fundraiser", f.id, None,
                  {"report": "FUNDRAISER_PRESENTATION", "format": "PPTX",
                   "options": {"itemized": itemized, "names": names, "history": history}})

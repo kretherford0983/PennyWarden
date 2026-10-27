@@ -7,7 +7,7 @@
     pennywarden restore --list [--data-dir DIR]     the backups this server can recover
 
 2.2.0 (#319): PARTS is a comma-separated list of data, settings (or settings.general, settings.backups,
-settings.payments, settings.donations), reminders and users. Data is never split. Without --only/--skip everything is
+settings.payments, settings.donations, settings.branding), reminders and users. Data is never split. Without --only/--skip everything is
 restored, as before.
 
 Order of checks: (1) elevation (only where it is needed), (2) the backup file and its passphrase (decrypted and

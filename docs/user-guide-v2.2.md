@@ -90,6 +90,29 @@ balance — so the Change column shows real growth, not the whole balance.
 Dates before it count as $0 (the account didn't exist), the report doesn't list it for a Through Date before then, and
 the dashboard balance charts start there. Leave it blank if the account existed before PennyWarden.
 
+## Organization branding (Administrators)
+
+**System/About → Branding** gives generated reports and presentations your organization's look: every PDF report,
+the fundraiser report and presentation, and the Fiscal Year fundraising report and presentation. Checks, cover
+letters, receipts and envelopes keep their own design.
+
+- **Palette.** Choose one of the ready-made palettes (PennyWarden, the default; Forest; Ocean; Plum; Ember), or
+  **Custom**: enter your **primary** and **secondary** colors and choose **Generate recommended palette**. PennyWarden
+  works out a full Material 3 palette from them — the colors for headings, title bands, tiles, table headers and
+  lines, and eight chart colors. Open *Color roles* or *Chart series colors* to change any of them.
+- **Checks while you choose.** Every text color must be readable on the color it sits on (WCAG AA, at least 4.5:1);
+  a color that fails is named and **Save branding** stays unavailable until it is fixed. Chart colors that are hard to
+  tell apart get a warning; you can still save, because charts always keep their labels and legends.
+- **Live preview.** The sample page on the right shows the palette, the logo and the footer as you change them.
+- **Logos.** A **full logo** (report headers and title slides) and an optional **small mark** (footers of reports and
+  slides; without it, none is printed). PNG or JPEG, at most 2 MB; PennyWarden re-saves the picture without its
+  hidden details (metadata). Adding or removing a logo takes effect at once.
+- **Footer text** (optional): one line, up to 120 characters, printed at the bottom of every report page and slide.
+- **Reset to the PennyWarden palette** puts the colors back; the logos and footer text stay.
+
+Branding is included in backups and can be restored on its own (**Settings → Branding** under *What to restore*). A
+reinitialize keeps it, like the organization name.
+
 ## Backup and restore (Administrators)
 
 ### Choose what to restore
@@ -97,7 +120,7 @@ the dashboard balance charts start there. Leave it blank if the account existed 
 backup is checked, **What to restore** opens with everything ticked (**All**). Choose *show the parts* to untick what
 should stay as it is now:
 - **Data** — all the financial records and attachments, always together;
-- **Settings** — General, Backups, Payments Setup and Donations Setup, each on its own;
+- **Settings** — General, Backups, Payments Setup, Donations Setup and Branding, each on its own;
 - **Reminders**;
 - **Users** — passwords, two-step verification, security questions, preferences.
 

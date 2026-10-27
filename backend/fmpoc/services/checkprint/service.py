@@ -1057,13 +1057,13 @@ MAX_LOGO_BYTES = 1024 * 1024
 LOGO_MAX_PIXELS = (1500, 600)      # re-encoded no larger than this (2.5" x 1" at 600 dpi)
 
 
-def normalize_logo(data: bytes) -> tuple[bytes, int, int]:
+def normalize_logo(data: bytes, max_bytes: int = MAX_LOGO_BYTES) -> tuple[bytes, int, int]:
     """Validates an uploaded logo server-side (PNG or JPEG by content, not by name or browser type; at most 1 MB) and
     re-encodes it as PNG without metadata, scaled down to at most 1500 x 600 pixels (BR-073, BR-074, BR-101)."""
     if not data:
         raise validation("The file is empty.", "file")
-    if len(data) > MAX_LOGO_BYTES:
-        raise AppError(413, "FILE_TOO_LARGE", "A logo may not exceed 1 MB.")
+    if len(data) > max_bytes:
+        raise AppError(413, "FILE_TOO_LARGE", f"A logo may not exceed {max_bytes // (1024 * 1024)} MB.")
     if not (data.startswith(b"\x89PNG\r\n\x1a\n") or data.startswith(b"\xff\xd8\xff")):
         raise AppError(415, "UNSUPPORTED_TYPE", "The logo must be a PNG or JPEG image.")
     try:

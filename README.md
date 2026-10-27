@@ -60,6 +60,9 @@ signature page, and — when it covers several bank accounts — a start and an 
 so a reviewer can see that nothing is missing. A documentation review shows what still lacks a document before
 anyone asks.
 
+Since 2.2.0 reports and presentations can carry your organization's **branding**: its logo, a footer line and a
+Material 3 color palette (ready-made or generated from your own two colors, checked for readable contrast).
+
 <p align="center">
   <img src="docs/screenshots/readme/audit-report-cover.png" alt="Audit report: title page" width="270">
   <img src="docs/screenshots/readme/audit-report-account.png" alt="Audit report: start page of a bank account with its page range" width="270">

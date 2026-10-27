@@ -3334,7 +3334,7 @@ test("#216: System/About tabs have their own addresses; Auditors see three; bann
   await login(page, "admin");
   await page.getByRole("link", { name: "System/About" }).click();
   const tabs = page.getByRole("tablist", { name: "System/About sections" });
-  await expect(tabs.getByRole("tab")).toHaveText(["About", "General", "Settings", "Backups", "Security", "System health", "Advanced"]);
+  await expect(tabs.getByRole("tab")).toHaveText(["About", "General", "Branding", "Settings", "Backups", "Security", "System health", "Advanced"]);
   await expect(page).toHaveURL(/\/about$/);
   await expect(tabs.getByRole("tab", { name: "About" })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("tabpanel")).toContainText("Data protection");
@@ -3782,4 +3782,37 @@ test("#125: an Administrator reinitializes (keeping the users); everyone sees th
   await login(page, "admin");
   await page.getByTestId("reinitialized-banner").getByRole("button", { name: "Acknowledge for everyone" }).click();
   await expect(page.getByTestId("reinitialized-banner")).toHaveCount(0);
+});
+// ---------------------------------------------------------------- 2.2.0 #280: organization branding
+const BRAND_LOGO = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAKAAAAAwCAIAAAAZy+Y5AAAAlUlEQVR42u3cMQ5AQBBA0VlxC0qOtw7jeloH0ck2thEi671WIfEzilmRhjwF7eo8AoERGIERGIERmFJ/dWFft6fvPS6zACYYgRFYYARGYARGYAQmbm6yvuCFbVobKjtBE+wVjcAIjMAIjMAILDACIzACE38+bPBdrQlGYIERGIERGIERGIE5JT9CM8EIjMAIjMAITOkAyvUIbD4P5UMAAAAASUVORK5CYII=", "base64");
+test("#280: an Administrator brands reports - a palette, a custom palette checked for contrast, a logo", async ({ page }) => {
+  await login(page, "admin");
+  await page.getByRole("link", { name: "System/About" }).click();
+  await aboutTab(page, "Branding");
+  await expect(page).toHaveURL(/\/about\/branding$/);
+  const card = page.getByRole("region", { name: "Organization branding" });
+  await expect(card.getByRole("radio", { name: /PennyWarden/ })).toBeChecked();
+  await card.getByRole("radio", { name: /Forest/ }).check();
+  await card.getByLabel("Footer text (optional)").fill("Serving the community since 1952");
+  await card.getByRole("button", { name: "Save branding" }).click();
+  await expect(card.getByRole("status")).toHaveText("Saved.");
+  // custom: generated from two colors, then a text color too light is caught before saving
+  await card.getByRole("radio", { name: "Custom" }).check();
+  await card.getByLabel("Primary color", { exact: true }).fill("#00658f");
+  await card.getByLabel("Secondary color", { exact: true }).fill("#e0a100");
+  await card.getByRole("button", { name: "Generate recommended palette" }).click();
+  await card.getByText("Color roles").click();
+  await card.getByLabel("Text on Primary", { exact: true }).fill("#5d8fb0");
+  await expect(card.getByTestId("branding-contrast")).toContainText("WCAG AA");
+  await expect(card.getByRole("button", { name: "Save branding" })).toBeDisabled();
+  await card.getByLabel("Text on Primary", { exact: true }).fill("#ffffff");
+  await expect(card.getByRole("button", { name: "Save branding" })).toBeEnabled();
+  await card.getByRole("button", { name: "Save branding" }).click();
+  await expect(card.getByRole("status")).toHaveText("Saved.");
+  // the logo shows in the live preview at once
+  await card.getByLabel("Full logo image").setInputFiles({ name: "logo.png", mimeType: "image/png", buffer: BRAND_LOGO });
+  await expect(page.getByTestId("branding-preview").getByRole("img", { name: "Full logo" })).toBeVisible();
+  await card.screenshot({ path: "e2e-screenshots/light-branding.png" });
+  await card.getByRole("button", { name: "Reset to the PennyWarden palette" }).click();
+  await expect(card.getByRole("radio", { name: /PennyWarden/ })).toBeChecked();
 });

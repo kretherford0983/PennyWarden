@@ -23,6 +23,7 @@ from ..errors import validation
 from ..models import BankAccount, RegisterTransaction, Workspace, utcnow
 from ..money import fmt
 from . import bank_accounts as bank
+from . import branding
 from .common import get_scoped
 from .reports import FRAME_W, P, PM, _AuditDoc, _Mark, _grid, _stamp_and_write, money
 
@@ -287,7 +288,7 @@ def _lines_table(lines: list[dict], with_notes: bool, total: int, empty: str) ->
     data.append([PM("<b>Total</b>", "cell"), PM(f"<b>{escape(money(total))}</b>", "cellr"), "",
                  *([""] if with_notes else [])])
     n = len(data) - 1
-    extra += [("LINEABOVE", (0, n), (-1, n), 0.8, colors.black), ("BACKGROUND", (0, n), (-1, n), colors.HexColor("#eef1f5"))]
+    extra += [("LINEABOVE", (0, n), (-1, n), 0.8, colors.black), ("BACKGROUND", (0, n), (-1, n), branding.color("surface_variant"))]
     return _grid(data, widths, extra=extra)
 
 
@@ -315,7 +316,7 @@ def _balances_table(b: dict) -> Table:
     for s in b["sections"]:
         data.append([PM(f"<b>{escape(s['label'])}</b>", "cell")] + [""] * (len(head) - 1))
         r = len(data) - 1
-        extra += [("SPAN", (0, r), (-1, r)), ("BACKGROUND", (0, r), (-1, r), colors.HexColor("#e8ecf1"))]
+        extra += [("SPAN", (0, r), (-1, r)), ("BACKGROUND", (0, r), (-1, r), branding.color("surface_variant"))]
         if not s["accounts"]:
             data.append([P("No accounts", "cell")] + [""] * (len(head) - 1))
         for a in s["accounts"]:
@@ -335,7 +336,7 @@ def _balances_table(b: dict) -> Table:
             row += [PM(f"<b>{escape(money(t['compare_total']))}</b>", "cellr"), _color_cell(signed(t["change"]), t["change"])]
         data.append(row)
         r = len(data) - 1
-        extra += [("BACKGROUND", (0, r), (-1, r), colors.HexColor("#eef1f5"))]
+        extra += [("BACKGROUND", (0, r), (-1, r), branding.color("surface_variant"))]
     extra.append(("LINEABOVE", (0, len(data) - 3), (-1, len(data) - 3), 1.2, colors.black))
     rest = FRAME_W - 12
     widths = ([rest - 4.4 * inch, 1.2 * inch, 0.8 * inch, 1.2 * inch, 1.2 * inch] if comp
@@ -343,6 +344,7 @@ def _balances_table(b: dict) -> Table:
     return _grid(data, widths, zebra=False, extra=extra)
 
 
+@branding.themed
 def build_pdf(db: Session, ctx, data) -> tuple[str, str, dict]:
     r = compute(db, ctx, data)
     excluded, notes = _apply_review(r, data.exclusions, data.line_notes)
