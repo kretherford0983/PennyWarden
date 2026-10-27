@@ -440,8 +440,18 @@ class MfaEnrollStartIn(In):
     current_code: str | None = Field(None, max_length=40)  # required when changing an existing authenticator
 
 
+class MfaOwnKeyIn(In):
+    """2.2.0 (#327): the key for the setup in progress - the user's own (Base32 or otpauth://totp link), or null for
+    a newly generated key again."""
+    own_key: str | None = Field(None, max_length=2000)
+
+
 class MfaResetIn(In):
     reason: str = Field(min_length=1, max_length=500)
+
+
+class MfaResetUserIn(MfaResetIn):
+    compromised: bool = False   # 2.2.0 (#327): possible compromise - the next setup needs a newly generated key
 
 
 class BackupCreateIn(In):

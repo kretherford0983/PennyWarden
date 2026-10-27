@@ -61,6 +61,9 @@ A deliberately triggered backend validation or unexpected-error path does not re
 ### AC-SEC-019 — Sensitive values absent from logs
 After login, account-number reveal, failed authentication, transaction processing, and representative error paths, application logs and audit records do not contain plaintext passwords, password hashes, session cookies/IDs, CSRF secrets, encryption keys, or full plaintext bank account numbers.
 
+### AC-SEC-019a — Own authenticator key (2.2.0, #327)
+Setting up two-step verification with the user's own key accepts a valid Base32 key of at least 16 characters (a note under 32) or an otpauth://totp link; a short or invalid key, an unsupported link, a wrong code, and an own key after a reset marked as a possible compromise are refused; the key is absent from responses, logs and the audit log, and a new set of recovery codes is issued.
+
 ### AC-SEC-020 — CSRF rejection
 A state-changing request using cookie authentication but lacking the required valid CSRF control is rejected and produces no persisted mutation.
 
@@ -340,6 +343,8 @@ With the application stopped, moving the persistent data set including database,
 - **AC-AUTH-SELF-004:** Old password stops authenticating and new password succeeds after change.
 - **AC-AUTH-SELF-005:** Other active sessions are invalidated after successful change.
 - **AC-AUTH-SELF-006:** Audit records the event without password values.
+- **AC-AUTH-SELF-007 (2.2.0, #343):** The password requirements are visible beside the new-password fields before typing, come from the server, and are ticked off (red → green with a check mark, "met"/"not met" for screen readers) as they are met, including new password = confirmation; a refused change leaves every field as typed.
+- **AC-AUTH-SELF-008 (2.2.0, #343):** After a failed sign-in the password field is empty and focused and the username is kept.
 
 ### Light/Dark Theme
 - **AC-UI-THEME-001:** Authenticated user can switch Light/Dark modes.

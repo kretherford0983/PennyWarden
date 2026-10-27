@@ -10,7 +10,7 @@ from .. import audit
 from ..deps import PRE_CSRF_COOKIE, SESSION_COOKIE, Ctx, auth_ctx, get_ctx, get_db, pre_mfa_ctx, require
 from ..errors import AppError
 from ..permissions import permissions_for
-from ..schemas import (ChangePasswordIn, ForgotCompleteIn, ForgotStartIn, LoginIn, MfaCodeIn, MfaEnrollStartIn,
+from ..schemas import (ChangePasswordIn, ForgotCompleteIn, ForgotStartIn, LoginIn, MfaCodeIn, MfaEnrollStartIn, MfaOwnKeyIn,
                        MfaVerifyIn, PreferencesIn, SecurityQuestionsChangeIn, SecurityQuestionsIn, SetupPasswordIn)
 from ..services import auth as svc
 from ..services import mfa
@@ -52,6 +52,14 @@ def pre_auth_csrf(request: Request, response: Response):
         response.set_cookie(PRE_CSRF_COOKIE, token, httponly=False, samesite="strict", secure=_secure(request),
                             path="/")
     return {"csrf_token": token}
+
+
+@router.get("/auth/password-policy")
+def password_policy():
+    """2.2.0 (#343): the password requirements for the checklist beside every new-password field (sign-in steps and
+    the first-run wizard included, so no session is needed). Contains no user data."""
+    from ..security.passwords import policy_requirements
+    return policy_requirements()
 
 
 def me_payload(ctx: Ctx) -> dict:
@@ -165,6 +173,16 @@ def mfa_enroll_start(body: MfaEnrollStartIn, request: Request, db: Session = Dep
         if e.code == "MFA_INVALID_CODE":
             lim.fail(*keys)
         raise
+
+
+@router.post("/auth/mfa/enroll/own-key")
+def mfa_enroll_own_key(body: MfaOwnKeyIn, request: Request, db: Session = Depends(get_db),
+                       ctx: Ctx = Depends(pre_mfa_ctx)):
+    """2.2.0 (#327): use your own authenticator key for the setup in progress (or a newly generated key again). The key
+    is saved only by /enroll/confirm with a current code made with it; it is never logged, audited or echoed."""
+    if ctx.mfa_pending == "VERIFY":
+        raise AppError(401, "MFA_REQUIRED", "Complete two-step verification first.")
+    return mfa.use_own_key(db, request.app.state.key, ctx, body.own_key)
 
 
 @router.post("/auth/mfa/enroll/confirm")

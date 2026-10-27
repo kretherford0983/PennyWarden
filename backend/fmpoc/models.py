@@ -507,6 +507,11 @@ class UserMfa(Base):
     last_step: Mapped[int | None] = mapped_column(Integer, nullable=True)  # last accepted TOTP time step (replay)
     pending_secret_enc: Mapped[str | None] = mapped_column(String(200), nullable=True)
     pending_created_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    # 2.2.0 (#327): after a reset marked as a possible compromise the next setup accepts only a newly generated key
+    new_key_required: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(),
+                                                   nullable=False)
+    # the pending key was supplied by the user (recorded as own_key on MFA_ENROLLED / MFA_CHANGED)
+    pending_own_key: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
 
 
 class MfaRecoveryCode(Base):

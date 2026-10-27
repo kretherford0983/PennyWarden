@@ -437,6 +437,8 @@ Application features should use Python/library APIs rather than shell commands. 
 
 Passwords, password hashes, session identifiers/cookies, CSRF secrets, encryption keys, full plaintext bank account numbers, and equivalent secrets must not appear in application logs, audit snapshots, exception responses, client-side logging, or ordinary diagnostic output. Audit records use masked/sanitized representations where required.
 
+2.2.0 (#327): this includes an authenticator key a user supplies when setting up two-step verification ("Use my own key instead"), and any otpauth link it came in. It is validated server-side (Base32, at least 16 and at most 100 characters; links only for 6-digit, 30-second, SHA-1 codes), accepted only during a setup in progress, saved only after a current code made with it, stored encrypted like a generated key, never shown again, and refused after a reset marked as a possible compromise. Error messages describe the problem without repeating the key; the audit records only whether an own key was used (`own_key`) and whether a reset was marked (`compromised`).
+
 ## BR-104 — Safe Error Handling
 
 Production-facing error responses must not expose stack traces, raw SQL, database internals, filesystem paths, encryption material, secret configuration, password data, session values, or other sensitive implementation details. Detailed diagnostics may be written to protected server logs only when those logs comply with BR-103.

@@ -304,6 +304,8 @@ On first run of an uninitialized application, automatically present the wizard b
 ### Password Change
 Every authenticated active user receives a self-service password-change action requiring current password, new password, and new-password confirmation.
 
+2.2.0 (#343): the password requirements are listed beside the new-password fields before the first try (fields on the left half, requirements on the right half; stacked on a narrow screen) and are ticked off while typing: at least 12 characters (at most 128), a letter and a digit, not the same as the username, different from the current password, and new password = confirmation. An unmet item is red, a met one green with a check mark (theme tokens, readable in both modes); each item also says "met" / "not met" to screen readers, announced politely. The requirements and their numbers come from the server (`GET /api/auth/password-policy`); the server's password check stays the authority. A refused change keeps every field as typed. The same list is shown wherever a new password is chosen (the step after a temporary password — where "different from the temporary password" is checked on save —, Forgot password, the Initialization Wizard, and an Administrator creating a user or resetting a password). After a failed sign-in the password field is cleared and focused and the username kept; the other password-confirmation fields are unchanged.
+
 ### Appearance
 Provide a Light/Dark mode control with persistent per-user preference. Core screens, dialogs, tables, forms, validation messages, and status indicators must remain usable in both modes.
 

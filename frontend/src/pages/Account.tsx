@@ -5,6 +5,7 @@ import { ROLE_NAMES, useMe } from "../App";
 import { SecuritySection } from "./Mfa";
 import { SecurityQuestionsSection } from "./Recovery";
 import { UpdateBanner, type UpdateStatus } from "./Updates";
+import { PasswordChecklist, PasswordFieldsWithChecklist } from "../PasswordChecklist";
 
 export default function Account({ updates = null }: { updates?: UpdateStatus | null }) {
   const { me, setTheme } = useMe();
@@ -55,9 +56,13 @@ export default function Account({ updates = null }: { updates?: UpdateStatus | n
         <h2>Change password</h2>
         <ErrorBox error={err} />
         {ok ? <div className="alert ok" role="status">Password changed. Your other sessions were signed out.</div> : null}
-        <Field label="Current password"><input type="password" required autoComplete="current-password" value={f.current_password} onChange={(e) => setF({ ...f, current_password: e.target.value })} /></Field>
-        <Field label="New password" hint="At least 12 characters including a letter and a digit."><input type="password" required autoComplete="new-password" value={f.new_password} onChange={(e) => setF({ ...f, new_password: e.target.value })} /></Field>
-        <Field label="Confirm new password"><input type="password" required autoComplete="new-password" value={f.new_password_confirmation} onChange={(e) => setF({ ...f, new_password_confirmation: e.target.value })} /></Field>
+        {/* 2.2.0 (#343): the requirements beside the fields, ticked off while typing; a refused change keeps the fields */}
+        <PasswordFieldsWithChecklist checklist={<PasswordChecklist id="pw-req-account" password={f.new_password}
+          context={{ username: me.username, current: f.current_password, confirm: f.new_password_confirmation }} />}>
+          <Field label="Current password"><input type="password" required autoComplete="current-password" value={f.current_password} onChange={(e) => setF({ ...f, current_password: e.target.value })} /></Field>
+          <Field label="New password"><input type="password" required autoComplete="new-password" aria-describedby="pw-req-account" value={f.new_password} onChange={(e) => setF({ ...f, new_password: e.target.value })} /></Field>
+          <Field label="Confirm new password"><input type="password" required autoComplete="new-password" value={f.new_password_confirmation} onChange={(e) => setF({ ...f, new_password_confirmation: e.target.value })} /></Field>
+        </PasswordFieldsWithChecklist>
         <button className="primary" type="submit">Change password</button>
       </GuardedForm>
       <SecuritySection />

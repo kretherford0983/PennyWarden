@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { api } from "../api";
 import { ErrorBox, Field, Loading, Modal, GuardedForm, RowMenu } from "../components";
 import { useMe } from "../App";
+import { PasswordChecklist } from "../PasswordChecklist";
 
 const ROLES: Record<string, [string, string][]> = {
   ADMINISTRATOR: [["ADMINISTRATOR", "Administrator"]],
@@ -130,7 +131,8 @@ function UserForm({ user, ownRolesLocked = false, isSelf = false, local = false,
         </div>
         <Field label="Email"><input required type="email" value={f.email} onChange={(e) => setF({ ...f, email: e.target.value })} /></Field>
         <Field label="Display name" hint="The name shown in the top bar for this user. At least 3 characters."><input value={f.display_name} onChange={(e) => setF({ ...f, display_name: e.target.value })} /></Field>
-        {isNew ? <Field label="Initial password" hint="At least 12 characters including a letter and a digit."><input required type="password" autoComplete="new-password" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} /></Field> : null}
+        {isNew ? <Field label="Initial password"><input required type="password" autoComplete="new-password" aria-describedby="pw-req-newuser" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} /></Field> : null}
+        {isNew ? <PasswordChecklist id="pw-req-newuser" password={f.password} context={{ username: f.username }} /> : null /* 2.2.0 (#343) */}
         {/* 1.7.2 (#55): in server mode an Administrator cannot change their own roles (also refused by the server) */}
         {ownRolesLocked ? <p className="hint" id="own-roles-hint">You cannot change your own security domain or roles. Another Administrator can change them for you.</p> : null}
         {local ? (
@@ -195,7 +197,8 @@ function ResetForm({ user, onClose }: { user: any; onClose: () => void }) {
         <ErrorBox error={err} />
         {done ? <div className="alert ok">Password reset. The user's sessions were signed out.</div> : (
           <>
-            <Field label="New password"><input type="password" required autoComplete="new-password" value={pw} onChange={(e) => setPw(e.target.value)} /></Field>
+            <Field label="New password"><input type="password" required autoComplete="new-password" aria-describedby="pw-req-reset" value={pw} onChange={(e) => setPw(e.target.value)} /></Field>
+            <PasswordChecklist id="pw-req-reset" password={pw} context={{ username: user.username }} />
             <div className="actions"><button type="button" onClick={onClose}>Cancel</button><button className="primary" type="submit">Reset</button></div>
           </>
         )}
@@ -207,12 +210,13 @@ function ResetForm({ user, onClose }: { user: any; onClose: () => void }) {
 // v1.4.1 CR-018: the user sets two-step verification up again at the next sign-in.
 function MfaResetForm({ user, onClose }: { user: any; onClose: () => void }) {
   const [reason, setReason] = useState("");
+  const [compromised, setCompromised] = useState(false);   // 2.2.0 (#327)
   const [err, setErr] = useState<unknown>(null);
   const [done, setDone] = useState(false);
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     try {
-      await api.post(`/api/users/${user.id}/reset-mfa`, { reason });
+      await api.post(`/api/users/${user.id}/reset-mfa`, { reason, compromised });
       setDone(true);
     } catch (x) {
       setErr(x);
@@ -226,6 +230,9 @@ function MfaResetForm({ user, onClose }: { user: any; onClose: () => void }) {
           <>
             <p>Use this when {user.username} has lost both the authenticator app and the recovery codes. Their authenticator, recovery codes and trusted browsers are removed and they are signed out everywhere.</p>
             <Field label="Reason (required)"><input required maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Lost phone" /></Field>
+            {/* 2.2.0 (#327): after a possible compromise the user can't set up again with a key they already have */}
+            <label className="check"><input type="checkbox" checked={compromised} onChange={(e) => setCompromised(e.target.checked)} aria-describedby="mfa-compromise-hint" /> Possible compromise</label>
+            <p className="hint" id="mfa-compromise-hint">Tick this if the authenticator key may have been exposed (a stolen phone, a security problem). {user.username} then has to set up with a newly generated key; otherwise they may keep the key already in their authenticator app.</p>
             <div className="actions"><button type="button" onClick={onClose}>Cancel</button><button className="primary" type="submit">Reset two-step verification</button></div>
           </>
         )}
