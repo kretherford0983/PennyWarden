@@ -72,6 +72,9 @@ class Workspace(Base):
     reinitialize_backup: Mapped[str | None] = mapped_column(String(255), nullable=True)
     reinitialize_ack_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     reinitialize_ack_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # 2.2.0 (#243): the published demo. Set only by scripts/build_demo.py (directly in the database file) - no web or API
+    # path writes it. While set: local loopback only, reset to demo-pristine/ on every start, the demo banner.
+    demo_mode: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
 
 
 class Role(Base):
@@ -638,6 +641,18 @@ class BudgetHistoryEntry(Base):
     created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     updated_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     updated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class TestingState(Base):
+    """2.2.0 (#231): what a testing-mode Administrator moved that is otherwise taken from the audit log (which can't be
+    changed): the time of the last successful backup, and when the reinitialize cooldown was cleared. Read only while
+    the server is in testing mode."""
+    __tablename__ = "testing_state"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), unique=True)
+    last_backup_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    reinitialize_cooldown_cleared_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    updated_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
 
 
 class FundraiserFyReportNote(Base):

@@ -643,3 +643,17 @@ label.check.small { font-size: 12px; }
 .row-buttons { display: inline-flex; gap: 4px; }
 .retired-entries { margin: 6px 0; }
 .retired-entries summary { cursor: pointer; color: var(--muted); }
+/* 2.2.0 (#319): What to restore */
+.what-to-restore { margin-top: 12px; padding: 12px; border: 1px solid var(--border); border-radius: 6px; }
+.restore-tree ul { list-style: none; margin: 4px 0 4px 22px; padding: 0; }
+.restore-tree li { margin: 4px 0; }
+.restore-tree summary { cursor: pointer; }
+.restore-tree summary > label { display: inline-flex; }
+.restore-summary { margin-top: 10px; }
+/* 2.2.0 (#231): testing mode - a striped banner on every page, so a test server is never mistaken for a live one */
+.testing-banner { background: repeating-linear-gradient(135deg, var(--warn-bg), var(--warn-bg) 12px, var(--yellow-bg) 12px, var(--yellow-bg) 24px);
+  border-color: var(--warn-border); color: var(--yellow-fg); }
+.testing-panel h3 { margin-top: 18px; }
+/* 2.2.0 (#243): the demo banner */
+.demo-banner { background: var(--info-bg); border-color: var(--link); }
+.demo-banner button.small { margin-left: 4px; }

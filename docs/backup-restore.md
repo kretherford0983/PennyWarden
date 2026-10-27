@@ -70,6 +70,44 @@ log as `SYSTEM_RESTORED`.
 If any step fails the current data stays in place (or is put back from the safety copy) and the page says which step
 failed. The largest accepted file is set by `restore_max_mb` in `config.toml` (default 20480).
 
+### Choosing what to restore (since 2.2.0)
+
+After step 2 the backup is brought to this version in the work folder and **What to restore** opens. Everything is
+ticked, collapsed to **All**; *show the parts* lists them:
+
+| Part | Holds | |
+|---|---|---|
+| **Data** | Fiscal Years, budgets (and history entered before PennyWarden), entities, bank accounts, the register and attachments, Payments records (printed checks, each account's check style and sheet counter), Fundraisers, Donations | always as one unit: the records refer to each other |
+| **Settings** | **General** (organization name and profile, optional modules, audit review signature wording) · **Backups** (backup reminder, scheduled backups and their history) · **Payments Setup** (check styles, signers, letter and envelope templates) · **Donations Setup** | each section on its own |
+| **Reminders** | organization and personal reminders | |
+| **Users** | users, roles, passwords, two-step verification, security questions, preferences, printer settings | |
+
+**Review** shows what will be replaced and what is kept as it is now; nothing has changed yet. Everything ticked is the
+full restore described above. A **partial** restore:
+
+- **keeps the current audit log** (it already holds everything in the backup's, and more) and adds one
+  `SYSTEM_RESTORED` event listing what was restored and kept;
+- always installs the **backup's encryption key**; if the backup comes from another installation, what is kept (bank
+  account numbers, two-step secrets, signature images) is re-encrypted with it;
+- **Users restored, Data not:** users created after the backup are kept but **inactivated**, and listed afterwards;
+- **records that refer to users who aren't here** (for example Data from a later backup than the Users): Review lists
+  them, and you choose to **add just those users** from the backup (with their roles and two-step verification) or to
+  **restore Users too**;
+- **Data without Settings → General:** the organization's profile stays the current one; a bank account's check style
+  is kept if that style exists in the current Payments Setup, otherwise it is cleared for a Register User to choose
+  again;
+- **reminder links** to records that aren't there are cleared;
+- a restored **Backups** section whose folder doesn't exist on this server is reported (scheduled backups fail until
+  it is changed);
+- server settings (`config.toml`) are never in a backup, so they are never restored.
+
+Everyone is signed out after any restore. The safety copy in `pre-restore/` is always a full copy, and the re-entry
+report below is written whenever Data is restored.
+
+Typical uses: put **Data** back after bad entries without rolling back users or settings; reset a test server to a
+baseline (**Data only** — users keep their current passwords and authenticators); move to a new host (**Settings and
+Users** first, then **Data and Reminders** at the switch).
+
 ### Restore re-entry report (since 2.0.0)
 
 Before the data is replaced, every restore (web or command line) compares it with the backup. Transactions that
@@ -87,8 +125,17 @@ changed after the backup"): the report holds financial data. A backup from anoth
 
 ```
 sudo pennywarden restore FILE.fmbak [--use-server-key | --passphrase-file PATH] --data-dir /var/lib/pennywarden [--stop-service] [--yes]
+sudo pennywarden restore FILE.fmbak [...] --only data,reminders | --skip settings,users [--missing-users add|include-users]
+sudo pennywarden restore FILE.fmbak [...] --list
 sudo pennywarden restore --list --data-dir /var/lib/pennywarden
 ```
+
+Since 2.2.0, `--only` and `--skip` choose the parts (comma-separated: `data`, `settings` or its sections
+`settings.general`, `settings.backups`, `settings.payments`, `settings.donations`, `reminders`, `users`; `data` is
+never split). A backup made on a server in **testing mode** (2.2.0, #231) is refused on a server that isn't in testing
+mode; add `--accept-testing-backup` to restore it anyway (its audit trail may have gaps). Without them everything is restored. The command prints what is restored and kept, and any users the
+restored records refer to that aren't here (added from the backup unless `--missing-users include-users`), then asks
+before continuing. `FILE --list` shows the parts a backup holds, with counts, and changes nothing.
 
 (Linux server shown. Windows: `C:\PennyWarden\current\PennyWarden.cmd restore … --data-dir C:\ProgramData\PennyWarden` as
 Administrator. A local install: the program itself, without `sudo` and without `--data-dir`, with PennyWarden quit.)
@@ -312,6 +359,11 @@ System/About → Backups → Backup / Restore → **Scheduled** writes backups o
 On the new server install the same or a newer version, open it in the browser and choose **Restore from a backup
 instead** in the initialization wizard (anyone who can reach an uninitialized installation can do this — the same as
 running the wizard). The new server keeps its own `config.toml`.
+
+To check the new server with a few users before the switch (since 2.2.0): initialize it, restore **Settings and
+Users** from a backup of the old server (System/About, *What to restore*), let a few users sign in at a temporary
+address, then at the switch restore **Data and Reminders** from a fresh backup of the old server and point the address
+at the new host. Users added on the old server in between are offered when you restore Data.
 
 ## Manual recovery without the application
 

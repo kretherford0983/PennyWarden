@@ -4,8 +4,10 @@ import { ErrorBox, Field, GuardedForm, LegalLinks } from "../components";
 import { ForgotPassword } from "./Recovery";
 
 import { MaintenanceNotice } from "./Maintenance";
+import { TestingBanner } from "./Testing";
+import { DemoBanner } from "./Demo";
 
-export default function Login({ workspace, onLogin, legal }: { workspace: string; onLogin: () => void; legal?: { license?: string; source_url?: string; maintenance_mode?: any } }) {
+export default function Login({ workspace, onLogin, legal }: { workspace: string; onLogin: () => void; legal?: { license?: string; source_url?: string; maintenance_mode?: any; testing_mode?: boolean; demo?: boolean } }) {
   const [username, setU] = useState("");
   const [password, setP] = useState("");
   const [err, setErr] = useState<unknown>(null);
@@ -46,6 +48,8 @@ export default function Login({ workspace, onLogin, legal }: { workspace: string
         <p className="muted">{workspace}</p>
         {/* 2.0.0 (#130): maintenance mode - signing in still works, changes are paused for everyone but Administrators */}
         {maint?.on ? <MaintenanceNotice m={maint} /> : null}
+        {legal?.testing_mode ? <TestingBanner /> : null /* 2.2.0 (#231) */}
+        {legal?.demo ? <DemoBanner signIn /> : null /* 2.2.0 (#243): Reset demo data works without signing in */}
         <ErrorBox error={err} />
         <Field label="Username"><input required autoComplete="username" value={username} onChange={(e) => setU(e.target.value)} /></Field>
         <Field label="Password"><input ref={pwRef} required type="password" autoComplete="current-password" value={password} onChange={(e) => setP(e.target.value)} /></Field>

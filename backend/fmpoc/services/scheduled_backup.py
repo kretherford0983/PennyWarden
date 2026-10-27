@@ -429,6 +429,8 @@ def tick(app, now: dt.datetime | None = None) -> list[BackupRun]:
     """Runs whatever is due. Called every 30 seconds by the scheduler thread (and directly by the tests)."""
     if getattr(app.state, "maintenance", None) or app.state.jobs.running() or running():
         return []
+    if getattr(app.state, "demo", False):     # 2.2.0 (#243): no scheduled backups in the demo
+        return []
     now = now or utcnow()
     done = []
     with app.state.session_factory() as db:

@@ -28,6 +28,8 @@ import { AdminSecurityNotices, SignInNotices } from "./pages/Recovery";
 import { BackupFailedBanner } from "./pages/ScheduledBackups";
 import { UpdateBanner, UpdateIndicator, useUpdates } from "./pages/Updates";
 import { MaintenanceBanner } from "./pages/Maintenance";
+import { TestingBanner } from "./pages/Testing";
+import { DemoBanner } from "./pages/Demo";
 import { ReinitializedBanner } from "./pages/Reinitialize";
 import NamesGate from "./pages/NamesGate";
 
@@ -156,7 +158,7 @@ export default function App() {
   };
   return (
     <MeCtx.Provider value={ctx}>
-      <Shell workspace={status.workspace_name} warning={status.insecure_transport_warning} mode={status.mode} onLogout={() => { setCsrf(null); setMe(null); }} />
+      <Shell workspace={status.workspace_name} warning={status.insecure_transport_warning} mode={status.mode} testing={!!status.testing_mode} demo={!!status.demo} onLogout={() => { setCsrf(null); setMe(null); }} />
     </MeCtx.Provider>
   );
 }
@@ -189,7 +191,7 @@ function navFor(me: Me) {
   return fin;
 }
 
-function Shell({ workspace, warning, mode, onLogout }: { workspace: string; warning: boolean; mode: string; onLogout: () => void }) {
+function Shell({ workspace, warning, mode, testing, demo, onLogout }: { workspace: string; warning: boolean; mode: string; testing?: boolean; demo?: boolean; onLogout: () => void }) {
   const { me, can, setTheme, patchMe } = useMe();
   const updates = useUpdates(); // 1.10.0 (#58)
   // CR-014: collapsible left navigation, remembered per user (like the theme)
@@ -257,6 +259,8 @@ function Shell({ workspace, warning, mode, onLogout }: { workspace: string; warn
           <button className="small" onClick={logout}>Sign out</button>
         </div>
       </header>
+      {testing ? <TestingBanner /> : null /* 2.2.0 (#231) */}
+      {demo ? <DemoBanner canRemove={can("users.manage")} /> : null /* 2.2.0 (#243) */}
       {warning ? <div className="alert warn banner" role="alert">Security warning: this server is exposed on a network without HTTPS configuration. Deploy behind an HTTPS reverse proxy.</div> : null}
       <MaintenanceBanner path={path} />
       <ReinitializedBanner path={path} />

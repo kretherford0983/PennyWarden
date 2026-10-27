@@ -23,7 +23,7 @@ Windows PC, Mac or Linux server; your data stays in one folder you control. No s
 > receipt letters. 2.0 added
 > the optional
 > [Payments module](#payments-and-check-printing-optional-payments-module-200).
-> [What's new in 2.2](docs/user-guide-v2.2.md) (in progress) · [What's new in 2.1](docs/user-guide-v2.1.md) · [What's new in 2.0](docs/user-guide-v2.0.md) · [Changelog](CHANGELOG.md)
+> [Try the demo](docs/demo.md) · [What's new in 2.2](docs/user-guide-v2.2.md) (in progress) · [What's new in 2.1](docs/user-guide-v2.1.md) · [What's new in 2.0](docs/user-guide-v2.0.md) · [Changelog](CHANGELOG.md)
 
 ## Why PennyWarden
 

@@ -42,6 +42,7 @@ LABELS = {
     "restore_max_mb": "Largest backup accepted for a restore (MB)", "backup_folders": "Scheduled backup folders",
     "update_base_url": "Update check address", "update_channel": "Update channel", "log_level": "Log level",
     "debug": "Debug mode", "frontend_dir": "Frontend folder",
+    "testing_mode": "Testing mode (test server)",   # 2.2.0 (#231)
 }
 # The settings an Administrator may change on a server install (#126). Everything else is read-only here.
 EDITABLE = ("trusted_proxies", "secure_cookies", "hsts", "session_idle_minutes", "session_absolute_hours",
@@ -50,7 +51,8 @@ EDITABLE = ("trusted_proxies", "secure_cookies", "hsts", "session_idle_minutes",
             "lockout_disable_failures", "log_level")
 # A wrong value here would lock everyone out: never editable from the application.
 READ_ONLY_REASON = {"data_dir": "Changed only by the server owner.", "mode": "Changed only by the server owner.",
-                    "host": "Changed only by the server owner.", "port": "Changed only by the server owner."}
+                    "host": "Changed only by the server owner.", "port": "Changed only by the server owner.",
+                    "testing_mode": "Changed only by the server owner, in config.toml."}
 RANGES = {"session_idle_minutes": (5, 480), "session_absolute_hours": (1, 72), "login_max_failures": (3, 50),
           "login_lockout_seconds": (60, 86400), "lockout_1_failures": (3, 50), "lockout_2_failures": (4, 75),
           "lockout_3_failures": (5, 100), "lockout_disable_failures": (6, 200), "lockout_1_minutes": (1, 10080),
@@ -333,6 +335,10 @@ RESTORE_EVENTS = ("SYSTEM_RESTORED",)
 
 
 def last_backup_at(db: Session, ws_id: int) -> dt.datetime | None:
+    from . import testing     # 2.2.0 (#231): a testing-mode Administrator may set it
+    override = testing.last_backup_override(db, ws_id)
+    if override is not None:
+        return override
     return db.scalar(select(func.max(AuditEvent.timestamp)).where(
         AuditEvent.workspace_id == ws_id, AuditEvent.action.in_(BACKUP_EVENTS)))
 
@@ -348,6 +354,9 @@ def backup_age(db: Session, ws_id: int, now: dt.datetime | None = None) -> dict:
         AuditEvent.workspace_id == ws_id, AuditEvent.action.in_(RESTORE_EVENTS)))
     start = max(x for x in (last, restored, ws.bootstrap_completed_at if ws else None, ws.created_at if ws else None)
                 if x is not None) if ws else None
+    from . import testing     # 2.2.0 (#231): the time a testing-mode Administrator set is the only clock
+    if ws and testing.last_backup_override(db, ws_id) is not None:
+        start = last
     now = now or utcnow()
     stale = bool(days and start and now - start > dt.timedelta(days=days))
     out = {"warning_days": days, "last_backup_at": last.isoformat() + "Z" if last else None, "stale": stale}

@@ -145,6 +145,24 @@ back.
 Before/after snapshots are used for auditable mutations, with sensitive
 values sanitized before entering the audit record.
 
+**Testing mode (2.2.0, #231).** A server-install-only switch in `config.toml` (`testing_mode = true`, or
+`FM_TESTING_MODE`); the web UI and API can't turn it on or off. While it is on, every page shows a testing banner and
+Administrators (`system.manage`) can move timers and schedules on System/About → Testing; the endpoints answer 404
+otherwise. It never moves the real clock and changes no financial records. Testing actions are not bound by the audit
+rules (decision 2026-10-14) but are still recorded as `TESTING_*` events in the Security category. A backup made in
+testing mode is marked; the application refuses to restore it onto a server that is not in testing mode, and the
+command line requires `--accept-testing-backup` (the server owner); `SYSTEM_RESTORED` records `testing_backup`.
+
+
+**The demo (2.2.0, #243).** A database carrying the demo marker (`workspace.demo_mode`) is the published demo: its
+passwords, backup passphrase and encryption key are public, so (1) the application refuses to start it in server mode
+or on a non-loopback address, and a server refuses to restore it (BR-081 / AC-DEP-003); (2) only the build script sets
+the marker, directly in the database file — no web or API path writes it (request models reject the field); (3) the
+demo is reset to its pristine copy on every start and by *Reset demo data*, which needs no sign-in and exists only in
+the demo; (4) *Remove the demo* (demo Administrator, or the host command `remove-demo`) removes the database,
+attachments, the published key and the pristine copy, so nothing remains and the Initialization Wizard creates a new
+key (BR-085 / AC-DEP-006). Reset and Remove replace or discard a disposable demo installation; neither edits an audit
+event (confirmed 2026-10-24).
 
 ## 7. Secure Coding and Request Handling
 

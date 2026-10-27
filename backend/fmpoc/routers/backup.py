@@ -25,6 +25,8 @@ from ..security import crypto
 from ..security.passwords import verify_password
 from ..services import backup as bk
 from ..services import bootstrap
+from ..services import demo as demo_svc
+from ..services import partial_restore as pr
 from ..services import restore_report
 from ..services import scheduled_backup as sched
 from ..services import server_recovery
@@ -265,10 +267,68 @@ def restore_start(upload_id: str, body: RestoreStartIn, request: Request, db: Se
                      {"filename": up["filename"], "size": up["size"]}, category="SECURITY")
         db.commit()
     actor = {"username": ctx.user.username if ctx.user else None, "ip": ctx.ip, "cid": ctx.correlation_id,
-             "via": "system_about" if initialized else "initialization_wizard"}
+             "via": "system_about" if initialized else "initialization_wizard",
+             # 2.2.0 (#319): System/About asks what to restore once the backup is checked; the wizard restores all
+             # (and so does a restore over the demo, #243)
+             "choose": initialized and not getattr(app.state, "demo", False),
+             "user_id": ctx.user.id if ctx.user else None}
     app.state.uploads.pop(upload_id, None)
     threading.Thread(target=run_restore, args=(app, job, up, body.passphrase, actor), name="fmpoc-restore",
                      daemon=True).start()
+    return job.out()
+
+
+class RestoreChoiceIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    domains: list[str] = Field(min_length=1, max_length=20)
+    missing_users: str = Field("add", pattern="^(add|include_users)$")
+
+
+def _choosing_job(request: Request, db: Session, job_id: str):
+    """2.2.0 (#319): the restore waiting for the What to restore choice - only the Administrator who started it."""
+    ctx, _initialized = _restore_actor(request, db)
+    job = request.app.state.jobs.get(job_id)
+    if job is None or job.kind != "restore":
+        raise AppError(404, "NOT_FOUND", "Restore not found.")
+    if job.state != "choose":
+        raise AppError(409, "NOT_WAITING", "This restore is not waiting for a choice.")
+    if ctx.user is None or job.result.get("_user_id") != ctx.user.id:
+        raise AppError(403, "FORBIDDEN", "Only the Administrator who started this restore can choose what to restore.")
+    return job
+
+
+def _chosen(body: RestoreChoiceIn) -> list[str]:
+    try:
+        return pr.normalize(body.domains)
+    except pr.RestoreChoiceError as e:
+        raise validation(str(e), "domains") from None
+
+
+@router.post("/restore/jobs/{job_id}/check")
+def restore_check(job_id: str, body: RestoreChoiceIn, request: Request, db: Session = Depends(get_db)):
+    """2.2.0 (#319): what a choice would replace and keep, and the users the restored records would miss (4a). Nothing
+    changes."""
+    job = _choosing_job(request, db, job_id)
+    chosen = _chosen(body)
+    out = {**pr.summary(chosen), "full": pr.is_full(chosen)}
+    if not out["full"]:
+        try:
+            out["check"] = pr.check(request.app.state.settings.database_path, job.result["_backup_db"], chosen)
+        except pr.RestoreChoiceError as e:
+            raise validation(str(e), "domains") from None
+    return out
+
+
+@router.post("/restore/jobs/{job_id}/choose")
+def restore_choose(job_id: str, body: RestoreChoiceIn, request: Request, db: Session = Depends(get_db)):
+    """2.2.0 (#319): the What to restore choice; the restore continues in the background."""
+    job = _choosing_job(request, db, job_id)
+    chosen = _chosen(body)
+    if body.missing_users == "include_users" and "users" not in chosen:
+        chosen = pr.normalize(chosen + ["users"])
+    job.result["_choice"] = {"domains": chosen, "missing_users": body.missing_users}
+    job.state = "running"
+    job.result["_event"].set()
     return job.out()
 
 
@@ -316,13 +376,51 @@ def run_restore(app, job, up: dict, passphrase: str, actor: dict) -> None:
             pass
         job.advance("Checking versions and the encryption key")
         facts = bk.check_compatible(work / "unpacked" / "data", _known_revisions(settings.database_url))
+        testing_backup = bk.check_testing(manifest, bool(getattr(app.state, "testing_mode", False)))   # #231
+        chosen = list(pr.DOMAINS)
+        missing_users = "add"
+        # 2.2.0 (#243): the demo runs on this computer only, and is always restored whole
+        backup_is_demo = demo_svc.is_demo_db(work / "unpacked" / "data" / "database" / bk.DB_NAME)
+        if backup_is_demo:
+            from ..config import is_loopback
+            if settings.mode == "server" or not is_loopback(settings.host):
+                raise bk.BackupError(demo_svc.LOOPBACK_ONLY)
+        if actor.get("choose") and not backup_is_demo:
+            # 2.2.0 (#319, point 9): the backup is brought to this version in the work folder first, then the
+            # Administrator chooses what to restore (nothing has changed so far)
+            job.advance("Updating the backup to this version")
+            backup_db = work / "unpacked" / "data" / "database" / bk.DB_NAME
+            upgrade_database(f"sqlite:///{backup_db.as_posix()}")
+            event = threading.Event()
+            job.result.update({"workspace": facts["workspace"], "backup_created_at": manifest.get("created_at"),
+                               "backup_app_version": manifest.get("app_version"),
+                               "domains": pr.domains_in(backup_db),
+                               "same_key": (crypto.load_key(settings.secrets_dir) or SimpleNamespace(check_value=None))
+                               .check_value == facts["key_check"],
+                               "_event": event, "_backup_db": backup_db, "_user_id": actor.get("user_id")})
+            job.advance("Waiting for what to restore")
+            job.state = "choose"
+            if not event.wait(bk.KEEP_SECONDS):
+                job.state = "failed"
+                raise bk.BackupError("No choice was made within an hour.")
+            choice = job.result.pop("_choice")
+            chosen, missing_users = choice["domains"], choice["missing_users"]
+            for k in ("domains", "same_key", "_event", "_backup_db"):
+                job.result.pop(k, None)
         job.advance("Pausing the application")
         app.state.maintenance = "restore"
         time.sleep(0.5)  # let requests in flight finish
         app.state.engine.dispose()
-        report = _write_report(settings, work / "unpacked" / "data", manifest, job)   # 2.0.0 (#124)
+        report = (_write_report(settings, work / "unpacked" / "data", manifest, job)   # 2.0.0 (#124)
+                  if "data" in chosen else {})
+        full = pr.is_full(chosen)
+        source = work / "unpacked" / "data"
+        partial_facts: dict = {}
+        if not full:
+            job.advance("Combining the chosen parts with the current data")
+            source, partial_facts = pr.prepare_result(settings, work / "unpacked" / "data", chosen, missing_users)
         job.advance("Saving a safety copy of the current data")
-        bk.swap_in(settings, work / "unpacked" / "data")
+        bk.swap_in(settings, source)
         swapped = True
         job.advance("Updating the database to this version")
         upgrade_database(settings.database_url)
@@ -342,14 +440,23 @@ def run_restore(app, job, up: dict, passphrase: str, actor: dict) -> None:
                           "backup_created_at": manifest.get("created_at"),
                           "backup_app_version": manifest.get("app_version"), "counts": manifest.get("counts"),
                           "report": report.get("report"), "report_transactions": report.get("transactions", 0),
-                          "sessions_revoked": "all"}, category="SECURITY")
+                          "sessions_revoked": "all",
+                          # 2.2.0 (#319): what was restored; a partial restore keeps the current audit log
+                          "restored": chosen, "kept": [d for d in pr.DOMAINS if d not in chosen],
+                          "partial": not full, "notes": pr.report_lines(partial_facts) if not full else [],
+                          "testing_backup": testing_backup},
+                         category="SECURITY")
             s.commit()
         app.state.engine, app.state.session_factory = engine, factory
         app.state.key = crypto.load_key(settings.secrets_dir)
         app.state.limiter = LoginRateLimiter(settings.login_max_failures, settings.login_lockout_seconds)
+        demo_svc.keep_pristine(settings)            # 2.2.0 (#243): a demo keeps its untouched copy; others drop it
+        app.state.demo = demo_svc.is_demo_db(settings.database_path)
         job.result = {"workspace": facts["workspace"], "backup_created_at": manifest.get("created_at"),
                       "backup_app_version": manifest.get("app_version"), "counts": manifest.get("counts"),
-                      "report_summary": restore_report.summary_text(report) if report else None}
+                      "report_summary": restore_report.summary_text(report) if report else None,
+                      "restored": chosen, "partial": not full,
+                      "notes": pr.report_lines(partial_facts) if not full else []}
         job.advance("")
         job.state = "done"
         log.info("restore completed")

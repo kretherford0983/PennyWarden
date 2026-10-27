@@ -1,5 +1,5 @@
 // E2E UI verification (AC-INIT-*, AC-UI-THEME-*, AC-FY-VIS-*, AC-SEC-005/011, AC-AUTH-SELF-001, AC-REG-001).
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createHmac } from "node:crypto";
 import { existsSync, mkdtempSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -1265,7 +1265,20 @@ test("CR-023 / CR-025: Administrator creates an encrypted backup and restores it
   await expect(page.getByRole("button", { name: "Restore" })).toBeDisabled();
   await page.getByLabel("Type RESTORE to confirm").fill("RESTORE");
   await page.getByRole("button", { name: "Restore" }).click();
+  // 2.2.0 (#319): What to restore - everything ticked, collapsed to All; here everything but Users
+  const wtr = page.getByRole("group", { name: "What to restore" });
+  await expect(wtr).toBeVisible({ timeout: 30_000 });
+  await expect(wtr.getByLabel("Restore all")).toBeChecked();
+  await wtr.getByText("— show the parts").click();
+  await wtr.getByLabel("Restore Users").uncheck();
+  await expect(wtr.getByLabel("Restore all")).not.toBeChecked();
+  await wtr.getByRole("button", { name: "Review" }).click();
+  await expect(wtr.getByTestId("restore-summary")).toContainText("Kept as it is now: Users");
+  await expect(wtr.getByTestId("restore-summary")).toContainText("and the current audit log");
+  await page.screenshot({ path: "e2e-screenshots/light-restore-what-to-restore.png", fullPage: true });
+  await wtr.getByRole("button", { name: "Restore the chosen parts" }).click();
   await expect(page.getByRole("status")).toContainText("Restore complete", { timeout: 30_000 });
+  await expect(page.getByTestId("restore-restored")).toContainText("Restored: data, settings.general");
   await page.screenshot({ path: "e2e-screenshots/light-restore-done.png", fullPage: true });
   await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible({ timeout: 15_000 });
   await login(page, "admin");
@@ -1304,6 +1317,113 @@ test("CR-024: a new installation is set up from the backup in the initialization
     await page.getByLabel("Password").fill(PW);
     await page.getByRole("button", { name: "Sign in" }).click();
     await passGates(page);
+  } finally {
+    child.kill();
+  }
+});
+
+test("#231: a server in testing mode shows the banner everywhere and the Testing tab to Administrators", async ({ page }) => {
+  const port = 8801;
+  const bundle = process.env.FM_BUNDLE;
+  const dataDir = mkdtempSync(join(tmpdir(), "fm-test-srv-"));
+  const args = ["--mode", "server", "--host", "127.0.0.1", "--no-browser", "--port", String(port), "--data-dir", dataDir];
+  const child = spawn(bundle || process.env.FM_PYTHON || "python", bundle ? args : ["-m", "fmpoc", ...args],
+    { cwd: existsSync(join(process.cwd(), "..", "backend")) ? join(process.cwd(), "..", "backend") : join(process.cwd(), "backend"),
+      stdio: "ignore", env: { ...process.env, FM_TESTING_MODE: "true" } });
+  try {
+    const base = `http://127.0.0.1:${port}`;
+    for (let i = 0; i < 120; i++) {
+      try { if ((await fetch(`${base}/api/health`)).ok) break; } catch { /* starting */ }
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    await page.goto(base + "/");
+    await page.getByLabel("Organization / Workspace Name").fill("Test Server Org");
+    await page.getByLabel("Administrator First Name").fill("Pat");
+    await page.getByLabel("Administrator Last Name").fill("Example");
+    await page.getByLabel("Administrator Username").fill("admin");
+    await page.getByLabel("Administrator Email Address").fill("admin@example.org");
+    await page.getByLabel("Password", { exact: true }).fill(PW);
+    await page.getByLabel("Password Confirmation").fill(PW);
+    await page.getByRole("button", { name: "Initialize" }).click();
+    const secret = (await page.getByTestId("mfa-secret").textContent())!.replace(/\s/g, "");
+    await page.getByLabel("Code from the app").fill(totp(secret));
+    await page.getByRole("button", { name: "Turn on two-step verification" }).click();
+    await page.getByLabel("I have saved my recovery codes").check();
+    await page.getByRole("button", { name: "Continue" }).click();
+    await setupQuestions(page);
+    await expect(page.getByTestId("testing-banner")).toContainText("TESTING MODE");
+    await page.goto(base + "/about/testing");
+    const panel = page.getByRole("region", { name: "Testing" });
+    await expect(panel).toBeVisible();
+    await expect(panel).toContainText("scheduled backups are off");
+    await panel.getByRole("button", { name: "Check for updates now" }).click();
+    await expect(panel.getByRole("status")).toContainText("Update check done.");
+    await page.screenshot({ path: "e2e-screenshots/light-testing-mode.png", fullPage: true });
+    // the setting is shown read-only
+    await page.goto(base + "/about/settings");
+    await expect(page.getByText("Testing mode (test server)")).toBeVisible();
+    // and the sign-in page carries the banner too
+    await page.getByRole("button", { name: "Sign out" }).click();
+    await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
+    await expect(page.getByTestId("testing-banner")).toBeVisible();
+  } finally {
+    child.kill();
+  }
+});
+
+test("#243: the published demo - built by the script, restored on a new install, banner, reset from the sign-in page", async ({ page }) => {
+  test.setTimeout(240_000);
+  test.skip(!!process.env.FM_BUNDLE && !process.env.FM_PYTHON, "builds the demo with Python from this checkout");
+  const py = process.env.FM_PYTHON || "python";
+  const root = existsSync(join(process.cwd(), "..", "scripts")) ? join(process.cwd(), "..") : process.cwd();
+  const demoFile = join(mkdtempSync(join(tmpdir(), "fm-demo-")), "pennywarden-demo.fmbak");
+  const built = spawnSync(py, [join(root, "scripts", "build_demo.py"), "--out", demoFile, "--python", py], { encoding: "utf-8", timeout: 200_000 });
+  expect(built.status, built.stderr + built.stdout).toBe(0);
+  const port = 8802;
+  const bundle = process.env.FM_BUNDLE;
+  const dataDir = mkdtempSync(join(tmpdir(), "fm-demo-install-"));
+  const args = ["--no-browser", "--port", String(port), "--data-dir", dataDir];
+  const child = spawn(bundle || py, bundle ? args : ["-m", "fmpoc", ...args], { cwd: join(root, "backend"), stdio: "ignore" });
+  try {
+    const base = `http://127.0.0.1:${port}`;
+    for (let i = 0; i < 120; i++) {
+      try { if ((await fetch(`${base}/api/health`)).ok) break; } catch { /* starting */ }
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    await page.goto(base + "/");
+    await page.getByRole("button", { name: "Restore from a backup instead" }).click();
+    await page.getByLabel("Backup file (.fmbak)").setInputFiles(demoFile);
+    await page.getByLabel("Backup passphrase").fill("pennywarden demo");
+    await page.getByRole("button", { name: "Restore" }).click();
+    await expect(page.getByRole("status")).toContainText("Restore complete", { timeout: 60_000 });
+    await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("demo-banner")).toContainText("DEMO");
+    // the published sign-in, then a change the next reset undoes
+    await page.getByLabel("Username").fill("demo-register");
+    await page.getByLabel("Password").fill("Demo-PennyWarden-2026");
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(page.getByRole("navigation", { name: "Main navigation" })).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId("demo-banner")).toBeVisible();
+    await expect(page.getByTestId("demo-banner").getByRole("button", { name: "Remove the demo and start fresh" })).toHaveCount(0);
+    await page.screenshot({ path: "e2e-screenshots/light-demo.png", fullPage: true });
+    await page.getByRole("link", { name: "My account" }).click();
+    await page.getByLabel("Current password").fill("Demo-PennyWarden-2026");
+    await page.getByLabel("New password", { exact: true }).fill("Evaluator-Pass-77");
+    await page.getByLabel("Confirm new password").fill("Evaluator-Pass-77");
+    await page.getByRole("button", { name: "Change password" }).click();
+    await expect(page.getByText("Password changed.")).toBeVisible();
+    await page.getByRole("button", { name: "Sign out" }).click();
+    // Reset demo data from the sign-in page: the published password works again
+    const banner = page.getByTestId("demo-banner");
+    await banner.getByRole("button", { name: "Reset demo data" }).click();
+    // "Resetting…" until the reset is done, then the page reloads with the button as before
+    await expect(banner.getByRole("button", { name: "Resetting…" })).toBeVisible();
+    await expect(banner.getByRole("button", { name: "Reset demo data" })).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible({ timeout: 30_000 });
+    await page.getByLabel("Username").fill("demo-register");
+    await page.getByLabel("Password").fill("Demo-PennyWarden-2026");
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(page.getByRole("navigation", { name: "Main navigation" })).toBeVisible({ timeout: 20_000 });
   } finally {
     child.kill();
   }

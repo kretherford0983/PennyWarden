@@ -31,6 +31,47 @@ PennyWarden 2.2.0 (in progress).
   XlsxWriter 3.3.0, and the build tool Vite 6.4.5 (a security fix for its development server, which PennyWarden
   doesn't ship). Bug-fix releases; no change in how PennyWarden behaves.
 
+### Backup and restore
+- **Choose what to restore (#319).** After the backup is checked, **What to restore** lists its parts — **Data**
+  (always as one unit), **Settings** (General, Backups, Payments Setup, Donations Setup, each on its own),
+  **Reminders** and **Users** — all ticked. Untick what should stay as it is now, choose **Review** to see what will be
+  replaced and kept, then restore. Everything ticked is the full restore as before.
+  - A partial restore **keeps the current audit log** and records what was restored.
+  - Users created after the backup are kept but inactivated when Users are restored without Data.
+  - If the restored records refer to users who aren't here, they are listed first: add just those users from the
+    backup, or restore Users too.
+  - The backup's encryption key is always used; what is kept is re-encrypted with it when the backup comes from another
+    installation (moving to a new host).
+  - On the command line: `pennywarden restore FILE --only data,reminders` or `--skip settings,users`, and
+    `pennywarden restore FILE --list` shows the parts a backup holds. See docs/backup-restore.md.
+
+### Try the demo
+- **A ready-made demo (#243).** Each release now includes `pennywarden-demo-<version>.fmbak`: a made-up band boosters
+  club with this year's approved budget, a register with receipts, a fundraiser, reminders, printed checks and last
+  year closed. Restore it on the first screen of a new install (passphrase `pennywarden demo`) and sign in as
+  `demo-admin`, `demo-budget`, `demo-register` or `demo-auditor` (password `Demo-PennyWarden-2026`).
+  - A **DEMO** banner on every page. Nothing is kept: the demo is put back on every start and by **Reset demo data**
+    (on the banner, and on the sign-in page for anyone locked out).
+  - The demo runs only on the computer it's installed on (its passwords and key are published): no server mode, no
+    network address.
+  - **Remove the demo and start fresh** (the demo Administrator, or `pennywarden remove-demo`) removes everything of
+    it — data, users, audit log and its key — and the Initialization Wizard comes next.
+  - pennywarden.org has a *Try the demo* section. See docs/demo.md.
+
+### Testing mode (server installs)
+- **A test server that doesn't make you wait (#231).** `testing_mode = true` in `config.toml` (only there — never from
+  the web) turns a server install into a test server: a striped **TESTING MODE** banner on every page, including the
+  sign-in page, and **System/About → Testing** for Administrators, which moves timers and schedules instead of waiting:
+  - the next scheduled backup (or *Run as if due now*), and *Retry the failed backup now*;
+  - backup runs moved back in time, to see what retention keeps and removes;
+  - the time of the last successful backup, to bring up (or clear) the backup reminder;
+  - clearing the reinitialize cooldown;
+  - moving an organization reminder's due date;
+  - *Check for updates now*.
+  The real clock is never moved, nothing financial changes, and every action is in the audit log as a testing action.
+  Backups made in testing mode are marked: the app won't restore one onto a server that isn't in testing mode (the
+  server owner can, with `pennywarden restore FILE --accept-testing-backup`). Local installs ignore the setting for now.
+
 ### Budgets
 - **Budget history before PennyWarden (#284).** Budget Managers can enter the budgeted and actual figures of years
   before the first Fiscal Year in PennyWarden, from the old spreadsheets, so a budget's history is complete:
@@ -48,7 +89,8 @@ PennyWarden 2.2.0 (in progress).
   - Years a Fiscal Year in PennyWarden covers are refused, so nothing is counted twice.
 
 ### Upgrade
-- Migration `0049` adds the table `budget_history_entry` (empty).
+- Migration `0049` adds the table `budget_history_entry` (empty); `0050` the table `testing_state` (empty); `0051`
+  the column `workspace.demo_mode` (off).
 - Migration `0048` adds two columns to `user_mfa` (`new_key_required`, `pending_own_key`; both off). No existing value
   changes. Going back to 2.1.2 needs the pre-upgrade data backup (2.1.2 does not know revisions 0048 and later).
 

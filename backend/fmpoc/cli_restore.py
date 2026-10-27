@@ -1,8 +1,14 @@
 """2.0.0 (#124): `pennywarden restore` - restore a backup from the server's command line.
 
     pennywarden restore FILE.fmbak [--use-server-key | --passphrase-file PATH] [--data-dir DIR]
+                        [--only PARTS | --skip PARTS] [--missing-users add|include-users]
                         [--stop-service] [--yes]
-    pennywarden restore --list [--data-dir DIR]
+    pennywarden restore FILE.fmbak --list [...]     the parts this backup holds (2.2.0, #319); nothing changes
+    pennywarden restore --list [--data-dir DIR]     the backups this server can recover
+
+2.2.0 (#319): PARTS is a comma-separated list of data, settings (or settings.general, settings.backups,
+settings.payments, settings.donations), reminders and users. Data is never split. Without --only/--skip everything is
+restored, as before.
 
 Order of checks: (1) elevation (only where it is needed), (2) the backup file and its passphrase (decrypted and
 verified against its manifest before anything changes), (3) whether the service is running, then the restore - the
@@ -217,8 +223,22 @@ def restore(args) -> int:
 
     settings = load_settings({"data_dir": args.data_dir})
     data_dir = settings.data_dir
-    if args.list:
+    if args.list and not args.file:
         return list_backups(settings)
+    from .services import partial_restore as pr
+    try:
+        if args.only:
+            chosen = pr.normalize([args.only])
+        elif args.skip:
+            skip = set(pr.parse_names(args.skip))
+            chosen = pr.normalize([d for d in pr.DOMAINS if d not in skip])
+        else:
+            chosen = list(pr.DOMAINS)
+    except pr.RestoreChoiceError as e:
+        raise CliError(f"{e} Nothing was changed.", 2) from None
+    missing_users = (args.missing_users or "add").replace("-", "_")
+    if missing_users == "include_users" and "users" not in chosen:
+        chosen = pr.normalize(chosen + ["users"])
     if not args.file:
         raise CliError("Give the backup file: pennywarden restore FILE.fmbak", 2)
     # (1) elevation
@@ -238,10 +258,52 @@ def restore(args) -> int:
         try:
             manifest = bk.unpack(src, passphrase, work / "unpacked")
             facts = bk.check_compatible(work / "unpacked" / "data", known_revisions(settings))
+            from .services.testing import enabled_for
+            testing_backup = bk.check_testing(manifest, enabled_for(settings), args.accept_testing_backup)
         except bk.BackupError as e:
             raise CliError(f"{e} Nothing was changed.", 2) from None
         say(f"  Backup of \"{facts['workspace']}\" made {manifest.get('created_at')} with version "
             f"{manifest.get('app_version')}.")
+        if testing_backup:
+            say("  It was made on a server in TESTING MODE (its audit trail may have gaps).")
+        from .config import is_loopback
+        from .services import demo as demo_svc     # 2.2.0 (#243): the demo is restored whole, on this computer only
+        if demo_svc.is_demo_db(work / "unpacked" / "data" / "database" / bk.DB_NAME) or \
+                demo_svc.is_demo_db(settings.database_path):
+            if demo_svc.is_demo_db(work / "unpacked" / "data" / "database" / bk.DB_NAME) and \
+                    (settings.mode == "server" or not is_loopback(settings.host)):
+                raise CliError(f"{demo_svc.LOOPBACK_ONLY} Nothing was changed.", 2)
+            if not pr.is_full(chosen):
+                say("  The demo is always restored (or replaced) whole: --only/--skip are ignored.")
+                chosen = list(pr.DOMAINS)
+        full = pr.is_full(chosen)
+        if args.list or not full:
+            # 2.2.0 (#319, point 9): the backup is brought to this version in the work folder before anything else
+            from .db import upgrade_database
+            backup_db = work / "unpacked" / "data" / "database" / bk.DB_NAME
+            upgrade_database(f"sqlite:///{backup_db.as_posix()}")
+        if args.list:
+            say("The backup holds (restore them with --only or --skip):")
+            for d in pr.domains_in(backup_db):
+                counts = ", ".join(f"{v} {k.replace('_', ' ')}" for k, v in d["counts"].items())
+                say(f"  {d['name']:<19} {d['label']}  [{counts}]")
+            return 0
+        if not full:
+            sm = pr.summary(chosen)
+            say("Restoring:     " + ", ".join(x["name"] for x in sm["restored"]))
+            say("Keeping as is: " + ", ".join(x["name"] for x in sm["kept"]) + " (and the current audit log)")
+            if settings.database_path.is_file():
+                chk = pr.check(settings.database_path, backup_db, chosen)
+                if chk["missing_users"]:
+                    names = ", ".join(u["username"] for u in chk["missing_users"])
+                    if missing_users == "add":
+                        say(f"The restored records refer to users that aren't here: {names}. They will be added from "
+                            "the backup (or use --missing-users include-users to restore Users too).")
+                for c in chk["user_id_clashes"]:
+                    say(f"Warning: user id {c['id']} is {c['backup_username']} in the backup but "
+                        f"{c['current_username']} here (a backup from another installation).")
+            if not ask("Continue?", args.yes):
+                raise CliError("Nothing was changed.", 4)
         # (3) the service
         stopped = False
         if in_container():
@@ -257,8 +319,11 @@ def restore(args) -> int:
         elif app_answering(settings):
             raise CliError("PennyWarden is running on this data folder. Quit it first, then run the command again. "
                            "Nothing was changed.", 4)
-        summary = run_offline_restore(settings, work / "unpacked" / "data", manifest, src.name)
+        summary = run_offline_restore(settings, work / "unpacked" / "data", manifest, src.name, chosen,
+                                      missing_users, testing_backup)
         say("Restore complete.")
+        for line in summary.get("notes") or []:
+            say("  " + line)
         from .services.restore_report import summary_text
         say("  " + summary_text(summary))
         if stopped:
@@ -286,8 +351,11 @@ def os_user() -> str:
         return "unknown"
 
 
-def run_offline_restore(settings, data: Path, manifest: dict, source_name: str) -> dict:
-    """Report, swap, migrate, revoke sessions and audit - with the service stopped. Rolls back on failure."""
+def run_offline_restore(settings, data: Path, manifest: dict, source_name: str, chosen: list[str] | None = None,
+                        missing_users: str = "add", testing_backup: bool = False) -> dict:
+    """Report, swap, migrate, revoke sessions and audit - with the service stopped. Rolls back on failure.
+    2.2.0 (#319): chosen - the parts to restore (default everything); a partial restore keeps the rest and the
+    current audit log."""
     from types import SimpleNamespace
 
     from sqlalchemy import update
@@ -297,10 +365,15 @@ def run_offline_restore(settings, data: Path, manifest: dict, source_name: str) 
     from .models import AuthSession, TrustedDevice, utcnow
     from .services import backup as bk
     from .services import bootstrap
+    from .services import partial_restore as pr
     from .services.restore_report import REPORT_DIR, build
 
+    chosen = chosen or list(pr.DOMAINS)
+    full = pr.is_full(chosen) or not settings.database_path.is_file()
+    if full:
+        chosen = list(pr.DOMAINS)
     summary: dict = {}
-    if settings.database_path.is_file():
+    if settings.database_path.is_file() and "data" in chosen:
         say("Comparing the current data with the backup (re-entry report) ...")
         engine = make_engine(settings.database_url)
         try:
@@ -311,6 +384,13 @@ def run_offline_restore(settings, data: Path, manifest: dict, source_name: str) 
                                     settings.data_dir / REPORT_DIR)
         finally:
             engine.dispose()
+    facts: dict = {}
+    if not full:
+        say("Combining the chosen parts with the current data ...")
+        try:
+            data, facts = pr.prepare_result(settings, data, chosen, missing_users)
+        except (pr.RestoreChoiceError, bk.BackupError) as e:
+            raise CliError(f"{e} Nothing was changed.", 6) from None
     say("Saving a safety copy of the current data (pre-restore/) and putting the backup in place ...")
     bk.swap_in(settings, data)
     try:
@@ -331,7 +411,10 @@ def run_offline_restore(settings, data: Path, manifest: dict, source_name: str) 
                               "backup_created_at": manifest.get("created_at"),
                               "backup_app_version": manifest.get("app_version"), "counts": manifest.get("counts"),
                               "report": summary.get("report"), "report_transactions": summary.get("transactions", 0),
-                              "sessions_revoked": "all"}, category="SECURITY")
+                              "sessions_revoked": "all", "restored": chosen,
+                              "kept": [d for d in pr.DOMAINS if d not in chosen], "partial": not full,
+                              "notes": pr.report_lines(facts) if not full else [],
+                              "testing_backup": testing_backup}, category="SECURITY")
                 s.commit()
         finally:
             engine.dispose()
@@ -343,8 +426,10 @@ def run_offline_restore(settings, data: Path, manifest: dict, source_name: str) 
         bk.rollback(settings)
         detail = str(e) if isinstance(e, bk.BackupError) else type(e).__name__
         raise CliError(f"Restore failed ({detail}); the previous data was put back.", 6) from None
-    match_ownership(settings.data_dir, list(bk.PARTS) + [bk.PRE_RESTORE_DIR, REPORT_DIR])
-    return summary
+    from .services import demo as demo_svc     # 2.2.0 (#243)
+    demo_svc.keep_pristine(settings)
+    match_ownership(settings.data_dir, list(bk.PARTS) + [bk.PRE_RESTORE_DIR, REPORT_DIR, demo_svc.PRISTINE])
+    return {**summary, "notes": pr.report_lines(facts) if not full else []}
 
 
 def list_backups(settings) -> int:
@@ -385,7 +470,17 @@ def main(argv: list[str]) -> int:
     p.add_argument("--data-dir")
     p.add_argument("--stop-service", action="store_true", help="stop the running service without asking")
     p.add_argument("--yes", action="store_true", help="answer yes to the questions")
-    p.add_argument("--list", action="store_true", help="list the backups this server can recover")
+    p.add_argument("--list", action="store_true",
+                   help="without FILE: the backups this server can recover; with FILE: the parts it holds")
+    g2 = p.add_mutually_exclusive_group()
+    g2.add_argument("--only", help="restore only these parts: data, settings[.general|.backups|.payments|.donations], "
+                                   "reminders, users (comma-separated)")
+    g2.add_argument("--skip", help="restore everything except these parts")
+    p.add_argument("--accept-testing-backup", action="store_true",
+                   help="restore a backup made on a server in testing mode onto a server that isn't (2.2.0)")
+    p.add_argument("--missing-users", choices=["add", "include-users"],
+                   help="restored records referring to users that aren't here: add just those users from the backup "
+                        "(default) or restore Users too")
     a = p.parse_args(argv)
     try:
         return restore(a)
