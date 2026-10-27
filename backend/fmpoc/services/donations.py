@@ -37,19 +37,24 @@ from sqlalchemy.orm import Session
 
 from .. import audit
 from ..errors import AppError, Warning_, conflict, not_found, require_confirmations, validation
-from ..models import (Attachment, DonationDetail, DonationLine, DonationReceipt, DonationSettings, Entity, RegisterTransaction, User,
-                      Workspace, utcnow)
+from ..models import (Attachment, Donation, DonationLine, DonationReceipt, DonationSettings, Entity, FiscalYear,
+                      RegisterTransaction, TransactionAllocation, User, Workspace, utcnow)
 from . import register as reg
 from .checkprint import config as cfgmod
 from . import organization as org_svc
 from .checkprint import fonts, patterns
-from .checkprint.service import _commit_or_unlink, _store_doc_copy, address_lines, format_date
+from .checkprint.service import _store_doc_copy, address_lines, format_date
 from .common import get_scoped
 
 RECEIPT_COPY = "DONATION_RECEIPT"          # Attachment.document_type of a receipt's record copy (system generated)
 ORIGINAL, DUPLICATE, CORRECTED = "ORIGINAL", "DUPLICATE", "CORRECTED"
 PT = 72.0
 NO_GOODS = "No goods or services were provided in exchange for this contribution."
+# 2.2.0 (#325): printed whenever a receipt lists items; editable in Donations Setup (empty = this default)
+ITEMS_NOTE_DEFAULT = ("Donated items are listed by description only. {ORG.NAME} does not assign a monetary value to "
+                      "donated property; determining its value is the donor's responsibility.")
+ITEMS_NOTE_MIN_WORDS = 8
+BLANK_DATE = "________________"
 
 
 # ------------------------------------------------------------------ module switch
@@ -94,6 +99,7 @@ class ReceiptConfig(BaseModel):
     closing: str = Field(default="With gratitude,", max_length=200)
     signer_name: str = Field(default="", max_length=120)
     signer_title: str = Field(default="", max_length=120)
+    items_note: str = Field(default="", max_length=1000)     # 2.2.0 (#325): empty = ITEMS_NOTE_DEFAULT
 
     @model_validator(mode="before")
     @classmethod
@@ -107,7 +113,17 @@ class ReceiptConfig(BaseModel):
     def _patterns(self):
         for name in ("title", "salutation", "body", "closing"):
             _check(getattr(self, name), name.capitalize())
+        if self.items_note.strip():
+            _check(self.items_note, "Items note")
+            if note_words(self.items_note) < ITEMS_NOTE_MIN_WORDS:
+                raise ValueError(f"Items note: write at least {ITEMS_NOTE_MIN_WORDS} words so the note explains "
+                                 "itself (a {VARIABLE} counts as one word), or leave it empty for the default wording.")
         return self
+
+
+def note_words(text: str) -> int:
+    """Words in a note; a {VARIABLE} counts as one word however many words it prints (Kyle, 2026-10-23)."""
+    return len(re.sub(r"\{[^{}]*\}", " X ", text).split())
 
 
 def _config_error(e: ValidationError) -> AppError:
@@ -155,7 +171,8 @@ def setup_out(db: Session, ctx) -> dict:
     return {"config": cfg.model_dump(), "defaults": ReceiptConfig().model_dump(), "saved": row is not None,
             "missing": missing_setup(db, ctx.workspace_id), "organization": organization_out(db, ctx.workspace_id),
             "variables": patterns.variable_options(patterns.RECEIPT),
-            "date_formats": list(cfgmod.DATE_FORMATS), "no_goods_statement": NO_GOODS}
+            "date_formats": list(cfgmod.DATE_FORMATS), "no_goods_statement": NO_GOODS,
+            "items_note_default": ITEMS_NOTE_DEFAULT, "items_note_min_words": ITEMS_NOTE_MIN_WORDS}
 
 
 def save_config(db: Session, ctx, data: dict) -> ReceiptConfig:
@@ -184,11 +201,13 @@ class ReceiptData:
     donor_name: str
     donor_address: list[str]
     amount_cents: int
-    dates: list[dt.date]                 # when the donation(s) were received (each line's date, else the deposit's)
+    dates: list[dt.date]                 # when received (each line's date, else the deposit's); [] = not received yet
+                                         # (2.2.0, #325: the receipt prints the date blank, to fill in by hand)
     purposes: list[str]
     goods: list[tuple[int, str]] = field(default_factory=list)       # (cents, description) per line with goods
     today: dt.date = field(default_factory=dt.date.today)
     details: str = ""                    # the {DETAILS} text as written (may contain {VARIABLES})
+    items: list[str] = field(default_factory=list)                    # 2.2.0 (#325): item descriptions (no values)
 
 
 def money(cents: int) -> str:
@@ -213,7 +232,7 @@ def dates_text(dates: list[dt.date], fmt: str) -> str:
 def values_for(cfg: ReceiptConfig, data: ReceiptData) -> dict[str, str]:
     vals = {"DONOR_NAME": data.donor_name, "DONOR_ADDRESS": "\n".join(data.donor_address),
             "AMOUNT": f"{data.amount_cents // 100:,}.{data.amount_cents % 100:02d}",
-            "DATE_RECEIVED": dates_text(data.dates, cfg.date_format),
+            "DATE_RECEIVED": dates_text(data.dates, cfg.date_format) or BLANK_DATE,
             "PURPOSE": "; ".join(data.purposes), **data.org, "RECEIPT_NO": data.number, "SIGNER": cfg.signer_name,
             "SIGNER_TITLE": cfg.signer_title, "TODAY": format_date(data.today, cfg.date_format)}
     # the details may use the same variables (not {DETAILS} itself)
@@ -303,17 +322,24 @@ def receipt_pdf(cfg: ReceiptConfig, data: ReceiptData, sample: bool = False, wat
             story += [Paragraph(p, base), Spacer(1, size * 0.7)]
     # the acknowledgment block: always printed, not part of the template
     rows = [("Organization", data.org["ORG.NAME"]), ("EIN", data.org["ORG.EIN"]), ("Donor", data.donor_name),
-            ("Date received", dates_text(data.dates, cfg.date_format)),
-            ("Amount", money(data.amount_cents))]
+            ("Date received", dates_text(data.dates, cfg.date_format) or BLANK_DATE)]
+    if data.amount_cents or not data.items:                    # 2.2.0 (#325): the total covers money only
+        rows.append(("Amount", money(data.amount_cents)))
+    if data.items:
+        rows.append(("Items", "\n".join(f"• {x}" for x in data.items)))
     if data.purposes:
         rows.append(("Purpose", "; ".join(data.purposes)))
     rows.append(("Receipt No.", data.number))
-    tbl = Table([[Paragraph(escape(k), strong), Paragraph(escape(v), base)] for k, v in rows],
+    tbl = Table([[Paragraph(escape(k), strong), Paragraph(escape(v).replace("\n", "<br/>"), base)] for k, v in rows],
                 colWidths=[1.6 * inch, 4.9 * inch], hAlign="LEFT")
     tbl.setStyle(TableStyle([("BOX", (0, 0), (-1, -1), 0.6, "#666666"), ("VALIGN", (0, 0), (-1, -1), "TOP"),
                              ("BOTTOMPADDING", (0, 0), (-1, -1), 3), ("TOPPADDING", (0, 0), (-1, -1), 3),
                              ("LEFTPADDING", (0, 0), (-1, -1), 6)]))
-    story.append(KeepTogether([tbl, Spacer(1, size * 0.6), Paragraph(escape(goods_statement(data.goods)), strong)]))
+    ack = [tbl, Spacer(1, size * 0.6), Paragraph(escape(goods_statement(data.goods)), strong)]
+    if data.items:                                  # 2.2.0 (#325): always with items; the wording is editable
+        note = patterns.resolve(cfg.items_note.strip() or ITEMS_NOTE_DEFAULT, values_for(cfg, data), patterns.RECEIPT)
+        ack += [Spacer(1, size * 0.4), Paragraph(escape(note.text), base)]
+    story.append(KeepTogether(ack))
     story.append(Spacer(1, size * 1.2))
     block = [Paragraph(escape(texts["closing"]), base)] if texts["closing"].strip() else []
     sign = []
@@ -351,6 +377,7 @@ def sample_data(db: Session, ctx, cfg: ReceiptConfig) -> ReceiptData:
     return ReceiptData(number=f"R-{dt.date.today().year}-0000", kind=ORIGINAL, kind_note="",
                        org=_org_or_placeholders(db, ctx.workspace_id), donor_name=SAMPLE_DONOR[0], donor_address=SAMPLE_DONOR[1:],
                        amount_cents=25000, dates=[dt.date.today()], purposes=["General support"],
+                       items=["SAMPLE ITEM - a television for the auction"],
                        details="(The details written for this donation in the Donation receipt dialog: for example, "
                                "how the gift of ${AMOUNT} will be used.)")
 
@@ -360,7 +387,15 @@ def sample_pdf(db: Session, ctx, data: dict | None) -> bytes:
     return receipt_pdf(cfg, sample_data(db, ctx, cfg), sample=True)
 
 
-# ------------------------------------------------------------------ deposits: marking and receipts
+# ------------------------------------------------------------------ 2.2.0 (#325): the donation model
+# A donation (donor, lines, details) is the receipt's unit. It starts on the Donations page (PAGE) or by marking a
+# deposit's lines in the register (DEPOSIT: one donation per donor on that deposit). Each line is money or an item.
+# "Received" decides (Kyle, 2026-10-23): a money line when it is linked to a deposit, an item when ticked Received.
+PAGE, DEPOSIT = "PAGE", "DEPOSIT"
+MONEY, ITEM = "MONEY", "ITEM"
+ACTIVE, CANCELLED = "ACTIVE", "CANCELLED"
+
+
 def get_deposit(db: Session, ctx, txn_id: int) -> RegisterTransaction:
     t = get_scoped(db, RegisterTransaction, txn_id, ctx, "Transaction")
     if t.transaction_type != "DEPOSIT" or t.transfer_group:
@@ -368,67 +403,134 @@ def get_deposit(db: Session, ctx, txn_id: int) -> RegisterTransaction:
     return t
 
 
-def _lines(db: Session, t: RegisterTransaction) -> dict[int, DonationLine]:
-    ids = [a.id for a in t.live_allocations]
-    if not ids:
-        return {}
-    return {d.allocation_id: d for d in db.scalars(select(DonationLine).where(DonationLine.allocation_id.in_(ids)))}
+def get_donation(db: Session, ctx, donation_id: int) -> Donation:
+    return get_scoped(db, Donation, donation_id, ctx, "Donation")
 
 
 def _donor(t: RegisterTransaction, a) -> Entity | None:
     return a.entity or t.parent_entity
 
 
-def _donor_groups(db: Session, t: RegisterTransaction) -> dict[int, dict]:
-    """Per donor: the donation lines and the receipt content."""
-    lines = _lines(db, t)
-    out: dict[int, dict] = {}
-    for a in t.live_allocations:
-        d = lines.get(a.id)
-        if d is None:
-            continue
-        e = _donor(t, a)
-        if e is None:
-            continue
-        g = out.setdefault(e.id, {"entity": e, "allocs": [], "amount": 0, "goods": [], "purposes": [], "dates": [],
-                                  "details": ""})
-        g["allocs"].append(a.id)
-        when = d.date_received or t.transaction_date
-        if when not in g["dates"]:
-            g["dates"].append(when)
-        g["amount"] += a.amount_cents
-        if d.goods_cents:
-            g["goods"].append((d.goods_cents, d.goods_description or ""))
-        if d.purpose and d.purpose not in g["purposes"]:
-            g["purposes"].append(d.purpose)
-    for x in _details(db, t).values():
-        if x.donor_entity_id in out:
-            out[x.donor_entity_id]["details"] = x.details
-    for g in out.values():
-        g["dates"].sort()
+def lines_of(db: Session, d: Donation) -> list[DonationLine]:
+    return list(db.scalars(select(DonationLine).where(DonationLine.donation_id == d.id).order_by(DonationLine.id)))
+
+
+def _alloc(db: Session, line: DonationLine) -> TransactionAllocation | None:
+    if line.allocation_id is None:
+        return None
+    a = db.get(TransactionAllocation, line.allocation_id)
+    return a if a is not None and a.removed_at is None else None
+
+
+def line_received(db: Session, line: DonationLine) -> bool:
+    if line.kind == ITEM:
+        return bool(line.item_received)
+    a = _alloc(db, line)
+    return a is not None and a.transaction.status == "ACTIVE"
+
+
+def line_amount(db: Session, line: DonationLine) -> int:
+    """A linked money line follows the deposit's allocation (the register wins); otherwise its own amount. For an
+    item: its estimated value (for our records only, never printed)."""
+    if line.kind == MONEY:
+        a = _alloc(db, line)
+        if a is not None:
+            return a.amount_cents
+    return line.amount_cents or 0
+
+
+def line_date(db: Session, line: DonationLine) -> dt.date | None:
+    """The received date of a received line; for one not received yet, the estimate (if any)."""
+    if line.kind == MONEY:
+        a = _alloc(db, line)
+        if a is not None:
+            return line.date_received or a.transaction.transaction_date
+    return line.date_received
+
+
+def line_deposit(db: Session, line: DonationLine) -> RegisterTransaction | None:
+    a = _alloc(db, line)
+    return a.transaction if a is not None else None
+
+
+def value_missing(line: DonationLine) -> bool:
+    return line.kind == ITEM and not line.amount_cents and not line.item_no_value
+
+
+def _closed_on(db: Session, ws_id: int, d: dt.date | None) -> bool:
+    if d is None:
+        return False
+    return db.scalar(select(func.count(FiscalYear.id)).where(
+        FiscalYear.workspace_id == ws_id, FiscalYear.status == "CLOSED", FiscalYear.start_date <= d,
+        FiscalYear.end_date >= d)) > 0
+
+
+def line_locked(db: Session, line: DonationLine) -> bool:
+    """A received line in a Closed Fiscal Year can't be edited, like the register (BR-057)."""
+    if not line_received(db, line):
+        return False
+    if line.kind == MONEY:
+        t = line_deposit(db, line)
+        return t is not None and reg.is_closed_protected(db, t)
+    return _closed_on(db, line.workspace_id, line.date_received)
+
+
+def deposits_of(db: Session, d: Donation) -> list[RegisterTransaction]:
+    out: list[RegisterTransaction] = []
+    for line in lines_of(db, d):
+        t = line_deposit(db, line)
+        if t is not None and t not in out:
+            out.append(t)
+    if d.origin == DEPOSIT and d.transaction_id:
+        t = db.get(RegisterTransaction, d.transaction_id)
+        if t is not None and t not in out:
+            out.insert(0, t)
     return out
 
 
-def _details(db: Session, t: RegisterTransaction) -> dict[int, DonationDetail]:
-    return {x.donor_entity_id: x for x in db.scalars(select(DonationDetail).where(DonationDetail.transaction_id == t.id))}
+def _content(db: Session, d: Donation) -> dict:
+    """What the donation's receipt would carry now."""
+    e = db.get(Entity, d.donor_entity_id)
+    lines = lines_of(db, d)
+    money_cents, goods, purposes, items, dates, allocs = 0, [], [], [], [], []
+    received = bool(lines) and all(line_received(db, x) for x in lines)
+    for x in lines:
+        if x.kind == MONEY:
+            money_cents += line_amount(db, x)
+            if x.allocation_id:
+                allocs.append(x.allocation_id)
+        else:
+            items.append(x.description or "")
+        if x.goods_cents:
+            goods.append((x.goods_cents, x.goods_description or ""))
+        if x.purpose and x.purpose not in purposes:
+            purposes.append(x.purpose)
+        when = line_date(db, x)
+        if received and when and when not in dates:
+            dates.append(when)
+    dates.sort()
+    return {"entity": e, "amount": money_cents, "goods": goods, "purposes": purposes, "items": items,
+            "dates": dates, "details": d.details or "", "allocs": allocs, "received": received}
 
 
-def _content_sha(t: RegisterTransaction, g: dict) -> str:
-    e = g["entity"]
-    doc = {"donor": e.id, "name": e.display_name, "address": address_lines(e), "amount": g["amount"],
-           "dates": [d.isoformat() for d in g["dates"]], "goods": g["goods"], "purposes": g["purposes"],
-           "details": g["details"]}
+def _content_sha(c: dict) -> str:
+    e = c["entity"]
+    doc = {"donor": e.id, "name": e.display_name, "address": address_lines(e), "amount": c["amount"],
+           "dates": [x.isoformat() for x in c["dates"]], "goods": c["goods"], "purposes": c["purposes"],
+           "details": c["details"]}
+    if c["items"]:                       # 2.2.0: part 1 receipts (no items) keep their fingerprint
+        doc["items"] = c["items"]
     return hashlib.sha256(json.dumps(doc, sort_keys=True).encode()).hexdigest()
 
 
-def _receipts(db: Session, t: RegisterTransaction) -> list[DonationReceipt]:
-    return list(db.scalars(select(DonationReceipt).where(DonationReceipt.transaction_id == t.id)
+def _receipts_of(db: Session, d: Donation) -> list[DonationReceipt]:
+    return list(db.scalars(select(DonationReceipt).where(DonationReceipt.donation_id == d.id)
                            .order_by(DonationReceipt.id)))
 
 
-def _current(receipts: list[DonationReceipt], donor_id: int) -> DonationReceipt | None:
-    """The donor's receipt in force: the last numbered (ORIGINAL or CORRECTED) one."""
-    numbered = [r for r in receipts if r.donor_entity_id == donor_id and r.kind != DUPLICATE]
+def _current(receipts: list[DonationReceipt]) -> DonationReceipt | None:
+    """The receipt in force: the last numbered (ORIGINAL or CORRECTED) one."""
+    numbered = [r for r in receipts if r.kind != DUPLICATE]
     return numbered[-1] if numbered else None
 
 
@@ -437,52 +539,244 @@ def _user_name(db: Session, uid: int | None) -> str:
     return (u.display_name or u.username) if u else ""
 
 
-def transaction_out(db: Session, ctx, t: RegisterTransaction) -> dict:
-    lines = _lines(db, t)
-    receipts = _receipts(db, t)
-    groups = _donor_groups(db, t)
-    printable = t.status == "ACTIVE" and not reg.is_closed_protected(db, t)
+def receipts_void(db: Session, d: Donation) -> bool:
+    """Cancelled donations, and donations marked on a deposit that was voided or deleted (part 1), have void
+    receipts. A Donations page donation whose deposit was voided is unlinked instead: its receipts stay valid."""
+    if d.status == CANCELLED:
+        return True
+    if d.origin == DEPOSIT and d.transaction_id:
+        t = db.get(RegisterTransaction, d.transaction_id)
+        return t is None or t.status != "ACTIVE"
+    return False
+
+
+def _receipts_out(db: Session, d: Donation) -> list[dict]:
+    receipts = _receipts_of(db, d)
     by_id = {r.id: r for r in receipts}
-    cfg = get_config(db, ctx.workspace_id)
-    donors = []
-    for eid, g in groups.items():
-        cur = _current(receipts, eid)
-        sha = _content_sha(t, g)
-        next_kind = ORIGINAL if cur is None else (DUPLICATE if cur.content_sha == sha else CORRECTED)
-        donors.append({"entity_id": eid, "name": g["entity"].display_name, "amount": money(g["amount"]),
-                       "amount_cents": g["amount"], "goods_cents": sum(c for c, _d in g["goods"]),
-                       "purposes": g["purposes"], "has_address": bool(address_lines(g["entity"])),
-                       "dates": [d.isoformat() for d in g["dates"]], "details": g["details"],
-                       "current_receipt": cur.number if cur else None, "next_kind": next_kind})
     superseded = {r.replaces_id for r in receipts if r.kind == CORRECTED and r.replaces_id}
+    void = receipts_void(db, d)
+    return [{"id": r.id, "number": r.number, "kind": r.kind, "donor_entity_id": r.donor_entity_id,
+             "donor": r.donor_name, "amount": money(r.amount_cents),
+             "date_received": r.date_received.isoformat() if r.date_received else None,
+             "replaces": by_id[r.replaces_id].number if r.replaces_id in by_id else None,
+             "attachment_id": r.attachment_id, "printed_at": r.printed_at.isoformat() + "Z",
+             "printed_by": _user_name(db, r.printed_by_user_id), "void": void,
+             "superseded": r.id in superseded or (r.kind == DUPLICATE and r.replaces_id in superseded)}
+            for r in receipts]
+
+
+def _next_seq(db: Session, ws_id: int, year: int) -> int:
+    cur = db.scalar(select(func.max(DonationReceipt.seq)).where(DonationReceipt.workspace_id == ws_id,
+                                                                DonationReceipt.year == year))
+    return (cur or 0) + 1
+
+
+def _check_printable(db: Session, ctx, d: Donation) -> None:
+    if d.status == CANCELLED:
+        raise conflict("NOT_PRINTABLE", "This donation was cancelled - its receipts are void and no receipt can be "
+                                        "printed.")
+    if d.origin == DEPOSIT and d.transaction_id:
+        t = db.get(RegisterTransaction, d.transaction_id)
+        if t is None or t.status != "ACTIVE":
+            raise conflict("NOT_PRINTABLE", "This deposit is void - its receipts are void and no receipt can be "
+                                            "printed.")
+        if reg.is_closed_protected(db, t):
+            raise conflict("FISCAL_YEAR_CLOSED", "The deposit belongs to a Closed Fiscal Year and cannot be printed. "
+                                                 "Its receipts are attached to it.")
+    if not lines_of(db, d):
+        raise conflict("NO_LINES", "This donation has no lines.")
+    missing = missing_setup(db, ctx.workspace_id)
+    if missing:
+        raise conflict("SETUP_INCOMPLETE", "An Administrator must enter " + " and ".join(missing) +
+                       " in System/About → Organization before receipts can be printed.")
+
+
+def _compose(db: Session, ctx, d: Donation) -> dict:
+    """Everything a receipt for this donation would be now: kind and number, the data, the warnings."""
+    _check_printable(db, ctx, d)
+    cfg = get_config(db, ctx.workspace_id)
+    c = _content(db, d)
+    receipts = _receipts_of(db, d)
+    cur = _current(receipts)
+    sha = _content_sha(c)
+    e = c["entity"]
+    if cur is not None and cur.content_sha == sha:
+        kind, number, year, seq = DUPLICATE, cur.number, cur.year, cur.seq
+        note = f"DUPLICATE of receipt {cur.number}, first printed {format_date(cur.printed_at.date(), cfg.date_format)}."
+    else:
+        year = c["dates"][0].year if c["dates"] else dt.date.today().year   # the (first) date received
+        seq = _next_seq(db, ctx.workspace_id, year)
+        number = f"R-{year}-{seq:04d}"
+        kind = ORIGINAL if cur is None else CORRECTED
+        note = "" if cur is None else (f"CORRECTED receipt: replaces receipt {cur.number} printed "
+                                       f"{format_date(cur.printed_at.date(), cfg.date_format)}.")
+    data = ReceiptData(number=number, kind=kind, kind_note=note, org=org_svc.values_for(db, ctx.workspace_id),
+                       donor_name=e.display_name, donor_address=address_lines(e),
+                       amount_cents=c["amount"], dates=c["dates"], purposes=c["purposes"],
+                       goods=c["goods"], details=c["details"], items=c["items"])
+    warnings = []
+    _texts, empty = receipt_texts(cfg, data)
+    if empty:
+        warnings.append(Warning_("EMPTY_VARIABLES", "These variables have no data for this receipt: " +
+                                 ", ".join("{" + v + "}" for v in empty) + ". Print the receipt as it is?",
+                                 variables=empty))
+    if not data.donor_address:
+        warnings.append(Warning_("NO_DONOR_ADDRESS", "The donor has no address in the register. Print the receipt "
+                                 "without it?"))
+    if not c["received"]:
+        warnings.append(Warning_("NOT_RECEIVED", "This donation is not received yet, so the receipt prints the date "
+                                 "received blank, to fill in by hand when it is handed over. Print it?"))
+    if kind == CORRECTED:
+        warnings.append(Warning_("CORRECTED_RECEIPT", f"The donation changed since receipt {cur.number}. Print a "
+                                 f"corrected receipt {number} that replaces it?", replaces=cur.number))
+    return {"cfg": cfg, "data": data, "kind": kind, "number": number, "year": year, "seq": seq, "cur": cur,
+            "sha": sha, "c": c, "e": e, "warnings": warnings}
+
+
+PREVIEW_NUMBER = "(assigned when printed)"
+
+
+def _preview(db: Session, ctx, d: Donation) -> tuple[bytes, dict]:
+    c = _compose(db, ctx, d)
+    data = c["data"]
+    if c["kind"] != DUPLICATE:
+        data.number = PREVIEW_NUMBER          # a new number is only taken when the receipt is printed
+    pdf = receipt_pdf(c["cfg"], data, watermark="PREVIEW - NOT A RECEIPT")
+    return pdf, {"kind": c["kind"], "number": c["number"] if c["kind"] == DUPLICATE else None,
+                 "replaces": c["cur"].number if c["cur"] is not None and c["kind"] == CORRECTED else None,
+                 "warnings": [w.as_dict() for w in c["warnings"]]}
+
+
+def _store_donation_copy(db: Session, ctx, settings, d: Donation, kind_type: str, filename: str,
+                         pdf: bytes) -> tuple[bool, object]:
+    """A printed receipt (or envelope) of a donation not linked to a deposit: kept with the donation."""
+    from . import attachments as att_svc
+    sha = hashlib.sha256(pdf).hexdigest()
+    if db.scalar(select(Attachment).where(Attachment.donation_id == d.id, Attachment.document_type == kind_type,
+                                          Attachment.sha256 == sha)) is not None:
+        return False, None
+    key, path = att_svc._write_file(settings, pdf)
+    att = Attachment(workspace_id=ctx.workspace_id, original_filename=att_svc.sanitize_filename(filename),
+                     storage_key=key, mime_type="application/pdf", size_bytes=len(pdf), sha256=sha,
+                     uploaded_by_user_id=ctx.user.id, active=True, donation_id=d.id, document_type=kind_type,
+                     system_generated=True)
+    db.add(att)
+    db.flush()
+    audit.record(db, ctx, "ATTACHMENT_ADDED", "attachment", att.id, None, att_svc.snapshot(att))
+    return True, path
+
+
+def print_donation(db: Session, ctx, settings, d: Donation, confirmations: list[str]) -> tuple[bytes, DonationReceipt]:
+    c = _compose(db, ctx, d)
+    cfg, data, kind, number, year, seq, cur, sha, content, e = (c[k] for k in ("cfg", "data", "kind", "number",
+                                                                                "year", "seq", "cur", "sha", "c", "e"))
+    require_confirmations(c["warnings"], confirmations)
+    pdf = receipt_pdf(cfg, data)
+    suffix = "-duplicate" if kind == DUPLICATE else ""
+    fname = f"receipt-{number}{suffix}.pdf"
+    deposits = [t for t in deposits_of(db, d) if t.status == "ACTIVE"]
+    paths, added = [], False
+    for t in deposits:                     # kept on every deposit it is linked to, else with the donation
+        a, path = _store_doc_copy(db, ctx, settings, t, RECEIPT_COPY, fname, pdf)
+        added = added or a
+        paths.append(path)
+    if not deposits:
+        added, path = _store_donation_copy(db, ctx, settings, d, RECEIPT_COPY, fname, pdf)
+        paths.append(path)
+    psha = hashlib.sha256(pdf).hexdigest()
+    att = db.scalar(select(Attachment).where(Attachment.document_type == RECEIPT_COPY, Attachment.sha256 == psha,
+                                             Attachment.workspace_id == ctx.workspace_id).order_by(Attachment.id))
+    r = DonationReceipt(workspace_id=ctx.workspace_id, donation_id=d.id,
+                        transaction_id=deposits[0].id if deposits else None, donor_entity_id=e.id,
+                        donor_name=e.display_name[:200], number=number, year=year, seq=seq, kind=kind,
+                        replaces_id=cur.id if cur is not None else None, amount_cents=content["amount"],
+                        goods_cents=sum(x for x, _d in content["goods"]),
+                        date_received=content["dates"][0] if content["dates"] else None,
+                        allocation_ids=",".join(str(x) for x in content["allocs"])[:500], content_sha=sha,
+                        attachment_id=att.id if att else None, printed_by_user_id=ctx.user.id)
+    db.add(r)
+    db.flush()
+    audit.record(db, ctx, "DONATION_RECEIPT_PRINTED", "donation", d.id, None,
+                 {"donation_id": d.id, "transaction_id": r.transaction_id, "receipt_id": r.id, "number": number,
+                  "kind": kind, "donor_entity_id": e.id, "amount_cents": content["amount"],
+                  "items": len(content["items"]), "goods_cents": r.goods_cents, "received": content["received"],
+                  "replaces": cur.number if cur is not None and kind != ORIGINAL else None, "attached": added})
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        for p in paths:
+            if p is not None:
+                try:
+                    p.unlink()
+                except OSError:
+                    pass
+        raise
+    return pdf, r
+
+
+# ------------------------------------------------------------------ deposits: marking (part 1 flow) and receipts
+def _deposit_donations(db: Session, t: RegisterTransaction) -> dict[int, Donation]:
+    """The donations marked on this deposit (origin DEPOSIT), by donor."""
+    return {d.donor_entity_id: d for d in db.scalars(select(Donation).where(
+        Donation.transaction_id == t.id, Donation.origin == DEPOSIT).order_by(Donation.id))}
+
+
+def _lines_by_alloc(db: Session, t: RegisterTransaction) -> dict[int, DonationLine]:
+    ids = [a.id for a in t.live_allocations]
+    if not ids:
+        return {}
+    return {x.allocation_id: x for x in db.scalars(select(DonationLine).where(DonationLine.allocation_id.in_(ids)))}
+
+
+def transaction_out(db: Session, ctx, t: RegisterTransaction) -> dict:
+    lines = _lines_by_alloc(db, t)
+    donations = {x.donation_id: db.get(Donation, x.donation_id) for x in lines.values()}
+    deposit_donations = _deposit_donations(db, t)
+    printable = t.status == "ACTIVE" and not reg.is_closed_protected(db, t)
+    cfg = get_config(db, ctx.workspace_id)
+    donors, receipts = [], []
+    for d in deposit_donations.values():
+        c = _content(db, d)
+        rs = _receipts_of(db, d)
+        receipts += _receipts_out(db, d)
+        if not lines_of(db, d):
+            continue
+        cur = _current(rs)
+        sha = _content_sha(c)
+        next_kind = ORIGINAL if cur is None else (DUPLICATE if cur.content_sha == sha else CORRECTED)
+        e = c["entity"]
+        donors.append({"entity_id": e.id, "donation_id": d.id, "name": e.display_name, "amount": money(c["amount"]),
+                       "amount_cents": c["amount"], "goods_cents": sum(x for x, _d in c["goods"]),
+                       "purposes": c["purposes"], "has_address": bool(address_lines(e)),
+                       "dates": [x.isoformat() for x in c["dates"]], "details": c["details"],
+                       "current_receipt": cur.number if cur else None, "next_kind": next_kind})
+    receipts.sort(key=lambda r: r["id"])
+    page_linked = []
+    for d in donations.values():
+        if d is not None and d.origin == PAGE and all(p["id"] != d.id for p in page_linked):
+            page_linked.append({"id": d.id, "donor": db.get(Entity, d.donor_entity_id).display_name})
+
+    def line_out(a):
+        x = lines.get(a.id)
+        d = donations.get(x.donation_id) if x is not None else None
+        e = _donor(t, a)
+        return {"allocation_id": a.id, "donor_entity_id": e.id if e else None, "donor": e.display_name if e else "",
+                "description": a.description or "", "donor_is_organization": bool(e and e.is_organization),
+                "amount": money(a.amount_cents), "amount_cents": a.amount_cents,
+                "donation": x is not None,
+                "linked_donation_id": d.id if d is not None and d.origin == PAGE else None,
+                "purpose": x.purpose if x else None, "goods_cents": x.goods_cents if x else None,
+                "goods_description": x.goods_description if x else None,
+                "date_received": x.date_received.isoformat() if x is not None and x.date_received else None}
+
     return {
         "transaction_id": t.id, "status": t.status, "date": t.transaction_date.isoformat(),
-        "total": money(t.total_cents), "printable": printable,
-        "closed": reg.is_closed_protected(db, t),
-        "setup_missing": missing_setup(db, ctx.workspace_id),
-        "details_enabled": uses_details(cfg),
+        "total": money(t.total_cents), "printable": printable, "closed": reg.is_closed_protected(db, t),
+        "setup_missing": missing_setup(db, ctx.workspace_id), "details_enabled": uses_details(cfg),
         "variables": [v for v in patterns.variable_options(patterns.RECEIPT) if v["name"] != "DETAILS"],
-        "lines": [{"allocation_id": a.id, "donor_entity_id": (_donor(t, a).id if _donor(t, a) else None),
-                   "donor": (_donor(t, a).display_name if _donor(t, a) else ""), "description": a.description or "",
-                   "donor_is_organization": bool(_donor(t, a) and _donor(t, a).is_organization),
-                   "amount": money(a.amount_cents), "amount_cents": a.amount_cents,
-                   "donation": a.id in lines,
-                   "purpose": lines[a.id].purpose if a.id in lines else None,
-                   "goods_cents": lines[a.id].goods_cents if a.id in lines else None,
-                   "goods_description": lines[a.id].goods_description if a.id in lines else None,
-                   "date_received": (lines[a.id].date_received.isoformat() if a.id in lines and
-                                     lines[a.id].date_received else None)}
-                  for a in t.live_allocations],
-        "donors": donors,
-        "receipts": [{"id": r.id, "number": r.number, "kind": r.kind, "donor_entity_id": r.donor_entity_id,
-                      "donor": r.donor_name, "amount": money(r.amount_cents),
-                      "date_received": r.date_received.isoformat(),
-                      "replaces": by_id[r.replaces_id].number if r.replaces_id in by_id else None,
-                      "attachment_id": r.attachment_id, "printed_at": r.printed_at.isoformat() + "Z",
-                      "printed_by": _user_name(db, r.printed_by_user_id),
-                      "void": t.status != "ACTIVE",
-                      "superseded": r.id in superseded or (r.kind == DUPLICATE and r.replaces_id in superseded)}
-                     for r in receipts],
+        "lines": [line_out(a) for a in t.live_allocations], "donors": donors, "receipts": receipts,
+        "page_donations": page_linked,
     }
 
 
@@ -502,40 +796,64 @@ class DonorIn(BaseModel):
     details: str = Field(default="", max_length=2000)
 
 
-def _line_snap(d: DonationLine | None) -> dict | None:
-    if d is None:
+def _line_snap(db: Session, x: DonationLine | None) -> dict | None:
+    if x is None:
         return None
-    return {"allocation_id": d.allocation_id, "purpose": d.purpose, "goods_cents": d.goods_cents,
-            "goods_description": d.goods_description,
-            "date_received": d.date_received.isoformat() if d.date_received else None}
+    return {"line_id": x.id, "donation_id": x.donation_id, "kind": x.kind, "allocation_id": x.allocation_id,
+            "amount_cents": line_amount(db, x), "description": x.description, "purpose": x.purpose,
+            "goods_cents": x.goods_cents, "goods_description": x.goods_description,
+            "date_received": x.date_received.isoformat() if x.date_received else None,
+            "item_received": x.item_received if x.kind == ITEM else None,
+            "item_no_value": x.item_no_value if x.kind == ITEM else None,
+            "item_no_value_reason": x.item_no_value_reason if x.kind == ITEM else None}
+
+
+def _deposit_donation_for(db: Session, ctx, t: RegisterTransaction, donor: Entity) -> Donation:
+    d = _deposit_donations(db, t).get(donor.id)
+    if d is None:
+        d = Donation(workspace_id=ctx.workspace_id, donor_entity_id=donor.id, origin=DEPOSIT, transaction_id=t.id,
+                     status=ACTIVE, created_by_user_id=ctx.user.id, updated_by_user_id=ctx.user.id)
+        db.add(d)
+        db.flush()
+    return d
 
 
 def set_lines(db: Session, ctx, t: RegisterTransaction, items: list[LineIn]) -> None:
+    """Part 1: mark deposit lines as donations - one donation per donor on the deposit (origin DEPOSIT). Lines linked
+    to a donation from the Donations page are changed there."""
     if t.status != "ACTIVE":
         raise conflict("TRANSACTION_NOT_ACTIVE", "Donations can only be marked on an active deposit.")
     if reg.is_closed_protected(db, t):
         raise conflict("FISCAL_YEAR_CLOSED", "The deposit belongs to a Closed Fiscal Year.")
     allocs = {a.id: a for a in t.live_allocations}
-    current = _lines(db, t)
+    current = _lines_by_alloc(db, t)
     seen = set()
     for i, it in enumerate(items):
         a = allocs.get(it.allocation_id)
         if a is None or it.allocation_id in seen:
             raise validation("Unknown deposit line.", f"lines.{i}.allocation_id")
         seen.add(it.allocation_id)
-        d = current.get(a.id)
+        x = current.get(a.id)
+        if x is not None:
+            owner = db.get(Donation, x.donation_id)
+            if owner is not None and owner.origin == PAGE:      # changed on the Donations page, not here
+                if not it.donation:
+                    raise conflict("LINKED_TO_DONATION", f"This line is linked to donation #{owner.id} from the "
+                                                         "Donations page; change it there.")
+                continue
         if not it.donation:
-            if d is not None:
-                before = _line_snap(d)
-                db.delete(d)
+            if x is not None:
+                before = _line_snap(db, x)
+                db.delete(x)
                 db.flush()
                 audit.record(db, ctx, "DONATION_MARKED", "register_transaction", t.id, before,
                              {"allocation_id": a.id, "donation": False})
             continue
-        if _donor(t, a) is None:
+        donor = _donor(t, a)
+        if donor is None:
             raise validation("This line has no entity (donor). Add the donor to the deposit first.",
                              f"lines.{i}.donation")
-        if _donor(t, a).is_organization:          # 2.1.0 (#314): e.g. lump cash recorded as the organization's
+        if donor.is_organization:          # 2.1.0 (#314): e.g. lump cash recorded as the organization's
             raise validation("This line's entity is your own organization, so it can't be a donation with a receipt. "
                              "Record the donor as the line's entity.", f"lines.{i}.donation")
         goods = it.goods_cents or None
@@ -552,14 +870,17 @@ def set_lines(db: Session, ctx, t: RegisterTransaction, items: list[LineIn]) -> 
         if when is not None and when > t.transaction_date:
             raise validation("A donation can't be received after the deposit it was deposited in.",
                              f"lines.{i}.date_received")
-        before = _line_snap(d)
-        if d is None:
-            d = DonationLine(workspace_id=ctx.workspace_id, allocation_id=a.id, created_by_user_id=ctx.user.id)
-            db.add(d)
-        d.purpose, d.goods_cents, d.goods_description, d.date_received = purpose, goods, desc, when
-        d.updated_by_user_id, d.updated_at = ctx.user.id, utcnow()
+        before = _line_snap(db, x)
+        d = _deposit_donation_for(db, ctx, t, donor)
+        if x is None:
+            x = DonationLine(workspace_id=ctx.workspace_id, allocation_id=a.id, kind=MONEY,
+                             created_by_user_id=ctx.user.id)
+            db.add(x)
+        x.donation_id = d.id                    # a changed donor moves the line to that donor's donation
+        x.purpose, x.goods_cents, x.goods_description, x.date_received = purpose, goods, desc, when
+        x.updated_by_user_id, x.updated_at = ctx.user.id, utcnow()
         db.flush()
-        after = _line_snap(d)
+        after = _line_snap(db, x)
         if before != after:
             audit.record(db, ctx, "DONATION_MARKED", "register_transaction", t.id, before,
                          {**after, "donation": True})
@@ -569,88 +890,29 @@ def set_details(db: Session, ctx, t: RegisterTransaction, donors: list[DonorIn])
     """The {DETAILS} text per donor of this deposit (after the lines are saved: only current donors)."""
     if not donors:
         return
-    groups = _donor_groups(db, t)
-    current = _details(db, t)
+    deposit_donations = {k: d for k, d in _deposit_donations(db, t).items() if lines_of(db, d)}
     for i, it in enumerate(donors):
-        if it.entity_id not in groups:
+        d = deposit_donations.get(it.entity_id)
+        if d is None:
             raise validation("That entity is not a donor on this deposit.", f"donors.{i}.entity_id")
         text = (it.details or "").replace("\r\n", "\n").strip()
         if text:
             check_details(text)
-        x = current.get(it.entity_id)
-        before = x.details if x else ""
+        before = d.details or ""
         if before == text:
             continue
-        if not text:
-            db.delete(x)
-        else:
-            if x is None:
-                x = DonationDetail(workspace_id=ctx.workspace_id, transaction_id=t.id, donor_entity_id=it.entity_id,
-                                   details=text)
-                db.add(x)
-            x.details, x.updated_by_user_id, x.updated_at = text, ctx.user.id, utcnow()
+        d.details, d.updated_by_user_id, d.updated_at = (text or None), ctx.user.id, utcnow()
         db.flush()
         audit.record(db, ctx, "DONATION_DETAILS_UPDATED", "register_transaction", t.id,
                      {"donor_entity_id": it.entity_id, "details": before},
                      {"donor_entity_id": it.entity_id, "details": text})
 
 
-def _next_seq(db: Session, ws_id: int, year: int) -> int:
-    cur = db.scalar(select(func.max(DonationReceipt.seq)).where(DonationReceipt.workspace_id == ws_id,
-                                                                DonationReceipt.year == year))
-    return (cur or 0) + 1
-
-
-def _compose(db: Session, ctx, t: RegisterTransaction, donor_entity_id: int) -> dict:
-    """Everything a receipt for this donor would be now: kind and number, the data, the warnings."""
-    if t.status != "ACTIVE":
-        raise conflict("NOT_PRINTABLE", "This deposit is void - its receipts are void and no receipt can be printed.")
-    if reg.is_closed_protected(db, t):
-        raise conflict("FISCAL_YEAR_CLOSED", "The deposit belongs to a Closed Fiscal Year and cannot be printed. Its "
-                                             "receipts are attached to it.")
-    cfg = get_config(db, ctx.workspace_id)
-    missing = missing_setup(db, ctx.workspace_id)
-    if missing:
-        raise conflict("SETUP_INCOMPLETE", "An Administrator must enter " + " and ".join(missing) +
-                       " in System/About → Organization before receipts can be printed.")
-    g = _donor_groups(db, t).get(donor_entity_id)
-    if g is None:
+def _deposit_donation(db: Session, t: RegisterTransaction, donor_entity_id: int) -> Donation:
+    d = _deposit_donations(db, t).get(donor_entity_id)
+    if d is None or not lines_of(db, d):
         raise not_found("Donor")
-    receipts = _receipts(db, t)
-    cur = _current(receipts, donor_entity_id)
-    sha = _content_sha(t, g)
-    e = g["entity"]
-    if cur is not None and cur.content_sha == sha:
-        kind, number, year, seq = DUPLICATE, cur.number, cur.year, cur.seq
-        note = f"DUPLICATE of receipt {cur.number}, first printed {format_date(cur.printed_at.date(), cfg.date_format)}."
-    else:
-        year = g["dates"][0].year                    # the (first) date the donation was received
-        seq = _next_seq(db, ctx.workspace_id, year)
-        number = f"R-{year}-{seq:04d}"
-        kind = ORIGINAL if cur is None else CORRECTED
-        note = "" if cur is None else (f"CORRECTED receipt: replaces receipt {cur.number} printed "
-                                       f"{format_date(cur.printed_at.date(), cfg.date_format)}.")
-    data = ReceiptData(number=number, kind=kind, kind_note=note, org=org_svc.values_for(db, ctx.workspace_id),
-                       donor_name=e.display_name, donor_address=address_lines(e),
-                       amount_cents=g["amount"], dates=g["dates"], purposes=g["purposes"],
-                       goods=g["goods"], details=g["details"])
-    warnings = []
-    _texts, empty = receipt_texts(cfg, data)
-    if empty:
-        warnings.append(Warning_("EMPTY_VARIABLES", "These variables have no data for this receipt: " +
-                                 ", ".join("{" + v + "}" for v in empty) + ". Print the receipt as it is?",
-                                 variables=empty))
-    if not data.donor_address:
-        warnings.append(Warning_("NO_DONOR_ADDRESS", "The donor has no address in the register. Print the receipt "
-                                 "without it?"))
-    if kind == CORRECTED:
-        warnings.append(Warning_("CORRECTED_RECEIPT", f"The donation changed since receipt {cur.number}. Print a "
-                                 f"corrected receipt {number} that replaces it?", replaces=cur.number))
-    return {"cfg": cfg, "data": data, "kind": kind, "number": number, "year": year, "seq": seq, "cur": cur,
-            "sha": sha, "g": g, "e": e, "warnings": warnings}
-
-
-PREVIEW_NUMBER = "(assigned when printed)"
+    return d
 
 
 def preview_receipt(db: Session, ctx, t: RegisterTransaction, donor_entity_id: int,
@@ -663,14 +925,8 @@ def preview_receipt(db: Session, ctx, t: RegisterTransaction, donor_entity_id: i
             set_lines(db, ctx, t, lines)
         if donors:
             set_details(db, ctx, t, donors)
-        c = _compose(db, ctx, t, donor_entity_id)
-        data = c["data"]
-        if c["kind"] != DUPLICATE:
-            data.number = PREVIEW_NUMBER          # a new number is only taken when the receipt is printed
-        pdf = receipt_pdf(c["cfg"], data, watermark="PREVIEW - NOT A RECEIPT")
-        info = {"kind": c["kind"], "number": c["number"] if c["kind"] == DUPLICATE else None,
-                "replaces": c["cur"].number if c["cur"] is not None and c["kind"] == CORRECTED else None,
-                "warnings": [w.as_dict() for w in c["warnings"]], "unsaved": bool(lines or donors)}
+        pdf, info = _preview(db, ctx, _deposit_donation(db, t, donor_entity_id))
+        info["unsaved"] = bool(lines or donors)
     finally:
         db.rollback()                             # nothing of the unsaved changes stays
     audit.record(db, ctx, "DONATION_RECEIPT_PREVIEW", "register_transaction", t.id, None,
@@ -682,27 +938,418 @@ def preview_receipt(db: Session, ctx, t: RegisterTransaction, donor_entity_id: i
 
 def print_receipt(db: Session, ctx, settings, t: RegisterTransaction, donor_entity_id: int,
                   confirmations: list[str]) -> tuple[bytes, DonationReceipt]:
-    c = _compose(db, ctx, t, donor_entity_id)
-    cfg, data, kind, number, year, seq, cur, sha, g, e = (c[k] for k in ("cfg", "data", "kind", "number", "year",
-                                                                       "seq", "cur", "sha", "g", "e"))
-    require_confirmations(c["warnings"], confirmations)
-    pdf = receipt_pdf(cfg, data)
-    suffix = "-duplicate" if kind == DUPLICATE else ""
-    added, path = _store_doc_copy(db, ctx, settings, t, RECEIPT_COPY, f"receipt-{number}{suffix}.pdf", pdf)
-    att = db.scalar(select(Attachment).where(Attachment.transaction_id == t.id,
-                                             Attachment.document_type == RECEIPT_COPY,
-                                             Attachment.sha256 == hashlib.sha256(pdf).hexdigest()))
-    r = DonationReceipt(workspace_id=ctx.workspace_id, transaction_id=t.id, donor_entity_id=e.id,
-                        donor_name=e.display_name[:200], number=number, year=year, seq=seq, kind=kind,
-                        replaces_id=cur.id if cur is not None else None, amount_cents=g["amount"],
-                        goods_cents=sum(c for c, _d in g["goods"]), date_received=g["dates"][0],
-                        allocation_ids=",".join(str(x) for x in g["allocs"])[:500], content_sha=sha,
-                        attachment_id=att.id if att else None, printed_by_user_id=ctx.user.id)
-    db.add(r)
+    if t.status != "ACTIVE":
+        raise conflict("NOT_PRINTABLE", "This deposit is void - its receipts are void and no receipt can be printed.")
+    if reg.is_closed_protected(db, t):
+        raise conflict("FISCAL_YEAR_CLOSED", "The deposit belongs to a Closed Fiscal Year and cannot be printed. Its "
+                                             "receipts are attached to it.")
+    return print_donation(db, ctx, settings, _deposit_donation(db, t, donor_entity_id), confirmations)
+
+
+# ------------------------------------------------------------------ the register's changes reach the donations
+def unlink_for_deposit(db: Session, ctx, t: RegisterTransaction, allocation_ids: list[int] | None = None) -> None:
+    """A voided or deleted deposit (or allocations removed from it): money lines of Donations page donations are
+    unlinked - they await a deposit again and their receipts stay valid (Kyle, 2026-10-23, decision 4). Donations
+    marked on the deposit (part 1) keep their lines; their receipts are void with the deposit."""
+    ids = allocation_ids if allocation_ids is not None else [a.id for a in t.allocations]
+    if not ids:
+        return
+    for x in db.scalars(select(DonationLine).where(DonationLine.allocation_id.in_(ids))):
+        d = db.get(Donation, x.donation_id) if x.donation_id else None
+        if d is None or d.origin != PAGE:
+            continue
+        a = db.get(TransactionAllocation, x.allocation_id)
+        before = _line_snap(db, x)
+        x.amount_cents = a.amount_cents if a is not None else x.amount_cents
+        x.allocation_id = None
+        x.updated_by_user_id, x.updated_at = ctx.user.id, utcnow()
+        db.flush()
+        audit.record(db, ctx, "DONATION_UNLINKED", "donation", d.id, before,
+                     {**_line_snap(db, x), "transaction_id": t.id, "reason": t.status})
+
+
+# ------------------------------------------------------------------ the Donations page
+class PageLineIn(BaseModel):
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    id: int | None = None
+    kind: Literal["MONEY", "ITEM"] = "MONEY"
+    amount_cents: int | None = Field(default=None, ge=0, le=10**12)
+    description: str | None = Field(default=None, max_length=200)
+    purpose: str | None = Field(default=None, max_length=200)
+    goods_cents: int | None = Field(default=None, ge=0, le=10**12)
+    goods_description: str | None = Field(default=None, max_length=200)
+    date_received: dt.date | None = None        # money not linked / items: the estimate until received
+    item_received: bool = False
+    item_no_value: bool = False
+    item_no_value_reason: str | None = Field(default=None, max_length=500)
+
+
+class DonationIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    donor_entity_id: int
+    details: str = Field(default="", max_length=2000)
+    lines: list[PageLineIn] = Field(min_length=1, max_length=50)
+
+
+def _donor_entity(db: Session, ctx, entity_id: int) -> Entity:
+    e = get_scoped(db, Entity, entity_id, ctx, "Entity")
+    if e.is_system:
+        raise validation("Choose the donor.", "donor_entity_id")
+    if e.is_organization:
+        raise validation("The donor can't be your own organization.", "donor_entity_id")
+    return e
+
+
+def _apply_line(db: Session, ctx, x: DonationLine, it: PageLineIn, i: int) -> None:
+    linked = x.kind == MONEY and x.allocation_id is not None
+    if x.id is not None and it.kind != x.kind:
+        if linked or line_received(db, x):
+            raise validation("A received line can't change between money and item.", f"lines.{i}.kind")
+    kind = it.kind
+    desc = (it.description or "").strip() or None
+    if kind == ITEM and not desc:
+        raise validation("Describe the item: the receipt lists items by description only.", f"lines.{i}.description")
+    goods = it.goods_cents or None
+    gdesc = (it.goods_description or "").strip() or None
+    if goods and not gdesc:
+        raise validation("Describe the goods or services provided.", f"lines.{i}.goods_description")
+    if not goods:
+        gdesc = None
+    if kind == MONEY and not linked:
+        if not it.amount_cents:
+            raise validation("Enter the amount.", f"lines.{i}.amount_cents")
+        x.amount_cents = it.amount_cents
+        x.date_received = it.date_received
+    elif kind == MONEY and linked:
+        a = _alloc(db, x)
+        amount = a.amount_cents if a is not None else x.amount_cents
+        if it.amount_cents is not None and it.amount_cents != amount:
+            raise validation("This line is linked to a deposit: its amount follows the register. Change the deposit "
+                             "instead.", f"lines.{i}.amount_cents")
+        t = a.transaction if a is not None else None
+        if t is not None and it.date_received is not None and it.date_received > t.transaction_date:
+            raise validation("A donation can't be received after the deposit it was deposited in.",
+                             f"lines.{i}.date_received")
+        x.date_received = it.date_received if (t is None or it.date_received != t.transaction_date) else None
+    else:                                           # an item
+        x.amount_cents = it.amount_cents or None
+        x.item_received = bool(it.item_received)
+        x.date_received = it.date_received
+        if x.item_received and it.date_received is None:
+            raise validation("Enter the date the item was received.", f"lines.{i}.date_received")
+        reason = (it.item_no_value_reason or "").strip() or None
+        if it.item_no_value and x.amount_cents:
+            raise validation("An item with an estimated value can't also be marked No value will be provided.",
+                             f"lines.{i}.item_no_value")
+        if it.item_no_value and not reason:
+            raise validation("Give the reason no value will be provided.", f"lines.{i}.item_no_value_reason")
+        x.item_no_value, x.item_no_value_reason = bool(it.item_no_value), (reason if it.item_no_value else None)
+    if kind == MONEY and goods and goods > (line_amount(db, x) or 0):
+        raise validation("The goods or services value can't be more than the line's amount.",
+                         f"lines.{i}.goods_cents")
+    x.kind, x.description, x.purpose = kind, desc, (it.purpose or "").strip() or None
+    x.goods_cents, x.goods_description = goods, gdesc
+    x.updated_by_user_id, x.updated_at = ctx.user.id, utcnow()
+
+
+def _donation_snap(db: Session, d: Donation) -> dict:
+    return {"donor_entity_id": d.donor_entity_id, "details": d.details, "status": d.status,
+            "lines": [_line_snap(db, x) for x in lines_of(db, d)]}
+
+
+def create(db: Session, ctx, data: DonationIn) -> Donation:
+    e = _donor_entity(db, ctx, data.donor_entity_id)
+    text = (data.details or "").replace("\r\n", "\n").strip()
+    if text:
+        check_details(text)
+    d = Donation(workspace_id=ctx.workspace_id, donor_entity_id=e.id, origin=PAGE, status=ACTIVE, details=text or None,
+                 created_by_user_id=ctx.user.id, updated_by_user_id=ctx.user.id)
+    db.add(d)
     db.flush()
-    audit.record(db, ctx, "DONATION_RECEIPT_PRINTED", "register_transaction", t.id, None,
-                 {"transaction_id": t.id, "receipt_id": r.id, "number": number, "kind": kind,
-                  "donor_entity_id": e.id, "amount_cents": g["amount"], "goods_cents": r.goods_cents,
-                  "replaces": cur.number if cur is not None and kind != ORIGINAL else None, "attached": added})
-    _commit_or_unlink(db, path)
-    return pdf, r
+    for i, it in enumerate(data.lines):
+        if it.id is not None:
+            raise validation("Unknown line.", f"lines.{i}.id")
+        x = DonationLine(workspace_id=ctx.workspace_id, donation_id=d.id, kind=it.kind, created_by_user_id=ctx.user.id)
+        _apply_line(db, ctx, x, it, i)
+        db.add(x)
+    db.flush()
+    audit.record(db, ctx, "DONATION_CREATED", "donation", d.id, None, _donation_snap(db, d))
+    return d
+
+
+def update(db: Session, ctx, d: Donation, data: DonationIn) -> Donation:
+    if d.status == CANCELLED:
+        raise conflict("DONATION_CANCELLED", "This donation was cancelled and can't be changed.")
+    if d.origin != PAGE:
+        raise conflict("MARKED_ON_DEPOSIT", "This donation was marked on a deposit; change it from the deposit in the "
+                                            "register (Donation receipt…).")
+    before = _donation_snap(db, d)
+    current = {x.id: x for x in lines_of(db, d)}
+    if data.donor_entity_id != d.donor_entity_id:
+        if any(line_received(db, x) for x in current.values()):
+            raise validation("The donor can't change once part of the donation is received.", "donor_entity_id")
+        d.donor_entity_id = _donor_entity(db, ctx, data.donor_entity_id).id
+    text = (data.details or "").replace("\r\n", "\n").strip()
+    if text:
+        check_details(text)
+    d.details = text or None
+    kept = set()
+    for i, it in enumerate(data.lines):
+        if it.id is None:
+            x = DonationLine(workspace_id=ctx.workspace_id, donation_id=d.id, kind=it.kind,
+                             created_by_user_id=ctx.user.id)
+            _apply_line(db, ctx, x, it, i)
+            db.add(x)
+            continue
+        x = current.get(it.id)
+        if x is None or it.id in kept:
+            raise validation("Unknown line.", f"lines.{i}.id")
+        kept.add(it.id)
+        snap = _line_snap(db, x)
+        locked = line_locked(db, x)
+        _apply_line(db, ctx, x, it, i)
+        if locked and _line_snap(db, x) != snap:
+            raise conflict("FISCAL_YEAR_CLOSED", "This line was received in a Closed Fiscal Year and can't be "
+                                                 "changed.")
+    for lid, x in current.items():
+        if lid in kept:
+            continue
+        if x.kind == MONEY and x.allocation_id is not None:
+            raise conflict("LINE_LINKED", "A line linked to a deposit can't be removed. Void the deposit first.")
+        if line_locked(db, x):
+            raise conflict("FISCAL_YEAR_CLOSED", "This line was received in a Closed Fiscal Year and can't be removed.")
+        db.delete(x)
+    d.updated_by_user_id, d.updated_at = ctx.user.id, utcnow()
+    db.flush()
+    if not lines_of(db, d):
+        raise validation("A donation needs at least one line.", "lines")
+    after = _donation_snap(db, d)
+    if after != before:
+        audit.record(db, ctx, "DONATION_UPDATED", "donation", d.id, before, after)
+    return d
+
+
+def cancel(db: Session, ctx, d: Donation, reason: str) -> Donation:
+    """A donation that never happens: Cancelled with a reason, only while none of its lines is received (decision 5).
+    Its receipts are void; nothing is deleted."""
+    reason = (reason or "").strip()
+    if not reason:
+        raise validation("Give the reason the donation is cancelled.", "reason")
+    if d.status == CANCELLED:
+        raise conflict("DONATION_CANCELLED", "The donation is already cancelled.")
+    if d.origin != PAGE:
+        raise conflict("MARKED_ON_DEPOSIT", "This donation was marked on a deposit; untick its lines there instead.")
+    if any(line_received(db, x) for x in lines_of(db, d)):
+        raise conflict("DONATION_RECEIVED", "Part of this donation is received, so it can't be cancelled. Correct it "
+                                            "instead: void the deposit, untick Received, or print a corrected receipt.")
+    d.status, d.cancel_reason, d.cancelled_at, d.cancelled_by_user_id = CANCELLED, reason[:500], utcnow(), ctx.user.id
+    d.updated_by_user_id, d.updated_at = ctx.user.id, utcnow()
+    db.flush()
+    audit.record(db, ctx, "DONATION_CANCELLED", "donation", d.id, {"status": ACTIVE},
+                 {"status": CANCELLED, "reason": d.cancel_reason})
+    return d
+
+
+def _status_of(db: Session, d: Donation, lines: list[DonationLine]) -> str:
+    if d.status == CANCELLED:
+        return "CANCELLED"
+    if any(x.kind == MONEY and x.allocation_id is None for x in lines):
+        return "AWAITING_DEPOSIT"
+    if lines and all(line_received(db, x) for x in lines):
+        return "RECEIVED"
+    return "NOT_RECEIVED"
+
+
+STATUS_TEXT = {"CANCELLED": "Cancelled", "AWAITING_DEPOSIT": "Awaiting deposit", "RECEIVED": "Received",
+               "NOT_RECEIVED": "Not received"}
+
+
+def donation_out(db: Session, ctx, d: Donation, full: bool = True) -> dict:
+    e = db.get(Entity, d.donor_entity_id)
+    lines = lines_of(db, d)
+    c = _content(db, d)
+    rs = _receipts_of(db, d)
+    cur = _current(rs)
+    status = _status_of(db, d, lines)
+    out = {"id": d.id, "origin": d.origin, "status": status, "status_text": STATUS_TEXT[status],
+           "donor": {"id": e.id, "name": e.display_name, "has_address": bool(address_lines(e))},
+           "money": money(c["amount"]), "money_cents": c["amount"], "items": len(c["items"]),
+           "awaiting": sum(1 for x in lines if x.kind == MONEY and x.allocation_id is None) if d.status == ACTIVE else 0,
+           "value_missing": sum(1 for x in lines if value_missing(x)) if d.status == ACTIVE else 0,
+           "current_receipt": cur.number if cur else None,
+           "deposits": [{"id": t.id, "date": t.transaction_date.isoformat(), "status": t.status}
+                        for t in deposits_of(db, d)],
+           "created_at": d.created_at.isoformat() + "Z", "cancel_reason": d.cancel_reason}
+    if not full:
+        return out
+    next_kind = ORIGINAL if cur is None else (DUPLICATE if cur.content_sha == _content_sha(c) else CORRECTED)
+    out.update({
+        "details": d.details or "", "next_kind": next_kind, "receipts": _receipts_out(db, d),
+        "editable": d.status == ACTIVE and d.origin == PAGE,
+        "cancellable": d.status == ACTIVE and d.origin == PAGE and not any(line_received(db, x) for x in lines),
+        "printable": d.status == ACTIVE and not receipts_void(db, d) and bool(lines),
+        "received": c["received"],
+        "lines": [{"id": x.id, "kind": x.kind, "amount_cents": line_amount(db, x) if x.kind == MONEY else x.amount_cents,
+                   "description": x.description, "purpose": x.purpose, "goods_cents": x.goods_cents,
+                   "goods_description": x.goods_description,
+                   "date_received": (line_date(db, x).isoformat() if line_date(db, x) else None),
+                   "date_is_estimate": not line_received(db, x),
+                   "linked": x.allocation_id is not None, "received": line_received(db, x),
+                   "deposit_id": line_deposit(db, x).id if line_deposit(db, x) else None,
+                   "item_received": x.item_received, "item_no_value": x.item_no_value,
+                   "item_no_value_reason": x.item_no_value_reason, "value_missing": value_missing(x),
+                   "locked": line_locked(db, x)} for x in lines],
+        "documents": [{"id": a.id, "name": a.original_filename, "kind": a.document_type}
+                      for a in db.scalars(select(Attachment).where(Attachment.donation_id == d.id,
+                                                                   Attachment.active.is_(True))
+                                          .order_by(Attachment.id))],
+    })
+    return out
+
+
+def list_out(db: Session, ctx, show: str = "all", q: str | None = None) -> dict:
+    rows = [donation_out(db, ctx, d, full=False) for d in db.scalars(
+        select(Donation).where(Donation.workspace_id == ctx.workspace_id).order_by(Donation.id.desc()))]
+    rows = [r for r in rows if r["origin"] == PAGE or r["money_cents"] or r["items"] or r["current_receipt"]]
+    counts = {"all": len(rows), "awaiting": sum(1 for r in rows if r["awaiting"]),
+              "value_missing": sum(1 for r in rows if r["value_missing"]),
+              "cancelled": sum(1 for r in rows if r["status"] == "CANCELLED")}
+    if show == "awaiting":
+        rows = [r for r in rows if r["awaiting"]]
+    elif show == "value_missing":
+        rows = [r for r in rows if r["value_missing"]]
+    elif show == "cancelled":
+        rows = [r for r in rows if r["status"] == "CANCELLED"]
+    elif show == "active":
+        rows = [r for r in rows if r["status"] != "CANCELLED"]
+    if q:
+        k = q.strip().lower()
+        rows = [r for r in rows if k in r["donor"]["name"].lower() or k == str(r["id"])
+                or (r["current_receipt"] or "").lower() == k]
+    return {"items": rows, "counts": counts, "status_text": STATUS_TEXT}
+
+
+def preview_donation(db: Session, ctx, d: Donation) -> tuple[bytes, dict]:
+    pdf, info = _preview(db, ctx, d)
+    audit.record(db, ctx, "DONATION_RECEIPT_PREVIEW", "donation", d.id, None,
+                 {"donation_id": d.id, "kind": info["kind"]})
+    db.commit()
+    return pdf, info
+
+
+# ------------------------------------------------------------------ Create transaction from donations
+def awaiting_lines(db: Session, ctx) -> list[dict]:
+    """Money lines not yet linked to a deposit, of active donations: what Create transaction can pick."""
+    out = []
+    for x in db.scalars(select(DonationLine).where(DonationLine.workspace_id == ctx.workspace_id,
+                                                   DonationLine.kind == MONEY, DonationLine.allocation_id.is_(None))
+                        .order_by(DonationLine.id)):
+        d = db.get(Donation, x.donation_id) if x.donation_id else None
+        if d is None or d.status != ACTIVE:
+            continue
+        e = db.get(Entity, d.donor_entity_id)
+        out.append({"id": x.id, "donation_id": d.id, "donor_entity_id": e.id, "donor": e.display_name,
+                    "amount_cents": x.amount_cents or 0, "amount": money(x.amount_cents or 0),
+                    "description": x.description or x.purpose or "", "purpose": x.purpose,
+                    "date_received": x.date_received.isoformat() if x.date_received else None})
+    return out
+
+
+def create_transaction(db: Session, ctx, settings, data, links: list[int | None], date_received: dt.date | None):
+    """Saves the deposit (an ordinary register deposit: income budgets, the Fiscal Year rules, split as in the
+    register) and links each chosen money line to its allocation(s): `links[i]` is the donation line of allocation i.
+    A line spread over several allocations (split further) becomes one line per allocation, adding up to its amount.
+    Lines with no date received get `date_received` (empty = the deposit's date). The donations' printed receipts are
+    attached to the deposit."""
+    from . import attachments as att_svc
+    if data.transaction_type != "DEPOSIT":
+        raise validation("Create transaction makes a deposit.", "transaction_type")
+    if len(links) != len(data.allocations):
+        raise validation("Each allocation needs its donation line (or none).", "links")
+    chosen: dict[int, DonationLine] = {}
+    for i, lid in enumerate(links):
+        if lid is None or lid in chosen:
+            continue
+        x = db.get(DonationLine, lid)
+        d = db.get(Donation, x.donation_id) if x is not None and x.donation_id else None
+        if x is None or d is None or x.workspace_id != ctx.workspace_id:
+            raise validation("Unknown donation line.", f"links.{i}")
+        if d.status != ACTIVE or x.kind != MONEY or x.allocation_id is not None:
+            raise conflict("LINE_NOT_AWAITING", f"Donation #{d.id}'s line is not awaiting a deposit any more.")
+        chosen[lid] = x
+    if not chosen:
+        raise validation("Pick at least one donation.", "links")
+    for lid, x in chosen.items():
+        d = db.get(Donation, x.donation_id)
+        idx = [i for i, v in enumerate(links) if v == lid]
+        total = sum(int(round(float(data.allocations[i].amount) * 100)) for i in idx)
+        if total != (x.amount_cents or 0):
+            raise validation(f"The allocations for donation #{d.id} must add up to its amount "
+                             f"{money(x.amount_cents or 0)}.", f"allocations.{idx[0]}.amount")
+        for i in idx:
+            if data.allocations[i].entity_id not in (None, d.donor_entity_id):
+                raise validation(f"The entity of donation #{d.id}'s line is its donor.", f"allocations.{i}.entity_id")
+            data.allocations[i].entity_id = d.donor_entity_id
+        if x.date_received is None and date_received is not None:
+            if data.transaction_date and date_received > data.transaction_date:
+                raise validation("A donation can't be received after the deposit it was deposited in.",
+                                 "date_received")
+    t = reg.create(db, ctx, data)
+    allocs = list(t.live_allocations)
+    donations: dict[int, Donation] = {}
+    for lid, x in chosen.items():
+        d = db.get(Donation, x.donation_id)
+        donations[d.id] = d
+        before = _line_snap(db, x)
+        idx = [i for i, v in enumerate(links) if v == lid]
+        if x.date_received is None and date_received is not None and date_received != t.transaction_date:
+            x.date_received = date_received
+        elif x.date_received is not None and x.date_received > t.transaction_date:
+            x.date_received = None                     # an estimate after the deposit: the deposit's date
+        x.allocation_id = allocs[idx[0]].id
+        x.amount_cents = allocs[idx[0]].amount_cents
+        made = [x.id]
+        for i in idx[1:]:                               # split further: one line per allocation
+            y = DonationLine(workspace_id=ctx.workspace_id, donation_id=d.id, kind=MONEY, allocation_id=allocs[i].id,
+                             amount_cents=allocs[i].amount_cents, description=x.description, purpose=x.purpose,
+                             date_received=x.date_received, created_by_user_id=ctx.user.id,
+                             updated_by_user_id=ctx.user.id)
+            db.add(y)
+            db.flush()
+            made.append(y.id)
+        x.updated_by_user_id, x.updated_at = ctx.user.id, utcnow()
+        db.flush()
+        audit.record(db, ctx, "DONATION_LINKED", "donation", d.id, before,
+                     {"transaction_id": t.id, "line_ids": made, "allocation_ids": [allocs[i].id for i in idx]})
+    for d in donations.values():                       # the printed receipts go with the deposit
+        for att in db.scalars(select(Attachment).where(Attachment.donation_id == d.id, Attachment.active.is_(True),
+                                                       Attachment.document_type == RECEIPT_COPY)
+                              .order_by(Attachment.id)):
+            try:
+                pdf = att_svc.path_for(settings, att).read_bytes()
+            except OSError:
+                continue
+            _store_doc_copy(db, ctx, settings, t, RECEIPT_COPY, att.original_filename, pdf)
+    return t
+
+
+# ------------------------------------------------------------------ Audit and Close reports
+def non_cash_received(db: Session, ws_id: int, start: dt.date, end: dt.date) -> list[dict]:
+    """Items received in a period (the Fiscal Year): for the Audit and Close reports' "Non-cash donations
+    received" section. Values are the organization's own estimates (never printed on receipts)."""
+    out = []
+    for x in db.scalars(select(DonationLine).where(DonationLine.workspace_id == ws_id, DonationLine.kind == ITEM,
+                                                   DonationLine.item_received.is_(True),
+                                                   DonationLine.date_received >= start,
+                                                   DonationLine.date_received <= end)
+                        .order_by(DonationLine.date_received, DonationLine.id)):
+        d = db.get(Donation, x.donation_id) if x.donation_id else None
+        if d is None or d.status != ACTIVE:
+            continue
+        e = db.get(Entity, d.donor_entity_id)
+        receipts = _receipts_of(db, d)
+        cur = _current(receipts)
+        out.append({"date": x.date_received, "donor": e.display_name, "description": x.description or "",
+                    "value_cents": x.amount_cents, "no_value_reason": x.item_no_value_reason if x.item_no_value else None,
+                    "receipt": cur.number if cur else None, "donation_id": d.id})
+    return out

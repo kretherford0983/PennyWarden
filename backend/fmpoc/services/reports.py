@@ -672,6 +672,25 @@ def build_audit_report(db: Session, ctx, settings, fy: FiscalYear, account_id: i
     # ---- budgets
     f += [_Mark(doc, "Budgets")] + _budget_section(tree) + [PageBreak()]
 
+    # ---- 2.2.0 (#325): items (non-cash donations) received in the year - never in the register
+    if account_id is None:
+        from . import donations as don_svc
+        items = don_svc.non_cash_received(db, ctx.workspace_id, fy.start_date, fy.end_date)
+        if items:
+            rows = [[PM("<b>Received</b>", "cell"), PM("<b>Donor</b>", "cell"), PM("<b>Item</b>", "cell"),
+                     PM("<b>Our estimate</b>", "cellr"), PM("<b>Receipt</b>", "cell")]]
+            for x in items:
+                est = money(x["value_cents"]) if x["value_cents"] else (
+                    f"none ({x['no_value_reason']})" if x["no_value_reason"] else "Value not entered")
+                rows.append([P(x["date"].strftime("%m/%d/%Y"), "cell"), P(x["donor"], "cell"), P(x["description"], "cell"),
+                             P(est, "cellr"), P(x["receipt"] or "", "cell")])
+            f += [_Mark(doc, "Non-cash donations received"), PM("Non-cash donations received", "h1"),
+                  P("Items donated to the organization and received in this Fiscal Year. They are not in the register "
+                    "(nothing was deposited); receipts list them by description only. The estimate is the "
+                    "organization's own, for its records.", "small"), Spacer(1, 4),
+                  _grid(rows, [0.8 * inch, 1.7 * inch, FRAME_W - 12 - 4.7 * inch, 1.2 * inch, 1.0 * inch]),
+                  PageBreak()]
+
     # ---- one or more pages per transaction
     if not txns:
         f += [_Mark(doc, "Transactions"), PM("Transactions", "h1"), P("No transactions for this Fiscal Year.", "body")]

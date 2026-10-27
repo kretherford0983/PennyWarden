@@ -78,6 +78,14 @@ export default function DonationSetup() {
             <p className="hint">The signer's name and title print under the closing, with room to sign by hand. Put <code>{"{DETAILS}"}</code> where a write-up for each donation should go
               (the Register User writes it when printing; a paragraph of only <code>{"{DETAILS}"}</code> is left out when there is none). Statement when no goods or services were given:
               <i> {s.no_goods_statement}</i> Confirm the receipt wording with your organization's own tax advisor.</p>
+            {/* 2.2.0 (#325): the note printed whenever a receipt lists items (empty = the default wording) */}
+            <PatternInput id="rc-items-note" label="Note when a receipt lists items" value={cfg.items_note || ""} variables={vars} multiline maxLength={1000}
+                          placeholder={s.items_note_default} onChange={(v) => set("items_note", v)} />
+            <div className="row">
+              <button type="button" className="small" onClick={() => set("items_note", s.items_note_default)}>Default wording</button>
+              <span className="hint">Empty prints the default wording shown in grey. Your own wording needs at least {s.items_note_min_words} words (a {"{VARIABLE}"} counts as one).
+                Items are always listed by description only; the note can't be left off.</span>
+            </div>
           </Section>
           <div className="actions left">
             <button className="primary" onClick={save} disabled={!dirty}>Save</button>
@@ -101,7 +109,7 @@ export default function DonationSetup() {
 }
 
 // ------------------------------------------------------------------ a deposit's donations (register)
-type Line = { allocation_id: number; donor: string; donor_entity_id: number | null; donor_is_organization: boolean; description: string; amount: string; donation: boolean; purpose: string; goods: string; goods_description: string; date: string; amount_cents: number };
+type Line = { allocation_id: number; donor: string; donor_entity_id: number | null; donor_is_organization: boolean; description: string; amount: string; donation: boolean; purpose: string; goods: string; goods_description: string; date: string; amount_cents: number; linked_donation_id?: number | null };
 
 const cents = (s: string): number | null => {
   const t = s.replace(/[$,\s]/g, "");
@@ -125,7 +133,7 @@ export function DonationReceiptDialog({ txn, onClose, onChanged }: { txn: any; o
     setD(x);
     setLines(x.lines.map((l: any) => ({ allocation_id: l.allocation_id, donor: l.donor, donor_entity_id: l.donor_entity_id, donor_is_organization: !!l.donor_is_organization, description: l.description, amount: l.amount, amount_cents: l.amount_cents,
       donation: l.donation, purpose: l.purpose || "", goods: l.goods_cents ? (l.goods_cents / 100).toFixed(2) : "", goods_description: l.goods_description || "",
-      date: l.date_received || x.date })));
+      date: l.date_received || x.date, linked_donation_id: l.linked_donation_id })));
     setDetails(Object.fromEntries(x.donors.map((o: any) => [o.entity_id, o.details || ""])));
   };
   // each load and save is numbered; a reply is shown only if nothing newer was started since, so a reload that comes
@@ -151,7 +159,7 @@ export function DonationReceiptDialog({ txn, onClose, onChanged }: { txn: any; o
   const savedDonors = new Map<number, any>((d?.donors || []).map((o: any) => [o.entity_id, o]));
   const groups: { entity_id: number; name: string; cents: number; goods: number; dates: string[]; saved: any }[] = [];
   for (const l of lines) {
-    if (!l.donation || !l.donor_entity_id) continue;
+    if (!l.donation || !l.donor_entity_id || l.linked_donation_id) continue;   // 2.2.0: Donations page ones print there
     let g = groups.find((x) => x.entity_id === l.donor_entity_id);
     if (!g) { g = { entity_id: l.donor_entity_id, name: l.donor, cents: 0, goods: 0, dates: [], saved: savedDonors.get(l.donor_entity_id) }; groups.push(g); }
     g.cents += l.amount_cents || 0;
@@ -242,6 +250,13 @@ export function DonationReceiptDialog({ txn, onClose, onChanged }: { txn: any; o
             <thead><tr><th>Donation</th><th>Donor</th><th>Description</th><th className="num">Amount</th><th>Date received</th><th>Purpose</th><th>Goods or services given (value, description)</th></tr></thead>
             <tbody>
               {lines.map((l, i) => (
+                l.linked_donation_id ? (
+                <tr key={l.allocation_id}>
+                  <td><input type="checkbox" aria-label={`Donation: ${l.donor || "no donor"} ${l.amount}`} checked disabled /></td>
+                  <td>{l.donor}</td><td>{l.description}</td><td className="num">{l.amount}</td>
+                  <td colSpan={3}>Linked to <Link to="/donations">donation #{l.linked_donation_id}</Link> (Donations page): its receipt is printed and changed there.</td>
+                </tr>
+                ) : (
                 <tr key={l.allocation_id}>
                   <td><input type="checkbox" aria-label={`Donation: ${l.donor || "no donor"} ${l.amount}`} checked={l.donation} disabled={!editable || ((!l.donor_entity_id || l.donor_is_organization) && !l.donation)}
                              title={l.donor_is_organization ? "Your own organization can't be the donor: record the donor as the line's entity" : undefined}
@@ -258,6 +273,7 @@ export function DonationReceiptDialog({ txn, onClose, onChanged }: { txn: any; o
                       {l.goods ? <input aria-label="Goods or services description" maxLength={200} value={l.goods_description} disabled={!editable} placeholder="e.g. Dinner for two" onChange={(e) => setLine(i, { goods_description: e.target.value })} /> : null}
                     </span>) : null}</td>
                 </tr>
+                )
               ))}
             </tbody>
           </table>

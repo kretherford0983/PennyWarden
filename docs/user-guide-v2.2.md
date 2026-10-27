@@ -90,6 +90,46 @@ balance — so the Change column shows real growth, not the whole balance.
 Dates before it count as $0 (the account didn't exist), the report doesn't list it for a Through Date before then, and
 the dashboard balance charts start there. Leave it blank if the account existed before PennyWarden.
 
+## Donations: before the deposit, and items (Donations module)
+
+**Donations** is now in the navigation when the module is on. Register Users record and print there; the other
+financial roles and Auditors see it.
+
+### A receipt before the money arrives
+1. **New donation**: choose the donor, then one or more lines — the amount, an optional purpose and any goods or
+   services given in exchange. The **Est. received date** is optional.
+2. **Save**, then **Print receipt**. As the money hasn't come in yet, the receipt prints *Date received:
+   ________________* to fill in by hand when the donation is handed over. The printed copy is kept with the donation.
+3. When the money is deposited: **Create transaction**, tick the donation(s), choose the bank account and
+   **Continue**. The deposit form opens with one allocation per donation — donor, amount and description filled in.
+   Choose the budget(s); **Split this donation** spreads one over several budgets (its allocations must add up to its
+   amount). Enter the date received if the donation had none (empty = the deposit's date) and save. The deposit is
+   linked to the donations and their printed receipts are attached to it.
+
+Until it is deposited a money line shows **Awaiting deposit** (a filter with a count on the Donations page). Once
+linked, the deposit decides: changing its amount in the register changes the donation, and the next receipt prints as
+*Corrected*.
+
+### Items (not money)
+Tick **Item (not money)** on a line for a physical gift — a TV, auction goods. The receipt lists items **by
+description only**, never a value, and prints a note about it (Donations Setup can adjust the wording); its total
+covers money only. The amount box becomes *Estimated value for our records (not printed)*; leave it empty and the
+donation shows *Value not entered* until you enter an estimate or tick **No value will be provided** with a reason.
+Tick **Received** with the date when the item is handed over. Items received in a Fiscal Year are listed in the Audit
+and Close reports under **Non-cash donations received**.
+
+### Changing, voiding and cancelling
+- A line received in a Closed Fiscal Year can't be changed, like the register.
+- Voiding a deposit created from the Donations page *unlinks* its donations: they show *Awaiting deposit* again and
+  their receipts stay valid. (Receipts of donations marked on a deposit in the register are void with the deposit, as
+  before.)
+- A donation that never happens is **Cancelled** with a reason, as long as nothing of it is received. Its receipts are
+  void; nothing is deleted.
+
+### Donations Setup (Administrators)
+**Note when a receipt lists items**: empty prints the default wording (shown in grey); **Default wording** puts it in
+the box to edit. Your own wording needs at least 8 words (a `{VARIABLE}` counts as one).
+
 ## Organization branding (Administrators)
 
 **System/About → Branding** gives generated reports and presentations your organization's look: every PDF report,

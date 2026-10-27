@@ -99,6 +99,23 @@ PennyWarden 2.2.0 (in progress).
   before it count as $0, the report doesn't list it before then, and dashboard balance charts start there. Blank
   means the account existed before PennyWarden. Changes are audited.
 
+### Donations part 2 (#325)
+- **A Donations page** (navigation, when the module is on): Register Users record donations and print receipts there;
+  the other financial roles and Auditors see them.
+- **A receipt before the money.** A donation can be recorded and its receipt printed before anything is deposited;
+  without a received date the receipt prints *Date received* blank, to fill in by hand. **Create transaction** then
+  records the deposit from the chosen donations (one allocation per donation, split further if needed), links them
+  and attaches their printed receipts. Money not yet deposited shows *Awaiting deposit*.
+- **Items (not money).** Listed on the receipt by description only, with a note (editable in Donations Setup, at least
+  8 words; empty = the default); the receipt total covers money only. An optional estimated value for the
+  organization's records (never printed), *Value not entered* until there is one or *No value will be provided* with a
+  reason, and **Received** with its date. The Audit and Close reports list **Non-cash donations received** in the year.
+- **One donation model** for both flows: donations marked on a deposit (2.1) are migrated into it. The register wins
+  after linking; voiding a deposit created from donations unlinks them (receipts stay valid), while donations marked
+  on a deposit keep void receipts as before. Cancel (with a reason) only while nothing is received. Received lines in
+  a Closed Fiscal Year are locked. Audited: `DONATION_CREATED`, `DONATION_UPDATED`, `DONATION_LINKED`,
+  `DONATION_UNLINKED`, `DONATION_CANCELLED`.
+
 ### Organization branding (#280)
 - **Your colors and logo on reports and presentations.** *System/About → Branding* (Administrators): choose a
   ready-made palette (PennyWarden — the default —, Forest, Ocean, Plum, Ember) or a custom one generated from your

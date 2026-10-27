@@ -429,6 +429,8 @@ class Attachment(Base):
     # v1.6.1 CR-034: a fundraiser document (flyer, permit, tally sheet). No DB-level FK (added by a later migration
     # on SQLite); the service checks the owner.
     fundraiser_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    # 2.2.0 (#325): a printed receipt or envelope of a donation not (yet) linked to a deposit
+    donation_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     removed_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     removed_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("app_user.id"), nullable=True)
@@ -1017,14 +1019,44 @@ class DonationSettings(Base):
     updated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
+class Donation(Base):
+    """2.2.0 (#325): a donation - the receipt's unit: one donor, one or more lines (money or items), the {DETAILS} text.
+    Started on the Donations page (PAGE) or by marking a deposit's lines (DEPOSIT, `transaction_id`). Cancelled with a
+    reason, never deleted."""
+    __tablename__ = "donation"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
+    donor_entity_id: Mapped[int] = mapped_column(ForeignKey("entity.id"))
+    origin: Mapped[str] = mapped_column(String(10))                      # PAGE | DEPOSIT
+    transaction_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    status: Mapped[str] = mapped_column(String(10), default="ACTIVE", server_default="ACTIVE")
+    cancel_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    cancelled_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    cancelled_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    details: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    updated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
 class DonationLine(Base):
-    """A deposit allocation marked as a donation (Register User), with an optional purpose and the goods or services
-    given in exchange (value and description; none = no goods or services)."""
+    """A line of a donation (2.2.0, #325): money or an item. A money line is received when it is linked to a deposit
+    allocation (part 1: a deposit allocation marked as a donation); until then it keeps its own amount ("awaiting
+    deposit"). An item is never deposited: it has an optional estimated value (not printed) and a Received box. Both
+    have an optional purpose and the goods or services given in exchange (value and description)."""
     __tablename__ = "donation_line"
     __table_args__ = (UniqueConstraint("allocation_id", name="uq_donation_line_allocation"),)
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
-    allocation_id: Mapped[int] = mapped_column(ForeignKey("transaction_allocation.id"))
+    donation_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    kind: Mapped[str] = mapped_column(String(6), default="MONEY", server_default="MONEY")      # MONEY | ITEM
+    amount_cents: Mapped[int | None] = mapped_column(BigInteger, nullable=True)   # unlinked money; an item's estimate
+    description: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    item_received: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
+    item_no_value: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
+    item_no_value_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    allocation_id: Mapped[int | None] = mapped_column(ForeignKey("transaction_allocation.id"), nullable=True)
     purpose: Mapped[str | None] = mapped_column(String(200), nullable=True)
     goods_cents: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     goods_description: Mapped[str | None] = mapped_column(String(200), nullable=True)
@@ -1057,7 +1089,9 @@ class DonationReceipt(Base):
     __tablename__ = "donation_receipt"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
-    transaction_id: Mapped[int] = mapped_column(ForeignKey("register_transaction.id"), index=True)
+    donation_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)     # 2.2.0 (#325)
+    # the deposit (empty: a donation not linked to one when printed)
+    transaction_id: Mapped[int | None] = mapped_column(ForeignKey("register_transaction.id"), nullable=True, index=True)
     donor_entity_id: Mapped[int] = mapped_column(ForeignKey("entity.id"))
     donor_name: Mapped[str] = mapped_column(String(200))
     number: Mapped[str] = mapped_column(String(20))
@@ -1067,7 +1101,7 @@ class DonationReceipt(Base):
     replaces_id: Mapped[int | None] = mapped_column(ForeignKey("donation_receipt.id"), nullable=True)
     amount_cents: Mapped[int] = mapped_column(BigInteger)
     goods_cents: Mapped[int] = mapped_column(BigInteger, default=0)
-    date_received: Mapped[dt.date] = mapped_column(Date)
+    date_received: Mapped[dt.date | None] = mapped_column(Date, nullable=True)   # empty: printed blank (not received)
     allocation_ids: Mapped[str] = mapped_column(String(500))    # comma-separated, for the record
     content_sha: Mapped[str] = mapped_column(String(64))
     attachment_id: Mapped[int | None] = mapped_column(ForeignKey("attachment.id"), nullable=True)

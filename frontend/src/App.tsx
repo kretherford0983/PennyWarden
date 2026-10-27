@@ -23,6 +23,7 @@ import FundraiserSeries from "./pages/FundraiserSeries";
 import CheckSetup from "./pages/CheckSetup";
 import DonationSetup from "./pages/Donations";
 import Payments from "./pages/Payments";
+import DonationsPage from "./pages/DonationsPage";
 import Notifications, { REMINDERS_CHANGED } from "./pages/Notifications";
 import { AdminSecurityNotices, SignInNotices } from "./pages/Recovery";
 import { BackupFailedBanner } from "./pages/ScheduledBackups";
@@ -176,6 +177,11 @@ function navFor(me: Me) {
   if (me.modules?.fundraisers) fin.splice(6, 0, ["/fundraisers", "Fundraisers"]); // v1.6.0 CR-033 (optional module)
   // 2.0.0 (#164): Payments (Payments module) for Register Users, after Register
   if (me.modules?.checks && me.permissions.includes("checks.print")) fin.splice(fin.findIndex((n) => n[0] === "/register") + 1, 0, ["/payments", "Payments"]);
+  // 2.2.0 (#325): Donations for the financial roles and Auditors when the Donations module is on, after Register/Payments
+  if (me.modules?.donations && me.permissions.includes("donation.view")) {
+    const after = Math.max(fin.findIndex((n) => n[0] === "/payments"), fin.findIndex((n) => n[0] === "/register"));
+    fin.splice(after + 1, 0, ["/donations", "Donations"]);
+  }
   // 2.0.0 (#156): Payments Setup (check printing) for Administrators when the Payments module is on
   const checkSetup = me.modules?.checks && me.permissions.includes("checks.setup") ? [["/check-setup", "Payments Setup"]] : [];
   // 2.1.0 (#312): Donations Setup (receipt letters) for Administrators when the Donations module is on
@@ -238,6 +244,7 @@ function Shell({ workspace, warning, mode, testing, demo, onLogout }: { workspac
   else if (path === "/check-setup") page = guard("/check-setup", <CheckSetup />);
   else if (path === "/donation-setup") page = guard("/donation-setup", <DonationSetup />);
   else if (path === "/payments") page = guard("/payments", <Payments />);
+  else if (path === "/donations") page = guard("/donations", <DonationsPage />);
   else if ((m = match("/fundraisers/:id", path))) page = guard("/fundraisers", <FundraiserDetail id={Number(m.id)} />);
   else page = <p>Page not found.</p>;
 

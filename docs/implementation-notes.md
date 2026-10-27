@@ -128,6 +128,29 @@ could not otherwise be corrected. Scope and safeguards:
   with a link; the variable picker completes dotted names.
 - Tests: `backend/tests/test_v210_organization.py` (6, including the data migration) and the E2E #126 and #312 steps.
 
+**2.2.0 — Donations part 2: before the deposit, items, the Donations page (#325, Kyle 2026-10-23).**
+- Model (migration `0054`): `donation` (donor, origin PAGE | DEPOSIT with the deposit for DEPOSIT, status ACTIVE |
+  CANCELLED with reason, `details` — was `donation_detail`); `donation_line.donation_id`, `kind` MONEY | ITEM,
+  `amount_cents` (unlinked money; an item's estimate), `description`, `item_received`, `item_no_value` + reason;
+  `allocation_id` nullable (empty = awaiting deposit). `donation_receipt.donation_id`, `transaction_id` and
+  `date_received` nullable; `attachment.donation_id` (receipts of a donation not linked to a deposit). The migration
+  groups part 1 lines by (deposit, donor) into DEPOSIT donations, moves details and receipts onto them.
+- `services/donations`: `line_received` (money linked to a live allocation of an ACTIVE deposit; items ticked),
+  `line_amount` (linked money follows the allocation), `line_date`, `line_locked` (received in a Closed Fiscal Year),
+  `_content`/`_content_sha` per donation (items added to the hash only when present, so part 1 receipts keep their
+  fingerprint), `_compose` (confirmation `NOT_RECEIVED` when the date prints blank), `print_donation` (a copy on every
+  linked deposit, else with the donation). The part 1 API (`/transactions/{id}/...`) now works on DEPOSIT donations;
+  lines linked to a PAGE donation show read-only (409 LINKED_TO_DONATION on unmarking).
+- Page API: `GET/POST /api/donations`, `GET/PUT /api/donations/{id}`, `POST .../cancel`, `.../receipts/preview`,
+  `.../receipts`, `GET /api/donations/awaiting-lines`, `POST /api/donations/create-transaction` (the register's
+  `create` with `links[i]` = the donation line of allocation i; a line on several allocations is split into one line
+  per allocation adding up to its amount; the donor is the allocation entity; receipts copied onto the deposit).
+- Register hooks: `void`, `delete` and allocations removed on edit call `donations.unlink_for_deposit` — PAGE lines are
+  unlinked (amount kept), DEPOSIT donations keep their lines and their receipts show void.
+- Audit and Close reports: `non_cash_received()` → "Non-cash donations received" after the budgets (whole-year
+  reports only).
+- Tests: `test_v220_donations_part2.py`.
+
 **2.1.0 — Donations module, part 1: receipt letters (#312, Kyle 2026-10-22; part of #256).**
 - Module switch `workspace.donations_enabled` (migration `0045`, off), the same pattern as Fundraisers and Payments:
   `services/donations.module_enabled/require_module/set_module` (audit `MODULE_ENABLED`/`MODULE_DISABLED`,
