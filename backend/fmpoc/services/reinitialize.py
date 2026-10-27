@@ -30,7 +30,7 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
 from .. import audit
-from ..models import (Attachment, AuditEvent, BankAccount, BankAccountBalance, Budget, BudgetProjectionChoice, CheckAccount,
+from ..models import (Attachment, AuditEvent, BankAccount, BankAccountBalance, Budget, BudgetHistoryEntry, BudgetProjectionChoice, CheckAccount,
                       CheckDocument, CheckNumberAcknowledgement, CheckPrinterSetting, CheckSigner, CheckStyle, DonationDetail, DonationLine,
                       DonationReceipt, DonationSettings, Entity,
                       FiscalYear, FiscalYearReview, Fundraiser, FundraiserBucket, FundraiserBucketCategory, FundraiserBucketLine, FundraiserBudget,
@@ -49,7 +49,7 @@ COOLDOWN = dt.timedelta(hours=24)
 WIPE = (DonationReceipt, DonationDetail, DonationLine, FundraiserBucketLine, FundraiserLineContributor, FundraiserClassification, FundraiserExclusion, FiscalYearReview, Attachment,
         TransactionAllocation, RegisterTransaction, CheckNumberAcknowledgement, CheckAccount, CheckPrinterSetting,
         BankAccountBalance, BankAccount, FundraiserBucket, FundraiserBucketCategory, FundraiserBudget, Fundraiser, FundraiserSeriesResult,
-        FundraiserSeries, FundraiserFyReportNote, BudgetProjectionChoice, Budget, FiscalYear,
+        FundraiserSeries, FundraiserFyReportNote, BudgetProjectionChoice, BudgetHistoryEntry, Budget, FiscalYear,
         CheckDocument, CheckSigner, CheckStyle, DonationSettings, RequestKey)   # 2.1.0 (#312): donations
 
 

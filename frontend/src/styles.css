@@ -638,3 +638,8 @@ label.check.small { font-size: 12px; }
 .mfa-setup details.own-key summary { cursor: pointer; font-weight: 600; color: var(--link); }
 .mfa-setup details.own-key[open] { padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; }
 .pw-checklist > p.field-label { margin: 0 0 3px; }
+/* 2.2.0 (#284): years before PennyWarden in a budget's History */
+.entered-row td:first-child { white-space: nowrap; }
+.row-buttons { display: inline-flex; gap: 4px; }
+.retired-entries { margin: 6px 0; }
+.retired-entries summary { cursor: pointer; color: var(--muted); }

@@ -158,6 +158,9 @@ Rejecting a Draft budget sets its allowed amount to zero, preserves historical a
 ### AC-BUD-011 — Status indicators
 Draft uses `?`/light yellow; Approved+Locked uses closed padlock/light green; Approved+Unlocked uses open padlock/light green; Rejected uses `X`/light red. Status is not communicated by color alone.
 
+### AC-BUD-012 — Budget history before PennyWarden (2.2.0, #284)
+A Budget Manager can enter, correct (reason required) and retire (reason required) a budget's budgeted and actual figures for a year before the first Fiscal Year in PennyWarden, one at a time or from a CSV file (year, budget code, budgeted, actual, note) after a preview that marks each row matched, refused (with the reason) or duplicate. A year covered by a Fiscal Year in PennyWarden, a second active entry for the same line and year, Budget 0 and `Other` are refused. Entries follow the budget's continuation links; a parent without its own figure shows the sum of its sub-budgets' (a mismatch note when both differ). The History view and the Budget Review (on screen, PDF, CSV) label them *Entered*. Other roles can read them on History but not change them; the Administrator is refused (BR-003). Budget actuals and totals are unchanged (BR-048); nothing is deleted (BR-001); every change is audited.
+
 ## Entities
 
 ### AC-ENT-001 — Individual requirement

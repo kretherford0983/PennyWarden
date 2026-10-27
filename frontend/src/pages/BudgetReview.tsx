@@ -80,11 +80,15 @@ type Col = { key: string; head: React.ReactNode; cells: (r: any) => [React.React
 
 function columns(data: any): Col[] {
   const cols: Col[] = data.years.map((y: any, i: number) => ({
-    key: `y${y.id}`, head: y.display_name,
+    key: y.entered ? `e${y.year}` : `y${y.id}`,
+    head: y.entered ? <>{y.display_name}<div className="muted small">entered</div></> : y.display_name,
     cells: (r: any) => {
       const c = r.history[i];
       if (!c) return [r.history_note ? <i className="muted">history on parent</i> : <span className="muted" title="No linked budget that year">—</span>, null, null];
-      const note = [c.renumbered ? c.code : null, c.status && c.status !== "APPROVED" ? status(c.status) : null].filter(Boolean).join(" · ");
+      // 2.2.0 (#284): a year before PennyWarden, entered from earlier records
+      const entered = c.source === "ENTERED" ? (c.from_sub_budgets ? "entered · sum of sub-budgets" : "entered") : null;
+      const mismatch = c.mismatch ? `sub-budgets: ${money(c.mismatch.budgeted)} / ${money(c.mismatch.actual)}` : null;
+      const note = [entered, mismatch, c.renumbered ? c.code : null, c.status && c.status !== "APPROVED" ? status(c.status) : null].filter(Boolean).join(" · ");
       return [<>{money(c.budgeted)}{note ? <div className="muted small">{note}</div> : null}</>, money(c.actual), diffText(c.difference, c.difference_pct)];
     },
   }));
@@ -182,7 +186,7 @@ function BudgetReviewTable({ data, url }: { data: any; url: (format: string, dow
   return (
     <div className="budget-review">
       <h2>Budget Review — {data.fiscal_year.display_name}</h2>
-      <p>Actuals year-to-date as of {data.as_of}. Prior years shown: {data.years.length} of {data.available_years}. Difference = actual − budgeted; n/a when nothing was budgeted. Avg = the average of the prior years shown in which the budget existed.{data.projected ? ` Projected = YTD ÷ elapsed months × months in the year (${data.projection_basis.elapsed_months} of ${data.projection_basis.months} months elapsed).` : ""}</p>
+      <p>Actuals year-to-date as of {data.as_of}. Prior years shown: {data.years.length} of {data.available_years}. Difference = actual − budgeted; n/a when nothing was budgeted. Avg = the average of the prior years shown in which the budget existed.{data.entered_years ? " Years marked entered are before PennyWarden, entered by a Budget Manager from earlier records." : ""}{data.projected ? ` Projected = YTD ÷ elapsed months × months in the year (${data.projection_basis.elapsed_months} of ${data.projection_basis.months} months elapsed).` : ""}</p>
       <div className="actions left no-print">
         <a className="button primary" href={url("pdf")} target="_blank" rel="noopener">Open PDF</a>
         <a className="button" href={url("pdf", true)}>Download PDF</a>

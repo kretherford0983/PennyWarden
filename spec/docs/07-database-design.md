@@ -98,6 +98,21 @@ amount is 0; - no hard deletion of historically material budgets.
 
 Budget display identifiers are derived, not duplicated unnecessarily.
 
+### budget_history_entry (2.2.0, #284)
+
+-   id PK
+-   workspace_id FK
+-   budget_id FK (the oldest budget of the line)
+-   fiscal_year_label, year (the year found in the label)
+-   budgeted_cents, actual_cents
+-   note nullable
+-   retired_at / retired_by_user_id / retire_reason nullable
+-   created_at/by, updated_at/by
+
+Rules: only years before the first Fiscal Year in PennyWarden; at most one active entry per line and year; never
+deleted (retired with a reason); reporting only (not an allocation, never in actuals). Removed by Reinitialize with
+the rest of the financial data.
+
 ## 4. Entities
 
 ### entity

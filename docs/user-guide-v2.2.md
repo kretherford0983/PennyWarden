@@ -42,3 +42,31 @@ been exposed (a stolen phone, a security problem): the user then has to set up w
 *Use my own key instead* explains why it isn't available. On the server command line the same is
 `pennywarden reset-mfa --user NAME --compromised` (with `sudo` and `--data-dir` as usual). The audit log records
 whether a reset was marked and whether a setup used an own key — never the key itself.
+
+## Budgets (Budget Managers)
+
+### Years before PennyWarden
+Your budgets probably have years of history in spreadsheets from before you started using PennyWarden. You can now
+enter those years so the History and the Budget Review show the whole picture.
+
+**One year at a time.** On **Budgets**, every budget now has a **History** link for Budget Managers. Open it and
+choose **Add an earlier year**: the Fiscal Year (include the year, for example *FY2021*), what was **budgeted**, what
+was **actually** spent or received, and an optional note such as *from the 2021 treasurer's spreadsheet*. The year
+appears at the top of the History, marked **Entered**.
+- Only years **before your first Fiscal Year in PennyWarden** can be entered; later years come from PennyWarden itself.
+- **Correct** fixes a typo (a reason is required); **Retire** takes an entry out (a reason is required). Nothing is
+  deleted, and every change is in the audit log.
+- Enter the figures at whatever level your spreadsheet has: on a budget, on its sub-budgets, or both. A budget
+  without its own figure for a year shows the **sum of its sub-budgets'**. If you enter both and they don't add up,
+  the History and the Budget Review say so.
+- A renumbered budget keeps its entered years: they follow the *Continues* links.
+
+**Many years at once.** **Budgets → Import earlier years…** takes a CSV file with the columns **year, budget code,
+budgeted, actual, note** (one row per budget per year). **Download the template** to get every budget code of the
+Fiscal Year you're looking at. Choose **Preview** to see what will happen to each row — *will be saved*, *duplicate*
+(already entered, or twice in the file) or *refused* with the reason — then **Import**. Only the rows that will be
+saved are saved.
+
+**Where they show.** In the budget's History and in the **Budget Review** (on screen, in the PDF and the CSV, and in
+the review you can add to the Planning Sheet), after your PennyWarden years, with the column marked *entered*. They
+never change actuals, the registers or the Fiscal Year closure, and they are not in the dashboard charts.

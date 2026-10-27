@@ -1626,6 +1626,63 @@ test("#89: a copied budget continues its source; Continues can be set; History s
   await expect(page.getByRole("dialog", { name: "History of 8960 New name" })).toContainText("Old name");
 });
 
+test("#284: a Budget Manager enters years before PennyWarden on History and imports more from a CSV", async ({ page }) => {
+  await login(page, "bm1");
+  const fys = await (await page.request.get("/api/fiscal-years")).json();
+  const f41 = fys.find((f: any) => f.display_name === "FY2041");
+  await page.goto(`/budgets?fiscal_year_id=${f41.id}`);
+  await page.getByRole("button", { name: "History of 8900" }).click();
+  const h = page.getByRole("dialog", { name: "History of 8900 Lineage" });
+  const firstYear = Number((await h.locator(".hint").innerText()).match(/before FY(\d{4})/)![1]);
+  const y1 = `FY${firstYear - 2}`, y2 = `FY${firstYear - 1}`;
+  await h.getByRole("button", { name: "Add an earlier year" }).click();
+  let add = page.getByRole("dialog", { name: "Add an earlier year to 8900 Lineage" });
+  await add.getByLabel("Fiscal Year").fill(`FY${firstYear}`);
+  await add.getByLabel("Budgeted").fill("80.00");
+  await add.getByLabel("Actual").fill("75.50");
+  await add.getByRole("button", { name: "Add" }).click();
+  await expect(add.getByRole("alert")).toContainText("only years before the first Fiscal Year in PennyWarden");
+  await add.getByLabel("Fiscal Year").fill(y2);
+  await add.getByLabel("Note (optional)").fill("from the old treasurer's spreadsheet");
+  await add.getByRole("button", { name: "Add" }).click();
+  await expect(add).toHaveCount(0);
+  const rows = h.getByRole("table", { name: "Budget history" }).locator("tbody tr");
+  await expect(rows).toHaveCount(3);
+  await expect(rows.first()).toContainText(y2);
+  await expect(rows.first()).toContainText("Entered");
+  await expect(rows.first()).toContainText("$75.50");
+  // correct it (a reason is required), then the History shows the new figure
+  await h.getByRole("button", { name: `Correct ${y2}` }).click();
+  const cor = page.getByRole("dialog", { name: `Correct ${y2}` });
+  await cor.getByLabel("Actual").fill("76.00");
+  await cor.getByLabel("Reason (required)").fill("Typo");
+  await cor.getByRole("button", { name: "Save correction" }).click();
+  await expect(rows.first()).toContainText("$76.00");
+  await page.screenshot({ path: "e2e-screenshots/light-budget-history-entered.png" });
+  await h.locator(".actions").getByRole("button", { name: "Close" }).click();
+
+  // CSV import: preview first, then import the matched rows
+  await page.getByRole("button", { name: "Import earlier years…" }).click();
+  const imp = page.getByRole("dialog", { name: "Import earlier years (before PennyWarden)" });
+  await expect(imp.getByRole("link", { name: "Download the template" })).toHaveAttribute("href", new RegExp(`fiscal_year_id=${f41.id}`));
+  await imp.getByLabel("Or paste the CSV").fill(`year,budget code,budgeted,actual,note\n${y1},8900,70,65,\n${y2},8900,1,1,\n${y1},9999,1,1,\n`);
+  await imp.getByRole("button", { name: "Preview" }).click();
+  const prev = imp.getByRole("table", { name: "Import preview" });
+  await expect(prev.locator("tbody tr")).toHaveCount(3);
+  await expect(prev.locator("tbody tr").nth(1)).toContainText("Duplicate");
+  await expect(prev.locator("tbody tr").nth(2)).toContainText("No budget 9999");
+  await imp.getByRole("button", { name: "Import 1 year" }).click();
+  await expect(imp.getByRole("status")).toContainText("1 year was entered.");
+  await imp.getByRole("button", { name: "Done" }).click();
+  // the Budget Review shows the entered years after the PennyWarden ones, labelled entered
+  const rep = await (await page.request.get(`/api/reports/budget-review?fiscal_year_id=${f41.id}&years=-1`)).json();
+  const entered = rep.years.filter((y: any) => y.entered).map((y: any) => y.display_name);
+  expect(entered).toEqual(expect.arrayContaining([y1, y2]));
+  const row = rep.expense.find((r: any) => r.code === "8900");
+  const i = rep.years.findIndex((y: any) => y.display_name === y1);
+  expect(row.history[i]).toMatchObject({ source: "ENTERED", budgeted: "70.00", actual: "65.00" });
+});
+
 // ---------------------------------------------------------------- v1.5.0 CR-031: dashboard layout
 test("CR-031: dashboard sections can be hidden, reordered and reset; saved per user", async ({ page }) => {
   await login(page, "ru1", "Brand-New-Pass-99");

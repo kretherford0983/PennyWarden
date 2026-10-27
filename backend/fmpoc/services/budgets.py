@@ -502,6 +502,15 @@ def tree(db: Session, fy: FiscalYear, include_hidden: bool = False, include_dele
     for r in [*sections["INCOME"], *sections["EXPENSE"]]:
         for x in [r, *r["children"]]:
             x["has_history"] = bool(x.get("continues_budget_id")) or x["id"] in continued
+    # 2.2.0 (#284): ... or years before PennyWarden are entered for its line
+    from . import budget_history as hist
+    if db.scalar(select(hist.BudgetHistoryEntry.id).where(hist.BudgetHistoryEntry.workspace_id == fy.workspace_id,
+                                                          hist.BudgetHistoryEntry.retired_at.is_(None)).limit(1)):
+        for r in [*sections["INCOME"], *sections["EXPENSE"]]:
+            for x in [r, *r["children"]]:
+                if not x["has_history"]:
+                    b = db.get(Budget, x["id"])
+                    x["has_history"] = b is not None and hist.has_entries(db, b)
 
     return {
         "fiscal_year": fy_brief(fy),
