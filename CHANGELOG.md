@@ -2,7 +2,10 @@
 
 Versions are `Breaking.Major.Minor` from 1.6.0 (docs/branching.md).
 
-## 2.1.2 — unreleased
+## 2.2.0 — unreleased
+PennyWarden 2.2.0 (in progress).
+
+## 2.1.2 — 2026-10-23
 Hotfix for 2.1.1. No database migration; going back to 2.1.1 is just reinstalling it.
 - **Register: changing a deposit's Entity now saves (#344).** Editing a deposit to pick a different Entity (for
   example moving transactions to the organization entity added in 2.1.0) saved without an error but kept the old
