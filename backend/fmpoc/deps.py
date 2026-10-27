@@ -19,7 +19,8 @@ PRE_CSRF_COOKIE = "fm_precsrf"
 CSRF_HEADER = "x-csrf-token"
 SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 ANON_MUTATING_PATHS = {"/api/auth/login", "/api/system/initialize",
-                       "/api/auth/forgot/start", "/api/auth/forgot/complete"}  # 1.8.0 (#113)
+                       "/api/auth/forgot/start", "/api/auth/forgot/complete",  # 1.8.0 (#113)
+                       "/api/system/demo/reset"}  # 2.2.0 (#243): from the sign-in page (exists only in the demo)
 ANON_MUTATING_PREFIXES = ("/api/system/restore/",)  # v1.4.1 CR-024: restore from the initialization wizard
 
 

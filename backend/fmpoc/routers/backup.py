@@ -25,6 +25,7 @@ from ..security import crypto
 from ..security.passwords import verify_password
 from ..services import backup as bk
 from ..services import bootstrap
+from ..services import demo as demo_svc
 from ..services import partial_restore as pr
 from ..services import restore_report
 from ..services import scheduled_backup as sched
@@ -268,7 +269,9 @@ def restore_start(upload_id: str, body: RestoreStartIn, request: Request, db: Se
     actor = {"username": ctx.user.username if ctx.user else None, "ip": ctx.ip, "cid": ctx.correlation_id,
              "via": "system_about" if initialized else "initialization_wizard",
              # 2.2.0 (#319): System/About asks what to restore once the backup is checked; the wizard restores all
-             "choose": initialized, "user_id": ctx.user.id if ctx.user else None}
+             # (and so does a restore over the demo, #243)
+             "choose": initialized and not getattr(app.state, "demo", False),
+             "user_id": ctx.user.id if ctx.user else None}
     app.state.uploads.pop(upload_id, None)
     threading.Thread(target=run_restore, args=(app, job, up, body.passphrase, actor), name="fmpoc-restore",
                      daemon=True).start()
@@ -376,7 +379,13 @@ def run_restore(app, job, up: dict, passphrase: str, actor: dict) -> None:
         testing_backup = bk.check_testing(manifest, bool(getattr(app.state, "testing_mode", False)))   # #231
         chosen = list(pr.DOMAINS)
         missing_users = "add"
-        if actor.get("choose"):
+        # 2.2.0 (#243): the demo runs on this computer only, and is always restored whole
+        backup_is_demo = demo_svc.is_demo_db(work / "unpacked" / "data" / "database" / bk.DB_NAME)
+        if backup_is_demo:
+            from ..config import is_loopback
+            if settings.mode == "server" or not is_loopback(settings.host):
+                raise bk.BackupError(demo_svc.LOOPBACK_ONLY)
+        if actor.get("choose") and not backup_is_demo:
             # 2.2.0 (#319, point 9): the backup is brought to this version in the work folder first, then the
             # Administrator chooses what to restore (nothing has changed so far)
             job.advance("Updating the backup to this version")
@@ -441,6 +450,8 @@ def run_restore(app, job, up: dict, passphrase: str, actor: dict) -> None:
         app.state.engine, app.state.session_factory = engine, factory
         app.state.key = crypto.load_key(settings.secrets_dir)
         app.state.limiter = LoginRateLimiter(settings.login_max_failures, settings.login_lockout_seconds)
+        demo_svc.keep_pristine(settings)            # 2.2.0 (#243): a demo keeps its untouched copy; others drop it
+        app.state.demo = demo_svc.is_demo_db(settings.database_path)
         job.result = {"workspace": facts["workspace"], "backup_created_at": manifest.get("created_at"),
                       "backup_app_version": manifest.get("app_version"), "counts": manifest.get("counts"),
                       "report_summary": restore_report.summary_text(report) if report else None,

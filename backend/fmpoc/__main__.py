@@ -160,7 +160,7 @@ def main(argv: list[str] | None = None, window: bool = False) -> int:
     """window=True (1.6.7, the macOS app): local mode runs behind a small status window instead of a console."""
     argv = sys.argv[1:] if argv is None else argv
     if len(argv) > 1 and argv[0] == "--no-browser" and argv[1] in ("reset-mfa", "reset-password", "restore",
-                                                               "reinitialize", "apply-config"):
+                                                               "reinitialize", "apply-config", "remove-demo"):
         argv = argv[1:]   # 2.0.0: the Docker image's entrypoint adds --no-browser before a command
     if argv and argv[0] == "reset-mfa":
         return reset_mfa_cli(argv[1:])
@@ -175,6 +175,9 @@ def main(argv: list[str] | None = None, window: bool = False) -> int:
     if argv and argv[0] == "self-check-documents":   # 2.1.1: used by the macOS smoke test
         from .cli_selfcheck import main as selfcheck_main
         return selfcheck_main(argv[1:])
+    if argv and argv[0] == "remove-demo":   # 2.2.0 (#243)
+        from .services.demo import remove_cli
+        return remove_cli(argv[1:])
     if argv and argv[0] == "reinitialize":   # 2.0.0 (#125)
         from .cli_restore import reinit_main
         return reinit_main(argv[1:])
@@ -204,7 +207,12 @@ def main(argv: list[str] | None = None, window: bool = False) -> int:
 
     from .app import create_app
 
-    app = create_app(settings)
+    from .services.demo import DemoError
+    try:
+        app = create_app(settings)
+    except DemoError as e:     # 2.2.0 (#243): the demo runs on this computer only
+        print(str(e), file=sys.stderr)
+        return 2
     url = f"http://{'127.0.0.1' if settings.host in ('0.0.0.0', '::') else settings.host}:{settings.port}"
     print(f"PennyWarden {VERSION} - {settings.mode} mode - {url}")
     print(f"Application data: {settings.data_dir}")

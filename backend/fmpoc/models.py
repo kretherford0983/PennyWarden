@@ -72,6 +72,9 @@ class Workspace(Base):
     reinitialize_backup: Mapped[str | None] = mapped_column(String(255), nullable=True)
     reinitialize_ack_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     reinitialize_ack_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # 2.2.0 (#243): the published demo. Set only by scripts/build_demo.py (directly in the database file) - no web or API
+    # path writes it. While set: local loopback only, reset to demo-pristine/ on every start, the demo banner.
+    demo_mode: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
 
 
 class Role(Base):

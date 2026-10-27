@@ -113,3 +113,11 @@ Nothing financial changes and the real clock keeps running. A backup made on the
 your main server from the app (it is marked as a test backup); restoring your main server's backup onto the test server
 works as usual — that is the easy way to give the test server real-looking data. Local installs ignore the setting for
 now.
+
+## Try the demo
+
+Want to show PennyWarden to someone before they set up their own organization? Each release has a demo file with a
+made-up band boosters club. Install PennyWarden, choose **Restore from a backup instead** on the first screen, pick the
+demo file and enter `pennywarden demo`, then sign in as `demo-admin`, `demo-budget`, `demo-register` or
+`demo-auditor` (password `Demo-PennyWarden-2026`). Changes are undone when PennyWarden restarts or with **Reset demo
+data**; **Remove the demo and start fresh** clears it away for real use. Details: [docs/demo.md](demo.md).

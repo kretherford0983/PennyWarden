@@ -45,6 +45,19 @@ PennyWarden 2.2.0 (in progress).
   - On the command line: `pennywarden restore FILE --only data,reminders` or `--skip settings,users`, and
     `pennywarden restore FILE --list` shows the parts a backup holds. See docs/backup-restore.md.
 
+### Try the demo
+- **A ready-made demo (#243).** Each release now includes `pennywarden-demo-<version>.fmbak`: a made-up band boosters
+  club with this year's approved budget, a register with receipts, a fundraiser, reminders, printed checks and last
+  year closed. Restore it on the first screen of a new install (passphrase `pennywarden demo`) and sign in as
+  `demo-admin`, `demo-budget`, `demo-register` or `demo-auditor` (password `Demo-PennyWarden-2026`).
+  - A **DEMO** banner on every page. Nothing is kept: the demo is put back on every start and by **Reset demo data**
+    (on the banner, and on the sign-in page for anyone locked out).
+  - The demo runs only on the computer it's installed on (its passwords and key are published): no server mode, no
+    network address.
+  - **Remove the demo and start fresh** (the demo Administrator, or `pennywarden remove-demo`) removes everything of
+    it — data, users, audit log and its key — and the Initialization Wizard comes next.
+  - pennywarden.org has a *Try the demo* section. See docs/demo.md.
+
 ### Testing mode (server installs)
 - **A test server that doesn't make you wait (#231).** `testing_mode = true` in `config.toml` (only there — never from
   the web) turns a server install into a test server: a striped **TESTING MODE** banner on every page, including the
@@ -76,7 +89,8 @@ PennyWarden 2.2.0 (in progress).
   - Years a Fiscal Year in PennyWarden covers are refused, so nothing is counted twice.
 
 ### Upgrade
-- Migration `0049` adds the table `budget_history_entry` (empty); `0050` the table `testing_state` (empty).
+- Migration `0049` adds the table `budget_history_entry` (empty); `0050` the table `testing_state` (empty); `0051`
+  the column `workspace.demo_mode` (off).
 - Migration `0048` adds two columns to `user_mfa` (`new_key_required`, `pending_own_key`; both off). No existing value
   changes. Going back to 2.1.2 needs the pre-upgrade data backup (2.1.2 does not know revisions 0048 and later).
 

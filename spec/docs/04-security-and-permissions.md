@@ -154,6 +154,16 @@ testing mode is marked; the application refuses to restore it onto a server that
 command line requires `--accept-testing-backup` (the server owner); `SYSTEM_RESTORED` records `testing_backup`.
 
 
+**The demo (2.2.0, #243).** A database carrying the demo marker (`workspace.demo_mode`) is the published demo: its
+passwords, backup passphrase and encryption key are public, so (1) the application refuses to start it in server mode
+or on a non-loopback address, and a server refuses to restore it (BR-081 / AC-DEP-003); (2) only the build script sets
+the marker, directly in the database file — no web or API path writes it (request models reject the field); (3) the
+demo is reset to its pristine copy on every start and by *Reset demo data*, which needs no sign-in and exists only in
+the demo; (4) *Remove the demo* (demo Administrator, or the host command `remove-demo`) removes the database,
+attachments, the published key and the pristine copy, so nothing remains and the Initialization Wizard creates a new
+key (BR-085 / AC-DEP-006). Reset and Remove replace or discard a disposable demo installation; neither edits an audit
+event (confirmed 2026-10-24).
+
 ## 7. Secure Coding and Request Handling
 
 The application follows a defense-in-depth model. All client data is untrusted and is validated server-side. SQLAlchemy/parameterized database access is mandatory; user input is never concatenated into SQL. Request schemas expose only fields writable by the caller and prevent mass assignment of protected state. Object-level authorization is checked for requested records, not merely endpoint access.

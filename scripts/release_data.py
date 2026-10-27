@@ -45,6 +45,8 @@ def kind_of(name: str) -> tuple[str, str] | None:
         return "linux", "installer"
     if n.endswith("linux-x64-portable.tar.gz"):
         return "linux", "portable"
+    if n.startswith("pennywarden-demo-") and n.endswith(".fmbak"):   # 2.2.0 (#243): the Try the demo page
+        return "demo", "backup"
     if n == "sha256sums.txt":
         return "all", "checksums"
     return None

@@ -654,3 +654,6 @@ label.check.small { font-size: 12px; }
 .testing-banner { background: repeating-linear-gradient(135deg, var(--warn-bg), var(--warn-bg) 12px, var(--yellow-bg) 12px, var(--yellow-bg) 24px);
   border-color: var(--warn-border); color: var(--yellow-fg); }
 .testing-panel h3 { margin-top: 18px; }
+/* 2.2.0 (#243): the demo banner */
+.demo-banner { background: var(--info-bg); border-color: var(--link); }
+.demo-banner button.small { margin-left: 4px; }

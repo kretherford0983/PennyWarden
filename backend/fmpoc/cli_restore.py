@@ -266,6 +266,16 @@ def restore(args) -> int:
             f"{manifest.get('app_version')}.")
         if testing_backup:
             say("  It was made on a server in TESTING MODE (its audit trail may have gaps).")
+        from .config import is_loopback
+        from .services import demo as demo_svc     # 2.2.0 (#243): the demo is restored whole, on this computer only
+        if demo_svc.is_demo_db(work / "unpacked" / "data" / "database" / bk.DB_NAME) or \
+                demo_svc.is_demo_db(settings.database_path):
+            if demo_svc.is_demo_db(work / "unpacked" / "data" / "database" / bk.DB_NAME) and \
+                    (settings.mode == "server" or not is_loopback(settings.host)):
+                raise CliError(f"{demo_svc.LOOPBACK_ONLY} Nothing was changed.", 2)
+            if not pr.is_full(chosen):
+                say("  The demo is always restored (or replaced) whole: --only/--skip are ignored.")
+                chosen = list(pr.DOMAINS)
         full = pr.is_full(chosen)
         if args.list or not full:
             # 2.2.0 (#319, point 9): the backup is brought to this version in the work folder before anything else
@@ -416,7 +426,9 @@ def run_offline_restore(settings, data: Path, manifest: dict, source_name: str, 
         bk.rollback(settings)
         detail = str(e) if isinstance(e, bk.BackupError) else type(e).__name__
         raise CliError(f"Restore failed ({detail}); the previous data was put back.", 6) from None
-    match_ownership(settings.data_dir, list(bk.PARTS) + [bk.PRE_RESTORE_DIR, REPORT_DIR])
+    from .services import demo as demo_svc     # 2.2.0 (#243)
+    demo_svc.keep_pristine(settings)
+    match_ownership(settings.data_dir, list(bk.PARTS) + [bk.PRE_RESTORE_DIR, REPORT_DIR, demo_svc.PRISTINE])
     return {**summary, "notes": pr.report_lines(facts) if not full else []}
 
 
