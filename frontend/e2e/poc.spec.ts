@@ -3801,7 +3801,7 @@ test("#280: an Administrator brands reports - a palette, a custom palette checke
   await card.getByLabel("Primary color", { exact: true }).fill("#00658f");
   await card.getByLabel("Secondary color", { exact: true }).fill("#e0a100");
   await card.getByRole("button", { name: "Generate recommended palette" }).click();
-  await card.getByText("Color roles").click();
+  await card.getByText("Color roles", { exact: true }).click();
   await card.getByLabel("Text on Primary", { exact: true }).fill("#5d8fb0");
   await expect(card.getByTestId("branding-contrast")).toContainText("WCAG AA");
   await expect(card.getByRole("button", { name: "Save branding" })).toBeDisabled();
