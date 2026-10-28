@@ -431,6 +431,8 @@ class Attachment(Base):
     fundraiser_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     # 2.2.0 (#325): a printed receipt or envelope of a donation not (yet) linked to a deposit
     donation_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    # 2.2.0 (#256): a year-end giving statement's kept copy (and its envelope)
+    donation_statement_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     removed_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     removed_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("app_user.id"), nullable=True)
@@ -715,6 +717,8 @@ class FundraiserBucket(Base):
     # 2.1.0 (#278): one category or none; display order (buckets numbered in name order by migration 0039)
     category_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     display_order: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 2.2.0 (#256): the bucket holds donations - its deposits get the Donation box pre-ticked as a suggestion
+    is_donation: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
     created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
@@ -1107,6 +1111,32 @@ class DonationReceipt(Base):
     goods_cents: Mapped[int] = mapped_column(BigInteger, default=0)
     date_received: Mapped[dt.date | None] = mapped_column(Date, nullable=True)   # empty: printed blank (not received)
     allocation_ids: Mapped[str] = mapped_column(String(500))    # comma-separated, for the record
+    content_sha: Mapped[str] = mapped_column(String(64))
+    attachment_id: Mapped[int | None] = mapped_column(ForeignKey("attachment.id"), nullable=True)
+    printed_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    printed_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class DonationStatement(Base):
+    """2.2.0 (#256): a printed year-end giving statement - one donor, one calendar year, the donation lines received
+    in it. Numbered per year like receipts (S-2026-0001): ORIGINAL, DUPLICATE (same content, same number) or
+    CORRECTED (a new number replacing `replaces_id`). Never deleted."""
+    __tablename__ = "donation_statement"
+    __table_args__ = (Index("ix_donation_statement_year", "workspace_id", "year"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
+    donor_entity_id: Mapped[int] = mapped_column(ForeignKey("entity.id"), index=True)
+    donor_name: Mapped[str] = mapped_column(String(200))
+    year: Mapped[int] = mapped_column(Integer)
+    seq: Mapped[int] = mapped_column(Integer)
+    number: Mapped[str] = mapped_column(String(20))
+    kind: Mapped[str] = mapped_column(String(10))               # ORIGINAL | DUPLICATE | CORRECTED
+    replaces_id: Mapped[int | None] = mapped_column(ForeignKey("donation_statement.id"), nullable=True)
+    total_cents: Mapped[int] = mapped_column(BigInteger)        # money only
+    goods_cents: Mapped[int] = mapped_column(BigInteger, default=0)
+    gifts: Mapped[int] = mapped_column(Integer, default=0)
+    items: Mapped[int] = mapped_column(Integer, default=0)
+    line_ids: Mapped[str] = mapped_column(Text, default="")     # comma-separated donation_line ids, for the record
     content_sha: Mapped[str] = mapped_column(String(64))
     attachment_id: Mapped[int | None] = mapped_column(ForeignKey("attachment.id"), nullable=True)
     printed_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)

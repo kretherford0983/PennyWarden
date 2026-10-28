@@ -554,6 +554,7 @@ class FundraiserBucketIn(In):
     name: Str(80)
     description: OptStr(500) = None
     category_id: int | None = None      # 2.1.0 (#278): one category or none
+    is_donation: bool | None = None     # 2.2.0 (#256): the bucket holds donations (None: unchanged)
 
 
 class FundraiserNotesIn(In):           # 2.1.0 (#275): the stakeholder report's summary notes

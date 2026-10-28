@@ -105,6 +105,14 @@ class ReceiptConfig(BaseModel):
     window: Literal["NONE", "LETTER", "ADDRESS_PAGE"] = "NONE"
     window_return: bool = True                                # the organization's address in the upper window
     fold_marks: Literal["NONE", "FRONT", "BACK"] = "NONE"
+    # 2.2.0 (#256): the year-end giving statement's letter (the receipt variables plus {YEAR}, {TOTAL},
+    # {STATEMENT_NO} and {DONATION_TABLE}); the layout, window and signer are the receipt's
+    statement_title: str = Field(default="Year-End Giving Statement {YEAR}", max_length=120)
+    statement_salutation: str = Field(default="Dear {DONOR_NAME},", max_length=200)
+    statement_body: str = Field(default="Thank you for your generous support of {ORG.NAME} during {YEAR}. These are the "
+                                        "contributions we received from you in {YEAR}:\n\n{DONATION_TABLE}\n\nPlease "
+                                        "keep this statement with your tax records.", max_length=2000)
+    statement_closing: str = Field(default="With gratitude,", max_length=200)
 
     @model_validator(mode="before")
     @classmethod
@@ -118,6 +126,11 @@ class ReceiptConfig(BaseModel):
     def _patterns(self):
         for name in ("title", "salutation", "body", "closing"):
             _check(getattr(self, name), name.capitalize())
+        for name in ("statement_title", "statement_salutation", "statement_body", "statement_closing"):
+            try:
+                patterns.parse(getattr(self, name), patterns.STATEMENT)
+            except patterns.PatternError as e:
+                raise ValueError(f"Year-end statement {name.split('_', 1)[1]}: {e}") from None
         if self.items_note.strip():
             _check(self.items_note, "Items note")
             if note_words(self.items_note) < ITEMS_NOTE_MIN_WORDS:
@@ -282,25 +295,39 @@ def _paras(text: str) -> list[str]:
     return ["<br/>".join(escape(x) for x in p.split("\n")) for p in text.split("\n\n") if p.strip()]
 
 
-def receipt_pdf(cfg: ReceiptConfig, data: ReceiptData, sample: bool = False, watermark: str | None = None) -> bytes:
-    """The receipt letter. `sample` (setup preview and test print) draws SAMPLE - NOT A RECEIPT across the page;
-    `watermark` another text (the Register User's preview: PREVIEW - NOT A RECEIPT)."""
-    if sample and watermark is None:
-        watermark = "SAMPLE - NOT A RECEIPT"
-    texts, _empty = receipt_texts(cfg, data)
+def _styles(cfg) -> dict:
     reg_f, bold = fonts.ps_name(cfg.font), fonts.ps_name(cfg.font, True)
     size = cfg.size
     base = ParagraphStyle("base", fontName=reg_f, fontSize=size, leading=size * 1.3)
     strong = ParagraphStyle("strong", parent=base, fontName=bold)
-    title = ParagraphStyle("title", parent=strong, fontSize=size + 3, leading=(size + 3) * 1.3)
-    small = ParagraphStyle("small", parent=base, fontSize=size - 1.5, leading=(size - 1.5) * 1.3)
+    return {"reg": reg_f, "bold": bold, "size": size, "base": base, "strong": strong,
+            "title": ParagraphStyle("title", parent=strong, fontSize=size + 3, leading=(size + 3) * 1.3),
+            "small": ParagraphStyle("small", parent=base, fontSize=size - 1.5, leading=(size - 1.5) * 1.3)}
 
-    # 2.2.0 (#325): window envelope and fold marks, drawn the way the cover letter draws them
+
+def ack_table(rows: list[tuple[str, str]], st: dict) -> Table:
+    """The acknowledgment block: always printed, not part of the template."""
+    tbl = Table([[Paragraph(escape(k), st["strong"]), Paragraph(escape(v).replace("\n", "<br/>"), st["base"])]
+                 for k, v in rows], colWidths=[1.6 * inch, 4.9 * inch], hAlign="LEFT")
+    tbl.setStyle(TableStyle([("BOX", (0, 0), (-1, -1), 0.6, "#666666"), ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                             ("BOTTOMPADDING", (0, 0), (-1, -1), 3), ("TOPPADDING", (0, 0), (-1, -1), 3),
+                             ("LEFTPADDING", (0, 0), (-1, -1), 6)]))
+    return tbl
+
+
+def donor_letter_pdf(cfg: ReceiptConfig, *, org: dict, donor_name: str, donor_address: list[str], today: dt.date,
+                     kind: str, sample: bool, watermark: str | None, doc_title: str, middle: list,
+                     closing: str) -> bytes:
+    """A letter to a donor (receipt or year-end statement, 2.2.0 #256): the organization and donor heading - or the
+    window-envelope layout and fold marks (#325) - then `middle`, the closing and the signer. A kind other than
+    ORIGINAL is printed in the top corner; `watermark` across the page."""
+    st = _styles(cfg)
+    reg_f, bold, size, base = st["reg"], st["bold"], st["size"], st["base"]
     lcfg = documents.LetterConfig(font=cfg.font, size=cfg.size, window=cfg.window, window_return=cfg.window_return,
                                   fold_marks=cfg.fold_marks)
-    org_lines = [data.org["ORG.NAME"]] + [x for x in data.org["ORG.ADDRESS"].split("\n") if x]
+    org_lines = [org["ORG.NAME"]] + [x for x in org["ORG.ADDRESS"].split("\n") if x]
     windowed = cfg.window != "NONE"
-    blocks = documents.window_blocks(lcfg, {"letterhead": org_lines}, [data.donor_name] + data.donor_address) \
+    blocks = documents.window_blocks(lcfg, {"letterhead": org_lines}, [donor_name] + donor_address) \
         if windowed else []
 
     def first_page(c, doc):
@@ -328,10 +355,10 @@ def receipt_pdf(cfg: ReceiptConfig, data: ReceiptData, sample: bool = False, wat
 
     def page(c, _doc):
         c.saveState()
-        if data.kind != ORIGINAL:
+        if kind != ORIGINAL:
             c.setFont(bold, 9)
             c.setFillGray(0.35)
-            c.drawRightString(7.5 * PT, 10.55 * PT, data.kind)
+            c.drawRightString(7.5 * PT, 10.55 * PT, kind)
         if watermark:
             c.setFillGray(0.86)
             c.setFont(bold, 46)
@@ -345,25 +372,58 @@ def receipt_pdf(cfg: ReceiptConfig, data: ReceiptData, sample: bool = False, wat
         story += [Spacer(1, 1), PageBreak()]                    # page 1: only the addresses, for the windows
     if cfg.window == "LETTER":                                  # the addresses show through the windows
         story += [Spacer(1, (documents.FOLD_LINES[0] + 0.15 - 1) * inch),
-                  Paragraph(escape(format_date(data.today, cfg.date_format)), base)]
+                  Paragraph(escape(format_date(today, cfg.date_format)), base)]
     else:
-        story += [Paragraph(escape(data.org["ORG.NAME"]), strong)]
-        story += [Paragraph(escape(x), base) for x in data.org["ORG.ADDRESS"].split("\n") if x]
-        story += [Spacer(1, size * 1.2), Paragraph(escape(format_date(data.today, cfg.date_format)), base),
+        story += [Paragraph(escape(org["ORG.NAME"]), st["strong"])]
+        story += [Paragraph(escape(x), base) for x in org["ORG.ADDRESS"].split("\n") if x]
+        story += [Spacer(1, size * 1.2), Paragraph(escape(format_date(today, cfg.date_format)), base),
                   Spacer(1, size * 1.2)]
-        story += [Paragraph(escape(x), base) for x in [data.donor_name] + data.donor_address]
+        story += [Paragraph(escape(x), base) for x in [donor_name] + donor_address]
     story.append(Spacer(1, size * 1.4))
+    story += middle
+    story.append(Spacer(1, size * 1.2))
+    block = [Paragraph(escape(closing), base)] if closing.strip() else []
+    sign = []
+    if cfg.signer_name:
+        sign.append(f"<font name='{bold}'>{escape(cfg.signer_name)}</font>")
+    if cfg.signer_title:
+        sign.append(escape(", ".join(x for x in (cfg.signer_title, org["ORG.NAME"]) if x)))
+    if sign:                                            # room to sign by hand above the name (no signature image)
+        block += [Spacer(1, size * 2.6), Paragraph("<br/>".join(sign), base)]
+    if block:
+        story.append(KeepTogether(block))
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=(8.5 * inch, 11 * inch), leftMargin=inch, rightMargin=inch,
+                            topMargin=inch, bottomMargin=inch, title=doc_title,
+                            creator="PennyWarden", author="", subject="", invariant=1)
+    doc.build(story, onFirstPage=first_page, onLaterPages=page)
+    if cfg.fold_marks == "BACK":
+        return documents._with_back_pages(buf.getvalue(), lcfg, doc_title)
+    return buf.getvalue()
+
+
+def items_note_text(cfg: ReceiptConfig, values: dict) -> str:
+    return patterns.resolve(cfg.items_note.strip() or ITEMS_NOTE_DEFAULT, values, patterns.RECEIPT).text
+
+
+def receipt_pdf(cfg: ReceiptConfig, data: ReceiptData, sample: bool = False, watermark: str | None = None) -> bytes:
+    """The receipt letter. `sample` (setup preview and test print) draws SAMPLE - NOT A RECEIPT across the page;
+    `watermark` another text (the Register User's preview: PREVIEW - NOT A RECEIPT)."""
+    if sample and watermark is None:
+        watermark = "SAMPLE - NOT A RECEIPT"
+    texts, _empty = receipt_texts(cfg, data)
+    st = _styles(cfg)
+    size, base = st["size"], st["base"]
+    middle = []
     if texts["title"].strip():
-        story += [Paragraph(escape(texts["title"]), title), Spacer(1, size * 0.4)]
-    head = f"Receipt No. {data.number}"
-    story += [Paragraph(escape(head), strong)]
+        middle += [Paragraph(escape(texts["title"]), st["title"]), Spacer(1, size * 0.4)]
+    middle += [Paragraph(escape(f"Receipt No. {data.number}"), st["strong"])]
     if data.kind_note:
-        story.append(Paragraph(escape(data.kind_note), small))
-    story.append(Spacer(1, size))
+        middle.append(Paragraph(escape(data.kind_note), st["small"]))
+    middle.append(Spacer(1, size))
     for key in ("salutation", "body"):
         for p in _paras(texts[key]):
-            story += [Paragraph(p, base), Spacer(1, size * 0.7)]
-    # the acknowledgment block: always printed, not part of the template
+            middle += [Paragraph(p, base), Spacer(1, size * 0.7)]
     rows = [("Organization", data.org["ORG.NAME"]), ("EIN", data.org["ORG.EIN"]), ("Donor", data.donor_name),
             ("Date received", dates_text(data.dates, cfg.date_format) or BLANK_DATE)]
     if data.amount_cents or not data.items:                    # 2.2.0 (#325): the total covers money only
@@ -373,36 +433,13 @@ def receipt_pdf(cfg: ReceiptConfig, data: ReceiptData, sample: bool = False, wat
     if data.purposes:
         rows.append(("Purpose", "; ".join(data.purposes)))
     rows.append(("Receipt No.", data.number))
-    tbl = Table([[Paragraph(escape(k), strong), Paragraph(escape(v).replace("\n", "<br/>"), base)] for k, v in rows],
-                colWidths=[1.6 * inch, 4.9 * inch], hAlign="LEFT")
-    tbl.setStyle(TableStyle([("BOX", (0, 0), (-1, -1), 0.6, "#666666"), ("VALIGN", (0, 0), (-1, -1), "TOP"),
-                             ("BOTTOMPADDING", (0, 0), (-1, -1), 3), ("TOPPADDING", (0, 0), (-1, -1), 3),
-                             ("LEFTPADDING", (0, 0), (-1, -1), 6)]))
-    ack = [tbl, Spacer(1, size * 0.6), Paragraph(escape(goods_statement(data.goods)), strong)]
+    ack = [ack_table(rows, st), Spacer(1, size * 0.6), Paragraph(escape(goods_statement(data.goods)), st["strong"])]
     if data.items:                                  # 2.2.0 (#325): always with items; the wording is editable
-        note = patterns.resolve(cfg.items_note.strip() or ITEMS_NOTE_DEFAULT, values_for(cfg, data), patterns.RECEIPT)
-        ack += [Spacer(1, size * 0.4), Paragraph(escape(note.text), base)]
-    story.append(KeepTogether(ack))
-    story.append(Spacer(1, size * 1.2))
-    block = [Paragraph(escape(texts["closing"]), base)] if texts["closing"].strip() else []
-    sign = []
-    if cfg.signer_name:
-        sign.append(f"<font name='{bold}'>{escape(cfg.signer_name)}</font>")
-    if cfg.signer_title:
-        sign.append(escape(", ".join(x for x in (cfg.signer_title, data.org["ORG.NAME"]) if x)))
-    if sign:                                            # room to sign by hand above the name (no signature image)
-        block += [Spacer(1, size * 2.6), Paragraph("<br/>".join(sign), base)]
-    if block:
-        story.append(KeepTogether(block))
-
-    buf = io.BytesIO()
-    doc = SimpleDocTemplate(buf, pagesize=(8.5 * inch, 11 * inch), leftMargin=inch, rightMargin=inch,
-                            topMargin=inch, bottomMargin=inch, title=f"Donation receipt {data.number}",
-                            creator="PennyWarden", author="", subject="", invariant=1)
-    doc.build(story, onFirstPage=first_page, onLaterPages=page)
-    if cfg.fold_marks == "BACK":
-        return documents._with_back_pages(buf.getvalue(), lcfg, f"Donation receipt {data.number}")
-    return buf.getvalue()
+        ack += [Spacer(1, size * 0.4), Paragraph(escape(items_note_text(cfg, values_for(cfg, data))), base)]
+    middle.append(KeepTogether(ack))
+    return donor_letter_pdf(cfg, org=data.org, donor_name=data.donor_name, donor_address=data.donor_address,
+                            today=data.today, kind=data.kind, sample=sample, watermark=watermark,
+                            doc_title=f"Donation receipt {data.number}", middle=middle, closing=texts["closing"])
 
 
 SAMPLE_DONOR = ["SAMPLE DONOR", "123 Main Street", "Sample Town, US 55555"]
@@ -802,6 +839,8 @@ def transaction_out(db: Session, ctx, t: RegisterTransaction) -> dict:
         if d is not None and d.origin == PAGE and all(p["id"] != d.id for p in page_linked):
             page_linked.append({"id": d.id, "donor": db.get(Entity, d.donor_entity_id).display_name})
 
+    suggested = donation_bucket_allocations(db, [a.id for a in t.live_allocations])
+
     def line_out(a):
         x = lines.get(a.id)
         d = donations.get(x.donation_id) if x is not None else None
@@ -813,7 +852,9 @@ def transaction_out(db: Session, ctx, t: RegisterTransaction) -> dict:
                 "linked_donation_id": d.id if d is not None and d.origin == PAGE else None,
                 "purpose": x.purpose if x else None, "goods_cents": x.goods_cents if x else None,
                 "goods_description": x.goods_description if x else None,
-                "date_received": x.date_received.isoformat() if x is not None and x.date_received else None}
+                "date_received": x.date_received.isoformat() if x is not None and x.date_received else None,
+                # 2.2.0 (#256): in a fundraiser's donation bucket - the Donation box starts ticked as a suggestion
+                "suggested": x is None and a.id in suggested, "fundraiser": suggested.get(a.id)}
 
     return {
         "transaction_id": t.id, "status": t.status, "date": t.transaction_date.isoformat(),
@@ -989,6 +1030,62 @@ def print_receipt(db: Session, ctx, settings, t: RegisterTransaction, donor_enti
         raise conflict("FISCAL_YEAR_CLOSED", "The deposit belongs to a Closed Fiscal Year and cannot be printed. Its "
                                              "receipts are attached to it.")
     return print_donation(db, ctx, settings, _deposit_donation(db, t, donor_entity_id), confirmations)
+
+
+# ------------------------------------------------------------------ 2.2.0 (#256): fundraiser donation buckets
+def donation_bucket_allocations(db: Session, allocation_ids: list[int]) -> dict[int, str]:
+    """The allocations classified into a fundraiser's donation bucket -> the fundraiser's name."""
+    from ..models import Fundraiser, FundraiserBucket, FundraiserBucketLine
+    if not allocation_ids:
+        return {}
+    rows = db.execute(select(FundraiserBucketLine.allocation_id, Fundraiser.name)
+                      .join(FundraiserBucket, FundraiserBucket.id == FundraiserBucketLine.bucket_id)
+                      .join(Fundraiser, Fundraiser.id == FundraiserBucket.fundraiser_id)
+                      .where(FundraiserBucketLine.allocation_id.in_(allocation_ids),
+                             FundraiserBucket.is_donation.is_(True)))
+    return {aid: name for aid, name in rows}
+
+
+def fundraiser_unreceipted(db: Session, ctx, fundraiser_id: int) -> dict:
+    """The deposits classified into this fundraiser's donation buckets that have no receipt yet: lines not marked as
+    donations, or marked but never printed. Voided deposits are left out."""
+    from ..models import Fundraiser, FundraiserBucket, FundraiserBucketLine
+    f = get_scoped(db, Fundraiser, fundraiser_id, ctx, "Fundraiser")
+    q = (select(FundraiserBucketLine.allocation_id)
+         .join(FundraiserBucket, FundraiserBucket.id == FundraiserBucketLine.bucket_id)
+         .where(FundraiserBucket.fundraiser_id == f.id, FundraiserBucket.is_donation.is_(True)))
+    by_txn: dict[int, dict] = {}
+    for aid in sorted(set(db.scalars(q))):
+        a = db.get(TransactionAllocation, aid)
+        if a is None or a.removed_at is not None:
+            continue
+        t = a.transaction
+        if t.status != "ACTIVE" or t.transaction_type != "DEPOSIT":
+            continue
+        x = db.scalar(select(DonationLine).where(DonationLine.allocation_id == a.id))
+        if x is None:
+            state = "NOT_MARKED"
+        else:
+            d = db.get(Donation, x.donation_id) if x.donation_id else None
+            if d is None or _current(_receipts_of(db, d)) is not None:
+                continue
+            state = "NOT_PRINTED"
+        row = by_txn.setdefault(t.id, {"transaction_id": t.id, "bank_account_id": t.bank_account_id,
+                                       "date": t.transaction_date.isoformat(), "donors": [], "amount_cents": 0,
+                                       "lines": 0, "states": []})
+        e = _donor(t, a)
+        if e is not None and e.display_name not in row["donors"]:
+            row["donors"].append(e.display_name)
+        row["amount_cents"] += a.amount_cents
+        row["lines"] += 1
+        if state not in row["states"]:
+            row["states"].append(state)
+    items = sorted(by_txn.values(), key=lambda r: (r["date"], r["transaction_id"]))
+    for r in items:
+        r["amount"] = money(r["amount_cents"])
+    return {"fundraiser_id": f.id, "items": items,
+            "has_donation_buckets": db.scalar(select(func.count(FundraiserBucket.id)).where(
+                FundraiserBucket.fundraiser_id == f.id, FundraiserBucket.is_donation.is_(True))) > 0}
 
 
 # ------------------------------------------------------------------ the register's changes reach the donations

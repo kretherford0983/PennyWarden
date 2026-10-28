@@ -19,6 +19,7 @@ from ..deps import Ctx, get_db, require
 from ..errors import AppError
 from ..schemas import TransactionCreateIn
 from ..services import donations as svc
+from ..services import donation_statements as stm
 from ..services import idempotency
 from ..services import register as reg
 from ..services.checkprint import raster
@@ -177,6 +178,135 @@ def create_donation(body: svc.DonationIn, db: Session = Depends(get_db), ctx: Ct
 @router.get("/awaiting-lines")
 def awaiting_lines(db: Session = Depends(get_db), ctx: Ctx = Depends(print_ctx)):
     return {"items": svc.awaiting_lines(db, ctx)}
+
+
+# ------------------------------------------------------------------ 2.2.0 (#256): year-end statements, donor report
+class StatementPrintIn(In):
+    confirmations: list[str] = Field(default_factory=list, max_length=10)
+
+
+class PrintAllIn(In):
+    min_cents: int = Field(default=0, ge=0, le=10**13)
+    confirmations: list[str] = Field(default_factory=list, max_length=10)
+
+
+@router.post("/setup/statement-preview")
+def setup_statement_preview(body: PreviewIn, db: Session = Depends(get_db), ctx: Ctx = Depends(setup_ctx)):
+    """The year-end statement's live preview with sample data (unsaved settings); not audited."""
+    return _pdf(ctx, stm.sample_pdf(db, ctx, body.config), "statement-preview.pdf")
+
+
+@router.post("/setup/statement-preview-image")
+def setup_statement_preview_image(body: PreviewIn, db: Session = Depends(get_db), ctx: Ctx = Depends(setup_ctx)):
+    if not raster.available():
+        raise AppError(501, "PREVIEW_UNAVAILABLE", "The picture preview is not available on this server.")
+    png, pages = raster.pdf_to_png(stm.sample_pdf(db, ctx, body.config))
+    return Response(png, media_type="image/png",
+                    headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+                             "X-Page-Count": str(pages)})
+
+
+@router.post("/setup/statement-test-print")
+def setup_statement_test_print(body: PreviewIn, db: Session = Depends(get_db), ctx: Ctx = Depends(setup_ctx)):
+    pdf = stm.sample_pdf(db, ctx, body.config)
+    audit.record(db, ctx, "DONATION_STATEMENT_TEST", "donation_settings", None, None,
+                 {"unsaved_settings": body.config is not None})
+    db.commit()
+    return _pdf(ctx, pdf, "statement-test-print.pdf")
+
+
+@router.get("/statements")
+def statements(year: int, min_cents: int = 0, q: str | None = None, db: Session = Depends(get_db),
+               ctx: Ctx = Depends(view_ctx)):
+    return stm.summary(db, ctx, year, max(0, min_cents), (q or "")[:120] or None)
+
+
+@router.get("/statements/{year}/donors/{donor_id}")
+def statement_detail(year: int, donor_id: int, db: Session = Depends(get_db), ctx: Ctx = Depends(view_ctx)):
+    return stm.detail(db, ctx, year, donor_id)
+
+
+@router.post("/statements/{year}/donors/{donor_id}/preview")
+def statement_preview(year: int, donor_id: int, db: Session = Depends(get_db), ctx: Ctx = Depends(print_ctx)):
+    pdf, info = stm.preview(db, ctx, year, donor_id)
+    resp = _pdf(ctx, pdf, "statement-preview.pdf")
+    resp.headers["X-Statement-Kind"] = info["kind"]
+    return resp
+
+
+@router.post("/statements/{year}/donors/{donor_id}")
+def print_statement(year: int, donor_id: int, body: StatementPrintIn, request: Request,
+                    db: Session = Depends(get_db), ctx: Ctx = Depends(print_ctx)):
+    pdf, s = stm.print_one(db, ctx, request.app.state.settings, year, donor_id, body.confirmations)
+    resp = _pdf(ctx, pdf, f"statement-{s.number}{'-duplicate' if s.kind == svc.DUPLICATE else ''}.pdf")
+    resp.headers["X-Statement-Number"] = s.number
+    resp.headers["X-Statement-Kind"] = s.kind
+    resp.headers["X-Statement-Id"] = str(s.id)
+    return resp
+
+
+@router.post("/statements/{year}/print-all")
+def print_all_statements(year: int, body: PrintAllIn, request: Request, db: Session = Depends(get_db),
+                         ctx: Ctx = Depends(print_ctx)):
+    pdf, made = stm.print_all(db, ctx, request.app.state.settings, year, body.min_cents, body.confirmations)
+    resp = _pdf(ctx, pdf, f"statements-{year}.pdf")
+    resp.headers["X-Statement-Count"] = str(len(made))
+    return resp
+
+
+@router.get("/statements/printed/{statement_id}/document")
+def statement_document(statement_id: int, request: Request, db: Session = Depends(get_db),
+                       ctx: Ctx = Depends(view_ctx)):
+    data, name = stm.document(db, ctx, request.app.state.settings, stm.get_statement(db, ctx, statement_id))
+    return _pdf(ctx, data, name)
+
+
+@router.post("/statements/printed/{statement_id}/envelope")
+def statement_envelope(statement_id: int, body: EnvelopeIn, request: Request, db: Session = Depends(get_db),
+                       ctx: Ctx = Depends(print_ctx)):
+    s = stm.get_statement(db, ctx, statement_id)
+    pdf = stm.print_envelope(db, ctx, request.app.state.settings, s, body.document_id,
+                             return_address=body.return_address, page=body.page, guide=body.guide, test=False,
+                             confirmations=body.confirmations)
+    return _pdf(ctx, pdf, f"envelope-{s.number}.pdf")
+
+
+@router.post("/statements/printed/{statement_id}/envelope-test")
+def statement_envelope_test(statement_id: int, body: EnvelopeIn, request: Request, db: Session = Depends(get_db),
+                            ctx: Ctx = Depends(print_ctx)):
+    s = stm.get_statement(db, ctx, statement_id)
+    pdf = stm.print_envelope(db, ctx, request.app.state.settings, s, body.document_id,
+                             return_address=body.return_address, page=body.page, guide=body.guide, test=True,
+                             confirmations=[])
+    return _pdf(ctx, pdf, "envelope-test.pdf")
+
+
+@router.get("/report")
+def donor_report(start_year: int, end_year: int, donor_id: int | None = None, min_cents: int = 0,
+                 format: str = "json", detail: bool = False, db: Session = Depends(get_db),
+                 ctx: Ctx = Depends(view_ctx)):
+    """The donor giving report (all financial roles and Auditors; never Administrators)."""
+    if format not in ("json", "pdf", "csv"):
+        format = "json"
+    rep = stm.report(db, ctx, start_year, end_year, donor_id, max(0, min_cents))
+    if format == "json":
+        return rep
+    name = f"donor-report-{rep['years'][0]}-{rep['years'][-1]}"
+    audit.record(db, ctx, "REPORT_GENERATED", "report", "donor_giving", None,
+                 {"report": "DONOR_GIVING", "format": format.upper(), "years": rep["years"], "donor_id": donor_id,
+                  "min_cents": rep["min_cents"], "detail": detail, "donors": len(rep["rows"])})
+    db.commit()
+    if format == "csv":
+        return Response(stm.report_csv(rep, detail), media_type="text/csv; charset=utf-8",
+                        headers={"Content-Disposition": f'attachment; filename="{name}.csv"',
+                                 "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff"})
+    return _pdf(ctx, stm.report_pdf(db, ctx, rep, detail), f"{name}.pdf")
+
+
+@router.get("/fundraisers/{fundraiser_id}/unreceipted")
+def fundraiser_unreceipted(fundraiser_id: int, db: Session = Depends(get_db), ctx: Ctx = Depends(view_ctx)):
+    """2.2.0 (#256): a fundraiser's donation-bucket deposits without a receipt yet (Print receipts opens each)."""
+    return svc.fundraiser_unreceipted(db, ctx, fundraiser_id)
 
 
 # 2.2.0 (#325): receipt envelopes - templates tagged for Donations in the shared envelope library

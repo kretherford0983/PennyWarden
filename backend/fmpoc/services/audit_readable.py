@@ -43,6 +43,11 @@ ACTION_LABELS = {
     # 2.2.0 (#325)
     "DONATION_ENVELOPE_PRINTED": "Donation envelope printed", "DONATION_ENVELOPE_TEST": "Donation envelope test print",
     "ENVELOPE_TAGS_UPDATED": "Envelope template features changed",
+    # 2.2.0 (#256)
+    "DONATION_STATEMENT_PRINTED": "Year-end giving statement printed",
+    "DONATION_STATEMENT_PREVIEW": "Year-end giving statement previewed",
+    "DONATION_STATEMENT_TEST": "Year-end statement test print",
+    "DONATION_STATEMENTS_PRINTED_ALL": "Year-end giving statements printed for all donors",
 }
 OBJECT_LABELS = {
     "user": "User", "workspace": "Organization", "server_config": "Server settings", "fiscal_year": "Fiscal Year", "budget": "Budget", "entity": "Entity",
@@ -50,7 +55,7 @@ OBJECT_LABELS = {
     "fiscal_year_review": "Fiscal Year review", "transaction_allocation": "Transaction line", "fundraiser": "Fundraiser",
     "reminder": "Reminder", "check_style": "Check style", "check_signer": "Signer", "check_document": "Letter/envelope template",
     "signature_template": "Signature wording", "security_notice": "Security notice", "audit_log": "Audit log",
-    "donation_settings": "Donations setup",
+    "donation_settings": "Donations setup", "donation_statement": "Year-end giving statement",
 }
 FIELD_LABELS = {
     "id": "ID", "username": "Username", "display_name": "Display name", "first_name": "First name",
