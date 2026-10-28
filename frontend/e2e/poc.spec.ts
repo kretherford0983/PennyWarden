@@ -3844,7 +3844,9 @@ test("#325: a receipt before the money and an item on the Donations page, then C
   await budget.selectOption({ index: 1 });
   await tf.getByRole("button", { name: "Save" }).click();
   const c2 = page.getByRole("dialog", { name: "Confirmation required" });
-  if (await c2.isVisible().catch(() => false)) {
+  // the save may ask for a confirmation first (e.g. a cross-Fiscal-Year date): wait for that dialog or the form closing
+  await expect.poll(async () => (await c2.isVisible()) || (await tf.count()) === 0).toBe(true);
+  if (await c2.isVisible()) {
     await c2.getByLabel("I have reviewed these warnings and explicitly confirm.").check();
     await c2.getByRole("button", { name: "Confirm and continue" }).click();
   }
