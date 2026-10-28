@@ -113,7 +113,7 @@ export default function DonationSetup() {
                 <button type="button" className="small" aria-label={`Remove addressee line ${i + 1}`} onClick={() => set("addressee", cfg.addressee.filter((_: string, j: number) => j !== i))}>Remove</button>
               </div>
             ))}
-            {(cfg.addressee || []).length < 6 ? <button type="button" className="small" onClick={() => set("addressee", [...(cfg.addressee || []), ""])}>+ Add line</button> : null}
+            {(cfg.addressee || []).length < 6 ? <button type="button" className="small" onClick={() => set("addressee", [...(cfg.addressee || []), ""])}>+ Add addressee line</button> : null}
             <p className="hint">The donor's block on receipts and year-end statements (and in the lower window of a window envelope). The default is the
               donor's name and mailing address: <code>{"{DONOR.NAME}"}</code>, <code>{"{DONOR.MAILING_ADDRESS}"}</code>.</p>
           </Section>
