@@ -1006,7 +1006,10 @@ def doc_config(d: CheckDocument):
 
 
 def doc_out(d: CheckDocument, full: bool = True) -> dict:
-    out = {"id": d.id, "kind": d.kind, "name": d.name, "active": d.active, "is_default": d.is_default}
+    out = {"id": d.id, "kind": d.kind, "name": d.name, "active": d.active, "is_default": d.is_default,
+           # 2.2.0 (#325): the shared envelope library - the features a template is used for and is the default for
+           "features": [f for f in (d.features or "").split(",") if f],
+           "default_for": [f for f in (d.default_for or "").split(",") if f]}
     if full:
         out["config"] = doc_config(d).model_dump()
         if d.kind == "LETTER":
@@ -1173,7 +1176,7 @@ def _check_kind(kind: str, preset: str | None) -> None:
 
 
 def draft_document(db: Session, ctx, kind: str, preset: str | None = None,
-                   source: CheckDocument | None = None) -> dict:
+                   source: CheckDocument | None = None, feature: str | None = "PAYMENTS") -> dict:
     """Build 13: what *New cover letter* / *New #10 envelope* / *Duplicate* open in the editor - nothing is stored
     until the first Save (backing out keeps nothing, so BR-001 is not involved). A free name (#217), the starting
     settings (or the source's, for a duplicate) and the source's logo, which is copied when the draft is saved."""
@@ -1186,8 +1189,12 @@ def draft_document(db: Session, ctx, kind: str, preset: str | None = None,
         name = free_document_name(db, ctx, kind, DOC_PRESETS[preset][1] if preset else DOC_DEFAULT_NAMES[kind])
     _check_room(db, ctx)
     existing = list_documents(db, ctx, kind)
+    is_default = not any(x.active and x.is_default for x in existing)
+    if kind == "ENVELOPE":           # 2.2.0 (#325): the default of the feature it is created for (if it has none)
+        from .. import envelopes as env_lib
+        is_default = feature is not None and env_lib.default_of(db, ctx, feature) is None
     out = {"id": None, "draft": True, "kind": kind, "name": name, "active": True,
-           "is_default": not any(x.active and x.is_default for x in existing), "config": config,
+           "is_default": is_default, "config": config, "feature": feature if kind == "ENVELOPE" else "PAYMENTS",
            "duplicate_of": source.id if source is not None else None}
     if kind == "LETTER":
         out["logo"] = ({"width": source.logo_width, "height": source.logo_height,
@@ -1197,7 +1204,8 @@ def draft_document(db: Session, ctx, kind: str, preset: str | None = None,
 
 
 def create_document(db: Session, ctx, kind: str, name: str | None, preset: str | None = None,
-                    config: dict | None = None, source: CheckDocument | None = None) -> CheckDocument:
+                    config: dict | None = None, source: CheckDocument | None = None,
+                    feature: str | None = "PAYMENTS") -> CheckDocument:
     """A new template. Without a name it gets the kind's (or preset's) default name, numbered when taken (#217);
     a name the user typed must be unique as before. Build 13: the editor saves a draft this way, with its settings
     (`config`, validated) and, for a duplicate, the template it copies (`source`: its logo is copied too)."""
@@ -1217,16 +1225,25 @@ def create_document(db: Session, ctx, kind: str, name: str | None, preset: str |
         cfg = doc_config(source).model_dump()
     else:
         cfg = _starting_config(db, ctx, kind, preset)
-    return _new_document(db, ctx, kind, name, cfg, logo=source, source=source)
+    return _tagged(db, ctx, _new_document(db, ctx, kind, name, cfg, logo=source, source=source), feature)
 
 
-def duplicate_document(db: Session, ctx, d: CheckDocument) -> CheckDocument:
+def _tagged(db: Session, ctx, d: CheckDocument, feature: str | None) -> CheckDocument:
+    """2.2.0 (#325): a template created on a feature's setup page is tagged for that feature (and is its default when
+    it has none); created on the global Envelopes page (feature None) it is *Not used*. Letters stay Payments'."""
+    from .. import envelopes as env_lib
+    env_lib.tag_new(d, feature, db, ctx)
+    db.flush()
+    return d
+
+
+def duplicate_document(db: Session, ctx, d: CheckDocument, feature: str | None = "PAYMENTS") -> CheckDocument:
     """Build 11 (#217): a copy of a template with all its settings, the letter's logo included, stored at once (the
     editor uses a draft instead since build 13; this stays for the API). The copy is active and becomes the default
     only when its kind has no active default."""
     _check_room(db, ctx)
     name = free_document_name(db, ctx, d.kind, f"{d.name[:71].rstrip()} copy")   # room for " copy 999"
-    return _new_document(db, ctx, d.kind, name, doc_config(d).model_dump(), logo=d, source=d)
+    return _tagged(db, ctx, _new_document(db, ctx, d.kind, name, doc_config(d).model_dump(), logo=d, source=d), feature)
 
 
 def update_document(db: Session, ctx, d: CheckDocument, name: str, config: dict) -> CheckDocument:
@@ -1243,7 +1260,23 @@ def update_document(db: Session, ctx, d: CheckDocument, name: str, config: dict)
     return d
 
 
-def set_document_flags(db: Session, ctx, d: CheckDocument, active: bool | None, is_default: bool | None) -> CheckDocument:
+def set_document_flags(db: Session, ctx, d: CheckDocument, active: bool | None, is_default: bool | None,
+                       feature: str = "PAYMENTS") -> CheckDocument:
+    if d.kind == "ENVELOPE":             # 2.2.0 (#325): each feature has its own default in the shared library
+        from .. import envelopes as env_lib
+        before = _doc_snapshot(d)
+        if active is not None:
+            d.active = active
+            if not active:
+                env_lib.clear_defaults(d)
+        db.flush()
+        if _doc_snapshot(d) != before:
+            audit.record(db, ctx, "CHECK_DOCUMENT_UPDATED", "check_document", d.id,
+                         {"active": before["active"], "is_default": before["is_default"]},
+                         {"active": d.active, "is_default": d.is_default})
+        if is_default:
+            env_lib.set_default(db, ctx, d, feature)
+        return d
     before = _doc_snapshot(d)
     if active is not None:
         d.active = active

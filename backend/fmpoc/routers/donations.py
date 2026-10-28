@@ -22,7 +22,7 @@ from ..services import donations as svc
 from ..services import idempotency
 from ..services import register as reg
 from ..services.checkprint import raster
-from .checks import _pdf
+from .checks import EnvelopeIn, EnvelopePrinterIn, _pdf
 
 router = APIRouter(prefix="/api/donations", tags=["donations"])
 
@@ -179,6 +179,22 @@ def awaiting_lines(db: Session = Depends(get_db), ctx: Ctx = Depends(print_ctx))
     return {"items": svc.awaiting_lines(db, ctx)}
 
 
+# 2.2.0 (#325): receipt envelopes - templates tagged for Donations in the shared envelope library
+@router.get("/envelopes")
+def envelopes(db: Session = Depends(get_db), ctx: Ctx = Depends(print_ctx)):
+    return svc.envelope_choices(db, ctx)
+
+
+@router.put("/my-printer/envelope")
+def save_envelope_printer(body: EnvelopePrinterIn, db: Session = Depends(get_db), ctx: Ctx = Depends(print_ctx)):
+    """My envelope printer settings: they belong to the template, so they carry over to Payments when it shares it."""
+    from ..services.checkprint import service as cp
+    d = svc._donation_envelope(db, ctx, body.document_id)
+    out = cp.save_envelope_printer(db, ctx, d, body.page, body.guide, body.dx, body.dy)
+    db.commit()
+    return out
+
+
 @router.post("/create-transaction", status_code=201)
 def create_transaction(body: CreateTransactionIn, request: Request, db: Session = Depends(get_db),
                        ctx: Ctx = Depends(print_ctx)):
@@ -249,3 +265,24 @@ def donation_document(donation_id: int, attachment_id: int, request: Request, db
     audit.record(db, ctx, "ATTACHMENT_VIEWED", "attachment", a.id, None, {"donation_id": d.id})
     db.commit()
     return _pdf(ctx, data, a.original_filename)
+
+
+@router.post("/{donation_id}/envelope")
+def print_envelope(donation_id: int, body: EnvelopeIn, request: Request, db: Session = Depends(get_db),
+                   ctx: Ctx = Depends(print_ctx)):
+    d = svc.get_donation(db, ctx, donation_id)
+    pdf = svc.print_envelope(db, ctx, request.app.state.settings, d, body.document_id,
+                             return_address=body.return_address, page=body.page, guide=body.guide, test=False,
+                             confirmations=body.confirmations)
+    return _pdf(ctx, pdf, f"envelope-donation-{d.id}.pdf")
+
+
+@router.post("/{donation_id}/envelope-test")
+def envelope_test(donation_id: int, body: EnvelopeIn, request: Request, db: Session = Depends(get_db),
+                  ctx: Ctx = Depends(print_ctx)):
+    """Test on plain paper: the real addresses, marked TEST; not kept."""
+    d = svc.get_donation(db, ctx, donation_id)
+    pdf = svc.print_envelope(db, ctx, request.app.state.settings, d, body.document_id,
+                             return_address=body.return_address, page=body.page, guide=body.guide, test=True,
+                             confirmations=[])
+    return _pdf(ctx, pdf, "envelope-test.pdf")

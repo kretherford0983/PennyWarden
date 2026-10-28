@@ -31,7 +31,7 @@ from xml.sax.saxutils import escape
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import inch
-from reportlab.platypus import KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import KeepTogether, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -42,7 +42,7 @@ from ..models import (Attachment, Donation, DonationLine, DonationReceipt, Donat
 from . import register as reg
 from .checkprint import config as cfgmod
 from . import organization as org_svc
-from .checkprint import fonts, patterns
+from .checkprint import documents, fonts, patterns
 from .checkprint.service import _store_doc_copy, address_lines, format_date
 from .common import get_scoped
 
@@ -100,6 +100,11 @@ class ReceiptConfig(BaseModel):
     signer_name: str = Field(default="", max_length=120)
     signer_title: str = Field(default="", max_length=120)
     items_note: str = Field(default="", max_length=1000)     # 2.2.0 (#325): empty = ITEMS_NOTE_DEFAULT
+    # 2.2.0 (#325): the cover letter's window-envelope options (#177) and fold marks (#247). A receipt printed for a
+    # #10 double-window envelope needs no envelope of its own (the print screen hides that step).
+    window: Literal["NONE", "LETTER", "ADDRESS_PAGE"] = "NONE"
+    window_return: bool = True                                # the organization's address in the upper window
+    fold_marks: Literal["NONE", "FRONT", "BACK"] = "NONE"
 
     @model_validator(mode="before")
     @classmethod
@@ -290,6 +295,37 @@ def receipt_pdf(cfg: ReceiptConfig, data: ReceiptData, sample: bool = False, wat
     title = ParagraphStyle("title", parent=strong, fontSize=size + 3, leading=(size + 3) * 1.3)
     small = ParagraphStyle("small", parent=base, fontSize=size - 1.5, leading=(size - 1.5) * 1.3)
 
+    # 2.2.0 (#325): window envelope and fold marks, drawn the way the cover letter draws them
+    lcfg = documents.LetterConfig(font=cfg.font, size=cfg.size, window=cfg.window, window_return=cfg.window_return,
+                                  fold_marks=cfg.fold_marks)
+    org_lines = [data.org["ORG.NAME"]] + [x for x in data.org["ORG.ADDRESS"].split("\n") if x]
+    windowed = cfg.window != "NONE"
+    blocks = documents.window_blocks(lcfg, {"letterhead": org_lines}, [data.donor_name] + data.donor_address) \
+        if windowed else []
+
+    def first_page(c, doc):
+        if cfg.fold_marks == "FRONT":
+            documents.fold_ticks(c, lcfg)
+        if blocks:
+            c.saveState()
+            for which, x, y, lines in blocks:
+                yy = (11 - y) * PT - size
+                for i, line in enumerate(lines):
+                    c.setFont(bold if (which == "return" and i == 0) else reg_f, size)
+                    c.drawString(x * PT, yy, line)
+                    yy -= size * 1.2
+            if sample:                                   # the setup preview shows where the windows are
+                c.setStrokeGray(0.45)
+                c.setLineWidth(0.6)
+                c.setDash(3, 2)
+                for key in ("return", "payee"):
+                    if key == "return" and not cfg.window_return:
+                        continue
+                    left, top, w, h = documents.WINDOW_PRESET[key]["window"]
+                    c.rect(left * PT, (11 - top - h) * PT, w * PT, h * PT, stroke=1, fill=0)
+            c.restoreState()
+        page(c, doc)
+
     def page(c, _doc):
         c.saveState()
         if data.kind != ORIGINAL:
@@ -304,11 +340,18 @@ def receipt_pdf(cfg: ReceiptConfig, data: ReceiptData, sample: bool = False, wat
             c.drawCentredString(0, 0, watermark)
         c.restoreState()
 
-    story = [Paragraph(escape(data.org["ORG.NAME"]), strong)]
-    story += [Paragraph(escape(x), base) for x in data.org["ORG.ADDRESS"].split("\n") if x]
-    story += [Spacer(1, size * 1.2), Paragraph(escape(format_date(data.today, cfg.date_format)), base),
-              Spacer(1, size * 1.2)]
-    story += [Paragraph(escape(x), base) for x in [data.donor_name] + data.donor_address]
+    story = []
+    if cfg.window == "ADDRESS_PAGE":
+        story += [Spacer(1, 1), PageBreak()]                    # page 1: only the addresses, for the windows
+    if cfg.window == "LETTER":                                  # the addresses show through the windows
+        story += [Spacer(1, (documents.FOLD_LINES[0] + 0.15 - 1) * inch),
+                  Paragraph(escape(format_date(data.today, cfg.date_format)), base)]
+    else:
+        story += [Paragraph(escape(data.org["ORG.NAME"]), strong)]
+        story += [Paragraph(escape(x), base) for x in data.org["ORG.ADDRESS"].split("\n") if x]
+        story += [Spacer(1, size * 1.2), Paragraph(escape(format_date(data.today, cfg.date_format)), base),
+                  Spacer(1, size * 1.2)]
+        story += [Paragraph(escape(x), base) for x in [data.donor_name] + data.donor_address]
     story.append(Spacer(1, size * 1.4))
     if texts["title"].strip():
         story += [Paragraph(escape(texts["title"]), title), Spacer(1, size * 0.4)]
@@ -356,7 +399,9 @@ def receipt_pdf(cfg: ReceiptConfig, data: ReceiptData, sample: bool = False, wat
     doc = SimpleDocTemplate(buf, pagesize=(8.5 * inch, 11 * inch), leftMargin=inch, rightMargin=inch,
                             topMargin=inch, bottomMargin=inch, title=f"Donation receipt {data.number}",
                             creator="PennyWarden", author="", subject="", invariant=1)
-    doc.build(story, onFirstPage=page, onLaterPages=page)
+    doc.build(story, onFirstPage=first_page, onLaterPages=page)
+    if cfg.fold_marks == "BACK":
+        return documents._with_back_pages(buf.getvalue(), lcfg, f"Donation receipt {data.number}")
     return buf.getvalue()
 
 
@@ -1259,8 +1304,8 @@ def create_transaction(db: Session, ctx, settings, data, links: list[int | None]
     """Saves the deposit (an ordinary register deposit: income budgets, the Fiscal Year rules, split as in the
     register) and links each chosen money line to its allocation(s): `links[i]` is the donation line of allocation i.
     A line spread over several allocations (split further) becomes one line per allocation, adding up to its amount.
-    Lines with no date received get `date_received` (empty = the deposit's date). The donations' printed receipts are
-    attached to the deposit."""
+    Lines with no date received get `date_received` (empty = the deposit's date). The donations' printed receipts (and
+    printed envelopes) are attached to the deposit."""
     from . import attachments as att_svc
     if data.transaction_type != "DEPOSIT":
         raise validation("Create transaction makes a deposit.", "transaction_type")
@@ -1323,14 +1368,120 @@ def create_transaction(db: Session, ctx, settings, data, links: list[int | None]
                      {"transaction_id": t.id, "line_ids": made, "allocation_ids": [allocs[i].id for i in idx]})
     for d in donations.values():                       # the printed receipts go with the deposit
         for att in db.scalars(select(Attachment).where(Attachment.donation_id == d.id, Attachment.active.is_(True),
-                                                       Attachment.document_type == RECEIPT_COPY)
+                                                       Attachment.document_type.in_((RECEIPT_COPY, ENVELOPE_COPY)))
                               .order_by(Attachment.id)):
             try:
                 pdf = att_svc.path_for(settings, att).read_bytes()
             except OSError:
                 continue
-            _store_doc_copy(db, ctx, settings, t, RECEIPT_COPY, att.original_filename, pdf)
+            _store_doc_copy(db, ctx, settings, t, att.document_type, att.original_filename, pdf)
     return t
+
+
+# ------------------------------------------------------------------ receipt envelopes (Kyle, 2026-10-23)
+ENVELOPE_COPY = "DONATION_ENVELOPE"         # Attachment.document_type of a printed receipt envelope's record copy
+
+
+def envelope_choices(db: Session, ctx) -> dict:
+    """The envelopes tagged for Donations (the Donations default first) with the user's envelope printer settings.
+    `receipt_window`: receipts print for a window envelope, so the print screen hides the envelope step (with *Print
+    an envelope anyway*). No envelope tagged for Donations: printing an envelope is hidden, with a hint."""
+    from . import envelopes as env_lib
+    from .checkprint import service as cp
+    envs = env_lib.envelopes(db, ctx, env_lib.DONATIONS, active_only=True)
+    envs.sort(key=lambda d: (env_lib.DONATIONS not in env_lib.defaults(d), d.name.lower()))
+    cfg = get_config(db, ctx.workspace_id)
+    return {"envelopes": [{**cp.doc_out(d, full=False), "is_default": env_lib.DONATIONS in env_lib.defaults(d),
+                           "printer": cp.envelope_options(db, ctx, d)} for d in envs],
+            "receipt_window": cfg.window != "NONE"}
+
+
+def _donation_envelope(db: Session, ctx, doc_id: int):
+    from . import envelopes as env_lib
+    from .checkprint import service as cp
+    doc = cp.get_document(db, ctx, doc_id, "ENVELOPE")
+    if env_lib.DONATIONS not in env_lib.tags(doc):
+        raise not_found("Template")
+    return doc
+
+
+def _check_envelope_printable(db: Session, d: Donation) -> None:
+    if d.status == CANCELLED:
+        raise conflict("NOT_PRINTABLE", "This donation was cancelled - no envelope can be printed for it.")
+    if receipts_void(db, d):
+        raise conflict("NOT_PRINTABLE", "This deposit is void - no envelope can be printed for its donations.")
+
+
+def _envelope_values(db: Session, ctx, d: Donation, e: Entity) -> dict[str, str]:
+    """The envelope's variables for a donation: the organization's, the donor as the addressee, today's date. The
+    check-only variables have no data here."""
+    ws = db.get(Workspace, ctx.workspace_id)
+    fmt = get_config(db, ctx.workspace_id).date_format
+    return {"ORG": ws.name if ws else "", "PAYEE": e.display_name, "PAYEE_ADDRESS": "\n".join(address_lines(e)),
+            "TODAY": format_date(dt.date.today(), fmt),
+            **{k: v for k, v in org_svc.values_for(db, ctx.workspace_id).items() if k.startswith("ORG.")}}
+
+
+def print_envelope(db: Session, ctx, settings, d: Donation, doc_id: int, *, return_address: bool | None,
+                   page: str | None, guide: str | None, test: bool, confirmations: list[str]) -> bytes:
+    """Prints the donor's envelope with a template tagged for Donations, like a cover letter's envelope. The printed
+    envelope is kept with the donation and on every deposit it is linked to; audited. The test on plain paper is
+    neither kept nor counted."""
+    from .checkprint import service as cp
+    _check_envelope_printable(db, d)
+    doc = _donation_envelope(db, ctx, doc_id)
+    if not doc.active:
+        raise conflict("TEMPLATE_INACTIVE", "Choose an active envelope template.")
+    cfg = cp.doc_config(doc)
+    e = db.get(Entity, d.donor_entity_id)
+    use_return = cfg.return_address if return_address is None else return_address
+    to_lines = [e.display_name] + address_lines(e)
+    ret, to, empty = documents.envelope_lines(cfg, _envelope_values(db, ctx, d, e), to_lines, use_return)
+    if not test:
+        warnings = []
+        if not to_lines[1:]:
+            warnings.append(Warning_("NO_DONOR_ADDRESS", "The donor has no address. Add it to the donor's entity, or "
+                                     "print the envelope with the name only?"))
+        if empty:
+            warnings.append(Warning_("EMPTY_VARIABLES", "These variables have no data: " +
+                                     ", ".join("{" + v + "}" for v in empty) + ". Print anyway?", variables=empty))
+        require_confirmations(warnings, confirmations)
+    opt = cp.envelope_options(db, ctx, doc, {"page": page, "guide": guide})
+    pdf = documents.envelope_pdf(cfg, ret, to, page=opt["page"], guide=opt["guide"], dx=opt["dx"], dy=opt["dy"],
+                                 test=test)
+    if test:
+        audit.record(db, ctx, "DONATION_ENVELOPE_TEST", "donation", d.id, None,
+                     {"donation_id": d.id, "document_id": doc.id, "page": opt["page"], "guide": opt["guide"]})
+        db.commit()
+        return pdf
+    # the kept copy is drawn without the feed offsets, so the same envelope is kept only once
+    copy_pdf = documents.envelope_pdf(cfg, ret, to, page="ENVELOPE")
+    fname = f"envelope-donation-{d.id}.pdf"
+    deposits = [t for t in deposits_of(db, d) if t.status == "ACTIVE"]
+    added, paths = False, []
+    for t in deposits:
+        a, path = _store_doc_copy(db, ctx, settings, t, ENVELOPE_COPY, fname, copy_pdf)
+        added = added or a
+        paths.append(path)
+    a, path = _store_donation_copy(db, ctx, settings, d, ENVELOPE_COPY, fname, copy_pdf)
+    added = added or a
+    paths.append(path)
+    audit.record(db, ctx, "DONATION_ENVELOPE_PRINTED", "donation", d.id, None,
+                 {"donation_id": d.id, "document_id": doc.id, "donor_entity_id": e.id, "return_address": use_return,
+                  "page": opt["page"], "guide": opt["guide"], "transaction_ids": [t.id for t in deposits],
+                  "attached": added})
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        for x in paths:
+            if x is not None:
+                try:
+                    x.unlink()
+                except OSError:
+                    pass
+        raise
+    return pdf
 
 
 # ------------------------------------------------------------------ Audit and Close reports

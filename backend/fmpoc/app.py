@@ -21,6 +21,7 @@ from .db import make_engine, make_session_factory, upgrade_database
 from .deps import enforce_csrf, enforce_maintenance
 from .errors import install_handlers
 from .routers import (admin, attachments, audit_log, auth, backup, bank_accounts, branding, budgets, checks, dashboard, donations,
+                      envelopes,
                       entities, fiscal_years, fundraisers, pdf_preview, register, reminders, reports, system, updates,
                       demo, testing, users)
 from .security import crypto
@@ -217,7 +218,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     for r in (system, backup, auth, users, audit_log, fiscal_years, budgets, entities, bank_accounts, register,
               attachments, dashboard, reports, fundraisers, reminders, updates, checks, donations, pdf_preview, admin,
-              testing, demo, branding):
+              testing, demo, branding, envelopes):
         app.include_router(r.router)
 
     @app.api_route("/api/{rest:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"], include_in_schema=False)

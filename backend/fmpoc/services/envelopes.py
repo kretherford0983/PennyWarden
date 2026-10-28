@@ -18,7 +18,7 @@ from __future__ import annotations
 from sqlalchemy.orm import Session
 
 from .. import audit
-from ..errors import AppError, conflict, validation
+from ..errors import AppError, conflict, forbidden, validation
 from ..models import CheckDocument, Workspace, utcnow
 from .checkprint import service as cp
 
@@ -46,6 +46,11 @@ def _set(d: CheckDocument, features: list[str], default_for: list[str]) -> None:
         d.is_default = PAYMENTS in defaults(d)          # Payments' print screen reads is_default
 
 
+def clear_defaults(d: CheckDocument) -> None:
+    """A deactivated template is no feature's default any more (its tags stay)."""
+    _set(d, tags(d), [])
+
+
 def enabled(db: Session, ws_id: int) -> list[str]:
     ws = db.get(Workspace, ws_id)
     out = []
@@ -62,6 +67,18 @@ def require_any_module(db: Session, ctx) -> None:
                                                "turned on.")
 
 
+FEATURE_PERMISSION = {PAYMENTS: "checks.setup", DONATIONS: "donation.setup"}
+
+
+def require_feature(db: Session, ctx, feature: str) -> None:
+    """Tagging, defaults and templates created for a feature need that feature's setup permission and its module on."""
+    feature = _feature(feature)
+    if not ctx.has(FEATURE_PERMISSION[feature]):
+        raise forbidden()
+    if feature not in enabled(db, ctx.workspace_id):
+        raise AppError(404, "MODULE_DISABLED", f"The {LABELS[feature]} module is not turned on.")
+
+
 def envelopes(db: Session, ctx, feature: str | None = None, active_only: bool = False) -> list[CheckDocument]:
     out = cp.list_documents(db, ctx, "ENVELOPE", include_inactive=not active_only)
     return [d for d in out if feature is None or feature in tags(d)]
@@ -72,7 +89,7 @@ def default_of(db: Session, ctx, feature: str) -> CheckDocument | None:
 
 
 def out(db: Session, ctx, d: CheckDocument) -> dict:
-    return {**cp.doc_out(d, full=False), "features": tags(d), "default_for": defaults(d),
+    return {**cp.doc_out(d), "features": tags(d), "default_for": defaults(d),
             "used_for": [LABELS[f] for f in tags(d)] or ["Not used"]}
 
 
@@ -149,7 +166,7 @@ def duplicate_for(db: Session, ctx, d: CheckDocument, feature: str) -> CheckDocu
     if feature not in tags(d):
         raise conflict("NOT_TAGGED", f"This template isn't used for {LABELS[feature]}.")
     was_default = feature in defaults(d)
-    copy = cp.duplicate_document(db, ctx, d)
+    copy = cp.duplicate_document(db, ctx, d, None)
     before = _snap(d)
     _set(copy, [feature], [feature] if was_default else [])
     _set(d, [f for f in tags(d) if f != feature], [f for f in defaults(d) if f != feature])
