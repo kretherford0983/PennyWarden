@@ -82,7 +82,7 @@ def test_account_opened_later_starts_at_zero(env, base, brokerage):
     # audited, can't be in the future, can be cleared
     ev = [e for e in env.auditor.get("/api/audit-events").json()["items"] if e["action"] == "BANK_ACCOUNT_UPDATED"]
     assert any("account_opened_date" in str(e.get("after") or e.get("details") or e) for e in ev)
-    r = env.bm.patch(f"/api/bank-accounts/{brokerage['id']}", {"account_opened_date": (TODAY + dt.timedelta(days=1)).isoformat()})
+    r = env.bm.patch(f"/api/bank-accounts/{brokerage['id']}", {"account_opened_date": (dt.date.today() + dt.timedelta(days=1)).isoformat()})
     assert r.status_code == 422 and "future" in r.text
     r = env.bm.patch(f"/api/bank-accounts/{brokerage['id']}", {"account_opened_date": None})
     assert r.status_code == 200 and r.json()["account_opened_date"] is None
