@@ -106,7 +106,8 @@ def about(request: Request, ctx: Ctx = Depends(auth_ctx)):
     admin = ADMINISTRATOR in ctx.roles
     return {**version_payload(request), "bind_host": s.host if admin else None, "port": s.port if admin else None,
             # v1.4.1 CR-023: backup/restore is built in (supersedes BR-092)
-            "backup_notice": "Create backups regularly (System/About → Backups → Backup / Restore) and keep them off "
+            # 2.2.0 (#349): backups are an Administrator duty - no notice for the other roles
+            "backup_notice": None if not ctx.has("system.view") else "Create backups regularly (System/About → Backups → Backup / Restore) and keep them off "
                              "this machine, together with their passphrase. A backup contains the database, all "
                              "attachments and the encryption key; config.toml is not included.",
             "restore_max_mb": s.restore_max_mb if ADMINISTRATOR in ctx.roles else None,

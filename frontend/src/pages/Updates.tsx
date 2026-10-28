@@ -123,8 +123,11 @@ export function UpdateBanner({ s }: { s: UpdateStatus | null }) {
 }
 
 /** System/About (Administrators): turn the check on or off, see when it last ran, check now. */
-export function UpdateSettings() {
+/** The Administrator's on/off switch and Check now; 2.2.0 (#349) `readOnly` for the other roles: whether the check is
+ * on, when it last ran and its result, with the release notes - no switch, no Check now. */
+export function UpdateSettings({ readOnly = false }: { readOnly?: boolean }) {
   const [s, setS] = useState<UpdateStatus | null>(null);
+  const [notes, setNotes] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<unknown>(null);
   useEffect(() => { api.get("/api/updates").then(setS, () => setS(null)); }, []);
@@ -144,16 +147,20 @@ export function UpdateSettings() {
     <section className="card" aria-labelledby="upd-h">
       <h2 id="upd-h">Update check</h2>
       <ErrorBox error={err} />
-      <label className="check"><input type="checkbox" checked={s.enabled} disabled={busy} onChange={(e) => toggle(e.target.checked)} /> Check for new versions of PennyWarden</label>
+      {readOnly
+        ? <p data-testid="update-check-status">Checking for new versions: <b>{s.enabled ? "On" : "Off"}</b> <span className="muted">(set by an Administrator)</span></p>
+        : <label className="check"><input type="checkbox" checked={s.enabled} disabled={busy} onChange={(e) => toggle(e.target.checked)} /> Check for new versions of PennyWarden</label>}
       <p className="hint">About once a day PennyWarden asks pennywarden.org for the list of releases and shows a gold arrow next to each user's name when a newer one is available. Nothing about your organization is sent. Turned off, no request is made.</p>
       {!s.channel ? <p className="hint">This build ({s.current.version}) was not built for release, so it does not check.</p> : (
         <p>
           {s.channel === "test" ? "Test build: looks for newer test builds and releases. " : "Looks for new releases. "}
           {s.checked_at ? <>Last checked {new Date(s.checked_at).toLocaleString()}{s.error ? " — pennywarden.org could not be reached" : ""}. </> : "Not checked yet. "}
           {s.available && s.latest ? <b>{label(s.latest)} is available. </b> : s.checked_at && !s.error ? "You have the newest version. " : null}
-          {s.enabled ? <button type="button" className="small" disabled={busy} onClick={now}>Check now</button> : null}
+          {s.enabled && !readOnly ? <button type="button" className="small" disabled={busy} onClick={now}>Check now</button> : null}
+          {s.available && s.latest ? <button type="button" className="small" onClick={() => setNotes(true)}>What's new</button> : null}
         </p>
       )}
+      {notes ? <WhatsNew s={s} onClose={() => setNotes(false)} /> : null}
     </section>
   );
 }

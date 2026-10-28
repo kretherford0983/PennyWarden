@@ -128,6 +128,20 @@ could not otherwise be corrected. Scope and safeguards:
   with a link; the variable picker completes dotted names.
 - Tests: `backend/tests/test_v210_organization.py` (6, including the data migration) and the E2E #126 and #312 steps.
 
+**2.2.0 — System/About read-only for financial users and Auditors (#349, decided 2026-10-24).**
+- Permission `system.about` (Administrator, Auditor, Budget Manager, Budget User, Register User; Budget/Register
+  Admins hold it through their base role). `GET /api/system/organization` moved from `system.view` to it. New
+  `GET /api/system/modules/status`: every module (`MODULES` in `routers/fundraisers.py`) with `enabled`, `used_by`
+  (role names from `PERMISSIONS`, plus "Administrators (setup)") and `you` (the viewer holds a use or setup
+  permission). `GET /api/system/about` returns `backup_notice: null` without `system.view`.
+- UI: the menu adds System/About for financial users (and COMBINED users with `system.about`). `About.tsx`: General is
+  open to `system.about`; non-Administrators get `OrganizationView` (AdminSettings) and `ModulesStatus` instead of
+  the editors; `UpdateSettings readOnly` shows On/Off, last check, result and *What's new* (also added for
+  Administrators), no switch or Check now. The Data protection note is shown only when the server sends it.
+- Choice: the issue named Budget Manager and Register User (Invoice Manager does not exist yet); Budget Users are a
+  financial role too, so they get it as well. Auditors also see the update-check status read-only.
+- Tests: `backend/tests/test_v220_about_readonly.py` (3); E2E "#216" (Auditor tabs) and "2.2.0 (#349)".
+
 **2.2.0 — Fundraiser series: Add to an existing series, years newest first and sortable (#302, #351, Kyle 2026-10-24).**
 - Migration `0058`: `app_user.fundraiser_series_sort` ("asc"; None = newest first, the default stored as no
   preference, like `register_sort`). `PUT /api/me/preferences {fundraiser_series_sort: "asc"|"desc"}`; `/auth/me`

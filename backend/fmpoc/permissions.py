@@ -74,6 +74,9 @@ PERMISSIONS: dict[str, set[str]] = {
     # (read-only, BR-004); everything else is the Administrator's.
     "system.view": {ADMINISTRATOR, AUDITOR},
     "system.manage": {ADMINISTRATOR},
+    # 2.2.0 (#349): the read-only System/About (version, update-check result, organization details, module status) -
+    # every signed-in role. Editing stays system.manage / modules.manage (Administrators).
+    "system.about": {ADMINISTRATOR, AUDITOR, BUDGET_MANAGER, BUDGET_USER, REGISTER_USER},
 }
 
 
