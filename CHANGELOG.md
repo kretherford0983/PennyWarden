@@ -167,6 +167,17 @@ PennyWarden 2.2.0 (in progress).
 - **Addressee block**: cover letters (Payments Setup) and receipts and statements (Donations Setup) have up to six
   addressee lines built from these variables. The default — name and mailing address — prints as before.
 
+### Fundraiser series (#302, #351)
+- **Events held more than once a year.** *Start a series…* (on *Fundraiser series*) can now **Add to an existing
+  series**, and a fundraiser in no series has **Add to a series…** on its page — for example a spring and a fall
+  breakfast in their first year in PennyWarden, when there is nothing earlier to continue from. Both count in the
+  same year. Refused when the series already has an entered result for that year, so a year is never counted twice.
+  Audited like a link change. A hint on *Fundraiser series* explains it.
+- **Years in order, newest first.** Each series is one list by year — fundraisers recorded in PennyWarden and
+  entered prior years mixed — with the current year on top. Click **Year** to show oldest first; the choice applies
+  to every series and is remembered for you. Within a year: fundraisers (newest first), then entered results, then
+  retired ones. The year over year in reports and presentations still reads oldest first.
+
 ### Organization branding (#280)
 - **Your colors and logo on reports and presentations.** *System/About → Branding* (Administrators): choose a
   ready-made palette (PennyWarden — the default —, Forest, Ocean, Plum, Ember) or a custom one generated from your
@@ -185,6 +196,7 @@ PennyWarden 2.2.0 (in progress).
 ### Upgrade
 - Migration `0049` adds the table `budget_history_entry` (empty); `0050` the table `testing_state` (empty); `0051`
   the column `workspace.demo_mode` (off).
+- Migration `0058` adds `app_user.fundraiser_series_sort` (empty = Fundraiser series newest year first).
 - Migration `0048` adds two columns to `user_mfa` (`new_key_required`, `pending_own_key`; both off). No existing value
   changes. Going back to 2.1.2 needs the pre-upgrade data backup (2.1.2 does not know revisions 0048 and later).
 

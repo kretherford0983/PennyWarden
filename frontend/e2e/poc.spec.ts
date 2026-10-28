@@ -2085,6 +2085,49 @@ test("2.1.0 (#292): prior years for an event with nothing earlier in PennyWarden
   await logout(page);
 });
 
+test("2.2.0 (#302, #351): add a second same-year fundraiser to a series; years newest first, flipped and remembered", async ({ page }) => {
+  await login(page, "bm1");
+  // a second Spring Fair in the same year: nothing earlier to continue from, so Add to a series…
+  await page.getByRole("link", { name: "Fundraisers" }).click();
+  await page.getByRole("button", { name: "New fundraiser" }).click();
+  let dlg = page.getByRole("dialog", { name: "New fundraiser" });
+  await dlg.getByLabel("Name").fill("Spring Fair Encore 2028");
+  await dlg.getByLabel("Event start date").fill("2028-05-06");
+  await dlg.getByRole("button", { name: "Create fundraiser" }).click();
+  await expect(page.getByTestId("fr-series")).toContainText("Not linked to an earlier year");
+  await page.getByRole("button", { name: "Add to a series…" }).click();
+  dlg = page.getByRole("dialog", { name: "Add to an existing series" });
+  await dlg.getByLabel("Series").selectOption((await dlg.locator("option", { hasText: /^Spring Fair$/ }).getAttribute("value"))!);
+  await dlg.getByRole("button", { name: "Add to series" }).click();
+  await expect(page.getByTestId("fr-series")).toContainText("Spring Fair");
+  // the series page: one list, newest year first (same year: newest start first), with the hint
+  await page.getByRole("link", { name: "← Fundraisers" }).click();
+  await page.getByRole("link", { name: "Fundraiser series" }).click();
+  await expect(page.getByTestId("series-twice-hint")).toContainText("more than once a year");
+  const card = page.locator("section.card").filter({ has: page.getByRole("heading", { name: "Spring Fair", exact: true }) });
+  const rows = card.locator("tbody tr");
+  await expect(rows).toHaveCount(3);
+  await expect(rows.nth(0)).toContainText("Spring Fair Encore 2028");
+  await expect(rows.nth(1)).toContainText("Spring Fair 2028");
+  await expect(rows.nth(2)).toContainText("FY2025");
+  await expect(page.locator(".sort-note")).toHaveCount(0);
+  // Year flips every table, and the choice is remembered
+  await card.getByRole("button", { name: "Year", exact: true }).click();
+  await expect(page.locator(".sort-note")).toContainText("Sorted by year, oldest first");
+  await expect(rows.nth(0)).toContainText("FY2025");
+  await expect(rows.nth(1)).toContainText("Spring Fair Encore 2028");   // within a year: unchanged
+  for (const th of await page.locator("section.card thead th").filter({ hasText: "Year" }).all()) await expect(th).toHaveAttribute("aria-sort", "ascending");
+  await logout(page);
+  await login(page, "bm1");
+  await page.getByRole("link", { name: "Fundraisers" }).click();
+  await page.getByRole("link", { name: "Fundraiser series" }).click();
+  await expect(rows.nth(0)).toContainText("FY2025");
+  await page.getByRole("button", { name: "Reset to default" }).click();
+  await expect(page.locator(".sort-note")).toHaveCount(0);
+  await expect(rows.nth(0)).toContainText("Spring Fair Encore 2028");
+  await logout(page);
+});
+
 // ---------------------------------------------------------------- v1.6.2 CR-035: fundraiser report
 test("CR-035: fundraiser report PDF; Audit and Close reports can include fundraisers", async ({ page }) => {
   await login(page, "bm1");

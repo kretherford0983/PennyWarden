@@ -15,7 +15,7 @@ from .. import audit
 from ..deps import Ctx, get_db, require
 from ..errors import validation
 from ..schemas import (ReasonIn, FundraiserBucketIn, FundraiserCategoryIn, FundraiserFinalIn, FundraiserFyNotesIn, FundraiserIn,
-                       FundraiserLineIn, FundraiserLinkIn, FundraiserSeriesIn, FundraiserSeriesMergeIn, FundraiserSeriesResultIn,
+                       FundraiserLineIn, FundraiserLinkIn, FundraiserSeriesAddIn, FundraiserSeriesIn, FundraiserSeriesMergeIn, FundraiserSeriesResultIn,
                        FundraiserNotesIn, FundraiserOrderIn,
                        FundraiserPreviewIn, ModulesIn)
 from ..services import branding  # 2.2.0 (#280)
@@ -148,8 +148,10 @@ def fy_report(fiscal_year_id: int = Query(...), ids: list[int] = Query(...), yea
 
 
 @router.get("/fundraiser-series")
-def series_list(db: Session = Depends(get_db), ctx: Ctx = Depends(manager)):
-    return series.series_list(db, ctx)
+def series_list(direction: Literal["asc", "desc"] | None = None, db: Session = Depends(get_db),
+                ctx: Ctx = Depends(manager)):
+    """2.2.0 (#351): years newest first, or as the user last chose; ?direction= overrides."""
+    return series.series_list(db, ctx, direction)
 
 
 @router.get("/fundraiser-series/start-options")
@@ -162,6 +164,20 @@ def series_start_options(db: Session = Depends(get_db), ctx: Ctx = Depends(manag
 def start_series(fid: int, db: Session = Depends(get_db), ctx: Ctx = Depends(manager)):
     """2.1.0 (#292): the fundraiser's series, created when it has none, so prior years can be entered."""
     s = series.start_series(db, ctx, svc.get(db, ctx, fid))
+    db.commit()
+    return {"series_id": s.id, "series": series.series_list(db, ctx)}
+
+
+@router.get("/fundraisers/{fid}/series-add-options")
+def series_add_options(fid: int, db: Session = Depends(get_db), ctx: Ctx = Depends(manager)):
+    """2.2.0 (#302): the series this fundraiser can be added to (allowed = no entered result for its year)."""
+    return series.add_options(db, ctx, svc.get(db, ctx, fid))
+
+
+@router.put("/fundraisers/{fid}/series")
+def add_to_series(fid: int, body: FundraiserSeriesAddIn, db: Session = Depends(get_db), ctx: Ctx = Depends(manager)):
+    """2.2.0 (#302): Add to an existing series - for an event held more than once a year."""
+    s = series.add_to_series(db, ctx, svc.get(db, ctx, fid), body.series_id)
     db.commit()
     return {"series_id": s.id, "series": series.series_list(db, ctx)}
 

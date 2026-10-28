@@ -3,10 +3,16 @@
 // PennyWarden (labelled Entered; retired, never deleted) and merged when one event was started twice.
 // #292: a series can also be started on a single fundraiser ("Start a series…" here, or "Enter prior years…" on the
 // fundraiser), for events whose earlier years all predate PennyWarden; ?enter=<series id> opens its prior-year entry.
+// 2.2.0 (#302): "Start a series…" can also add a fundraiser to an existing series (an event held twice a year, in
+// its first year in PennyWarden). #351: each table is one list by year, newest first unless the user flipped it
+// (Year heading; remembered per user, one choice for every table); the server returns it in order.
 import { useEffect, useState } from "react";
 import { api, money } from "../api";
+import { useMe } from "../App";
 import { ErrorBox, Field, Loading, Modal } from "../components";
 import { Link, useRouter } from "../router";
+
+const DEFAULT_DIR = "desc";
 
 export default function FundraiserSeries() {
   const [list, setList] = useState<any[] | null>(null);
@@ -15,10 +21,18 @@ export default function FundraiserSeries() {
   const [merging, setMerging] = useState<any>(null);
   const [renaming, setRenaming] = useState<any>(null);
   const [starting, setStarting] = useState(false);
+  const { me, patchMe } = useMe();
+  const [dir, setDir] = useState<"asc" | "desc">(me.fundraiser_series_sort === "asc" ? "asc" : DEFAULT_DIR);
   const { search } = useRouter();
   const run = async (fn: () => Promise<any>) => { setErr(null); try { setList(await fn()); } catch (x) { setErr(x); } };
+  const chooseDir = (next: "asc" | "desc") => {
+    setDir(next);
+    patchMe({ fundraiser_series_sort: next });
+    api.put("/api/me/preferences", { fundraiser_series_sort: next }).catch(() => undefined);
+    run(() => api.get(`/api/fundraiser-series?direction=${next}`));
+  };
   useEffect(() => {
-    api.get("/api/fundraiser-series").then((l: any[]) => {
+    api.get(`/api/fundraiser-series?direction=${dir}`).then((l: any[]) => {
       setList(l);
       const want = Number(new URLSearchParams(search).get("enter"));
       const s = want ? l.find((x) => x.id === want) : null;
@@ -31,7 +45,12 @@ export default function FundraiserSeries() {
       <p><Link to="/fundraisers">← Fundraisers</Link></p>
       <div className="page-head"><h1>Fundraiser series</h1><button onClick={() => setStarting(true)}>Start a series…</button></div>
       <p className="hint">A series is the same event across years. It is created when a fundraiser <b>continues from</b> an earlier one (set on the fundraiser), or here with <b>Start a series…</b> when the event's earlier years are all from before PennyWarden. Results of years before PennyWarden are entered on a series with <b>Enter a prior year…</b>; they show as <i>Entered</i> in the Fiscal Year fundraising report and in year over year.</p>
+      <p className="hint" data-testid="series-twice-hint"><b>An event held more than once a year</b> (for example a spring and a fall breakfast): “Continues from” links only to an earlier Fiscal Year, so in the event's first year in PennyWarden use <b>Start a series…</b> on one of them, then <b>Start a series…</b> → <i>Add to an existing series</i> for the other. Both count in the same year.</p>
       <ErrorBox error={err} />
+      {dir !== DEFAULT_DIR && list.length ? (
+        <p className="muted sort-note">Sorted by year, oldest first.{" "}
+          <button type="button" className="link" onClick={() => chooseDir(DEFAULT_DIR)}>Reset to default</button></p>
+      ) : null}
       {list.length === 0 ? <p className="muted">No series yet. To enter years from before PennyWarden, use <b>Start a series…</b> and choose the fundraiser, or link a fundraiser to an earlier one with “Continues from”.</p> : null}
       {list.map((s) => (
         <section className="card" key={s.id} aria-labelledby={`series-${s.id}`}>
@@ -46,12 +65,14 @@ export default function FundraiserSeries() {
             </div>
           </div>
           <table className="table compact">
-            <thead><tr><th>Year</th><th>Fundraiser / entry</th><th>Source</th><th className="num">Net raised</th><th>Note</th><th /></tr></thead>
+            <thead><tr><th aria-sort={dir === "asc" ? "ascending" : "descending"}>
+              <button type="button" className="sort-head" onClick={() => chooseDir(dir === "asc" ? "desc" : "asc")}
+                title={`Sort by year, ${dir === "asc" ? "newest" : "oldest"} first`}>Year<span aria-hidden="true" className="sort-arrow">{dir === "asc" ? " ▲" : " ▼"}</span></button>
+            </th><th>Fundraiser / entry</th><th>Source</th><th className="num">Net raised</th><th>Note</th><th /></tr></thead>
             <tbody>
-              {s.fundraisers.map((f: any) => (
-                <tr key={`f${f.id}`}><td>{f.year}</td><td><Link to={`/fundraisers/${f.id}`}>{f.name}</Link></td><td>Recorded</td><td className="num muted">on its page</td><td /><td /></tr>
-              ))}
-              {s.results.map((r: any) => (
+              {s.rows.map((r: any) => r.kind === "recorded" ? (
+                <tr key={`f${r.id}`}><td>{r.year}</td><td><Link to={`/fundraisers/${r.id}`}>{r.name}</Link></td><td>Recorded</td><td className="num muted">on its page</td><td /><td /></tr>
+              ) : (
                 <tr key={`r${r.id}`} className={r.retired ? "muted" : ""}>
                   <td>{r.year}</td><td>{r.fiscal_year_label}</td><td>{r.retired ? <s>Entered</s> : "Entered"}{r.retired ? ` (retired: ${r.retire_reason})` : ""}</td>
                   <td className="num">{money(r.net)}</td><td>{r.note || ""}</td>
@@ -64,7 +85,7 @@ export default function FundraiserSeries() {
       ))}
       {entering ? <EnterResult s={entering} onClose={() => setEntering(null)} onSaved={(x) => { setList(x); setEntering(null); }} /> : null}
       {renaming ? <Rename s={renaming} onClose={() => setRenaming(null)} onSaved={(x) => { setList(x); setRenaming(null); }} /> : null}
-      {starting ? <StartSeries onClose={() => setStarting(false)} onSaved={(r) => { setStarting(false); setList(r.series); const s = r.series.find((x: any) => x.id === r.series_id); if (s) setEntering(s); }} /> : null}
+      {starting ? <StartSeries hasSeries={list.length > 0} onClose={() => setStarting(false)} onSaved={(r, added) => { setStarting(false); setList(r.series); const s = r.series.find((x: any) => x.id === r.series_id); if (s && !added) setEntering(s); }} /> : null}
       {merging ? <Merge s={merging} list={list} onClose={() => setMerging(null)} onSaved={(x) => { setList(x); setMerging(null); }} /> : null}
     </div>
   );
@@ -129,26 +150,66 @@ function Merge({ s, list, onClose, onSaved }: { s: any; list: any[]; onClose: ()
   );
 }
 
-function StartSeries({ onClose, onSaved }: { onClose: () => void; onSaved: (x: any) => void }) {
+function StartSeries({ hasSeries, onClose, onSaved }: { hasSeries: boolean; onClose: () => void; onSaved: (x: any, added: boolean) => void }) {
   const [opts, setOpts] = useState<any[] | null>(null);
   const [pick, setPick] = useState("");
+  const [mode, setMode] = useState<"new" | "add">("new");
   const [err, setErr] = useState<unknown>(null);
   useEffect(() => { api.get("/api/fundraiser-series/start-options").then((l: any[]) => { setOpts(l); if (l.length) setPick(String(l[0].id)); }, setErr); }, []);
   const chosen = opts?.find((o) => String(o.id) === pick);
+  const [into, setInto] = useState("");
+  const save = async () => {
+    setErr(null);
+    try {
+      onSaved(mode === "add" ? await api.put(`/api/fundraisers/${pick}/series`, { series_id: Number(into) })
+        : await api.post(`/api/fundraisers/${pick}/series`), mode === "add");
+    } catch (x) { setErr(x); }
+  };
   return (
     <Modal title="Start a series" onClose={onClose}>
       <ErrorBox error={err} />
       {!opts ? (err ? null : <Loading />) : opts.length === 0 ? <p className="muted">Every fundraiser is already in a series.</p> : <>
-        <p>Choose the fundraiser whose earlier years are from before PennyWarden. A series is created for it so those years can be entered.</p>
         <Field label="Fundraiser">
           <select value={pick} onChange={(e) => setPick(e.target.value)}>
             {opts.map((o) => <option key={o.id} value={o.id}>{o.name} ({o.year})</option>)}
           </select>
         </Field>
-        {chosen ? <p className="hint">The series will be named <b>{chosen.series_name}</b>; it can be renamed later.</p> : null}
+        <fieldset className="choices">
+          <legend className="sr-only">Series</legend>
+          <label className="check"><input type="radio" name="start-mode" checked={mode === "new"} onChange={() => setMode("new")} /> Start a new series</label>
+          <label className="check"><input type="radio" name="start-mode" checked={mode === "add"} disabled={!hasSeries} onChange={() => setMode("add")} /> Add to an existing series{hasSeries ? "" : <span className="muted"> (no series yet)</span>}</label>
+        </fieldset>
+        {mode === "new" ? <>
+          <p className="hint">For a fundraiser whose earlier years are from before PennyWarden: a series is created for it so those years can be entered.</p>
+          {chosen ? <p className="hint">The series will be named <b>{chosen.series_name}</b>; it can be renamed later.</p> : null}
+        </> : pick ? <AddChoice fid={pick} into={into} setInto={setInto} /> : null}
       </>}
       <div className="actions"><button onClick={onClose}>Cancel</button>
-        <button className="primary" disabled={!pick} onClick={async () => { setErr(null); try { onSaved(await api.post(`/api/fundraisers/${pick}/series`)); } catch (x) { setErr(x); } }}>Start series</button></div>
+        <button className="primary" disabled={!pick || (mode === "add" && !into)} onClick={save}>{mode === "add" ? "Add to series" : "Start series"}</button></div>
     </Modal>
   );
+}
+
+/** 2.2.0 (#302): the series a fundraiser can join; one with an entered result for its year is shown but disabled. */
+export function AddChoice({ fid, into, setInto }: { fid: string | number; into: string; setInto: (v: string) => void }) {
+  const [opts, setOpts] = useState<any[] | null>(null);
+  const [err, setErr] = useState<unknown>(null);
+  useEffect(() => {
+    setOpts(null);
+    api.get(`/api/fundraisers/${fid}/series-add-options`).then((l: any[]) => {
+      setOpts(l);
+      const first = l.find((o) => o.allowed);
+      setInto(first ? String(first.id) : "");
+    }, setErr);
+  }, [fid]);
+  if (!opts) return <><ErrorBox error={err} />{err ? null : <Loading />}</>;
+  if (!opts.length) return <p className="muted">No series yet.</p>;
+  return <>
+    <Field label="Series">
+      <select value={into} onChange={(e) => setInto(e.target.value)}>
+        {opts.map((o) => <option key={o.id} value={o.id} disabled={!o.allowed}>{o.name}{o.allowed ? "" : ` — not available: ${o.reason}`}</option>)}
+      </select>
+    </Field>
+    <p className="hint">For an event held more than once a year: both fundraisers count in the same year of the series. “Continues from” stays empty. A series that has an entered result for this fundraiser's year can't be chosen, so the year is not counted twice.</p>
+  </>;
 }

@@ -98,6 +98,8 @@ class PreferencesIn(In):
     reset_register_sort: bool | None = None
     # 2.2.0 (#316): how Individuals show and sort for this user
     name_order: Literal["FIRST_LAST", "LAST_FIRST"] | None = None
+    # 2.2.0 (#351): Fundraiser series years, newest first ("desc", the default) or oldest first
+    fundraiser_series_sort: Literal["desc", "asc"] | None = None
 
 
 Domain = Literal["ADMINISTRATOR", "FINANCIAL", "AUDITOR", "COMBINED"]  # 1.9.0 (#54): COMBINED on local installs
@@ -543,6 +545,11 @@ class BudgetHistoryCsvIn(In):
 
 class FundraiserSeriesMergeIn(In):
     into_series_id: int
+
+
+class FundraiserSeriesAddIn(In):
+    """2.2.0 (#302): put a fundraiser in no series into an existing series."""
+    series_id: int
 
 
 class FundraiserFyNotesIn(In):
