@@ -3855,6 +3855,42 @@ test("#325: a receipt before the money and an item on the Donations page, then C
   await logout(page);
 });
 
+// ---------------------------------------------------------------- 2.2.0 #256: year-end statements, donor report
+test("#256: a Register User prints a year-end giving statement; the donor report totals by year", async ({ page }) => {
+  test.setTimeout(120_000);
+  const year = String(new Date().getFullYear());
+  await login(page, "ru1", "Brand-New-Pass-99");
+  await page.getByRole("link", { name: "Donations", exact: true }).click();
+  await page.getByRole("tab", { name: "Year-end statements" }).click();
+  await page.getByLabel("Year", { exact: true }).selectOption(year);
+  const list = page.getByRole("table", { name: `Year-end statements ${year}` });
+  const alpha = list.getByRole("row", { name: /Sample Donor Alpha/ });
+  await expect(alpha).toContainText("Not printed");
+  await alpha.getByRole("button", { name: /Open statement/ }).click();
+  const dlg = page.getByRole("dialog", { name: `Year-end statement ${year} – Sample Donor Alpha` });
+  await expect(dlg.getByRole("table", { name: "Donations in the year" })).toContainText("$250.00");
+  await dlg.getByRole("button", { name: "Print statement" }).click();
+  const conf = page.getByRole("dialog", { name: "Confirmation required" });
+  const pv = page.getByRole("dialog", { name: "Year-end statement", exact: true });
+  await expect.poll(async () => (await conf.isVisible()) || (await pv.isVisible())).toBe(true);
+  if (await conf.isVisible()) {
+    await conf.getByLabel("I have reviewed these warnings and explicitly confirm.").check();
+    await conf.getByRole("button", { name: "Confirm and continue" }).click();
+  }
+  await expect(pv.getByRole("button", { name: "Print…" })).toBeVisible();
+  await pv.getByRole("button", { name: "Close" }).first().click();
+  await expect(dlg.getByTestId("statement-history")).toContainText(`S-${year}-0001`);
+  await expect(dlg.getByRole("button", { name: "Print duplicate" })).toBeVisible();
+  await page.screenshot({ path: "e2e-screenshots/light-year-end-statement.png" });
+  await dlg.getByRole("button", { name: "Close" }).first().click();
+  // the donor report: a column per year and the total
+  await page.getByRole("tab", { name: "Donor report" }).click();
+  const rep = page.getByRole("table", { name: "Donor report" });
+  await expect(rep.getByRole("row", { name: /Sample Donor Alpha/ })).toBeVisible();
+  await expect(rep.getByRole("columnheader", { name: year })).toBeVisible();
+  await logout(page);
+});
+
 test("#125: an Administrator reinitializes (keeping the users); everyone sees the notice until it is acknowledged", async ({ page }) => {
   await login(page, "admin");
   await page.getByRole("link", { name: "System/About" }).click();

@@ -128,6 +128,32 @@ could not otherwise be corrected. Scope and safeguards:
   with a link; the variable picker completes dotted names.
 - Tests: `backend/tests/test_v210_organization.py` (6, including the data migration) and the E2E #126 and #312 steps.
 
+**2.2.0 — Year-end giving statements, donor report, fundraiser donation buckets (#256, Kyle 2026-10-24).**
+- Migration `0056`: `donation_statement` (donor, calendar year, seq/number S-YYYY-NNNN, kind ORIGINAL | DUPLICATE |
+  CORRECTED with `replaces_id`, totals, `line_ids`, `content_sha`, `attachment_id`), `attachment.donation_statement_id`
+  (the kept copy and its envelope), `fundraiser_bucket.is_donation`. In `reinitialize.WIPE` and the partial-restore
+  data tables.
+- `services/donation_statements`: `received_lines(ws, start, end, donor)` — lines of ACTIVE donations that are
+  received (`donations.line_received`) with `line_date` in the years; `summary`, `detail`, `preview`, `print_one`,
+  `print_all` (one combined PDF via pypdf; one `PRINT_ALL` confirmation plus aggregated NO_DONOR_ADDRESS /
+  CORRECTED_STATEMENT / EMPTY_VARIABLES), `document`, `print_envelope`, `report` (≤ 5 years), `report_csv` (BOM;
+  formula-leading text quoted), `report_pdf` (landscape, `branding.use` + the reports module's grid and branded
+  footer). The statement letter shares the receipt's layout through `donations.donor_letter_pdf` (refactored out of
+  `receipt_pdf`), `ack_table`, `items_note_text`.
+- Patterns: context `STATEMENT` (the receipt's donor/organization/signer variables plus `YEAR`, `TOTAL`,
+  `STATEMENT_NO`, `DONATION_TABLE`); `ReceiptConfig.statement_title|salutation|body|closing`. `{DONATION_TABLE}`
+  resolves to a marker; its paragraph becomes the table (appended after the text when absent).
+- Routes (`/api/donations`): `GET statements`, `GET statements/{year}/donors/{id}`, `POST .../preview`, `POST ...`
+  (print), `POST statements/{year}/print-all`, `GET statements/printed/{id}/document`,
+  `POST statements/printed/{id}/envelope|envelope-test`, `GET report?format=json|pdf|csv&detail=`,
+  `POST setup/statement-preview|statement-preview-image|statement-test-print`,
+  `GET fundraisers/{id}/unreceipted`. View: `donation.view`; print: `donation.print`; setup: `donation.setup`.
+- Fundraiser link: `donations.donation_bucket_allocations` → `transaction_out` lines carry `suggested` and
+  `fundraiser`; the dialog pre-ticks them (saved only on Save). `fundraiser_unreceipted` lists ACTIVE deposits in
+  donation buckets whose line is unmarked or whose donation has no receipt. `FundraiserBucketIn.is_donation`
+  (None = unchanged; allowed in a closed year: it only drives a suggestion).
+- Tests: `test_v220_year_end.py`; E2E "#256".
+
 **2.2.0 — Donations part 2: before the deposit, items, the Donations page (#325, Kyle 2026-10-23).**
 - Model (migration `0054`): `donation` (donor, origin PAGE | DEPOSIT with the deposit for DEPOSIT, status ACTIVE |
   CANCELLED with reason, `details` — was `donation_detail`); `donation_line.donation_id`, `kind` MONEY | ITEM,

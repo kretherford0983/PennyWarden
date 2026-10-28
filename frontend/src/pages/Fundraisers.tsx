@@ -255,6 +255,8 @@ export function FundraiserDetail({ id }: { id: number }) {
         ) : <p className="muted">No buckets yet.</p>}
       </section>
 
+      {me.modules?.donations && can("donation.view") && f.buckets.items.some((b: any) => b.is_donation) ? <Unreceipted fid={f.id} /> : null}
+
       {f.per_fiscal_year.length > 1 ? (
         <section className="card">
           <h2>By Fiscal Year</h2>
@@ -502,13 +504,16 @@ function FundraiserForm({ current, prefill, onClose, onSaved }: { current?: any;
 
 // ------------------------------------------------------------------ v1.6.1 CR-034: buckets and line management
 function BucketDialog({ f, bucket, onClose, onSaved }: { f: any; bucket: any; onClose: () => void; onSaved: (f: any) => void }) {
-  const [v, setV] = useState({ name: bucket.name || "", description: bucket.description || "", category_id: bucket.category_id ? String(bucket.category_id) : "" });
+  const [v, setV] = useState({ name: bucket.name || "", description: bucket.description || "", category_id: bucket.category_id ? String(bucket.category_id) : "",
+    is_donation: !!bucket.is_donation });
+  const { me } = useMe();
   const [err, setErr] = useState<unknown>(null);
   const locked = !!f.read_only; // closed year: only the category can change
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setErr(null);
-    const body = { name: v.name, description: v.description || null, category_id: v.category_id ? Number(v.category_id) : null };
+    const body = { name: v.name, description: v.description || null, category_id: v.category_id ? Number(v.category_id) : null,
+      ...(me.modules?.donations ? { is_donation: v.is_donation } : {}) };
     try {
       onSaved(bucket.id ? await api.put(`/api/fundraisers/${f.id}/buckets/${bucket.id}`, body) : await api.post(`/api/fundraisers/${f.id}/buckets`, body));
     } catch (x) { setErr(x); }
@@ -525,6 +530,9 @@ function BucketDialog({ f, bucket, onClose, onSaved }: { f: any; bucket: any; on
             {f.buckets.categories.map((c: any) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
         </Field>
+        {/* 2.2.0 (#256): deposits in a donation bucket get the Donation box ticked as a suggestion */}
+        {me.modules?.donations ? <label className="check"><input type="checkbox" checked={v.is_donation} onChange={(e) => setV({ ...v, is_donation: e.target.checked })} /> Donations
+          <span className="hint"> – deposits in this bucket are suggested as donations for receipts (the Register User confirms)</span></label> : null}
         <div className="actions"><button type="button" onClick={onClose}>Cancel</button><button className="primary" type="submit">Save</button></div>
       </GuardedForm>
     </Modal>
@@ -944,5 +952,35 @@ function CountSheetDialog({ f, onClose }: { f: any; onClose: () => void }) {
         {problem ? null : <a className="button primary" href={href} target="_blank" rel="noopener">Open sheet (PDF)</a>}
       </div>
     </Modal>
+  );
+}
+
+
+/** 2.2.0 (#256): the deposits in this fundraiser's donation buckets without a receipt yet; each opens in the register (Print receipts),
+ * where the Register User marks the donation and prints the receipt (Donation receipt…). */
+function Unreceipted({ fid }: { fid: number }) {
+  const [d, setD] = useState<any>(null);
+  const [err, setErr] = useState<unknown>(null);
+  useEffect(() => { api.get(`/api/donations/fundraisers/${fid}/unreceipted`).then(setD, setErr); }, [fid]);
+  if (!d) return err ? <ErrorBox error={err} /> : null;
+  const STATE: Record<string, string> = { NOT_MARKED: "Not marked as a donation", NOT_PRINTED: "Receipt not printed" };
+  return (
+    <section className="card" aria-labelledby="fr-unreceipted-h" data-testid="fundraiser-unreceipted">
+      <h2 id="fr-unreceipted-h">Donations without a receipt</h2>
+      {!d.items.length ? <p className="muted">Every deposit in a donation bucket has a receipt.</p> : (
+        <table className="table compact">
+          <thead><tr><th>Deposit</th><th>Date</th><th>Donors</th><th className="num">Amount</th><th>Status</th><th /></tr></thead>
+          <tbody>
+            {d.items.map((r: any) => (
+              <tr key={r.transaction_id}>
+                <td>#{r.transaction_id}</td><td>{r.date}</td><td>{r.donors.join(", ")}</td><td className="num">{r.amount}</td>
+                <td>{r.states.map((x: string) => STATE[x] || x).join("; ")}</td>
+                <td><Link to={`/register?account=${r.bank_account_id}&txn=${r.transaction_id}`}>Print receipts</Link></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </section>
   );
 }

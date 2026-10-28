@@ -196,7 +196,9 @@ export function SharedNotice({ doc, feature, onOpen }: { doc: any; feature: stri
 }
 
 /** Print the donor's envelope for a donation (after its receipt). */
-export function ReceiptEnvelopePanel({ donationId, onChanged }: { donationId: number; onChanged?: () => void }) {
+export function ReceiptEnvelopePanel({ donationId, onChanged, basePath }: { donationId?: number; onChanged?: () => void; basePath?: string }) {
+  // 2.2.0 (#256): a year-end statement's envelope uses the same panel (basePath = the printed statement)
+  const base = basePath || `/api/donations/${donationId}`;
   const [ch, setCh] = useState<any>(null);
   const [err, setErr] = useState<unknown>(null);
   const [envId, setEnvId] = useState("");
@@ -227,7 +229,7 @@ export function ReceiptEnvelopePanel({ donationId, onChanged }: { donationId: nu
   const print = async (test: boolean) => {
     setErr(null);
     try {
-      const blob = await run((c) => api.postBlob(`/api/donations/${donationId}/${test ? "envelope-test" : "envelope"}`, { document_id: Number(envId), return_address: useReturn, confirmations: c }));
+      const blob = await run((c) => api.postBlob(`${base}/${test ? "envelope-test" : "envelope"}`, { document_id: Number(envId), return_address: useReturn, confirmations: c }));
       if (!blob) return;
       setPdf(blob, test ? "envelope-test.pdf" : "envelope.pdf"); setViewing(test ? "test" : "envelope");
       if (!test) { setDone(true); onChanged?.(); }

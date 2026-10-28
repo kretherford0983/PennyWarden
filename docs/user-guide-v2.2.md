@@ -145,6 +145,39 @@ plain paper** to check where the address lands (not kept), and **My envelope pri
 up to 1/4 inch. The printed envelope is kept with the donation and on its deposit. With no envelope set up for
 Donations the step says so; an Administrator adds one in Donations Setup.
 
+## Year-end giving statements and the donor report (Donations module)
+
+### Year-end statements
+Donations page → **Year-end statements**: choose the **year** (and, if you like, a **minimum total**, e.g. 250). The
+list shows each donor with donations **received** in that calendar year — money deposited in the register and items
+ticked Received — their money total, gifts and items, and their statement. Donations that were cancelled, deposits
+that were voided and money still awaiting a deposit are not on it.
+
+- **Open** a donor to see the year's donations, **Preview** the statement and **Print** it (Register Users). Items
+  are listed by description only; the total covers money only.
+- **Print all** prints a statement for every donor in the list as one PDF, asking once to confirm.
+- Each printed statement is kept and numbered per year, *S-2026-0001*. Printing it again with the same content prints
+  a **Duplicate**; if a donation of that year changed, a **Corrected** statement with a new number replaces it.
+- After printing, the **Envelope** step prints the donor's envelope, as for receipts.
+- Budget Managers, Budget Users and Auditors see the statements and open the printed copies.
+
+### Donor report
+Donations page → **Donor report**: each donor's money received per calendar year (up to 5 years side by side) and
+the total, the number of gifts, the last gift, and items with their estimated value (for your own records — never
+printed on a letter to a donor). Click a donor to see their donations. Filter by years, donor and minimum total, and
+download it as **PDF** or **CSV** (tick *With each donation* to include the detail lines).
+
+### Donations Setup: the statement letter (Administrators)
+**Year-end statement letter**: the title, salutation, text and closing. Put `{DONATION_TABLE}` in a paragraph of
+its own where the table of the year's donations goes (without it, the table prints after the text); `{YEAR}`,
+`{TOTAL}` and `{STATEMENT_NO}` are also available. The layout, window envelope, fold marks and signer are the
+receipt's. **Show the statement preview** and **Test print the statement** use sample data only.
+
+### Fundraisers: donation buckets
+Mark a fundraiser bucket **Donations** (New bucket / Edit bucket). Deposits classified into it then start with the
+**Donation** box ticked in their *Donation receipt…* dialog — a suggestion: it is saved only when you Save. The
+fundraiser page lists **Donations without a receipt**; **Print receipts** opens each deposit in the register.
+
 ## Envelopes: one library (Administrators)
 Envelope templates are one library shared by Payments and Donations. Each template is *used for* the features you
 choose, and each feature has its own default. **Envelopes** in the navigation (shown when Payments or Donations is on)

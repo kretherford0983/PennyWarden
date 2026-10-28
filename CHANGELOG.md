@@ -131,6 +131,24 @@ PennyWarden 2.2.0 (in progress).
   or on a separate address page, the organization's address in the upper window, fold marks on the front or back. A
   window receipt hides the envelope step (*Print an envelope anyway*).
 
+### Year-end giving statements, donor report, fundraiser donations (#256)
+- **Year-end giving statements** (Donations page → *Year-end statements*). One letter per donor and calendar year
+  listing the donations received that year: money deposited in the register and items ticked Received (items by
+  description only, no value), with the money total and the receipt's required statements. Cancelled donations,
+  voided deposits and money awaiting a deposit are left out. Register Users print one donor, or **all donors** for a
+  year as one PDF with an optional minimum total; the other financial roles and Auditors see them. Each statement is
+  kept and numbered per year (S-2026-0001); the same content again prints a *Duplicate*, a change a *Corrected*
+  statement. Envelopes as for receipts. The letter's wording is in Donations Setup (*Year-end statement letter*,
+  with `{YEAR}`, `{TOTAL}`, `{STATEMENT_NO}` and `{DONATION_TABLE}`), with a preview and a test print (sample data).
+  Audited: `DONATION_STATEMENT_PRINTED`, `DONATION_STATEMENTS_PRINTED_ALL`.
+- **Donor report** (Donations page → *Donor report*, all financial roles and Auditors). Each donor's money by
+  calendar year (up to 5 years side by side) and the total, the number of gifts, the last gift, and items with their
+  internal estimated value; each donor expands to their donations. Filters: years, donor, minimum total. PDF (in the
+  organization's branding) and CSV, optionally with each donation.
+- **Fundraiser donation buckets.** A bucket can be marked **Donations**: in a deposit's *Donation receipt…* dialog its
+  lines start ticked as a suggestion (saved only when you Save). The fundraiser lists **Donations without a receipt**
+  with a link to each deposit.
+
 ### Organization branding (#280)
 - **Your colors and logo on reports and presentations.** *System/About → Branding* (Administrators): choose a
   ready-made palette (PennyWarden — the default —, Forest, Ocean, Plum, Ember) or a custom one generated from your

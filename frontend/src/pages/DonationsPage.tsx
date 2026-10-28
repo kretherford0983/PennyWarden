@@ -10,6 +10,7 @@ import { EntityPicker, ErrorBox, Field, GuardedForm, Loading, Modal, useConfirma
 import { Link } from "../router";
 import { PdfViewer, usePdf } from "./checkShared";
 import { ReceiptEnvelopePanel } from "./Envelopes";
+import { DonorReportTab, StatementsTab } from "./DonationStatements";
 import { TxnForm } from "./Register";
 
 const PUB_1771 = "https://www.irs.gov/pub/irs-pdf/p1771.pdf";
@@ -35,6 +36,7 @@ export default function DonationsPage() {
   const [err, setErr] = useState<unknown>(null);
   const [open, setOpen] = useState<number | "new" | null>(null);
   const [creating, setCreating] = useState(false);
+  const [tab, setTab] = useState<"donations" | "statements" | "report">("donations");   // 2.2.0 (#256)
   const load = () => api.get(`/api/donations?show=${show}${q.trim() ? `&q=${encodeURIComponent(q.trim())}` : ""}`).then(setData, setErr);
   useEffect(() => { load(); }, [show]); // eslint-disable-line react-hooks/exhaustive-deps
   const printer = can("donation.print");
@@ -49,6 +51,12 @@ export default function DonationsPage() {
           </div>
         ) : null}
       </div>
+      <div role="tablist" className="row" aria-label="Donations views">
+        <button role="tab" aria-selected={tab === "donations"} className={tab === "donations" ? "primary" : ""} onClick={() => setTab("donations")}>Donations</button>
+        <button role="tab" aria-selected={tab === "statements"} className={tab === "statements" ? "primary" : ""} onClick={() => setTab("statements")}>Year-end statements</button>
+        <button role="tab" aria-selected={tab === "report"} className={tab === "report" ? "primary" : ""} onClick={() => setTab("report")}>Donor report</button>
+      </div>
+      {tab === "statements" ? <StatementsTab /> : tab === "report" ? <DonorReportTab /> : <>
       <p className="hint">A donation is what a receipt is printed for: one donor, money and items. Record it here when the receipt is needed before the
         money arrives, or for items; when the money is deposited, <b>Create transaction</b> records the deposit and links it. Deposits already in the
         register can still be marked from the register (<b>Donation receipt…</b>).</p>
@@ -83,6 +91,7 @@ export default function DonationsPage() {
           </tbody>
         </table>
       )}
+      </>}
       {open != null ? <DonationEditor id={open === "new" ? null : open} canPrint={printer} onClose={() => setOpen(null)} onChanged={load} onOpen={(id) => setOpen(id)} /> : null}
       {creating ? <CreateTransaction onClose={() => setCreating(false)} onSaved={() => { setCreating(false); load(); }} /> : null}
     </div>

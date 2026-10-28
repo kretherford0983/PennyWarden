@@ -189,6 +189,7 @@ def setup_out(db: Session, ctx) -> dict:
     return {"config": cfg.model_dump(), "defaults": ReceiptConfig().model_dump(), "saved": row is not None,
             "missing": missing_setup(db, ctx.workspace_id), "organization": organization_out(db, ctx.workspace_id),
             "variables": patterns.variable_options(patterns.RECEIPT),
+            "statement_variables": patterns.variable_options(patterns.STATEMENT),     # 2.2.0 (#256)
             "date_formats": list(cfgmod.DATE_FORMATS), "no_goods_statement": NO_GOODS,
             "items_note_default": ITEMS_NOTE_DEFAULT, "items_note_min_words": ITEMS_NOTE_MIN_WORDS}
 
