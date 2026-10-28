@@ -11,7 +11,7 @@ const ORG_FIELDS: [string, string, number][] = [["address_line1", "Street addres
   ["city", "City", 100], ["state_region", "State", 100], ["postal_code", "ZIP code", 20], ["country", "Country (outside the US)", 100],
   ["phone", "Phone", 40], ["email", "Email", 254], ["ein", "EIN (Employer Identification Number)", 10],
   // 2.2.0 (#315): a mailing address only when it differs (empty = the address); letters, envelopes and receipts use it
-  ["mailing_address_line1", "Mailing address, if different (e.g. a P.O. Box)", 200], ["mailing_address_line2", "Mailing address line 2", 200],
+  ["mailing_address_line1", "Mailing street address (e.g. a P.O. Box)", 200], ["mailing_address_line2", "Mailing address line 2", 200],
   ["mailing_city", "Mailing city", 100], ["mailing_state_region", "Mailing state", 100], ["mailing_postal_code", "Mailing ZIP code", 20],
   ["mailing_country", "Mailing country (outside the US)", 100]];
 
@@ -26,14 +26,17 @@ export function OrganizationPanel({ name, onRenamed }: { name: string; onRenamed
   const [f, setF] = useState<Record<string, string>>({ name });
   const [err, setErr] = useState<unknown>(null);
   const [saved, setSaved] = useState(false);
+  const [mailSame, setMailSame] = useState(true);    // 2.2.0 (#315): the mailing address only when it differs
   // the phone is shown and typed like an entity's: (nnn) nnn-nnnn, formatted when the field is left (1.6.7)
   const shown = (d: any) => ({ ...d, phone: d.phone_display || d.phone || "" });
-  const take = (d: any) => { const v = shown(d); setP(v); setF(Object.fromEntries([["name", v.name], ...ORG_FIELDS.map(([k]) => [k, v[k] || ""])])); };
+  const take = (d: any) => { const v = shown(d); setP(v); setMailSame(v.mailing_same !== false); setF(Object.fromEntries([["name", v.name], ...ORG_FIELDS.map(([k]) => [k, v[k] || ""])])); };
   useEffect(() => { api.get("/api/system/organization").then(take, setErr); }, []);
-  const dirty = !!p && (f.name !== p.name || ORG_FIELDS.some(([k]) => (f[k] || "") !== (p[k] || "")));
+  const dirty = !!p && (f.name !== p.name || ORG_FIELDS.some(([k]) => (f[k] || "") !== (p[k] || ""))
+    || (mailSame && p.mailing_same === false));
   const save = async () => {
     setErr(null); setSaved(false);
     const sent = { ...f };
+    if (mailSame) ORG_FIELDS.forEach(([k]) => { if (k.startsWith("mailing_")) sent[k] = ""; });
     try {
       const r = shown(await api.put("/api/system/organization", sent));
       setP(r);
@@ -55,7 +58,7 @@ export function OrganizationPanel({ name, onRenamed }: { name: string; onRenamed
         <Field label="Organization name"><input maxLength={120} value={f.name || ""} onChange={set("name")} /></Field>
       </div>
       <div className="row form-row org-fields">
-        {ORG_FIELDS.map(([k, label, max]) => (
+        {ORG_FIELDS.filter(([k]) => !k.startsWith("mailing_") || !mailSame).map(([k, label, max]) => (
           <Field key={k} label={label} hint={k === "ein" ? "9 digits; the dash is added for you (12-3456789)" : undefined}>
             <input type={k === "phone" ? "tel" : k === "email" ? "email" : "text"} maxLength={max} value={f[k] || ""}
                    inputMode={k === "ein" ? "numeric" : undefined}
@@ -65,6 +68,7 @@ export function OrganizationPanel({ name, onRenamed }: { name: string; onRenamed
           </Field>
         ))}
       </div>
+      <label className="check"><input type="checkbox" checked={mailSame} onChange={(e) => { setMailSame(e.target.checked); setSaved(false); }} /> Mailing address same as Address</label>
       <div className="row">
         <button className="primary" onClick={save} disabled={!dirty || !(f.name || "").trim()}>Save</button>
         {saved && !dirty ? <span className="hint" role="status">Saved.</span> : null}
