@@ -74,6 +74,7 @@ def me_payload(ctx: Ctx) -> dict:
             "theme": u.theme, "nav_collapsed": bool(u.nav_collapsed), "dashboard_charts": charts_for(u),
             "dashboard_layout": layout_for(u), "dashboard_layout_customized": is_customized(u),
             "register_sort": u.register_sort or DEFAULT_REGISTER_SORT,   # 2.1.0 (#262)
+            "name_order": u.name_order or "FIRST_LAST",                  # 2.2.0 (#316)
             "modules": {"fundraisers": module_enabled(object_session(u), u.workspace_id),  # v1.6.0 CR-033
                         "checks": checks_enabled(object_session(u), u.workspace_id),  # 2.0.0 (#156)
                         "donations": donations_enabled(object_session(u), u.workspace_id)},  # 2.1.0 (#312)
@@ -255,6 +256,8 @@ def preferences(body: PreferencesIn, db: Session = Depends(get_db), ctx: Ctx = D
         ctx.user.register_sort = None
     elif body.register_sort is not None:
         ctx.user.register_sort = None if body.register_sort == DEFAULT_REGISTER_SORT else body.register_sort
+    if body.name_order is not None:  # 2.2.0 (#316)
+        ctx.user.name_order = None if body.name_order == "FIRST_LAST" else body.name_order
     if body.reset_dashboard_layout:  # v1.5.0 CR-031
         ctx.user.dashboard_layout = None
     elif body.dashboard_layout is not None:

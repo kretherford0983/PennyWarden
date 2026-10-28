@@ -96,6 +96,8 @@ class PreferencesIn(In):
     # 2.1.0 (#262): the register's sort, remembered per user; reset_register_sort -> Date, oldest first
     register_sort: Literal["transaction_date:asc", "transaction_date:desc", "clear_date:asc", "clear_date:desc"] | None = None
     reset_register_sort: bool | None = None
+    # 2.2.0 (#316): how Individuals show and sort for this user
+    name_order: Literal["FIRST_LAST", "LAST_FIRST"] | None = None
 
 
 Domain = Literal["ADMINISTRATOR", "FINANCIAL", "AUDITOR", "COMBINED"]  # 1.9.0 (#54): COMBINED on local installs
@@ -234,8 +236,19 @@ class OptionalReasonIn(In):
 class EntityFields(In):
     entity_type: Literal["INDIVIDUAL", "ORGANIZATION"] | None = None
     organization_name: OptStr(200) = None
-    primary_contact: OptStr(200) = None
+    first_name: OptStr(100) = None      # 2.2.0 (#316): the person (Individual) or contact person (Organization)
+    last_name: OptStr(100) = None
+    primary_contact: OptStr(200) = None  # legacy input: split into first and last name at the first space
     position: OptStr(60) = None  # 1.6.7: individuals only; same limit as a signer title
+    # 2.2.0 (#315): empty = "same as" (the name / the address)
+    display_name_custom: OptStr(200) = None
+    mailing_address_line1: OptStr(200) = None
+    mailing_address_line2: OptStr(200) = None
+    mailing_city: OptStr(100) = None
+    mailing_state_region: OptStr(100) = None
+    mailing_postal_code: OptStr(20) = None
+    mailing_country: OptStr(100) = None
+    ein: OptStr(12) = None                # organizations only, 12-3456789
     address_line1: OptStr(200) = None
     address_line2: OptStr(200) = None
     city: OptStr(100) = None

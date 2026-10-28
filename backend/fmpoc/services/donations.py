@@ -43,6 +43,7 @@ from . import register as reg
 from .checkprint import config as cfgmod
 from . import organization as org_svc
 from .checkprint import documents, fonts, patterns
+from . import entity_vars
 from .checkprint.service import _store_doc_copy, address_lines, format_date
 from .common import get_scoped
 
@@ -55,6 +56,7 @@ ITEMS_NOTE_DEFAULT = ("Donated items are listed by description only. {ORG.NAME} 
                       "donated property; determining its value is the donor's responsibility.")
 ITEMS_NOTE_MIN_WORDS = 8
 BLANK_DATE = "________________"
+DEFAULT_ADDRESSEE = ["{DONOR.NAME}", "{DONOR.MAILING_ADDRESS}"]      # 2.2.0 (#317): today's block
 
 
 # ------------------------------------------------------------------ module switch
@@ -105,6 +107,8 @@ class ReceiptConfig(BaseModel):
     window: Literal["NONE", "LETTER", "ADDRESS_PAGE"] = "NONE"
     window_return: bool = True                                # the organization's address in the upper window
     fold_marks: Literal["NONE", "FRONT", "BACK"] = "NONE"
+    # 2.2.0 (#317): the addressee block of receipts and statements - up to 6 lines from {DONOR.*}
+    addressee: list[str] = Field(default_factory=lambda: list(DEFAULT_ADDRESSEE), max_length=6)
     # 2.2.0 (#256): the year-end giving statement's letter (the receipt variables plus {YEAR}, {TOTAL},
     # {STATEMENT_NO} and {DONATION_TABLE}); the layout, window and signer are the receipt's
     statement_title: str = Field(default="Year-End Giving Statement {YEAR}", max_length=120)
@@ -126,6 +130,10 @@ class ReceiptConfig(BaseModel):
     def _patterns(self):
         for name in ("title", "salutation", "body", "closing"):
             _check(getattr(self, name), name.capitalize())
+        for line in self.addressee:
+            if len(line) > 200 or "\n" in line:
+                raise ValueError("Addressee: each line is one line of at most 200 characters.")
+            _check(line, "Addressee")
         for name in ("statement_title", "statement_salutation", "statement_body", "statement_closing"):
             try:
                 patterns.parse(getattr(self, name), patterns.STATEMENT)
@@ -227,6 +235,7 @@ class ReceiptData:
     today: dt.date = field(default_factory=dt.date.today)
     details: str = ""                    # the {DETAILS} text as written (may contain {VARIABLES})
     items: list[str] = field(default_factory=list)                    # 2.2.0 (#325): item descriptions (no values)
+    donor_values: dict[str, str] = field(default_factory=dict)        # 2.2.0 (#317): {DONOR.*}
 
 
 def money(cents: int) -> str:
@@ -253,7 +262,7 @@ def values_for(cfg: ReceiptConfig, data: ReceiptData) -> dict[str, str]:
             "AMOUNT": f"{data.amount_cents // 100:,}.{data.amount_cents % 100:02d}",
             "DATE_RECEIVED": dates_text(data.dates, cfg.date_format) or BLANK_DATE,
             "PURPOSE": "; ".join(data.purposes), **data.org, "RECEIPT_NO": data.number, "SIGNER": cfg.signer_name,
-            "SIGNER_TITLE": cfg.signer_title, "TODAY": format_date(data.today, cfg.date_format)}
+            "SIGNER_TITLE": cfg.signer_title, "TODAY": format_date(data.today, cfg.date_format), **data.donor_values}
     # the details may use the same variables (not {DETAILS} itself)
     vals["DETAILS"] = patterns.resolve(data.details, vals, patterns.RECEIPT).text if data.details.strip() else ""
     return vals
@@ -316,7 +325,7 @@ def ack_table(rows: list[tuple[str, str]], st: dict) -> Table:
     return tbl
 
 
-def donor_letter_pdf(cfg: ReceiptConfig, *, org: dict, donor_name: str, donor_address: list[str], today: dt.date,
+def donor_letter_pdf(cfg: ReceiptConfig, *, org: dict, donor_lines: list[str], today: dt.date,
                      kind: str, sample: bool, watermark: str | None, doc_title: str, middle: list,
                      closing: str) -> bytes:
     """A letter to a donor (receipt or year-end statement, 2.2.0 #256): the organization and donor heading - or the
@@ -328,8 +337,7 @@ def donor_letter_pdf(cfg: ReceiptConfig, *, org: dict, donor_name: str, donor_ad
                                   fold_marks=cfg.fold_marks)
     org_lines = [org["ORG.NAME"]] + [x for x in org["ORG.ADDRESS"].split("\n") if x]
     windowed = cfg.window != "NONE"
-    blocks = documents.window_blocks(lcfg, {"letterhead": org_lines}, [donor_name] + donor_address) \
-        if windowed else []
+    blocks = documents.window_blocks(lcfg, {"letterhead": org_lines}, donor_lines) if windowed else []
 
     def first_page(c, doc):
         if cfg.fold_marks == "FRONT":
@@ -379,7 +387,7 @@ def donor_letter_pdf(cfg: ReceiptConfig, *, org: dict, donor_name: str, donor_ad
         story += [Paragraph(escape(x), base) for x in org["ORG.ADDRESS"].split("\n") if x]
         story += [Spacer(1, size * 1.2), Paragraph(escape(format_date(today, cfg.date_format)), base),
                   Spacer(1, size * 1.2)]
-        story += [Paragraph(escape(x), base) for x in [donor_name] + donor_address]
+        story += [Paragraph(escape(x), base) for x in donor_lines]
     story.append(Spacer(1, size * 1.4))
     story += middle
     story.append(Spacer(1, size * 1.2))
@@ -401,6 +409,11 @@ def donor_letter_pdf(cfg: ReceiptConfig, *, org: dict, donor_name: str, donor_ad
     if cfg.fold_marks == "BACK":
         return documents._with_back_pages(buf.getvalue(), lcfg, doc_title)
     return buf.getvalue()
+
+
+def addressee_lines(cfg: ReceiptConfig, values: dict, name: str, address: list[str]) -> list[str]:
+    """2.2.0 (#317): the donor's addressee block from the template's lines (default: name and mailing address)."""
+    return entity_vars.addressee(cfg.addressee, values, patterns.RECEIPT) or [name] + address
 
 
 def items_note_text(cfg: ReceiptConfig, values: dict) -> str:
@@ -438,7 +451,8 @@ def receipt_pdf(cfg: ReceiptConfig, data: ReceiptData, sample: bool = False, wat
     if data.items:                                  # 2.2.0 (#325): always with items; the wording is editable
         ack += [Spacer(1, size * 0.4), Paragraph(escape(items_note_text(cfg, values_for(cfg, data))), base)]
     middle.append(KeepTogether(ack))
-    return donor_letter_pdf(cfg, org=data.org, donor_name=data.donor_name, donor_address=data.donor_address,
+    return donor_letter_pdf(cfg, org=data.org, donor_lines=addressee_lines(cfg, values_for(cfg, data), data.donor_name,
+                                                                           data.donor_address),
                             today=data.today, kind=data.kind, sample=sample, watermark=watermark,
                             doc_title=f"Donation receipt {data.number}", middle=middle, closing=texts["closing"])
 
@@ -461,6 +475,7 @@ def sample_data(db: Session, ctx, cfg: ReceiptConfig) -> ReceiptData:
                        org=_org_or_placeholders(db, ctx.workspace_id), donor_name=SAMPLE_DONOR[0], donor_address=SAMPLE_DONOR[1:],
                        amount_cents=25000, dates=[dt.date.today()], purposes=["General support"],
                        items=["SAMPLE ITEM - a television for the auction"],
+                       donor_values=entity_vars.sample("DONOR", SAMPLE_DONOR[0], SAMPLE_DONOR[1:]),
                        details="(The details written for this donation in the Donation receipt dialog: for example, "
                                "how the gift of ${AMOUNT} will be used.)")
 
@@ -598,7 +613,7 @@ def _content(db: Session, d: Donation) -> dict:
 
 def _content_sha(c: dict) -> str:
     e = c["entity"]
-    doc = {"donor": e.id, "name": e.display_name, "address": address_lines(e), "amount": c["amount"],
+    doc = {"donor": e.id, "name": e.legal_name, "address": address_lines(e), "amount": c["amount"],
            "dates": [x.isoformat() for x in c["dates"]], "goods": c["goods"], "purposes": c["purposes"],
            "details": c["details"]}
     if c["items"]:                       # 2.2.0: part 1 receipts (no items) keep their fingerprint
@@ -694,9 +709,10 @@ def _compose(db: Session, ctx, d: Donation) -> dict:
         note = "" if cur is None else (f"CORRECTED receipt: replaces receipt {cur.number} printed "
                                        f"{format_date(cur.printed_at.date(), cfg.date_format)}.")
     data = ReceiptData(number=number, kind=kind, kind_note=note, org=org_svc.values_for(db, ctx.workspace_id),
-                       donor_name=e.display_name, donor_address=address_lines(e),
+                       donor_name=e.legal_name, donor_address=address_lines(e),
                        amount_cents=c["amount"], dates=c["dates"], purposes=c["purposes"],
-                       goods=c["goods"], details=c["details"], items=c["items"])
+                       goods=c["goods"], details=c["details"], items=c["items"],
+                       donor_values=entity_vars.values("DONOR", e))
     warnings = []
     _texts, empty = receipt_texts(cfg, data)
     if empty:
@@ -771,7 +787,7 @@ def print_donation(db: Session, ctx, settings, d: Donation, confirmations: list[
                                              Attachment.workspace_id == ctx.workspace_id).order_by(Attachment.id))
     r = DonationReceipt(workspace_id=ctx.workspace_id, donation_id=d.id,
                         transaction_id=deposits[0].id if deposits else None, donor_entity_id=e.id,
-                        donor_name=e.display_name[:200], number=number, year=year, seq=seq, kind=kind,
+                        donor_name=e.legal_name[:200], number=number, year=year, seq=seq, kind=kind,
                         replaces_id=cur.id if cur is not None else None, amount_cents=content["amount"],
                         goods_cents=sum(x for x, _d in content["goods"]),
                         date_received=content["dates"][0] if content["dates"] else None,
@@ -1515,7 +1531,8 @@ def _envelope_values(db: Session, ctx, d: Donation, e: Entity) -> dict[str, str]
     check-only variables have no data here."""
     ws = db.get(Workspace, ctx.workspace_id)
     fmt = get_config(db, ctx.workspace_id).date_format
-    return {"ORG": ws.name if ws else "", "PAYEE": e.display_name, "PAYEE_ADDRESS": "\n".join(address_lines(e)),
+    return {**entity_vars.values("PAYEE", e),       # 2.2.0 (#317): the donor is the envelope's addressee
+            "ORG": ws.name if ws else "", "PAYEE": e.legal_name, "PAYEE_ADDRESS": "\n".join(address_lines(e)),
             "TODAY": format_date(dt.date.today(), fmt),
             **{k: v for k, v in org_svc.values_for(db, ctx.workspace_id).items() if k.startswith("ORG.")}}
 
@@ -1533,7 +1550,7 @@ def print_envelope(db: Session, ctx, settings, d: Donation, doc_id: int, *, retu
     cfg = cp.doc_config(doc)
     e = db.get(Entity, d.donor_entity_id)
     use_return = cfg.return_address if return_address is None else return_address
-    to_lines = [e.display_name] + address_lines(e)
+    to_lines = [e.legal_name] + address_lines(e)
     ret, to, empty = documents.envelope_lines(cfg, _envelope_values(db, ctx, d, e), to_lines, use_return)
     if not test:
         warnings = []

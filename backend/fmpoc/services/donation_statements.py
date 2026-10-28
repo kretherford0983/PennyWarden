@@ -40,6 +40,7 @@ from .. import audit
 from ..errors import AppError, Warning_, conflict, not_found, require_confirmations, validation
 from ..models import Attachment, Donation, DonationStatement, Entity, Workspace, utcnow
 from . import donations as dn
+from . import entity_vars
 from . import organization as org_svc
 from .checkprint import documents, patterns
 from .checkprint.service import address_lines, format_date
@@ -96,7 +97,7 @@ def _content(db: Session, ws_id: int, donor: Entity, year: int) -> dict:
 
 def _sha(c: dict) -> str:
     e = c["entity"]
-    doc = {"donor": e.id, "name": e.display_name, "address": address_lines(e), "year": c["year"],
+    doc = {"donor": e.id, "name": e.legal_name, "address": address_lines(e), "year": c["year"],
            "rows": [[r["line_id"], r["date"].isoformat(), r["receipt"], r["kind"], r["description"],
                      r["item_description"], r["amount_cents"], r["goods_cents"], r["goods_description"]]
                     for r in c["rows"]]}
@@ -182,8 +183,9 @@ def _row_out(r: dict) -> dict:
 
 # ------------------------------------------------------------------ the letter
 def statement_values(cfg, org: dict, donor_name: str, donor_address: list[str], year: int, number: str,
-                     total_cents: int, today: dt.date) -> dict[str, str]:
-    return {"DONOR_NAME": donor_name, "DONOR_ADDRESS": "\n".join(donor_address), **org, "YEAR": str(year),
+                     total_cents: int, today: dt.date, donor_values: dict | None = None) -> dict[str, str]:
+    return {"DONOR_NAME": donor_name, "DONOR_ADDRESS": "\n".join(donor_address), **org, **(donor_values or {}),
+            "YEAR": str(year),
             "TOTAL": f"{total_cents // 100:,}.{total_cents % 100:02d}", "STATEMENT_NO": number,
             "SIGNER": cfg.signer_name, "SIGNER_TITLE": cfg.signer_title, "TODAY": format_date(today, cfg.date_format),
             "DONATION_TABLE": TABLE_MARK}
@@ -223,11 +225,12 @@ def _donation_table(rows: list[dict], total_cents: int, cfg, st: dict) -> Table:
 
 def statement_pdf(cfg, *, org: dict, donor_name: str, donor_address: list[str], year: int, number: str, kind: str,
                   kind_note: str, rows: list[dict], total_cents: int, goods: list[tuple[int, str]], items: list[str],
-                  today: dt.date | None = None, sample: bool = False, watermark: str | None = None) -> bytes:
+                  today: dt.date | None = None, sample: bool = False, watermark: str | None = None,
+                  donor_values: dict | None = None) -> bytes:
     today = today or dt.date.today()
     if sample and watermark is None:
         watermark = "SAMPLE - NOT A STATEMENT"
-    vals = statement_values(cfg, org, donor_name, donor_address, year, number, total_cents, today)
+    vals = statement_values(cfg, org, donor_name, donor_address, year, number, total_cents, today, donor_values)
     texts, _empty = statement_texts(cfg, vals)
     st = dn._styles(cfg)
     size, base = st["size"], st["base"]
@@ -265,7 +268,9 @@ def statement_pdf(cfg, *, org: dict, donor_name: str, donor_address: list[str], 
         ack += [Spacer(1, size * 0.4), Paragraph(escape(dn.items_note_text(cfg, {k: v for k, v in vals.items()
                                                                                  if k != "DONATION_TABLE"})), base)]
     middle.append(KeepTogether(ack))
-    return dn.donor_letter_pdf(cfg, org=org, donor_name=donor_name, donor_address=donor_address, today=today,
+    lines = dn.addressee_lines(cfg, {k: v for k, v in vals.items() if k != "DONATION_TABLE"}, donor_name,
+                               donor_address)
+    return dn.donor_letter_pdf(cfg, org=org, donor_lines=lines, today=today,
                                kind=kind, sample=sample, watermark=watermark,
                                doc_title=f"Year-end giving statement {number}", middle=middle,
                                closing=texts["closing"].replace(TABLE_MARK, ""))
@@ -285,7 +290,8 @@ def sample_pdf(db: Session, ctx, data: dict | None) -> bytes:
     return statement_pdf(cfg, org=dn._org_or_placeholders(db, ctx.workspace_id), donor_name=dn.SAMPLE_DONOR[0],
                          donor_address=dn.SAMPLE_DONOR[1:], year=year, number=f"S-{year}-0000", kind=dn.ORIGINAL,
                          kind_note="", rows=rows, total_cents=40000, goods=[(6000, "Dinner")],
-                         items=["SAMPLE ITEM - a television for the auction"], sample=True)
+                         items=["SAMPLE ITEM - a television for the auction"], sample=True,
+                         donor_values=entity_vars.sample("DONOR", dn.SAMPLE_DONOR[0], dn.SAMPLE_DONOR[1:]))
 
 
 # ------------------------------------------------------------------ printing
@@ -322,7 +328,8 @@ def _compose(db: Session, ctx, e: Entity, year: int, seq: int | None = None) -> 
                                        f"{format_date(cur.printed_at.date(), cfg.date_format)}.")
     org = org_svc.values_for(db, ctx.workspace_id)
     addr = address_lines(e)
-    vals = statement_values(cfg, org, e.display_name, addr, year, number, c["total"], dt.date.today())
+    vals = statement_values(cfg, org, e.legal_name, addr, year, number, c["total"], dt.date.today(),
+                            entity_vars.values("DONOR", e))
     _t, empty = statement_texts(cfg, vals)
     warnings = []
     if empty:
@@ -342,11 +349,11 @@ def _compose(db: Session, ctx, e: Entity, year: int, seq: int | None = None) -> 
 
 def _pdf(x: dict, watermark: str | None = None) -> bytes:
     c = x["c"]
-    return statement_pdf(x["cfg"], org=x["org"], donor_name=x["e"].display_name, donor_address=x["addr"],
+    return statement_pdf(x["cfg"], org=x["org"], donor_name=x["e"].legal_name, donor_address=x["addr"],
                          year=x["year"], number=x["number"], kind=x["kind"], kind_note=x["note"], rows=c["rows"],
                          total_cents=c["total"], goods=[(r["goods_cents"], r["goods_description"]) for r in c["rows"]
                                                         if r["goods_cents"]],
-                         items=c["items"], watermark=watermark)
+                         items=c["items"], watermark=watermark, donor_values=entity_vars.values("DONOR", x["e"]))
 
 
 def preview(db: Session, ctx, year: int, donor_id: int) -> tuple[bytes, dict]:
@@ -362,7 +369,7 @@ def preview(db: Session, ctx, year: int, donor_id: int) -> tuple[bytes, dict]:
 def _keep(db: Session, ctx, settings, x: dict, pdf: bytes) -> tuple[DonationStatement, object]:
     from . import attachments as att_svc
     c, e = x["c"], x["e"]
-    s = DonationStatement(workspace_id=ctx.workspace_id, donor_entity_id=e.id, donor_name=e.display_name[:200],
+    s = DonationStatement(workspace_id=ctx.workspace_id, donor_entity_id=e.id, donor_name=e.legal_name[:200],
                           year=x["year"], seq=x["seq"], number=x["number"], kind=x["kind"],
                           replaces_id=x["cur"].id if x["cur"] is not None else None, total_cents=c["total"],
                           goods_cents=c["goods"], gifts=c["gifts"], items=len(c["items"]),
@@ -491,7 +498,7 @@ def print_envelope(db: Session, ctx, settings, s: DonationStatement, doc_id: int
     cfg = cp.doc_config(doc)
     e = db.get(Entity, s.donor_entity_id)
     use_return = cfg.return_address if return_address is None else return_address
-    to_lines = [e.display_name] + address_lines(e)
+    to_lines = [e.legal_name] + address_lines(e)
     ret, to, empty = documents.envelope_lines(cfg, dn._envelope_values(db, ctx, None, e), to_lines, use_return)
     if not test:
         warnings = []

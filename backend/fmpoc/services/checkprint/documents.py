@@ -61,6 +61,9 @@ WINDOW_OFFSET_MAX = 0.75
 LOGO_MAX_W, LOGO_MAX_H = 2.5, 1.0        # inches (#176)
 
 
+DEFAULT_ADDRESSEE = ["{PAYEE.NAME}", "{PAYEE.MAILING_ADDRESS}"]      # 2.2.0 (#317): today's block
+
+
 class LetterConfig(_M):
     font: Literal["SANS", "SERIF", "CARLITO"] = "CARLITO"
     size: float = Field(default=11, ge=8, le=14)
@@ -99,6 +102,18 @@ class LetterConfig(_M):
     fold_edge: float = Field(default=0.25, ge=0.1, le=0.5)
     fold_weight: Literal["HAIRLINE", "THIN", "MEDIUM"] = "HAIRLINE"
     fold_shade: Literal["LIGHT", "MEDIUM", "DARK"] = "LIGHT"
+    # 2.2.0 (#317): the addressee block - up to 6 lines like the letterhead, from {PAYEE.*} (default: name + mailing
+    # address, so existing templates print as before)
+    addressee: list[str] = Field(default_factory=lambda: list(DEFAULT_ADDRESSEE), max_length=6)
+
+    @field_validator("addressee")
+    @classmethod
+    def _ad(cls, v):
+        for line in v:
+            if len(line) > 200 or "\n" in line:
+                raise ValueError("Each addressee line is one line of at most 200 characters.")
+            _check_pattern(line, patterns.LETTER)
+        return v
 
     @field_validator("letterhead")
     @classmethod

@@ -81,6 +81,11 @@ VARIABLES["TOTAL"] = ("Total money given in the year, e.g. 1,250.00 (items have 
 VARIABLES["STATEMENT_NO"] = ("Statement number, e.g. S-2026-0001", (STATEMENT,))
 VARIABLES["DONATION_TABLE"] = ("The table of the year's donations (a paragraph of its own; printed after the text "
                                "when the letter doesn't have it)", (STATEMENT,))
+# 2.2.0 (#317): dotted entity variables by role ({ORG.*} is above); several-line fields only where line breaks are allowed
+from ..entity_vars import FIELDS as _EF, MULTILINE_FIELDS as _EM   # noqa: E402
+for _k, _d in _EF.items():
+    VARIABLES[f"PAYEE.{_k}"] = (f"Payee's {_d}", (LETTER, ENVELOPE) if _k in _EM else ALL)
+    VARIABLES[f"DONOR.{_k}"] = (f"Donor's {_d}", (RECEIPT, STATEMENT))
 MULTILINE = (LETTER, ENVELOPE, RECEIPT, STATEMENT)     # contexts whose text may contain line breaks
 _NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?")    # 2.1.0 (#314): ORG.NAME
 

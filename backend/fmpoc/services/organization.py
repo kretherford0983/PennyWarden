@@ -20,7 +20,11 @@ from . import entities as ent_svc
 
 EIN_RE = re.compile(r"^\d{2}-\d{7}$")
 PROFILE_FIELDS = ("address_line1", "address_line2", "city", "state_region", "postal_code", "country", "phone", "email",
-                  "ein")
+                  "ein",
+                  # 2.2.0 (#315): the mailing address when it isn't the address (empty = same); {ORG.ADDRESS} on
+                  # letters, envelopes and receipts is the mailing address
+                  "mailing_address_line1", "mailing_address_line2", "mailing_city", "mailing_state_region",
+                  "mailing_postal_code", "mailing_country")
 
 
 def normalize_ein(typed: str | None) -> str | None:
@@ -44,6 +48,12 @@ class ProfileIn(BaseModel):
     phone: str | None = Field(default=None, max_length=40)
     email: str | None = Field(default=None, max_length=254)
     ein: str | None = Field(default=None, max_length=10)
+    mailing_address_line1: str | None = Field(default=None, max_length=200)      # 2.2.0 (#315)
+    mailing_address_line2: str | None = Field(default=None, max_length=200)
+    mailing_city: str | None = Field(default=None, max_length=100)
+    mailing_state_region: str | None = Field(default=None, max_length=100)
+    mailing_postal_code: str | None = Field(default=None, max_length=20)
+    mailing_country: str | None = Field(default=None, max_length=100)
 
 
 def get(db: Session, ws_id: int | None) -> Entity | None:
@@ -102,7 +112,7 @@ def profile_out(db: Session, ws_id: int) -> dict:
     ws = db.get(Workspace, ws_id)
     e = ensure(db, ws)
     return {"id": e.id, "entity_number": e.entity_number, "name": ws.name,
-            **{f: getattr(e, f) for f in PROFILE_FIELDS}, "address": address_lines(e),
+            **{f: getattr(e, f) for f in PROFILE_FIELDS}, "address": address_lines(e), "mailing_same": e.mailing_same,
             "phone_display": phone_fmt.display(e.phone)}          # shown like an entity's phone (1.6.7)
 
 
