@@ -3420,16 +3420,44 @@ test("#216: System/About tabs have their own addresses; Auditors see three; bann
   await expect(page.getByRole("region", { name: "Health" })).toBeVisible();
   await page.unroute("**/api/system/backup-schedule/alert");
   await page.screenshot({ path: "e2e-screenshots/light-about-tabs.png" });
-  // an Auditor sees About, Settings and Security only; an Administrator-only address shows About
+  // an Auditor sees About, General (2.2.0, #349), Settings and Security only; an Administrator-only address shows About
   await createUser(page, "auditor1", "Auditor");
   await logout(page);
   await login(page, "auditor1");
   await page.getByRole("link", { name: "System/About" }).click();
-  await expect(page.getByRole("tablist", { name: "System/About sections" }).getByRole("tab")).toHaveText(["About", "Settings", "Security"]);
+  await expect(page.getByRole("tablist", { name: "System/About sections" }).getByRole("tab")).toHaveText(["About", "General", "Settings", "Security"]);
   await page.goto("/about/backups");
   await expect(page).toHaveURL(/\/about$/);
   await page.goto("/about/security");
   await expect(page.getByRole("region", { name: "Security overview" })).toBeVisible();
+  await logout(page);
+});
+
+test("2.2.0 (#349): a financial user sees System/About read-only - About and General only", async ({ page }) => {
+  await login(page, "ru1", "Brand-New-Pass-99");
+  await page.getByRole("link", { name: "System/About" }).click();
+  await expect(page.getByRole("tablist", { name: "System/About sections" }).getByRole("tab")).toHaveText(["About", "General"]);
+  const panel = page.getByRole("tabpanel");
+  await expect(panel).toContainText("Version");
+  await expect(panel).not.toContainText("Data protection");
+  await expect(panel).not.toContainText("Bind address");
+  await expect(page.getByTestId("update-check-status")).toBeVisible();
+  await expect(panel.getByRole("button", { name: "Check now" })).toHaveCount(0);
+  await expect(panel.getByRole("checkbox")).toHaveCount(0);
+  await page.getByRole("tab", { name: "General" }).click();
+  await expect(page).toHaveURL(/\/about\/general$/);
+  await expect(page.getByTestId("org-view")).toContainText("Organization name");
+  await expect(page.getByRole("tabpanel").getByRole("textbox")).toHaveCount(0);
+  await expect(page.getByRole("tabpanel").getByRole("button", { name: "Save" })).toHaveCount(0);
+  const mods = page.getByTestId("modules-status");
+  await expect(mods.getByRole("row", { name: /Payments/ })).toContainText("Register Users");
+  await expect(mods.getByRole("row", { name: /Fundraisers/ })).toContainText(/Enabled|Disabled/);
+  await page.screenshot({ path: "e2e-screenshots/light-about-financial.png" });
+  // Administrator-only tab addresses fall back to /about
+  for (const t of ["settings", "backups", "security", "health", "advanced", "branding"]) {
+    await page.goto(`/about/${t}`);
+    await expect(page).toHaveURL(/\/about$/);
+  }
   await logout(page);
 });
 

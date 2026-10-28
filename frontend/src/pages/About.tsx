@@ -8,7 +8,7 @@ import { useMe } from "../App";
 import { MaintenancePanel } from "./Maintenance";
 import { ReinitializePanel } from "./Reinitialize";
 import { TestingPanel } from "./Testing";
-import { BackupWarningSetting, DiagnosticsPanel, HealthPanel, OrganizationPanel, SecurityOverviewPanel, SessionsPanel, SettingsPanel } from "./AdminSettings";
+import { BackupWarningSetting, DiagnosticsPanel, HealthPanel, OrganizationPanel, OrganizationView, SecurityOverviewPanel, SessionsPanel, SettingsPanel } from "./AdminSettings";
 
 /** 2.0.0 build 11 (#216, docs/ui-standards.md): System/About in tabs, each at its own address (/about/<tab>, so it can
  * be bookmarked, reloaded and reached with Back). Tabs the user can't use are not shown; an unknown or unavailable tab
@@ -35,9 +35,10 @@ export default function About() {
   }, []);
   const admin = can("system.manage");
   const viewer = can("system.view");                  // Administrators and Auditors
+  const reader = can("system.about");                 // 2.2.0 (#349): every role - About and General, read-only
   const backups = !!a && a.restore_max_mb != null;     // the backup/restore permission (the server says)
   const allowed: Record<AboutTab, boolean> = {
-    about: true, general: admin, branding: admin, settings: viewer, backups: backups || admin, security: viewer, health: admin,
+    about: true, general: admin || reader, branding: admin, settings: viewer, backups: backups || admin, security: viewer, health: admin,
     advanced: admin || backups, testing: admin && testingMode,
   };
   const asked = (path.split("/")[2] || "about") as AboutTab;
@@ -54,11 +55,11 @@ export default function About() {
         <BuildDetails info={a} />
         {a.bind_host ? <dl className="dl"><dt>Bind address</dt><dd>{a.bind_host}:{a.port}</dd></dl> : null}
         {a.insecure_transport_warning ? <div className="alert warn">Network deployment without HTTPS configuration is not secure.</div> : null}
-        <div className="alert warn" role="note"><strong>Data protection:</strong> {a.backup_notice}</div>
-        {backups ? <UpdateSettings /> : null}
+        {a.backup_notice ? <div className="alert warn" role="note"><strong>Data protection:</strong> {a.backup_notice}</div> : null}
+        {backups ? <UpdateSettings /> : <UpdateSettings readOnly />}
       </>
     ),
-    general: () => (
+    general: () => !admin ? <><OrganizationView /><ModulesStatus /></> : (
       <>
         {org != null ? <OrganizationPanel name={org} onRenamed={(n) => { setOrg(n); window.dispatchEvent(new CustomEvent("pw:workspace-renamed", { detail: n })); }} /> : null}
         <ModulesPanel />
@@ -151,6 +152,31 @@ function ModulesPanel() {
           {saved ? <p className="hint" role="status">Saved.</p> : null}
         </>
       ) : null}
+    </section>
+  );
+}
+
+/** 2.2.0 (#349): every optional module, on or off, who uses it and whether the viewer can - read-only. */
+function ModulesStatus() {
+  const [m, setM] = useState<any[] | null>(null);
+  const [err, setErr] = useState<unknown>(null);
+  useEffect(() => { api.get("/api/system/modules/status").then(setM, setErr); }, []);
+  return (
+    <section className="card" aria-labelledby="modules-h">
+      <h2 id="modules-h">Optional modules</h2>
+      <ErrorBox error={err} />
+      {!m ? (err ? null : <Loading />) : (
+        <table className="table compact" data-testid="modules-status">
+          <thead><tr><th>Module</th><th>Status</th><th>Used by</th><th>You</th></tr></thead>
+          <tbody>
+            {m.map((x) => (
+              <tr key={x.key}><td>{x.name}</td><td>{x.enabled ? "Enabled" : <span className="muted">Disabled</span>}</td>
+                <td>{x.used_by.join(", ")}</td><td>{x.you ? (x.enabled ? "Available to you" : "Your role uses it when it is enabled") : <span className="muted">Not used by your role</span>}</td></tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <p className="hint">Modules are switched on and off by an Administrator.</p>
     </section>
   );
 }

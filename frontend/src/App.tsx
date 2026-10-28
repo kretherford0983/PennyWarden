@@ -199,9 +199,10 @@ function navFor(me: Me) {
   if (me.security_domain === "COMBINED") { // 1.9.0 (#54): one person, roles of several domains (local installs)
     const has = (p: string) => me.permissions.includes(p);
     return [...(has("financial.view") ? fin : [["/", "Dashboard"]]), ...(has("users.view") ? [["/users", "Users"]] : []),
-      ...(has("audit.view") ? [["/audit-log", "Audit Log"]] : []), ...checkSetup, ...(has("users.manage") || has("system.view") ? [["/about", "System/About"]] : [])];
+      ...(has("audit.view") ? [["/audit-log", "Audit Log"]] : []), ...checkSetup, ...(has("users.manage") || has("system.view") || has("system.about") ? [["/about", "System/About"]] : [])];
   }
-  return fin;
+  // 2.2.0 (#349): financial users see System/About read-only (About and General)
+  return me.permissions.includes("system.about") ? [...fin, ["/about", "System/About"]] : fin;
 }
 
 function Shell({ workspace, warning, mode, testing, demo, onLogout }: { workspace: string; warning: boolean; mode: string; testing?: boolean; demo?: boolean; onLogout: () => void }) {

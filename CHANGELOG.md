@@ -167,6 +167,16 @@ PennyWarden 2.2.0 (in progress).
 - **Addressee block**: cover letters (Payments Setup) and receipts and statements (Donations Setup) have up to six
   addressee lines built from these variables. The default — name and mailing address — prints as before.
 
+### System/About for everyone (#349)
+- **Financial users** (Budget Managers, Budget Users, Register Users) now have **System/About**, read-only, with two
+  tabs. **About**: the version — the same an Administrator sees, so it is easy to tell over the phone — and the update
+  check: whether it is on, when it last ran and its result, with *What's new* (no *Check now*, no switch).
+  **General**: the organization details and every optional module, enabled or disabled, which roles use it and
+  whether yours does (e.g. *Payments — Register Users*).
+- **Auditors** get the read-only **General** tab too.
+- Only Administrators change anything there. Settings, Backups, Security, System health and Advanced stay hidden,
+  and the "create backups" notice is not shown to financial users — backups are the Administrator's duty.
+
 ### Fundraiser series (#302, #351)
 - **Events held more than once a year.** *Start a series…* (on *Fundraiser series*) can now **Add to an existing
   series**, and a fundraiser in no series has **Add to a series…** on its page — for example a spring and a fall

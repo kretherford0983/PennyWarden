@@ -1,6 +1,6 @@
 /** 2.0.0 (#126): System/About - the organization name, the effective settings (with the server settings editor on
  * server installs) and the backup age warning. The server validates everything; this is convenience only. */
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { api } from "../api";
 import { ErrorBox, Field, Loading, Modal, RowMenu, useConfirmable } from "../components";
 import { formatPhone } from "./Entities";
@@ -19,6 +19,30 @@ const ORG_FIELDS: [string, string, number][] = [["address_line1", "Street addres
 export function formatEin(typed: string): string {
   const d = typed.replace(/[\s-]/g, "");
   return /^\d{9}$/.test(d) ? `${d.slice(0, 2)}-${d.slice(2)}` : typed;
+}
+
+/** 2.2.0 (#349): the organization details, read-only (financial roles and Auditors; Administrators edit them). */
+export function OrganizationView() {
+  const [p, setP] = useState<any>(null);
+  const [err, setErr] = useState<unknown>(null);
+  useEffect(() => { api.get("/api/system/organization").then(setP, setErr); }, []);
+  const rows: [string, any][] = p ? [["Organization name", p.name], ...ORG_FIELDS
+    .filter(([k]) => !k.startsWith("mailing_") || p.mailing_same === false)
+    .map(([k, label]) => [label, k === "phone" ? p.phone_display || p.phone : p[k]] as [string, any])] : [];
+  return (
+    <section className="card" aria-labelledby="org-h">
+      <h2 id="org-h">Organization</h2>
+      <ErrorBox error={err} />
+      {!p ? (err ? null : <Loading />) : <>
+        <dl className="dl" data-testid="org-view">
+          {rows.map(([label, v]) => <Fragment key={label}><dt>{label}</dt><dd>{v || <span className="muted">—</span>}</dd></Fragment>)}
+          {p.mailing_same !== false ? <><dt>Mailing address</dt><dd>Same as Address</dd></> : null}
+        </dl>
+        <p className="hint">Set by an Administrator. Used in reports, letters, envelopes and receipts as <code>{"{ORG.NAME}"}</code>, <code>{"{ORG.ADDRESS}"}</code> and so on.
+          {" "}The organization is also an entity ({p.entity_number}).</p>
+      </>}
+    </section>
+  );
 }
 
 export function OrganizationPanel({ name, onRenamed }: { name: string; onRenamed: (n: string) => void }) {

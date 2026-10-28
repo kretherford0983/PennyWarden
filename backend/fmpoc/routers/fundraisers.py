@@ -28,6 +28,7 @@ from ..services.checkprint import service as checks_svc
 from ..services import donations as donations_svc
 from ..services.common import get_scoped
 from ..models import FiscalYear
+from ..permissions import PERMISSIONS
 
 router = APIRouter(prefix="/api", tags=["fundraisers"])
 
@@ -40,6 +41,28 @@ def _modules(db: Session, ws_id: int) -> dict:
 @router.get("/system/modules")
 def modules(db: Session = Depends(get_db), ctx: Ctx = Depends(require("modules.manage"))):
     return _modules(db, ctx.workspace_id)
+
+
+# 2.2.0 (#349): every module, on or off, and who uses it - read-only for every role on System/About → General
+MODULES = (("fundraisers", "Fundraisers", ("fundraiser.view",), None),
+           ("checks", "Payments", ("checks.print",), "checks.setup"),
+           ("donations", "Donations", ("donation.view", "donation.print"), "donation.setup"))
+ROLE_PLURALS = (("BUDGET_MANAGER", "Budget Managers"), ("BUDGET_USER", "Budget Users"),
+                ("REGISTER_USER", "Register Users"), ("AUDITOR", "Auditors"))
+
+
+@router.get("/system/modules/status")
+def modules_status(db: Session = Depends(get_db), ctx: Ctx = Depends(require("system.about"))):
+    on = _modules(db, ctx.workspace_id)
+    out = []
+    for key, name, use, setup in MODULES:
+        roles = set().union(*(PERMISSIONS[p] for p in use))
+        used_by = [label for code, label in ROLE_PLURALS if code in roles]
+        if setup:
+            used_by.append("Administrators (setup)")
+        out.append({"key": key, "name": name, "enabled": bool(on[key]), "used_by": used_by,
+                    "you": any(ctx.has(p) for p in use + ((setup,) if setup else ()))})
+    return out
 
 
 @router.put("/system/modules")
