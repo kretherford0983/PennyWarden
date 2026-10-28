@@ -3762,6 +3762,99 @@ test("#312: Donations module - Administrator sets up the receipt; a Register Use
   await logout(page);
 });
 
+// ---------------------------------------------------------------- 2.2.0 #325: the shared envelope library
+test("#325: envelopes are one library tagged by feature; Donations Setup adds one and sets the receipt's window options", async ({ page }) => {
+  await login(page, "admin");
+  await page.getByRole("link", { name: "Envelopes", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Envelopes", exact: true })).toBeVisible();
+  const lib = page.getByTestId("envelope-library");
+  const first = lib.getByRole("row", { name: /^#10 envelope Payments/ });
+  await expect(first).toContainText("Payments");              // upgraded and Payments-created templates: Payments
+  await expect(page.getByTestId("no-default-donations")).toBeVisible();
+  await rowAction(lib, "#10 envelope", "Use for Donations");
+  await expect(lib.getByRole("row", { name: /^#10 envelope Payments, Donations/ })).toContainText("Payments, Donations");
+  await expect(page.getByTestId("no-default-donations")).toHaveCount(0);
+  await page.screenshot({ path: "e2e-screenshots/light-envelope-library.png" });
+  // Donations Setup lists it as the Donations default; its editor says it is shared with Payments
+  await page.getByRole("link", { name: "Donations Setup" }).click();
+  const envs = page.getByTestId("envelopes-donations");
+  const mine = envs.getByRole("row", { name: /^#10 envelope Default/ });
+  await expect(mine).toContainText("Payments");                    // also used for Payments
+  await mine.getByRole("button", { name: "Edit" }).click();
+  await expect(page.getByTestId("envelope-shared")).toContainText("Also used for Payments");
+  await expect(page.getByRole("button", { name: "Duplicate for Donations only" })).toBeVisible();
+  await page.getByRole("button", { name: "Back to Donations Setup" }).click();
+  // the receipt's window options are there; a window receipt hides the envelope step (left off here)
+  await expect(page.getByLabel("Address for a window envelope")).toHaveValue("NONE");
+  await page.getByLabel("Fold marks", { exact: true }).selectOption("FRONT");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Saved." })).toBeVisible();
+  await logout(page);
+});
+
+// ---------------------------------------------------------------- 2.2.0 #325: Donations page
+test("#325: a receipt before the money and an item on the Donations page, then Create transaction", async ({ page }) => {
+  test.setTimeout(150_000);
+  await login(page, "ru1", "Brand-New-Pass-99");
+  await page.getByRole("link", { name: "Donations", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Donations", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "New donation" }).click();
+  const dlg = page.getByRole("dialog", { name: "New donation" });
+  await dlg.getByRole("combobox", { name: "Donor (entity)" }).fill("Sample Donor Alpha");
+  await page.getByRole("option", { name: /Sample Donor Alpha/ }).first().click();
+  await dlg.getByLabel("Line 1 amount").fill("250.00");
+  await dlg.getByLabel("Purpose (optional)").first().fill("New flags");
+  await dlg.getByRole("button", { name: "+ Add line" }).click();
+  await dlg.getByRole("checkbox", { name: "Item (not money)" }).nth(1).check();
+  await expect(dlg.getByText("Estimated value for our records (not printed)")).toBeVisible();
+  await dlg.getByLabel("Line 2 description").fill("Television, 55 inch");
+  await expect(dlg.getByText(/Value not entered/)).toBeVisible();
+  await dlg.getByRole("button", { name: "Save donation" }).click();
+  const ed = page.getByRole("dialog", { name: /Donation #\d+ – Sample Donor Alpha/ });
+  await expect(ed.getByText("Awaiting deposit")).toBeVisible();
+  // not received: the receipt prints the date blank, after a confirmation
+  await ed.getByRole("button", { name: "Print receipt" }).click();
+  const conf = page.getByRole("dialog", { name: "Confirmation required" });
+  await expect(conf).toContainText("not received yet");
+  await conf.getByLabel("I have reviewed these warnings and explicitly confirm.").check();
+  await conf.getByRole("button", { name: "Confirm and continue" }).click();
+  const pv = page.getByRole("dialog", { name: "Donation receipt" });
+  await expect(pv.getByRole("button", { name: "Print…" })).toBeVisible();
+  await pv.getByRole("button", { name: "Close" }).first().click();
+  await expect(ed.getByRole("region", { name: "Receipts" })).toContainText("date received left blank");
+  // the donor's envelope, from the envelope tagged for Donations (its default first); the test is not kept
+  const envPanel = ed.getByTestId("receipt-envelope");
+  await expect(envPanel.getByLabel("Envelope", { exact: true })).toContainText("#10 envelope (default)");
+  await envPanel.getByRole("button", { name: "Test on plain paper" }).click();
+  const et = page.getByRole("dialog", { name: "Envelope test (plain paper)" });
+  await expect(et.getByRole("button", { name: "Print…" })).toBeVisible();
+  await et.getByRole("button", { name: "Close" }).first().click();
+  await page.screenshot({ path: "e2e-screenshots/light-donation-page.png" });
+  await ed.getByRole("button", { name: "Close" }).first().click();
+  await expect(page.getByRole("radio", { name: /Awaiting deposit \(\d+\)/ })).toBeVisible();
+  // the money arrives: Create transaction
+  await page.getByRole("button", { name: "Create transaction" }).click();
+  const ct = page.getByRole("dialog", { name: "Create transaction from donations" });
+  await ct.getByRole("checkbox", { name: /Sample Donor Alpha \$250\.00/ }).check();
+  await ct.getByRole("button", { name: "Continue" }).click();
+  const tf = page.getByRole("dialog", { name: /New deposit from donations/ });
+  await expect(tf.getByText(/Donation #\d+ – Sample Donor Alpha/)).toBeVisible();
+  await expect(tf.getByLabel("Allocation 1 Amount")).toHaveValue("250.00");
+  const budget = tf.getByLabel("Allocation 1 Budget");
+  await budget.selectOption({ index: 1 });
+  await tf.getByRole("button", { name: "Save" }).click();
+  const c2 = page.getByRole("dialog", { name: "Confirmation required" });
+  // the save may ask for a confirmation first (e.g. a cross-Fiscal-Year date): wait for that dialog or the form closing
+  await expect.poll(async () => (await c2.isVisible()) || (await tf.count()) === 0).toBe(true);
+  if (await c2.isVisible()) {
+    await c2.getByLabel("I have reviewed these warnings and explicitly confirm.").check();
+    await c2.getByRole("button", { name: "Confirm and continue" }).click();
+  }
+  await expect(tf).toHaveCount(0);
+  await expect(page.getByRole("row", { name: /Sample Donor Alpha/ }).first()).toContainText("Not received");   // the TV isn't here yet
+  await logout(page);
+});
+
 test("#125: an Administrator reinitializes (keeping the users); everyone sees the notice until it is acknowledged", async ({ page }) => {
   await login(page, "admin");
   await page.getByRole("link", { name: "System/About" }).click();

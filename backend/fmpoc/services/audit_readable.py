@@ -40,6 +40,9 @@ ACTION_LABELS = {
     "DONATION_DETAILS_UPDATED": "Donation details changed", "DONATION_RECEIPT_PRINTED": "Donation receipt printed",
     "DONATION_RECEIPT_TEST": "Donation receipt test print",
     "DONATION_RECEIPT_PREVIEW": "Donation receipt previewed",
+    # 2.2.0 (#325)
+    "DONATION_ENVELOPE_PRINTED": "Donation envelope printed", "DONATION_ENVELOPE_TEST": "Donation envelope test print",
+    "ENVELOPE_TAGS_UPDATED": "Envelope template features changed",
 }
 OBJECT_LABELS = {
     "user": "User", "workspace": "Organization", "server_config": "Server settings", "fiscal_year": "Fiscal Year", "budget": "Budget", "entity": "Entity",

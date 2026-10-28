@@ -7,6 +7,8 @@ receipts. Marking lines and printing receipts: Register Users (donation.print).
 Every endpoint needs the module switched on (404 MODULE_DISABLED otherwise)."""
 from __future__ import annotations
 
+import datetime as dt
+
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, Field
@@ -15,9 +17,12 @@ from sqlalchemy.orm import Session
 from .. import audit
 from ..deps import Ctx, get_db, require
 from ..errors import AppError
+from ..schemas import TransactionCreateIn
 from ..services import donations as svc
+from ..services import idempotency
+from ..services import register as reg
 from ..services.checkprint import raster
-from .checks import _pdf
+from .checks import EnvelopeIn, EnvelopePrinterIn, _pdf
 
 router = APIRouter(prefix="/api/donations", tags=["donations"])
 
@@ -137,3 +142,147 @@ def print_receipt(txn_id: int, body: ReceiptIn, request: Request, db: Session = 
     resp.headers["X-Receipt-Number"] = r.number
     resp.headers["X-Receipt-Kind"] = r.kind
     return resp
+
+
+# ------------------------------------------------------------------ 2.2.0 (#325): the Donations page
+class CancelIn(In):
+    reason: str = Field(max_length=500)
+
+
+class DonationPrintIn(In):
+    confirmations: list[str] = Field(default_factory=list, max_length=10)
+
+
+class CreateTransactionIn(In):
+    transaction: TransactionCreateIn
+    links: list[int | None] = Field(max_length=100)       # the donation line of each allocation (or none)
+    date_received: dt.date | None = None                   # for lines with no date received yet
+
+
+@router.get("")
+def list_donations(show: str = "all", q: str | None = None, db: Session = Depends(get_db),
+                   ctx: Ctx = Depends(view_ctx)):
+    if show not in ("all", "active", "awaiting", "value_missing", "cancelled"):
+        show = "all"
+    return svc.list_out(db, ctx, show, (q or "")[:120] or None)
+
+
+@router.post("", status_code=201)
+def create_donation(body: svc.DonationIn, db: Session = Depends(get_db), ctx: Ctx = Depends(print_ctx)):
+    d = svc.create(db, ctx, body)
+    db.commit()
+    return svc.donation_out(db, ctx, d)
+
+
+@router.get("/awaiting-lines")
+def awaiting_lines(db: Session = Depends(get_db), ctx: Ctx = Depends(print_ctx)):
+    return {"items": svc.awaiting_lines(db, ctx)}
+
+
+# 2.2.0 (#325): receipt envelopes - templates tagged for Donations in the shared envelope library
+@router.get("/envelopes")
+def envelopes(db: Session = Depends(get_db), ctx: Ctx = Depends(print_ctx)):
+    return svc.envelope_choices(db, ctx)
+
+
+@router.put("/my-printer/envelope")
+def save_envelope_printer(body: EnvelopePrinterIn, db: Session = Depends(get_db), ctx: Ctx = Depends(print_ctx)):
+    """My envelope printer settings: they belong to the template, so they carry over to Payments when it shares it."""
+    from ..services.checkprint import service as cp
+    d = svc._donation_envelope(db, ctx, body.document_id)
+    out = cp.save_envelope_printer(db, ctx, d, body.page, body.guide, body.dx, body.dy)
+    db.commit()
+    return out
+
+
+@router.post("/create-transaction", status_code=201)
+def create_transaction(body: CreateTransactionIn, request: Request, db: Session = Depends(get_db),
+                       ctx: Ctx = Depends(print_ctx)):
+    """Create transaction from donations: the deposit, linked to the chosen donation lines, receipts attached."""
+    if not ctx.has("transaction.manage"):
+        raise AppError(403, "FORBIDDEN", "Recording a deposit needs the Register User role.")
+    replay = idempotency.claim(db, ctx, body.transaction.request_key, "transaction")
+    if replay:
+        return reg.out(db, reg.get(db, ctx, replay[0]))
+    t = svc.create_transaction(db, ctx, request.app.state.settings, body.transaction, body.links, body.date_received)
+    idempotency.complete(db, ctx, body.transaction.request_key, [t.id])
+    db.commit()
+    return reg.out(db, t)
+
+
+@router.get("/{donation_id}")
+def get_donation(donation_id: int, db: Session = Depends(get_db), ctx: Ctx = Depends(view_ctx)):
+    return svc.donation_out(db, ctx, svc.get_donation(db, ctx, donation_id))
+
+
+@router.put("/{donation_id}")
+def update_donation(donation_id: int, body: svc.DonationIn, db: Session = Depends(get_db),
+                    ctx: Ctx = Depends(print_ctx)):
+    d = svc.update(db, ctx, svc.get_donation(db, ctx, donation_id), body)
+    db.commit()
+    return svc.donation_out(db, ctx, d)
+
+
+@router.post("/{donation_id}/cancel")
+def cancel_donation(donation_id: int, body: CancelIn, db: Session = Depends(get_db), ctx: Ctx = Depends(print_ctx)):
+    d = svc.cancel(db, ctx, svc.get_donation(db, ctx, donation_id), body.reason)
+    db.commit()
+    return svc.donation_out(db, ctx, d)
+
+
+@router.post("/{donation_id}/receipts/preview")
+def preview_donation(donation_id: int, db: Session = Depends(get_db), ctx: Ctx = Depends(print_ctx)):
+    pdf, info = svc.preview_donation(db, ctx, svc.get_donation(db, ctx, donation_id))
+    resp = _pdf(ctx, pdf, "receipt-preview.pdf")
+    resp.headers["X-Receipt-Kind"] = info["kind"]
+    if info["replaces"]:
+        resp.headers["X-Receipt-Replaces"] = info["replaces"]
+    return resp
+
+
+@router.post("/{donation_id}/receipts")
+def print_donation(donation_id: int, body: DonationPrintIn, request: Request, db: Session = Depends(get_db),
+                   ctx: Ctx = Depends(print_ctx)):
+    d = svc.get_donation(db, ctx, donation_id)
+    pdf, r = svc.print_donation(db, ctx, request.app.state.settings, d, body.confirmations)
+    resp = _pdf(ctx, pdf, f"receipt-{r.number}{'-duplicate' if r.kind == svc.DUPLICATE else ''}.pdf")
+    resp.headers["X-Receipt-Number"] = r.number
+    resp.headers["X-Receipt-Kind"] = r.kind
+    return resp
+
+
+@router.get("/{donation_id}/documents/{attachment_id}")
+def donation_document(donation_id: int, attachment_id: int, request: Request, db: Session = Depends(get_db),
+                      ctx: Ctx = Depends(view_ctx)):
+    """A printed receipt kept with a donation not linked to a deposit (view only; audited like attachments)."""
+    from ..models import Attachment
+    from ..services import attachments as att_svc
+    d = svc.get_donation(db, ctx, donation_id)
+    a = db.get(Attachment, attachment_id)
+    if a is None or a.donation_id != d.id or not a.active:
+        raise AppError(404, "NOT_FOUND", "Document not found.")
+    data = att_svc.path_for(request.app.state.settings, a).read_bytes()
+    audit.record(db, ctx, "ATTACHMENT_VIEWED", "attachment", a.id, None, {"donation_id": d.id})
+    db.commit()
+    return _pdf(ctx, data, a.original_filename)
+
+
+@router.post("/{donation_id}/envelope")
+def print_envelope(donation_id: int, body: EnvelopeIn, request: Request, db: Session = Depends(get_db),
+                   ctx: Ctx = Depends(print_ctx)):
+    d = svc.get_donation(db, ctx, donation_id)
+    pdf = svc.print_envelope(db, ctx, request.app.state.settings, d, body.document_id,
+                             return_address=body.return_address, page=body.page, guide=body.guide, test=False,
+                             confirmations=body.confirmations)
+    return _pdf(ctx, pdf, f"envelope-donation-{d.id}.pdf")
+
+
+@router.post("/{donation_id}/envelope-test")
+def envelope_test(donation_id: int, body: EnvelopeIn, request: Request, db: Session = Depends(get_db),
+                  ctx: Ctx = Depends(print_ctx)):
+    """Test on plain paper: the real addresses, marked TEST; not kept."""
+    d = svc.get_donation(db, ctx, donation_id)
+    pdf = svc.print_envelope(db, ctx, request.app.state.settings, d, body.document_id,
+                             return_address=body.return_address, page=body.page, guide=body.guide, test=True,
+                             confirmations=[])
+    return _pdf(ctx, pdf, "envelope-test.pdf")

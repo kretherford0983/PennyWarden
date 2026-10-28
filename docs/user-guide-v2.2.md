@@ -90,6 +90,76 @@ balance — so the Change column shows real growth, not the whole balance.
 Dates before it count as $0 (the account didn't exist), the report doesn't list it for a Through Date before then, and
 the dashboard balance charts start there. Leave it blank if the account existed before PennyWarden.
 
+## Donations: before the deposit, and items (Donations module)
+
+**Donations** is now in the navigation when the module is on. Register Users record and print there; the other
+financial roles and Auditors see it.
+
+### A receipt before the money arrives
+1. **New donation**: choose the donor, then one or more lines — the amount, an optional purpose and any goods or
+   services given in exchange. The **Est. received date** is optional.
+2. **Save**, then **Print receipt**. As the money hasn't come in yet, the receipt prints *Date received:
+   ________________* to fill in by hand when the donation is handed over. The printed copy is kept with the donation.
+3. When the money is deposited: **Create transaction**, tick the donation(s), choose the bank account and
+   **Continue**. The deposit form opens with one allocation per donation — donor, amount and description filled in.
+   Choose the budget(s); **Split this donation** spreads one over several budgets (its allocations must add up to its
+   amount). Enter the date received if the donation had none (empty = the deposit's date) and save. The deposit is
+   linked to the donations and their printed receipts are attached to it.
+
+Until it is deposited a money line shows **Awaiting deposit** (a filter with a count on the Donations page). Once
+linked, the deposit decides: changing its amount in the register changes the donation, and the next receipt prints as
+*Corrected*.
+
+### Items (not money)
+Tick **Item (not money)** on a line for a physical gift — a TV, auction goods. The receipt lists items **by
+description only**, never a value, and prints a note about it (Donations Setup can adjust the wording); its total
+covers money only. The amount box becomes *Estimated value for our records (not printed)*; leave it empty and the
+donation shows *Value not entered* until you enter an estimate or tick **No value will be provided** with a reason.
+Tick **Received** with the date when the item is handed over. Items received in a Fiscal Year are listed in the Audit
+and Close reports under **Non-cash donations received**.
+
+### Changing, voiding and cancelling
+- A line received in a Closed Fiscal Year can't be changed, like the register.
+- Voiding a deposit created from the Donations page *unlinks* its donations: they show *Awaiting deposit* again and
+  their receipts stay valid. (Receipts of donations marked on a deposit in the register are void with the deposit, as
+  before.)
+- A donation that never happens is **Cancelled** with a reason, as long as nothing of it is received. Its receipts are
+  void; nothing is deleted.
+
+### Donations Setup (Administrators)
+**Note when a receipt lists items**: empty prints the default wording (shown in grey); **Default wording** puts it in
+the box to edit. Your own wording needs at least 8 words (a `{VARIABLE}` counts as one).
+
+**Window envelope and fold marks**: as on a cover letter, the receipt can carry the addresses for a #10
+double-window envelope (*On the receipt*, or *On a separate address page*), with or without the organization's address
+in the upper window, and fold marks on the front or on the back (two-sided printing). A window receipt needs no
+envelope, so the print screen hides that step (*Print an envelope anyway* brings it back).
+
+**Envelopes**: the envelopes used for Donations. **New #10 envelope** makes one for Donations; **Add to Donations**
+uses one of the other templates (for example Payments' envelope) as well. See *Envelopes: one library* below.
+
+### Printing the donor's envelope (Register Users)
+After printing a receipt (on the Donations page or in a deposit's *Donation receipt…* dialog), the **Envelope** step
+offers the envelopes used for Donations, the default first. Tick or untick **Print the return address**, use **Test on
+plain paper** to check where the address lands (not kept), and **My envelope printer settings** to move the print by
+up to 1/4 inch. The printed envelope is kept with the donation and on its deposit. With no envelope set up for
+Donations the step says so; an Administrator adds one in Donations Setup.
+
+## Envelopes: one library (Administrators)
+Envelope templates are one library shared by Payments and Donations. Each template is *used for* the features you
+choose, and each feature has its own default. **Envelopes** in the navigation (shown when Payments or Donations is on)
+lists every template with what it is used for: **Use for …** / **Remove from …**, **Make the … default**, **Edit**,
+**Deactivate**. Payments Setup and Donations Setup list their own envelopes and can remove only their own use.
+
+- Removing a feature from its default envelope asks which envelope it uses from now on. Removing it from its last
+  envelope leaves that feature with no envelope: printing an envelope is hidden there.
+- An envelope no feature uses stays on the Envelopes page as *Not used*. Templates are never deleted, because printed
+  copies refer to them.
+- Editing an envelope another feature also uses shows *Also used for …: changes apply there too*. **Duplicate for …
+  only** makes a copy for the feature you are setting up and moves that feature (and its default) to the copy.
+- Your *My envelope printer settings* belong to the template, so they apply wherever it is used.
+- After upgrading, every existing envelope is used for Payments and Payments keeps its default.
+
 ## Organization branding (Administrators)
 
 **System/About → Branding** gives generated reports and presentations your organization's look: every PDF report,

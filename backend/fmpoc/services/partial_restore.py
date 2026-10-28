@@ -47,7 +47,7 @@ DATA_TABLES = (
     "fundraiser", "fundraiser_budget", "fundraiser_series", "fundraiser_series_result", "fundraiser_fy_report_note",
     "fundraiser_bucket_category", "fundraiser_bucket", "fundraiser_exclusion", "fundraiser_classification",
     "fundraiser_line_contributor", "fundraiser_bucket_line",
-    "donation_line", "donation_detail", "donation_receipt",
+    "donation", "donation_line", "donation_detail", "donation_receipt",
 )
 SETTINGS_SECTIONS = {
     "settings.general": {"tables": ("signature_template",),
