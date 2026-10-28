@@ -42,6 +42,8 @@ def status(request: Request, response: Response, db: Session = Depends(get_db)):
             "maintenance_mode": maintenance_state(ws),
             "maintenance": request.app.state.maintenance,
             "mode": s.mode, "insecure_transport_warning": request.app.state.insecure_transport_warning,
+            "testing_mode": bool(getattr(request.app.state, "testing_mode", False)),   # 2.2.0 (#231): the banner
+            "demo": bool(getattr(request.app.state, "demo", False)),   # 2.2.0 (#243): the demo banner
             **legal_payload()}
 
 
@@ -104,7 +106,8 @@ def about(request: Request, ctx: Ctx = Depends(auth_ctx)):
     admin = ADMINISTRATOR in ctx.roles
     return {**version_payload(request), "bind_host": s.host if admin else None, "port": s.port if admin else None,
             # v1.4.1 CR-023: backup/restore is built in (supersedes BR-092)
-            "backup_notice": "Create backups regularly (System/About → Backups → Backup / Restore) and keep them off "
+            # 2.2.0 (#349): backups are an Administrator duty - no notice for the other roles
+            "backup_notice": None if not ctx.has("system.view") else "Create backups regularly (System/About → Backups → Backup / Restore) and keep them off "
                              "this machine, together with their passphrase. A backup contains the database, all "
                              "attachments and the encryption key; config.toml is not included.",
             "restore_max_mb": s.restore_max_mb if ADMINISTRATOR in ctx.roles else None,

@@ -17,7 +17,7 @@ export function MfaGate({ me, workspace, onDone, onLogout }: { me: Me; workspace
       <div className="card auth-card mfa-card">
         <p className="muted">{workspace}</p>
         {me.mfa_pending === "QUESTIONS" ? <QuestionsStep onDone={onDone} /> /* 1.8.0 (#113) */
-        : me.mfa_pending === "PASSWORD" ? <NewPasswordStep onDone={onDone} />
+        : me.mfa_pending === "PASSWORD" ? <NewPasswordStep onDone={onDone} username={me.username} />
         : me.mfa_pending === "ENROLL" ? (
           <>
             <h1>Set up two-step verification</h1>
@@ -82,9 +82,29 @@ export function Enrollment({ currentCode, onFinished, onCancel }: { currentCode?
   const [code, setCode] = useState("");
   const [codes, setCodes] = useState<string[] | null>(null);
   const [copied, setCopied] = useState(false);
+  // 2.2.0 (#327): the user's own key (Base32 or an otpauth://totp link) instead of the generated one
+  const [ownKey, setOwnKey] = useState("");
+  const [own, setOwn] = useState<any>(null);
+  const [ownErr, setOwnErr] = useState<unknown>(null);
   useEffect(() => {
     api.post("/api/auth/mfa/enroll/start", { current_code: currentCode || null }).then(setSetup, setErr);
   }, [currentCode]);
+  const useOwnKey = async () => {
+    setOwnErr(null);
+    try {
+      setOwn(await api.post("/api/auth/mfa/enroll/own-key", { own_key: ownKey }));
+      setOwnKey("");   // the key is not kept on the page once the server has it
+      setCode("");
+    } catch (x) { setOwnErr(x); }
+  };
+  const useGenerated = async () => {
+    setOwnErr(null);
+    try {
+      setSetup(await api.post("/api/auth/mfa/enroll/own-key", { own_key: null }));
+      setOwn(null);
+      setCode("");
+    } catch (x) { setOwnErr(x); }
+  };
   const confirm = async (e: FormEvent) => {
     e.preventDefault();
     setErr(null);
@@ -102,6 +122,55 @@ export function Enrollment({ currentCode, onFinished, onCancel }: { currentCode?
   const copyKey = async () => {
     try { await navigator.clipboard.writeText(setup.secret.replace(/ /g, "")); setCopied(true); } catch { setCopied(false); }
   };
+  const ownKeyBox = setup.own_key_allowed === false ? (
+    <div className="alert warn own-key" data-testid="own-key-blocked">
+      <b>Use my own key instead</b> is not available: your two-step verification was reset after a possible security
+      problem, so set it up with the new key above.
+    </div>
+  ) : (
+    <details className="own-key">
+      <summary>Use my own key instead</summary>
+      <p className="hint">
+        Already have PennyWarden in your authenticator app (for example after your two-step verification was reset)?
+        Enter the key from that entry, or paste an <code>otpauth://totp/…</code> link exported from the app, and keep
+        using it. <b>Reuse a key only if it was never exposed; after any security problem use the new key above.</b>
+      </p>
+      <ErrorBox error={ownErr} />
+      <Field label="Your authenticator key or otpauth link">
+        <input autoComplete="off" spellCheck={false} maxLength={2000} value={ownKey} onChange={(e) => setOwnKey(e.target.value)} />
+      </Field>
+      <button type="button" disabled={!ownKey.trim()} onClick={useOwnKey}>Use this key</button>
+    </details>
+  );
+  const confirmStep = (
+    <li>
+      <b>Enter the 6-digit code</b> the app now shows{own ? " for that entry" : ""}.
+      <GuardedForm onSubmit={confirm}>
+        <ErrorBox error={err} />
+        <Field label="Code from the app">
+          <input required inputMode="numeric" autoComplete="one-time-code" pattern="[0-9 ]{6,7}" maxLength={7} value={code} onChange={(e) => setCode(e.target.value.replace(/[^0-9 ]/g, ""))} />
+        </Field>
+        <div className="actions left">
+          <button className="primary" type="submit">Turn on two-step verification</button>
+          {onCancel ? <button type="button" onClick={onCancel}>Cancel</button> : null}
+        </div>
+      </GuardedForm>
+    </li>
+  );
+  if (own)
+    return (
+      <div className="mfa-setup">
+        <ol className="steps">
+          <li>
+            <b>Using your own key.</b> Nothing is saved until the code below matches it.
+            {own.short_key ? <p className="hint" data-testid="own-key-short">Your key is {own.key_length} characters, shorter than PennyWarden's own keys ({own.own_key_length} characters). It works, but a longer key is stronger.</p> : null}
+            <ErrorBox error={ownErr} />
+            <p><button type="button" className="small" onClick={useGenerated}>Use a new generated key instead</button></p>
+          </li>
+          {confirmStep}
+        </ol>
+      </div>
+    );
   return (
     <div className="mfa-setup">
       <ol className="steps">
@@ -116,20 +185,9 @@ export function Enrollment({ currentCode, onFinished, onCancel }: { currentCode?
             <button type="button" className="small" onClick={copyKey}>{copied ? "Copied" : "Copy key"}</button>
           </div>
           <p className="hint">Account: {setup.account} · Issuer: {setup.issuer}</p>
+          {ownKeyBox}
         </li>
-        <li>
-          <b>Enter the 6-digit code</b> the app now shows.
-          <GuardedForm onSubmit={confirm}>
-            <ErrorBox error={err} />
-            <Field label="Code from the app">
-              <input required inputMode="numeric" autoComplete="one-time-code" pattern="[0-9 ]{6,7}" maxLength={7} value={code} onChange={(e) => setCode(e.target.value.replace(/[^0-9 ]/g, ""))} />
-            </Field>
-            <div className="actions left">
-              <button className="primary" type="submit">Turn on two-step verification</button>
-              {onCancel ? <button type="button" onClick={onCancel}>Cancel</button> : null}
-            </div>
-          </GuardedForm>
-        </li>
+        {confirmStep}
       </ol>
     </div>
   );

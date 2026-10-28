@@ -20,9 +20,10 @@ from .config import Settings, is_loopback, load_settings
 from .db import make_engine, make_session_factory, upgrade_database
 from .deps import enforce_csrf, enforce_maintenance
 from .errors import install_handlers
-from .routers import (admin, attachments, audit_log, auth, backup, bank_accounts, budgets, checks, dashboard, donations,
+from .routers import (admin, attachments, audit_log, auth, backup, bank_accounts, branding, budgets, checks, dashboard, donations,
+                      envelopes,
                       entities, fiscal_years, fundraisers, pdf_preview, register, reminders, reports, system, updates,
-                      users)
+                      demo, testing, users)
 from .security import crypto
 from .services import bootstrap
 from .services.auth import LoginRateLimiter
@@ -126,6 +127,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     settings = settings or load_settings()
     settings.ensure_dirs()
     setup_logging(settings)
+    # 2.2.0 (#243): the demo starts from its pristine copy every time, and only on this computer (raises DemoError)
+    from .services import demo as demo_svc
+    is_demo = demo_svc.at_start(settings)
     upgrade_database(settings.database_url)
     engine = make_engine(settings.database_url)
     session_factory = make_session_factory(engine)
@@ -169,6 +173,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     from .services.backup import Jobs, cleanup_work
     app.state.jobs, app.state.uploads, app.state.maintenance = Jobs(), {}, None
     cleanup_work(settings)
+    # 2.2.0 (#231): testing mode - server installs only (a local install ignores the setting, phase 2)
+    from .services import testing as testing_svc
+    app.state.testing_mode = testing_svc.configure(settings)
+    app.state.demo = is_demo
 
     install_handlers(app)
     frontend_build = _frontend_build(settings.frontend_dir or STATIC_DIR)
@@ -209,7 +217,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.add_middleware(BodyLimitMiddleware)
 
     for r in (system, backup, auth, users, audit_log, fiscal_years, budgets, entities, bank_accounts, register,
-              attachments, dashboard, reports, fundraisers, reminders, updates, checks, donations, pdf_preview, admin):
+              attachments, dashboard, reports, fundraisers, reminders, updates, checks, donations, pdf_preview, admin,
+              testing, demo, branding, envelopes):
         app.include_router(r.router)
 
     @app.api_route("/api/{rest:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"], include_in_schema=False)

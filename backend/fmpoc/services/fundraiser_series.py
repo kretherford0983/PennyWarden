@@ -164,7 +164,33 @@ def _result_out(r: FundraiserSeriesResult) -> dict:
             "retired": r.retired_at is not None, "retire_reason": r.retire_reason}
 
 
-def series_list(db: Session, ctx) -> list[dict]:
+SORT_DIRECTIONS = ("desc", "asc")
+DEFAULT_SERIES_SORT = "desc"     # 2.2.0 (#351): newest year first; stored as no preference
+
+
+def series_sort_of(user) -> str:
+    return user.fundraiser_series_sort or DEFAULT_SERIES_SORT
+
+
+def _rows(fundraisers: list[dict], results: list[dict], direction: str) -> list[dict]:
+    """2.2.0 (#351): one list per series, recorded fundraisers and entered results mixed by year (newest first unless
+    `direction` is "asc"). Within a year the order is the same either way: recorded fundraisers by start date, newest
+    first; then active entered results; then retired ones (the record of the change)."""
+    rows = [{"kind": "recorded", **f} for f in fundraisers] + [{"kind": "entered", **r} for r in results]
+
+    def within(r):
+        if r["kind"] == "recorded":
+            return (0, -dt.date.fromisoformat(r["start_date"]).toordinal(), -r["id"])
+        return (2 if r["retired"] else 1, 0, r["id"])
+    rows.sort(key=within)
+    rows.sort(key=lambda r: r["year"], reverse=direction != "asc")      # stable: the within-year order is kept
+    return rows
+
+
+def series_list(db: Session, ctx, direction: str | None = None) -> list[dict]:
+    """Every series with its fundraisers and entered results. `rows` (2.2.0, #351) is the one ordered list the page
+    shows; `direction` defaults to the user's remembered choice."""
+    direction = direction if direction in SORT_DIRECTIONS else series_sort_of(ctx.user)
     out = []
     frs = list(db.scalars(select(Fundraiser).where(Fundraiser.workspace_id == ctx.workspace_id, Fundraiser.series_id.is_not(None))))
     for s in db.scalars(select(FundraiserSeries).where(FundraiserSeries.workspace_id == ctx.workspace_id,
@@ -172,11 +198,49 @@ def series_list(db: Session, ctx) -> list[dict]:
         members = sorted((f for f in frs if f.series_id == s.id), key=lambda f: f.start_date)
         results = list(db.scalars(select(FundraiserSeriesResult).where(FundraiserSeriesResult.series_id == s.id)
                                   .order_by(FundraiserSeriesResult.year, FundraiserSeriesResult.id)))
+        fundraisers = [{"id": f.id, "name": f.name, "start_date": f.start_date.isoformat(),
+                        "year": fundraiser_year(db, f), "status": fsvc.status_of(f)} for f in members]
+        entered = [_result_out(r) for r in results]
         out.append({"id": s.id, "name": s.name, "group_as_other": s.group_as_other,
-                    "fundraisers": [{"id": f.id, "name": f.name, "start_date": f.start_date.isoformat(),
-                                     "year": fundraiser_year(db, f), "status": fsvc.status_of(f)} for f in members],
-                    "results": [_result_out(r) for r in results]})
+                    "fundraisers": fundraisers, "results": entered, "rows": _rows(fundraisers, entered, direction)})
     return out
+
+
+def add_options(db: Session, ctx, f: Fundraiser) -> list[dict]:
+    """2.2.0 (#302): the series a fundraiser in no series can be added to. A series with an active entered result
+    for the fundraiser's year is listed but not allowed (a year is never counted twice)."""
+    year = fundraiser_year(db, f)
+    out = []
+    for s in db.scalars(select(FundraiserSeries).where(FundraiserSeries.workspace_id == ctx.workspace_id,
+                                                      FundraiserSeries.merged_into_id.is_(None)).order_by(FundraiserSeries.name)):
+        entered = db.scalar(select(FundraiserSeriesResult).where(FundraiserSeriesResult.series_id == s.id,
+                                                                 FundraiserSeriesResult.year == year,
+                                                                 FundraiserSeriesResult.retired_at.is_(None)))
+        out.append({"id": s.id, "name": s.name, "allowed": entered is None,
+                    "reason": None if entered is None else f"{entered.fiscal_year_label} is entered on this series"})
+    return out
+
+
+def add_to_series(db: Session, ctx, f: Fundraiser, series_id: int) -> FundraiserSeries:
+    """2.2.0 (#302): put a fundraiser in no series into an existing one - e.g. the second of an event held twice a
+    year, in its first year in PennyWarden (nothing earlier to continue from). "Continues from" stays empty. Refused
+    when the series has an active entered result for the fundraiser's year. Audited like a link change."""
+    if f.series_id is not None:
+        raise AppError(409, "ALREADY_IN_SERIES", "This fundraiser is already in a series. To combine two series, "
+                       "use Merge into… on Fundraiser series.")
+    s = _series(db, ctx, series_id)
+    year = fundraiser_year(db, f)
+    entered = db.scalar(select(FundraiserSeriesResult).where(FundraiserSeriesResult.series_id == s.id,
+                                                             FundraiserSeriesResult.year == year,
+                                                             FundraiserSeriesResult.retired_at.is_(None)))
+    if entered is not None:
+        raise AppError(409, "YEAR_ENTERED", f"{s.name} already has an entered result for {entered.fiscal_year_label}, "
+                       "the year of this fundraiser. Retire it first, so the year is not counted twice.")
+    before = _link_snapshot(f)
+    f.series_id = s.id
+    db.flush()
+    audit.record(db, ctx, "FUNDRAISER_SERIES_LINK_UPDATED", "fundraiser", f.id, before, _link_snapshot(f))
+    return s
 
 
 def update_series(db: Session, ctx, s: FundraiserSeries, name: str | None, group_as_other: bool | None) -> None:

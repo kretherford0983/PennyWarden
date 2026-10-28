@@ -25,7 +25,7 @@ def _rel(tag, pre=False, draft=False, date="2026-10-09T20:00:00Z", body="Notes",
 
 NAMES = ["PennyWarden-1.9.0-windows-x64.exe", "PennyWarden-windows-x64.zip", "PennyWarden-1.9.0-macos-arm64.dmg",
          "install.sh", "PennyWarden-linux-x64-portable.tar.gz", "install-server.sh", "build-info.json",
-         "SHA256SUMS.txt"]
+         "SHA256SUMS.txt", "pennywarden-demo-1.9.0.fmbak"]
 
 
 def test_channels_order_and_fields():
@@ -42,7 +42,7 @@ def test_channels_order_and_fields():
     assert r["notes"] == "**New** stuff" and r["date"] == "2026-10-09" and r["channel"] == "stable"
     dl = {(d["os"], d["kind"]): d for d in r["downloads"]}
     assert set(dl) == {("windows", "installer"), ("windows", "portable"), ("mac", "installer"), ("linux", "installer"),
-                       ("linux", "portable"), ("all", "checksums")}
+                       ("linux", "portable"), ("all", "checksums"), ("demo", "backup")}   # 2.2.0 (#243)
     assert dl[("windows", "installer")]["sha256"] == "a" * 64 and dl[("linux", "installer")]["sha256"] == "b" * 64
     assert dl[("mac", "installer")]["sha256"] is None
 

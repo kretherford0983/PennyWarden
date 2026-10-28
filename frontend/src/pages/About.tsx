@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { api } from "../api";
 import { BuildDetails, ErrorBox, Loading } from "../components";
 import { useRouter } from "../router";
@@ -7,14 +7,18 @@ import { UpdateSettings } from "./Updates";
 import { useMe } from "../App";
 import { MaintenancePanel } from "./Maintenance";
 import { ReinitializePanel } from "./Reinitialize";
-import { BackupWarningSetting, DiagnosticsPanel, HealthPanel, OrganizationPanel, SecurityOverviewPanel, SessionsPanel, SettingsPanel } from "./AdminSettings";
+import { TestingPanel } from "./Testing";
+import { BackupWarningSetting, DiagnosticsPanel, HealthPanel, OrganizationPanel, OrganizationView, SecurityOverviewPanel, SessionsPanel, SettingsPanel } from "./AdminSettings";
 
 /** 2.0.0 build 11 (#216, docs/ui-standards.md): System/About in tabs, each at its own address (/about/<tab>, so it can
  * be bookmarked, reloaded and reached with Back). Tabs the user can't use are not shown; an unknown or unavailable tab
  * address shows About. */
+// 2.2.0 (#280): the palette generator library is loaded only when the Branding tab is opened
+const BrandingPanel = lazy(() => import("./Branding").then((m) => ({ default: m.BrandingPanel })));
+
 export const ABOUT_TABS = [
-  ["about", "About"], ["general", "General"], ["settings", "Settings"], ["backups", "Backups"],
-  ["security", "Security"], ["health", "System health"], ["advanced", "Advanced"],
+  ["about", "About"], ["general", "General"], ["branding", "Branding"], ["settings", "Settings"], ["backups", "Backups"],
+  ["security", "Security"], ["health", "System health"], ["advanced", "Advanced"], ["testing", "Testing"],
 ] as const;
 export type AboutTab = (typeof ABOUT_TABS)[number][0];
 export const aboutPath = (tab: AboutTab) => (tab === "about" ? "/about" : `/about/${tab}`);
@@ -24,23 +28,25 @@ export default function About() {
   const { path, navigate } = useRouter();
   const [a, setA] = useState<any>(null);
   const [org, setOrg] = useState<string | null>(null);
+  const [testingMode, setTestingMode] = useState(false);   // 2.2.0 (#231)
   useEffect(() => {
     api.get("/api/system/about").then(setA);
-    api.get("/api/system/status").then((s) => setOrg(s.workspace_name));
+    api.get("/api/system/status").then((s) => { setOrg(s.workspace_name); setTestingMode(!!s.testing_mode); });
   }, []);
   const admin = can("system.manage");
   const viewer = can("system.view");                  // Administrators and Auditors
+  const reader = can("system.about");                 // 2.2.0 (#349): every role - About and General, read-only
   const backups = !!a && a.restore_max_mb != null;     // the backup/restore permission (the server says)
   const allowed: Record<AboutTab, boolean> = {
-    about: true, general: admin, settings: viewer, backups: backups || admin, security: viewer, health: admin,
-    advanced: admin || backups,
+    about: true, general: admin || reader, branding: admin, settings: viewer, backups: backups || admin, security: viewer, health: admin,
+    advanced: admin || backups, testing: admin && testingMode,
   };
   const asked = (path.split("/")[2] || "about") as AboutTab;
   const known = ABOUT_TABS.some(([k]) => k === asked);
   const tab: AboutTab = known && allowed[asked] ? asked : "about";
   useEffect(() => {   // a tab address this user can't use (or a typo) becomes /about
-    if (a && path !== aboutPath(tab) && path.startsWith("/about")) navigate(aboutPath(tab), { replace: true });
-  }, [a, path, tab]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (a && org !== null && path !== aboutPath(tab) && path.startsWith("/about")) navigate(aboutPath(tab), { replace: true });
+  }, [a, org, path, tab]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!a) return <Loading />;
   const tabs = ABOUT_TABS.filter(([k]) => allowed[k]);
   const panels: Record<AboutTab, () => ReactNode> = {
@@ -49,16 +55,17 @@ export default function About() {
         <BuildDetails info={a} />
         {a.bind_host ? <dl className="dl"><dt>Bind address</dt><dd>{a.bind_host}:{a.port}</dd></dl> : null}
         {a.insecure_transport_warning ? <div className="alert warn">Network deployment without HTTPS configuration is not secure.</div> : null}
-        <div className="alert warn" role="note"><strong>Data protection:</strong> {a.backup_notice}</div>
-        {backups ? <UpdateSettings /> : null}
+        {a.backup_notice ? <div className="alert warn" role="note"><strong>Data protection:</strong> {a.backup_notice}</div> : null}
+        {backups ? <UpdateSettings /> : <UpdateSettings readOnly />}
       </>
     ),
-    general: () => (
+    general: () => !admin ? <><OrganizationView /><ModulesStatus /></> : (
       <>
         {org != null ? <OrganizationPanel name={org} onRenamed={(n) => { setOrg(n); window.dispatchEvent(new CustomEvent("pw:workspace-renamed", { detail: n })); }} /> : null}
         <ModulesPanel />
       </>
     ),
+    branding: () => <Suspense fallback={<Loading />}><BrandingPanel org={org || ""} /></Suspense>,      // 2.2.0 (#280)
     settings: () => <SettingsPanel />,
     backups: () => (
       <>
@@ -69,6 +76,7 @@ export default function About() {
     security: () => <><SecurityOverviewPanel /><SessionsPanel /></>,
     health: () => <><HealthPanel /><DiagnosticsPanel /></>,
     advanced: () => <>{admin ? <MaintenancePanel /> : null}{backups ? <ReinitializePanel /> : null}</>,
+    testing: () => <TestingPanel />,
   };
   return (
     <div>
@@ -144,6 +152,31 @@ function ModulesPanel() {
           {saved ? <p className="hint" role="status">Saved.</p> : null}
         </>
       ) : null}
+    </section>
+  );
+}
+
+/** 2.2.0 (#349): every optional module, on or off, who uses it and whether the viewer can - read-only. */
+function ModulesStatus() {
+  const [m, setM] = useState<any[] | null>(null);
+  const [err, setErr] = useState<unknown>(null);
+  useEffect(() => { api.get("/api/system/modules/status").then(setM, setErr); }, []);
+  return (
+    <section className="card" aria-labelledby="modules-h">
+      <h2 id="modules-h">Optional modules</h2>
+      <ErrorBox error={err} />
+      {!m ? (err ? null : <Loading />) : (
+        <table className="table compact" data-testid="modules-status">
+          <thead><tr><th>Module</th><th>Status</th><th>Used by</th><th>You</th></tr></thead>
+          <tbody>
+            {m.map((x) => (
+              <tr key={x.key}><td>{x.name}</td><td>{x.enabled ? "Enabled" : <span className="muted">Disabled</span>}</td>
+                <td>{x.used_by.join(", ")}</td><td>{x.you ? (x.enabled ? "Available to you" : "Your role uses it when it is enabled") : <span className="muted">Not used by your role</span>}</td></tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      <p className="hint">Modules are switched on and off by an Administrator.</p>
     </section>
   );
 }

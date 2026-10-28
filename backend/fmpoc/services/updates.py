@@ -103,6 +103,8 @@ def _row(db) -> UpdateCheck:
 def check(app, force: bool = False, now: dt.datetime | None = None) -> bool:
     """Fetches when due (or forced). Returns True when a request was made."""
     settings = app.state.settings
+    if getattr(app.state, "demo", False):     # 2.2.0 (#243): no update check in the demo
+        return False
     chan = channel(settings)
     now = now or utcnow()
     with app.state.session_factory() as db:

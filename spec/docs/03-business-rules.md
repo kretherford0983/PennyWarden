@@ -156,6 +156,8 @@ A full Bank Account number must be unique within the Workspace. Uniqueness is en
 
 Full Bank Account number is encrypted at rest using application-level authenticated encryption. The portable encryption key is stored separately from SQLite and is not bound to a specific OS/machine.
 
+2.2.0 (#319): every restore, full or partial, installs the backup's portable key; values a partial restore keeps from the current installation (account numbers and their fingerprints, two-step secrets, signature images) are re-encrypted with it in the same transaction when the keys differ.
+
 ## BR-037 — Account Number Masking
 
 Normal account-number display is a fixed 10-character masked representation. No more than the final four characters may be revealed in masked form, and at least 50% of the actual identifier (rounded up) must remain masked. Full reveal is available only to Budget Managers.
@@ -187,6 +189,16 @@ The displayed starting balance for a Fiscal Year is the Bank Account balance as 
 ## BR-044 — Initial Opening Balance
 
 A newly tracked register-enabled Bank Account has an Opening Balance and Opening Balance Date used to establish the beginning of reliable Register history.
+
+2.2.0 (#348): a point-in-time comparison to a date before the Opening Balance Date uses the opening balance (BR-044a); BR-043's derived Fiscal-Year starting balance already does.
+
+## BR-044a — Comparisons Before Any Data (2.2.0, #348)
+
+Every point-in-time comparison (the Financial Flow Report's Compare Date, and any later comparison of balances or year-over-year figures) uses the **earliest available data** for a date before any data, never $0: a register account before its Opening Balance Date (or, without one, the day it was added) uses its opening balance; a non-register account before its first dated balance uses that first balance; a year-over-year figure with no earlier year shows no comparison.
+
+A Bank Account may have an optional **Account opened** date (not in the future; editable; audited). Blank means the account existed before PennyWarden. A date before Account opened is $0, because the account really did not exist then, and an account opened after a report's Through Date is not listed. Dashboard balance charts show no value for months before Account opened.
+
+Each substituted value is marked on screen with an explanation (always). The PDF lists a note for each one — "Savings: starting balance is the first recorded balance, 2026-07-01 (no data on 2026-01-01)." — only when the report option **Show notes on substituted starting values** is on (off by default).
 
 ## BR-045 — Transaction Parent Plus Allocations
 
@@ -436,6 +448,8 @@ Application features should use Python/library APIs rather than shell commands. 
 ## BR-103 — Secrets and Sensitive Values Are Not Logged
 
 Passwords, password hashes, session identifiers/cookies, CSRF secrets, encryption keys, full plaintext bank account numbers, and equivalent secrets must not appear in application logs, audit snapshots, exception responses, client-side logging, or ordinary diagnostic output. Audit records use masked/sanitized representations where required.
+
+2.2.0 (#327): this includes an authenticator key a user supplies when setting up two-step verification ("Use my own key instead"), and any otpauth link it came in. It is validated server-side (Base32, at least 16 and at most 100 characters; links only for 6-digit, 30-second, SHA-1 codes), accepted only during a setup in progress, saved only after a current code made with it, stored encrypted like a generated key, never shown again, and refused after a reset marked as a possible compromise. Error messages describe the problem without repeating the key; the audit records only whether an own key was used (`own_key`) and whether a reset was marked (`compromised`).
 
 ## BR-104 — Safe Error Handling
 

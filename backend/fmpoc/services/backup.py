@@ -260,7 +260,8 @@ class Jobs:
     def new(self, kind: str) -> Job:
         with self.lock:
             now = time.time()
-            for k in [k for k, j in self._jobs.items() if j.state != "running" and now - j.created > KEEP_SECONDS]:
+            for k in [k for k, j in self._jobs.items()
+                      if j.state not in ("running", "choose") and now - j.created > KEEP_SECONDS]:
                 self._jobs.pop(k, None)
             j = Job(secrets.token_urlsafe(24), kind)
             self._jobs[j.id] = j
@@ -270,7 +271,9 @@ class Jobs:
         return self._jobs.get(job_id)
 
     def running(self, kind: str | None = None) -> Job | None:
-        return next((j for j in self._jobs.values() if j.state == "running" and (kind is None or j.kind == kind)), None)
+        # 2.2.0 (#319): a restore waiting for the What to restore choice counts as running
+        return next((j for j in self._jobs.values() if j.state in ("running", "choose")
+                     and (kind is None or j.kind == kind)), None)
 
 
 def work_dir(settings) -> Path:
@@ -400,6 +403,9 @@ def create_backup(settings, passphrase: str | None, job: Job | None = None,
                             "created_at": dt.datetime.utcnow().isoformat() + "Z",
                             "alembic_revision": facts["alembic_revision"], "workspace": facts["workspace"],
                             "counts": facts["counts"], "files": manifest_files}
+                from .testing import enabled_for     # 2.2.0 (#231): a backup of a test server is marked
+                if enabled_for(settings):
+                    manifest["testing_mode"] = True
                 mb = json.dumps(manifest, indent=2).encode()
                 ti = tarfile.TarInfo("manifest.json")
                 ti.size, ti.mode, ti.mtime = len(mb), 0o600, int(time.time())
@@ -461,6 +467,20 @@ def unpack(src: Path, passphrase: str, dest: Path, job: Job | None = None) -> di
     if f"database/{DB_NAME}" not in seen or f"secrets/{crypto.KEY_FILENAME}" not in seen:
         raise BackupError("The backup is missing the database or the encryption key.")
     return manifest
+
+
+TESTING_BACKUP_REFUSED = ("This backup was made on a server in testing mode, so its audit trail may have gaps; it can't "
+                          "be restored here. The server owner can restore it on the command line with "
+                          "--accept-testing-backup.")
+
+
+def check_testing(manifest: dict, target_testing: bool, accept: bool = False) -> bool:
+    """2.2.0 (#231): a backup made in testing mode is refused on a server that isn't in testing mode (the command line
+    accepts it with --accept-testing-backup). Returns whether the backup came from testing mode."""
+    from_testing = bool(manifest.get("testing_mode"))
+    if from_testing and not target_testing and not accept:
+        raise BackupError(TESTING_BACKUP_REFUSED)
+    return from_testing
 
 
 def check_compatible(data: Path, known_revisions: set[str]) -> dict:

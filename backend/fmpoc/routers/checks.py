@@ -53,10 +53,39 @@ def print_ctx(db: Session = Depends(get_db), ctx: Ctx = Depends(require("checks.
 
 
 def any_ctx(db: Session = Depends(get_db), ctx: Ctx = Depends(auth_ctx)) -> Ctx:
-    if not (ctx.has("checks.setup") or ctx.has("checks.print")):
+    from ..services import envelopes as env_lib
+    payments = ctx.has("checks.setup") or ctx.has("checks.print")
+    donations = ctx.has("donation.setup") or ctx.has("donation.print")   # 2.2.0 (#325): receipt envelopes
+    if not (payments or donations):
         raise forbidden()
-    svc.require_module(db, ctx)
+    on = env_lib.enabled(db, ctx.workspace_id)
+    if not ((payments and env_lib.PAYMENTS in on) or (donations and env_lib.DONATIONS in on)):
+        svc.require_module(db, ctx)
     return ctx
+
+
+def doc_ctx(db: Session = Depends(get_db), ctx: Ctx = Depends(auth_ctx)) -> Ctx:
+    """2.2.0 (#325): letter and envelope templates. Envelopes are one library shared by Payments and Donations, so an
+    Administrator reaches them while either module is on; cover letters stay Payments' own (_kind_ok)."""
+    from ..services import envelopes as env_lib
+    if not (ctx.has("checks.setup") or ctx.has("donation.setup")):
+        raise forbidden()
+    env_lib.require_any_module(db, ctx)
+    on = env_lib.enabled(db, ctx.workspace_id)
+    if not ((ctx.has("checks.setup") and env_lib.PAYMENTS in on) or
+            (ctx.has("donation.setup") and env_lib.DONATIONS in on)):
+        raise forbidden()
+    return ctx
+
+
+def _kind_ok(db: Session, ctx: Ctx, kind: str, feature: str | None = None) -> None:
+    from ..services import envelopes as env_lib
+    if kind == "LETTER":
+        if not ctx.has("checks.setup"):
+            raise forbidden()
+        svc.require_module(db, ctx)
+    elif feature is not None:
+        env_lib.require_feature(db, ctx, feature)
 
 
 # ------------------------------------------------------------------ shared
@@ -315,6 +344,20 @@ class PrinterResetIn(In):
     feed_key: str = Field(max_length=20)
 
 
+def _payments_envelope(db, ctx, doc_id: int):
+    """2.2.0 (#325): Payments prints only the envelopes tagged for Payments."""
+    from ..services import envelopes as env_lib
+    d = svc.get_document(db, ctx, doc_id, "ENVELOPE")
+    if env_lib.PAYMENTS not in env_lib.tags(d):
+        raise not_found("Template")
+    return d
+
+
+def _payments_envelopes(db, ctx) -> list:
+    from ..services import envelopes as env_lib
+    return env_lib.envelopes(db, ctx, env_lib.PAYMENTS, active_only=True)
+
+
 def _job(db, ctx, txn_id: int, body: JobIn):
     t = svc.get_printable(db, ctx, txn_id)
     style = svc.get_style(db, ctx, body.check_style_id)
@@ -344,7 +387,8 @@ def print_options(txn_id: int, db: Session = Depends(get_db), ctx: Ctx = Depends
            "print_status": svc.print_status(db, t), "last_printed_number": svc.last_printed_number(db, t),
            "is_reprint": svc.is_reprint(db, t),
            # #165/#166: letters and envelopes can be printed on their own when the check is written by hand
-           "has_documents": bool(svc.list_documents(db, ctx, None, False))}
+           "has_documents": bool(svc.list_documents(db, ctx, "LETTER", False) or
+                                 _payments_envelopes(db, ctx))}
     if chosen:
         cfg = svc.style_config(chosen)
         left = svc.remaining(row, cfg)
@@ -483,6 +527,9 @@ class DocCreateIn(In):
     preset: Literal["WINDOW"] | None = None          # build 11 (#217): a cover letter for a window envelope
     config: dict | None = None                        # build 13: the editor's draft settings, saved at once
     duplicate_of: int | None = None                   # build 13: a draft copied from this template (logo too)
+    # 2.2.0 (#325): the feature whose setup page creates the envelope (tagged for it); None = the global Envelopes
+    # page (Not used). Letters are always Payments'.
+    feature: Literal["PAYMENTS", "DONATIONS"] | None = "PAYMENTS"
 
 
 class DraftIn(In):
@@ -500,6 +547,7 @@ class DocUpdateIn(In):
 class DocFlagsIn(In):
     active: bool | None = None
     is_default: bool | None = None
+    feature: Literal["PAYMENTS", "DONATIONS"] = "PAYMENTS"     # 2.2.0 (#325): whose default (envelopes)
 
 
 class DocTestIn(In):
@@ -535,9 +583,12 @@ class EnvelopePrinterIn(In):
 
 
 @router.post("/documents", status_code=201)
-def create_document(body: DocCreateIn, db: Session = Depends(get_db), ctx: Ctx = Depends(setup_ctx)):
+def create_document(body: DocCreateIn, db: Session = Depends(get_db), ctx: Ctx = Depends(doc_ctx)):
     source = svc.get_document(db, ctx, body.duplicate_of) if body.duplicate_of is not None else None
-    d = svc.create_document(db, ctx, body.kind, body.name, body.preset, body.config, source)
+    _kind_ok(db, ctx, source.kind if source is not None else body.kind, body.feature)
+    d = svc.create_document(db, ctx, body.kind, body.name, body.preset, body.config, source,
+                            body.feature if (source.kind if source is not None else body.kind) == "ENVELOPE"
+                            else "PAYMENTS")
     db.commit()
     return svc.doc_out(d)
 
@@ -545,12 +596,16 @@ def create_document(body: DocCreateIn, db: Session = Depends(get_db), ctx: Ctx =
 # build 13: a new or duplicated template is a draft in the editor until its first Save - nothing is stored before
 @router.get("/documents/draft")
 def document_draft(kind: Literal["LETTER", "ENVELOPE"], preset: Literal["WINDOW"] | None = None,
-                   duplicate_of: int | None = None, db: Session = Depends(get_db), ctx: Ctx = Depends(setup_ctx)):
+                   duplicate_of: int | None = None, feature: Literal["PAYMENTS", "DONATIONS", "NONE"] = "PAYMENTS",
+                   db: Session = Depends(get_db), ctx: Ctx = Depends(doc_ctx)):
     source = svc.get_document(db, ctx, duplicate_of) if duplicate_of is not None else None
-    return svc.draft_document(db, ctx, kind, preset, source)
+    f = None if feature == "NONE" else feature
+    _kind_ok(db, ctx, source.kind if source is not None else kind, f)
+    return svc.draft_document(db, ctx, kind, preset, source, f)
 
 
 def _draft_parts(db, ctx, body: DraftIn):
+    _kind_ok(db, ctx, body.kind)
     cfg = svc._doc_config_or_422(body.kind, body.config)
     logo = None
     if body.logo_from is not None and body.kind == "LETTER":
@@ -559,7 +614,7 @@ def _draft_parts(db, ctx, body: DraftIn):
 
 
 @router.post("/documents/draft/preview-image")
-def draft_preview_image(body: DraftIn, db: Session = Depends(get_db), ctx: Ctx = Depends(setup_ctx)):
+def draft_preview_image(body: DraftIn, db: Session = Depends(get_db), ctx: Ctx = Depends(doc_ctx)):
     cfg, logo = _draft_parts(db, ctx, body)
     if not raster.available():
         raise AppError(501, "PREVIEW_UNAVAILABLE", "The picture preview is not available on this server.")
@@ -571,14 +626,14 @@ def draft_preview_image(body: DraftIn, db: Session = Depends(get_db), ctx: Ctx =
 
 
 @router.post("/documents/draft/preview")
-def draft_preview(body: DraftIn, db: Session = Depends(get_db), ctx: Ctx = Depends(setup_ctx)):
+def draft_preview(body: DraftIn, db: Session = Depends(get_db), ctx: Ctx = Depends(doc_ctx)):
     cfg, logo = _draft_parts(db, ctx, body)
     pdf = svc.sample_letter_pdf(cfg, logo) if body.kind == "LETTER" else svc.sample_envelope_pdf(cfg, preview=True)
     return _pdf(ctx, pdf, f"{body.kind.lower()}-preview.pdf")
 
 
 @router.post("/documents/draft/test-print")
-def draft_test_print(body: DraftIn, db: Session = Depends(get_db), ctx: Ctx = Depends(setup_ctx)):
+def draft_test_print(body: DraftIn, db: Session = Depends(get_db), ctx: Ctx = Depends(doc_ctx)):
     cfg, logo = _draft_parts(db, ctx, body)
     pdf = svc.sample_letter_pdf(cfg, logo) if body.kind == "LETTER" else svc.sample_envelope_pdf(cfg)
     audit.record(db, ctx, "CHECK_DOCUMENT_TEST_PRINT", "check_document", None, None,
@@ -588,23 +643,29 @@ def draft_test_print(body: DraftIn, db: Session = Depends(get_db), ctx: Ctx = De
 
 
 @router.post("/documents/{doc_id}/duplicate", status_code=201)
-def duplicate_document(doc_id: int, db: Session = Depends(get_db), ctx: Ctx = Depends(setup_ctx)):
+def duplicate_document(doc_id: int, db: Session = Depends(get_db), ctx: Ctx = Depends(doc_ctx)):
     """Build 11 (#217): copy a letter or envelope template with all its settings (logo included)."""
-    d = svc.duplicate_document(db, ctx, svc.get_document(db, ctx, doc_id))
+    d = svc.get_document(db, ctx, doc_id)
+    _kind_ok(db, ctx, d.kind, "PAYMENTS" if d.kind == "ENVELOPE" else None)
+    d = svc.duplicate_document(db, ctx, d)
     db.commit()
     return svc.doc_out(d)
 
 
 @router.put("/documents/{doc_id}")
-def update_document(doc_id: int, body: DocUpdateIn, db: Session = Depends(get_db), ctx: Ctx = Depends(setup_ctx)):
-    d = svc.update_document(db, ctx, svc.get_document(db, ctx, doc_id), body.name, body.config)
+def update_document(doc_id: int, body: DocUpdateIn, db: Session = Depends(get_db), ctx: Ctx = Depends(doc_ctx)):
+    d = svc.get_document(db, ctx, doc_id)
+    _kind_ok(db, ctx, d.kind)
+    d = svc.update_document(db, ctx, d, body.name, body.config)
     db.commit()
     return svc.doc_out(d)
 
 
 @router.post("/documents/{doc_id}/flags")
-def document_flags(doc_id: int, body: DocFlagsIn, db: Session = Depends(get_db), ctx: Ctx = Depends(setup_ctx)):
-    d = svc.set_document_flags(db, ctx, svc.get_document(db, ctx, doc_id), body.active, body.is_default)
+def document_flags(doc_id: int, body: DocFlagsIn, db: Session = Depends(get_db), ctx: Ctx = Depends(doc_ctx)):
+    d = svc.get_document(db, ctx, doc_id)
+    _kind_ok(db, ctx, d.kind, body.feature if d.kind == "ENVELOPE" and body.is_default else None)
+    d = svc.set_document_flags(db, ctx, d, body.active, body.is_default, body.feature)
     db.commit()
     return svc.doc_out(d)
 
@@ -641,8 +702,9 @@ def document_logo_image(doc_id: int, db: Session = Depends(get_db), ctx: Ctx = D
 
 
 @router.post("/documents/{doc_id}/test-print")
-def document_test(doc_id: int, body: DocTestIn, db: Session = Depends(get_db), ctx: Ctx = Depends(setup_ctx)):
+def document_test(doc_id: int, body: DocTestIn, db: Session = Depends(get_db), ctx: Ctx = Depends(doc_ctx)):
     d = svc.get_document(db, ctx, doc_id)
+    _kind_ok(db, ctx, d.kind)
     cfg = svc._doc_config_or_422(d.kind, body.config) if body.config is not None else svc.doc_config(d)
     pdf = svc.sample_letter_pdf(cfg, d.logo_png) if d.kind == "LETTER" else svc.sample_envelope_pdf(cfg)
     audit.record(db, ctx, "CHECK_DOCUMENT_TEST_PRINT", "check_document", d.id, None,
@@ -652,20 +714,22 @@ def document_test(doc_id: int, body: DocTestIn, db: Session = Depends(get_db), c
 
 
 @router.post("/documents/{doc_id}/preview")
-def document_preview(doc_id: int, body: DocTestIn, db: Session = Depends(get_db), ctx: Ctx = Depends(setup_ctx)):
+def document_preview(doc_id: int, body: DocTestIn, db: Session = Depends(get_db), ctx: Ctx = Depends(doc_ctx)):
     """#186: the live on-screen preview of a letter or envelope template with sample data (unsaved settings). Nothing
     is printed or stored, so it is not audited (the test print is)."""
     d = svc.get_document(db, ctx, doc_id)
+    _kind_ok(db, ctx, d.kind)
     cfg = svc._doc_config_or_422(d.kind, body.config) if body.config is not None else svc.doc_config(d)
     pdf = svc.sample_letter_pdf(cfg, d.logo_png) if d.kind == "LETTER" else svc.sample_envelope_pdf(cfg, preview=True)
     return _pdf(ctx, pdf, f"{d.kind.lower()}-preview.pdf")
 
 
 @router.post("/documents/{doc_id}/preview-image")
-def document_preview_image(doc_id: int, body: DocTestIn, db: Session = Depends(get_db), ctx: Ctx = Depends(setup_ctx)):
+def document_preview_image(doc_id: int, body: DocTestIn, db: Session = Depends(get_db), ctx: Ctx = Depends(doc_ctx)):
     """Build 11 (#217): the same live preview as a PNG picture, which every browser shows (Safari shows an inline PDF
     blank). 501 PREVIEW_UNAVAILABLE where the PDF renderer can't load; the editor then falls back to the PDF."""
     d = svc.get_document(db, ctx, doc_id)
+    _kind_ok(db, ctx, d.kind)
     cfg = svc._doc_config_or_422(d.kind, body.config) if body.config is not None else svc.doc_config(d)
     if not raster.available():
         raise AppError(501, "PREVIEW_UNAVAILABLE", "The picture preview is not available on this server.")
@@ -682,8 +746,9 @@ def transaction_documents(txn_id: int, db: Session = Depends(get_db), ctx: Ctx =
     svc.get_printable(db, ctx, txn_id, for_check=False)
     letters = [{**svc.doc_out(d, full=False), "fold_default": svc.letter_fold_default(db, ctx, d)}
                for d in svc.list_documents(db, ctx, "LETTER", False)]
+    from ..services import envelopes as env_lib
     envs = []
-    for d in svc.list_documents(db, ctx, "ENVELOPE", False):
+    for d in env_lib.envelopes(db, ctx, env_lib.PAYMENTS, active_only=True):   # 2.2.0 (#325): Payments' envelopes
         envs.append({**svc.doc_out(d, full=False), "printer": svc.envelope_options(db, ctx, d)})
     return {"letters": letters, "envelopes": envs, "my_letter_fold": svc.my_letter_fold(db, ctx)}
 
@@ -719,7 +784,7 @@ def print_letter(txn_id: int, body: LetterIn, request: Request, db: Session = De
 def print_envelope(txn_id: int, body: EnvelopeIn, request: Request, db: Session = Depends(get_db),
                    ctx: Ctx = Depends(print_ctx)):
     t = svc.get_printable(db, ctx, txn_id, for_check=False)
-    d = svc.get_document(db, ctx, body.document_id, "ENVELOPE")
+    d = _payments_envelope(db, ctx, body.document_id)
     pdf = svc.print_envelope(db, ctx, request.app.state.settings, t, d, return_address=body.return_address,
                              page=body.page, guide=body.guide, test=False, confirmations=body.confirmations)
     return _pdf(ctx, pdf, f"envelope-{t.check_number or t.id}.pdf")
@@ -729,7 +794,7 @@ def print_envelope(txn_id: int, body: EnvelopeIn, request: Request, db: Session 
 def envelope_test(txn_id: int, body: EnvelopeIn, request: Request, db: Session = Depends(get_db),
                   ctx: Ctx = Depends(print_ctx)):
     t = svc.get_printable(db, ctx, txn_id, for_check=False)
-    d = svc.get_document(db, ctx, body.document_id, "ENVELOPE")
+    d = _payments_envelope(db, ctx, body.document_id)
     pdf = svc.print_envelope(db, ctx, request.app.state.settings, t, d, return_address=body.return_address,
                              page=body.page, guide=body.guide, test=True, confirmations=[])
     return _pdf(ctx, pdf, "envelope-test.pdf")

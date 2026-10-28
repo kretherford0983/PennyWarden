@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { api, preAuthCsrf } from "../api";
 import { ErrorBox, Field, GuardedForm } from "../components";
 import { RestorePanel } from "./BackupRestore";
+import { PasswordChecklist } from "../PasswordChecklist";
 
 export default function InitWizard({ onDone }: { onDone: () => void }) {
   const [f, setF] = useState({ workspace_name: "", admin_username: "", admin_email: "", admin_first_name: "", admin_last_name: "", password: "", password_confirmation: "" });
@@ -51,10 +52,12 @@ export default function InitWizard({ onDone }: { onDone: () => void }) {
         </div>
         <Field label="Administrator Username"><input required minLength={3} maxLength={64} autoComplete="username" value={f.admin_username} onChange={set("admin_username")} /></Field>
         <Field label="Administrator Email Address"><input required type="email" maxLength={254} value={f.admin_email} onChange={set("admin_email")} /></Field>
-        <Field label="Password" hint="At least 12 characters including a letter and a digit.">
-          <input required type="password" minLength={12} autoComplete="new-password" value={f.password} onChange={set("password")} />
+        <Field label="Password">
+          <input required type="password" minLength={12} autoComplete="new-password" aria-describedby="pw-req-init" value={f.password} onChange={set("password")} />
         </Field>
         <Field label="Password Confirmation"><input required type="password" autoComplete="new-password" value={f.password_confirmation} onChange={set("password_confirmation")} /></Field>
+        {/* 2.2.0 (#343) */}
+        <PasswordChecklist id="pw-req-init" password={f.password} context={{ username: f.admin_username, confirm: f.password_confirmation }} />
         <p className="hint">The POC does not provide backup/restore. Protect the application data directory (database, attachments and secrets) yourself.</p>
         <button className="primary" disabled={busy} type="submit">Initialize</button>
         <p className="hint">Moving an existing installation? <button type="button" className="linklike" onClick={() => setRestore(true)}>Restore from a backup instead</button></p>

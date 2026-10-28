@@ -31,15 +31,19 @@ def _open_browser_when_ready(url: str) -> None:
 def reset_mfa_cli(argv: list[str]) -> int:
     """v1.4.1 CR-018: host-side MFA reset for a locked-out user (e.g. the only Administrator).
 
-        pennywarden reset-mfa --user NAME [--reason TEXT] [--data-dir DIR]
+        pennywarden reset-mfa --user NAME [--reason TEXT] [--compromised] [--data-dir DIR]
 
     On the Linux server run it with sudo (sudo pennywarden reset-mfa ...); files it writes are handed back to the data
     folder's owner afterwards (2.0.0). The user sets MFA
     up again at the next sign-in. Recorded in the audit log as MFA_RESET via "host_cli".
+    2.2.0 (#327): --compromised marks a possible compromise: the next setup accepts only a newly generated key, not
+    a key the user already has in an authenticator app.
     """
     p = argparse.ArgumentParser(prog="pennywarden reset-mfa", description="Reset a user's two-step verification")
     p.add_argument("--user", required=True, help="username")
     p.add_argument("--reason", default="Reset from the server command line")
+    p.add_argument("--compromised", action="store_true",
+                   help="possible compromise: the next setup accepts only a newly generated key (not the user's own)")
     p.add_argument("--data-dir")
     a = p.parse_args(argv)
     from sqlalchemy import select
@@ -62,11 +66,13 @@ def reset_mfa_cli(argv: list[str]) -> int:
 
         from types import SimpleNamespace
         host_ctx = SimpleNamespace(workspace_id=user.workspace_id, user=None, correlation_id="host-cli", ip=None)
-        mfa.reset(db, host_ctx, user, a.reason, via="host_cli")  # audit context: host action, no signed-in user
+        mfa.reset(db, host_ctx, user, a.reason, via="host_cli", compromised=a.compromised)  # audit context: host action, no signed-in user
         enabled = _reenable(db, host_ctx, user)   # 1.8.0 (#113)
         db.commit()
     _own_again(settings)
     print(f"Two-step verification for '{user.username}' was reset. They will set it up again at the next sign-in.")
+    if a.compromised:
+        print("Marked as a possible compromise: the next setup accepts only a newly generated key.")
     if enabled:
         print("The account was disabled; it is enabled again and its failed attempts are cleared.")
     return 0
@@ -154,7 +160,7 @@ def main(argv: list[str] | None = None, window: bool = False) -> int:
     """window=True (1.6.7, the macOS app): local mode runs behind a small status window instead of a console."""
     argv = sys.argv[1:] if argv is None else argv
     if len(argv) > 1 and argv[0] == "--no-browser" and argv[1] in ("reset-mfa", "reset-password", "restore",
-                                                               "reinitialize", "apply-config"):
+                                                               "reinitialize", "apply-config", "remove-demo"):
         argv = argv[1:]   # 2.0.0: the Docker image's entrypoint adds --no-browser before a command
     if argv and argv[0] == "reset-mfa":
         return reset_mfa_cli(argv[1:])
@@ -169,6 +175,9 @@ def main(argv: list[str] | None = None, window: bool = False) -> int:
     if argv and argv[0] == "self-check-documents":   # 2.1.1: used by the macOS smoke test
         from .cli_selfcheck import main as selfcheck_main
         return selfcheck_main(argv[1:])
+    if argv and argv[0] == "remove-demo":   # 2.2.0 (#243)
+        from .services.demo import remove_cli
+        return remove_cli(argv[1:])
     if argv and argv[0] == "reinitialize":   # 2.0.0 (#125)
         from .cli_restore import reinit_main
         return reinit_main(argv[1:])
@@ -198,7 +207,12 @@ def main(argv: list[str] | None = None, window: bool = False) -> int:
 
     from .app import create_app
 
-    app = create_app(settings)
+    from .services.demo import DemoError
+    try:
+        app = create_app(settings)
+    except DemoError as e:     # 2.2.0 (#243): the demo runs on this computer only
+        print(str(e), file=sys.stderr)
+        return 2
     url = f"http://{'127.0.0.1' if settings.host in ('0.0.0.0', '::') else settings.host}:{settings.port}"
     print(f"PennyWarden {VERSION} - {settings.mode} mode - {url}")
     print(f"Application data: {settings.data_dir}")

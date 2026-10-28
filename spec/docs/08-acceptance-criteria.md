@@ -61,6 +61,9 @@ A deliberately triggered backend validation or unexpected-error path does not re
 ### AC-SEC-019 — Sensitive values absent from logs
 After login, account-number reveal, failed authentication, transaction processing, and representative error paths, application logs and audit records do not contain plaintext passwords, password hashes, session cookies/IDs, CSRF secrets, encryption keys, or full plaintext bank account numbers.
 
+### AC-SEC-019a — Own authenticator key (2.2.0, #327)
+Setting up two-step verification with the user's own key accepts a valid Base32 key of at least 16 characters (a note under 32) or an otpauth://totp link; a short or invalid key, an unsupported link, a wrong code, and an own key after a reset marked as a possible compromise are refused; the key is absent from responses, logs and the audit log, and a new set of recovery codes is issued.
+
 ### AC-SEC-020 — CSRF rejection
 A state-changing request using cookie authentication but lacking the required valid CSRF control is rejected and produces no persisted mutation.
 
@@ -155,6 +158,9 @@ Rejecting a Draft budget sets its allowed amount to zero, preserves historical a
 ### AC-BUD-011 — Status indicators
 Draft uses `?`/light yellow; Approved+Locked uses closed padlock/light green; Approved+Unlocked uses open padlock/light green; Rejected uses `X`/light red. Status is not communicated by color alone.
 
+### AC-BUD-012 — Budget history before PennyWarden (2.2.0, #284)
+A Budget Manager can enter, correct (reason required) and retire (reason required) a budget's budgeted and actual figures for a year before the first Fiscal Year in PennyWarden, one at a time or from a CSV file (year, budget code, budgeted, actual, note) after a preview that marks each row matched, refused (with the reason) or duplicate. A year covered by a Fiscal Year in PennyWarden, a second active entry for the same line and year, Budget 0 and `Other` are refused. Entries follow the budget's continuation links; a parent without its own figure shows the sum of its sub-budgets' (a mismatch note when both differ). The History view and the Budget Review (on screen, PDF, CSV) label them *Entered*. Other roles can read them on History but not change them; the Administrator is refused (BR-003). Budget actuals and totals are unchanged (BR-048); nothing is deleted (BR-001); every change is audited.
+
 ## Entities
 
 ### AC-ENT-001 — Individual requirement
@@ -209,6 +215,9 @@ A register-enabled account can reach closure eligibility only through register a
 
 ### AC-BANK-011 — Non-register account zeroing
 A non-register account must have its manually maintained balance explicitly updated to $0.00 through an audited change before closure.
+
+### AC-BANK-012 — Comparisons before any data (2.2.0, #348)
+With a Compare Date before an account's first data, the Financial Flow Report's compare balance is the earliest available data (the first dated balance, or the opening balance), not $0, and the review screen marks it with an explanation. With **Account opened** after the Compare Date, the compare balance is $0 and is not marked. The PDF carries the substitution notes only when *Show notes on substituted starting values* is on. Account opened can't be in the future, can be cleared, and its changes are audited.
 
 ## Register Transactions and Allocations
 
@@ -298,6 +307,14 @@ If audit persistence fails, the associated auditable business mutation is rolled
 ### AC-AUD-004 — Append-only application behavior
 No application role can edit or delete Audit Events.
 
+2.2.0 (#319): a partial restore (some of Data, Settings sections, Reminders, Users) keeps the current audit log and adds one `SYSTEM_RESTORED` event listing what was restored and kept; only a full restore replaces the log with the backup's (the safety copy keeps the replaced one).
+
+### AC-BKP-319 — Choose what to restore (2.2.0, #319)
+After a backup is decrypted and checked, the Administrator who started the restore chooses the parts to restore (Data as one unit; Settings by section; Reminders; Users) and sees what is replaced and kept before confirming; nothing changes before that. Data can't be split. Kept encrypted values are re-encrypted with the backup's key; users missing from a restored Users set are kept inactivated; users that restored records refer to are listed first and added from the backup (or Users are included). The same choices exist on the command line (`--only`, `--skip`, `FILE --list`).
+
+### AC-ADM-280 — Organization branding (2.2.0, #280)
+An Administrator chooses a ready-made palette or a custom Material 3 palette generated from a primary and a secondary color (every role and series color adjustable), a full logo and a small mark (PNG/JPEG ≤ 2 MB, re-encoded without metadata) and a one-line footer text. A text color below WCAG AA 4.5:1 is refused with the reason; similar series colors need a confirmation. Every PDF report, the fundraiser report (PDF, Word) and presentation and the Fiscal Year fundraising report and presentation use the branding (headings, bands, table headers, chart colors, logo on the first page or title slide, mark and footer text in footers); checks, letters, receipts and envelopes do not. Non-Administrators can't read or change it. Included in backups as `settings.branding`, kept through a reinitialize, audited without the image.
+
 ### AC-AUD-005 — Sensitive sanitization
 Audit snapshots never contain plaintext bank account numbers or encryption keys.
 
@@ -340,6 +357,8 @@ With the application stopped, moving the persistent data set including database,
 - **AC-AUTH-SELF-004:** Old password stops authenticating and new password succeeds after change.
 - **AC-AUTH-SELF-005:** Other active sessions are invalidated after successful change.
 - **AC-AUTH-SELF-006:** Audit records the event without password values.
+- **AC-AUTH-SELF-007 (2.2.0, #343):** The password requirements are visible beside the new-password fields before typing, come from the server, and are ticked off (red → green with a check mark, "met"/"not met" for screen readers) as they are met, including new password = confirmation; a refused change leaves every field as typed.
+- **AC-AUTH-SELF-008 (2.2.0, #343):** After a failed sign-in the password field is empty and focused and the username is kept.
 
 ### Light/Dark Theme
 - **AC-UI-THEME-001:** Authenticated user can switch Light/Dark modes.

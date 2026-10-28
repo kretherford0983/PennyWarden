@@ -10,7 +10,7 @@ from .. import audit
 from ..deps import PRE_CSRF_COOKIE, SESSION_COOKIE, Ctx, auth_ctx, get_ctx, get_db, pre_mfa_ctx, require
 from ..errors import AppError
 from ..permissions import permissions_for
-from ..schemas import (ChangePasswordIn, ForgotCompleteIn, ForgotStartIn, LoginIn, MfaCodeIn, MfaEnrollStartIn,
+from ..schemas import (ChangePasswordIn, ForgotCompleteIn, ForgotStartIn, LoginIn, MfaCodeIn, MfaEnrollStartIn, MfaOwnKeyIn,
                        MfaVerifyIn, PreferencesIn, SecurityQuestionsChangeIn, SecurityQuestionsIn, SetupPasswordIn)
 from ..services import auth as svc
 from ..services import mfa
@@ -54,6 +54,14 @@ def pre_auth_csrf(request: Request, response: Response):
     return {"csrf_token": token}
 
 
+@router.get("/auth/password-policy")
+def password_policy():
+    """2.2.0 (#343): the password requirements for the checklist beside every new-password field (sign-in steps and
+    the first-run wizard included, so no session is needed). Contains no user data."""
+    from ..security.passwords import policy_requirements
+    return policy_requirements()
+
+
 def me_payload(ctx: Ctx) -> dict:
     u = ctx.user
     if ctx.mfa_pending:  # v1.4.1 CR-018: only what the two-step screen needs
@@ -66,6 +74,8 @@ def me_payload(ctx: Ctx) -> dict:
             "theme": u.theme, "nav_collapsed": bool(u.nav_collapsed), "dashboard_charts": charts_for(u),
             "dashboard_layout": layout_for(u), "dashboard_layout_customized": is_customized(u),
             "register_sort": u.register_sort or DEFAULT_REGISTER_SORT,   # 2.1.0 (#262)
+            "name_order": u.name_order or "FIRST_LAST",                  # 2.2.0 (#316)
+            "fundraiser_series_sort": u.fundraiser_series_sort or "desc",  # 2.2.0 (#351)
             "modules": {"fundraisers": module_enabled(object_session(u), u.workspace_id),  # v1.6.0 CR-033
                         "checks": checks_enabled(object_session(u), u.workspace_id),  # 2.0.0 (#156)
                         "donations": donations_enabled(object_session(u), u.workspace_id)},  # 2.1.0 (#312)
@@ -167,6 +177,16 @@ def mfa_enroll_start(body: MfaEnrollStartIn, request: Request, db: Session = Dep
         raise
 
 
+@router.post("/auth/mfa/enroll/own-key")
+def mfa_enroll_own_key(body: MfaOwnKeyIn, request: Request, db: Session = Depends(get_db),
+                       ctx: Ctx = Depends(pre_mfa_ctx)):
+    """2.2.0 (#327): use your own authenticator key for the setup in progress (or a newly generated key again). The key
+    is saved only by /enroll/confirm with a current code made with it; it is never logged, audited or echoed."""
+    if ctx.mfa_pending == "VERIFY":
+        raise AppError(401, "MFA_REQUIRED", "Complete two-step verification first.")
+    return mfa.use_own_key(db, request.app.state.key, ctx, body.own_key)
+
+
 @router.post("/auth/mfa/enroll/confirm")
 def mfa_enroll_confirm(body: MfaCodeIn, request: Request, response: Response, db: Session = Depends(get_db),
                        ctx: Ctx = Depends(pre_mfa_ctx)):
@@ -237,6 +257,10 @@ def preferences(body: PreferencesIn, db: Session = Depends(get_db), ctx: Ctx = D
         ctx.user.register_sort = None
     elif body.register_sort is not None:
         ctx.user.register_sort = None if body.register_sort == DEFAULT_REGISTER_SORT else body.register_sort
+    if body.name_order is not None:  # 2.2.0 (#316)
+        ctx.user.name_order = None if body.name_order == "FIRST_LAST" else body.name_order
+    if body.fundraiser_series_sort is not None:  # 2.2.0 (#351): the default (newest first) is stored as none
+        ctx.user.fundraiser_series_sort = None if body.fundraiser_series_sort == "desc" else body.fundraiser_series_sort
     if body.reset_dashboard_layout:  # v1.5.0 CR-031
         ctx.user.dashboard_layout = None
     elif body.dashboard_layout is not None:
@@ -245,7 +269,8 @@ def preferences(body: PreferencesIn, db: Session = Depends(get_db), ctx: Ctx = D
     return {"theme": ctx.user.theme, "nav_collapsed": bool(ctx.user.nav_collapsed),
             "dashboard_charts": charts_for(ctx.user), "dashboard_layout": layout_for(ctx.user),
             "dashboard_layout_customized": is_customized(ctx.user),
-            "register_sort": ctx.user.register_sort or DEFAULT_REGISTER_SORT}
+            "register_sort": ctx.user.register_sort or DEFAULT_REGISTER_SORT,
+            "fundraiser_series_sort": ctx.user.fundraiser_series_sort or "desc"}
 
 
 # ------------------------------------------------------------------ 1.8.0 (#113): forgotten password

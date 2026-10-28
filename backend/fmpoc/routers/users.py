@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session, object_session
 
 from ..deps import Ctx, get_db, require
 from ..models import User, UserMfa
-from ..schemas import MfaResetIn, NamesIn, PasswordResetIn, UserCreateIn, UserUpdateIn
+from ..schemas import MfaResetIn, MfaResetUserIn, NamesIn, PasswordResetIn, UserCreateIn, UserUpdateIn
 from ..services import mfa as mfa_svc
 from ..services import recovery
 from ..services import users as svc
@@ -54,11 +54,12 @@ def get_user(user_id: int, db: Session = Depends(get_db), ctx: Ctx = Depends(req
 
 
 @router.post("/{user_id}/reset-mfa")
-def reset_mfa(user_id: int, body: MfaResetIn, db: Session = Depends(get_db),
+def reset_mfa(user_id: int, body: MfaResetUserIn, db: Session = Depends(get_db),
               ctx: Ctx = Depends(require("users.manage"))):
-    """v1.4.1 CR-018: the user sets two-step verification up again at the next sign-in (audited, reason required)."""
+    """v1.4.1 CR-018: the user sets two-step verification up again at the next sign-in (audited, reason required).
+    2.2.0 (#327): `compromised` - the next setup accepts only a newly generated key."""
     u = svc.get(db, ctx, user_id)
-    mfa_svc.reset(db, ctx, u, body.reason)
+    mfa_svc.reset(db, ctx, u, body.reason, compromised=body.compromised)
     db.commit()
     return _out(u, _mfa_on(db))
 

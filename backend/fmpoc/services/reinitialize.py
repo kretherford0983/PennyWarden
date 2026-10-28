@@ -30,9 +30,9 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
 from .. import audit
-from ..models import (Attachment, AuditEvent, BankAccount, BankAccountBalance, Budget, BudgetProjectionChoice, CheckAccount,
+from ..models import (Donation, Attachment, AuditEvent, BankAccount, BankAccountBalance, Budget, BudgetHistoryEntry, BudgetProjectionChoice, CheckAccount,
                       CheckDocument, CheckNumberAcknowledgement, CheckPrinterSetting, CheckSigner, CheckStyle, DonationDetail, DonationLine,
-                      DonationReceipt, DonationSettings, Entity,
+                      DonationReceipt, DonationSettings, DonationStatement, Entity,
                       FiscalYear, FiscalYearReview, Fundraiser, FundraiserBucket, FundraiserBucketCategory, FundraiserBucketLine, FundraiserBudget,
                       FundraiserFyReportNote, FundraiserSeries, FundraiserSeriesResult,
                       FundraiserClassification, FundraiserExclusion, FundraiserLineContributor, RegisterTransaction, Reminder,
@@ -46,10 +46,10 @@ CONFIRM_WORD = "reinitialize"
 COOLDOWN = dt.timedelta(hours=24)
 
 # children first
-WIPE = (DonationReceipt, DonationDetail, DonationLine, FundraiserBucketLine, FundraiserLineContributor, FundraiserClassification, FundraiserExclusion, FiscalYearReview, Attachment,
+WIPE = (DonationStatement, DonationReceipt, DonationDetail, DonationLine, Donation, FundraiserBucketLine, FundraiserLineContributor, FundraiserClassification, FundraiserExclusion, FiscalYearReview, Attachment,
         TransactionAllocation, RegisterTransaction, CheckNumberAcknowledgement, CheckAccount, CheckPrinterSetting,
         BankAccountBalance, BankAccount, FundraiserBucket, FundraiserBucketCategory, FundraiserBudget, Fundraiser, FundraiserSeriesResult,
-        FundraiserSeries, FundraiserFyReportNote, BudgetProjectionChoice, Budget, FiscalYear,
+        FundraiserSeries, FundraiserFyReportNote, BudgetProjectionChoice, BudgetHistoryEntry, Budget, FiscalYear,
         CheckDocument, CheckSigner, CheckStyle, DonationSettings, RequestKey)   # 2.1.0 (#312): donations
 
 
@@ -64,6 +64,10 @@ def last_reinitialize(db: Session, ws_id: int) -> dt.datetime | None:
 
 def cooldown_until(db: Session, ws_id: int, now: dt.datetime | None = None) -> dt.datetime | None:
     last = last_reinitialize(db, ws_id)
+    from . import testing     # 2.2.0 (#231): cleared by a testing-mode Administrator
+    cleared = testing.cooldown_cleared_at(db, ws_id)
+    if last and cleared and cleared >= last:
+        return None
     if last and (now or utcnow()) < last + COOLDOWN:
         return last + COOLDOWN
     return None
@@ -175,7 +179,7 @@ def wipe(db: Session, ws_id: int, ctx, by: str, backup_name: str, via: str, befo
                       organization_name="Multiple", is_system=True, active=True, name_key="multiple"))
     audit.record(db, ctx, "REINITIALIZE", "workspace", ws_id, {"counts": before},
                  {"by": by, "via": via, "safety_backup": backup_name, "kept": "users, roles, two-step, organization, "
-                  "key, modules, preferences, audit log"}, category="SECURITY")
+                  "key, modules, preferences, branding, audit log"}, category="SECURITY")
 
 
 def remove_attachment_files(settings) -> None:
