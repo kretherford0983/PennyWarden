@@ -115,6 +115,21 @@ PennyWarden 2.2.0 (in progress).
   on a deposit keep void receipts as before. Cancel (with a reason) only while nothing is received. Received lines in
   a Closed Fiscal Year are locked. Audited: `DONATION_CREATED`, `DONATION_UPDATED`, `DONATION_LINKED`,
   `DONATION_UNLINKED`, `DONATION_CANCELLED`.
+- **Envelopes for receipts, from one shared envelope library.** Envelope templates are now one library used by
+  Payments and Donations: each template has *Used for* tags and each feature its own default. A global **Envelopes**
+  page (Administrators) lists them all; Payments Setup and Donations Setup each list their own, create templates for
+  themselves and add other templates to themselves. Removing a feature's tag from its default asks for another
+  default; removing it from the last one hides envelope printing there. A template no feature uses stays as *Not
+  used* (never deleted). Editing a shared template says *Also used for …*; **Duplicate for … only** makes a separate
+  copy. Your envelope printer adjustments belong to the template, so they apply wherever it is used. Upgrading tags
+  every existing envelope Payments; nothing else changes for Payments.
+- **Print the donor's envelope** after a receipt (Donations page and the deposit's dialog), with the Donations
+  default first, the return address on or off, *Test on plain paper* and *My envelope printer settings*. The printed
+  envelope is kept with the donation and on its deposit (Create transaction carries it over). Audited:
+  `DONATION_ENVELOPE_PRINTED`, `DONATION_ENVELOPE_TEST`, `ENVELOPE_TAGS_UPDATED`.
+- **Window envelopes and fold marks for receipts** (Donations Setup), as on cover letters: the address on the receipt
+  or on a separate address page, the organization's address in the upper window, fold marks on the front or back. A
+  window receipt hides the envelope step (*Print an envelope anyway*).
 
 ### Organization branding (#280)
 - **Your colors and logo on reports and presentations.** *System/About → Branding* (Administrators): choose a

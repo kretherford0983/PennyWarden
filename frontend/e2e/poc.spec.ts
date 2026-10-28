@@ -3762,6 +3762,36 @@ test("#312: Donations module - Administrator sets up the receipt; a Register Use
   await logout(page);
 });
 
+// ---------------------------------------------------------------- 2.2.0 #325: the shared envelope library
+test("#325: envelopes are one library tagged by feature; Donations Setup adds one and sets the receipt's window options", async ({ page }) => {
+  await login(page, "admin");
+  await page.getByRole("link", { name: "Envelopes", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Envelopes", exact: true })).toBeVisible();
+  const lib = page.getByTestId("envelope-library");
+  const first = lib.getByRole("row", { name: /^#10 envelope Payments/ });
+  await expect(first).toContainText("Payments");              // upgraded and Payments-created templates: Payments
+  await expect(page.getByTestId("no-default-donations")).toBeVisible();
+  await rowAction(lib, "#10 envelope", "Use for Donations");
+  await expect(lib.getByRole("row", { name: /^#10 envelope Payments, Donations/ })).toContainText("Payments, Donations");
+  await expect(page.getByTestId("no-default-donations")).toHaveCount(0);
+  await page.screenshot({ path: "e2e-screenshots/light-envelope-library.png" });
+  // Donations Setup lists it as the Donations default; its editor says it is shared with Payments
+  await page.getByRole("link", { name: "Donations Setup" }).click();
+  const envs = page.getByTestId("envelopes-donations");
+  const mine = envs.getByRole("row", { name: /^#10 envelope Default/ });
+  await expect(mine).toContainText("Payments");                    // also used for Payments
+  await mine.getByRole("button", { name: "Edit" }).click();
+  await expect(page.getByTestId("envelope-shared")).toContainText("Also used for Payments");
+  await expect(page.getByRole("button", { name: "Duplicate for Donations only" })).toBeVisible();
+  await page.getByRole("button", { name: "Back to Donations Setup" }).click();
+  // the receipt's window options are there; a window receipt hides the envelope step (left off here)
+  await expect(page.getByLabel("Address for a window envelope")).toHaveValue("NONE");
+  await page.getByLabel("Fold marks").selectOption("FRONT");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Saved." })).toBeVisible();
+  await logout(page);
+});
+
 // ---------------------------------------------------------------- 2.2.0 #325: Donations page
 test("#325: a receipt before the money and an item on the Donations page, then Create transaction", async ({ page }) => {
   test.setTimeout(150_000);
@@ -3792,6 +3822,13 @@ test("#325: a receipt before the money and an item on the Donations page, then C
   await expect(pv.getByRole("button", { name: "Print…" })).toBeVisible();
   await pv.getByRole("button", { name: "Close" }).first().click();
   await expect(ed.getByRole("region", { name: "Receipts" })).toContainText("date received left blank");
+  // the donor's envelope, from the envelope tagged for Donations (its default first); the test is not kept
+  const envPanel = ed.getByTestId("receipt-envelope");
+  await expect(envPanel.getByLabel("Envelope", { exact: true })).toContainText("#10 envelope (default)");
+  await envPanel.getByRole("button", { name: "Test on plain paper" }).click();
+  const et = page.getByRole("dialog", { name: "Envelope test (plain paper)" });
+  await expect(et.getByRole("button", { name: "Print…" })).toBeVisible();
+  await et.getByRole("button", { name: "Close" }).first().click();
   await page.screenshot({ path: "e2e-screenshots/light-donation-page.png" });
   await ed.getByRole("button", { name: "Close" }).first().click();
   await expect(page.getByRole("radio", { name: /Awaiting deposit \(\d+\)/ })).toBeVisible();

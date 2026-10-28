@@ -9,6 +9,8 @@ import { ErrorBox, Field, Loading, Modal, useConfirmable } from "../components";
 import { useMe } from "../App";
 import { Link } from "../router";
 import { LivePreview, PatternInput, PdfViewer, Section, usePdf } from "./checkShared";
+import { DocFocus, DocumentEditor } from "./CheckDocuments";
+import { EnvelopeLibrary, ReceiptEnvelopePanel } from "./Envelopes";
 
 const FONTS: [string, string][] = [["CARLITO", "Carlito (Calibri-compatible)"], ["SANS", "Liberation Sans (Arial-compatible)"], ["SERIF", "Liberation Serif (Times-compatible)"]];
 const KIND_LABEL: Record<string, string> = { ORIGINAL: "Original", DUPLICATE: "Duplicate", CORRECTED: "Corrected" };
@@ -21,8 +23,18 @@ export default function DonationSetup() {
   const [saved, setSaved] = useState(false);
   const [pdf, setPdf] = usePdf();
   const [viewing, setViewing] = useState(false);
+  // 2.2.0 (#325): the envelopes used for Donations (the shared library) and their editor, in place of the page
+  const [lib, setLib] = useState<any>(null);
+  const [editingEnv, setEditingEnv] = useState<any>(null);
+  const [envFocus, setEnvFocus] = useState<DocFocus>(undefined);
+  const loadLib = () => api.get("/api/envelopes").then(setLib, setErr);
   const load = () => api.get("/api/donations/setup").then((d) => { setS(d); setCfg(d.config); }, setErr);
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); loadLib(); }, []);
+  if (editingEnv && lib) {
+    const edit = (d: any, f?: DocFocus) => { setEditingEnv(d); setEnvFocus(f); };
+    return <DocumentEditor setup={{ ...lib, documents: lib.envelopes }} doc={editingEnv} focus={envFocus} feature="DONATIONS" backLabel="Back to Donations Setup"
+                           onOpen={edit} onClose={() => { edit(null); loadLib(); }} onSaved={(d) => { setEditingEnv(d); setEnvFocus(undefined); loadLib(); }} />;
+  }
   if (!s || !cfg) return err ? <ErrorBox error={err} /> : <Loading />;
   const set = (k: string, v: unknown) => { setSaved(false); setCfg({ ...cfg, [k]: v }); };
   const dirty = JSON.stringify(cfg) !== JSON.stringify(s.config);
@@ -87,6 +99,29 @@ export default function DonationSetup() {
                 Items are always listed by description only; the note can't be left off.</span>
             </div>
           </Section>
+          {/* 2.2.0 (#325): the cover letter's window-envelope options (#177) and fold marks (#247) */}
+          <Section id="win" scope="pw-donations" title="Window envelope and fold marks">
+            <div className="row form-row">
+              <Field label="Address for a window envelope">
+                <select value={cfg.window} onChange={(e) => set("window", e.target.value)} aria-label="Address for a window envelope">
+                  <option value="NONE">None (a plain envelope can be printed)</option>
+                  <option value="LETTER">On the receipt (#10 double-window envelope)</option>
+                  <option value="ADDRESS_PAGE">On a separate address page</option>
+                </select>
+              </Field>
+              {cfg.window !== "NONE" ? <label className="check"><input type="checkbox" checked={cfg.window_return} onChange={(e) => set("window_return", e.target.checked)} /> The organization's address in the upper window</label> : null}
+              <Field label="Fold marks">
+                <select value={cfg.fold_marks} onChange={(e) => set("fold_marks", e.target.value)} aria-label="Fold marks">
+                  <option value="NONE">None</option>
+                  <option value="FRONT">On the front</option>
+                  <option value="BACK">On the back (two-sided)</option>
+                </select>
+              </Field>
+            </div>
+            <p className="hint">With a window envelope the donor's address prints where the lower window is and no envelope needs printing (the print screen
+              offers <i>Print an envelope anyway</i>). Fold marks are small ticks at the edges to fold the receipt in even thirds; <i>On the back</i> needs a printer
+              that prints two-sided.</p>
+          </Section>
           <div className="actions left">
             <button className="primary" onClick={save} disabled={!dirty}>Save</button>
             <button onClick={testPrint}>Test print (sample data)</button>
@@ -99,6 +134,7 @@ export default function DonationSetup() {
                        title="Donation receipt preview" aspect={8.5 / 11} deps={[JSON.stringify(cfg)]} />
         </Section>
       </div>
+      {lib ? <EnvelopeLibrary feature="DONATIONS" docs={lib.envelopes} onChanged={loadLib} onEdit={(d, f) => { setEditingEnv(d); setEnvFocus(f); }} /> : null}
       {pdf && viewing ? (
         <PdfViewer pdf={pdf} title="Donation receipt test print" onClose={() => setViewing(false)}>
           <p className="hint">Sample data, marked SAMPLE – NOT A RECEIPT. It is not attached anywhere.</p>
@@ -128,6 +164,7 @@ export function DonationReceiptDialog({ txn, onClose, onChanged }: { txn: any; o
   const [saved, setSaved] = useState(false);
   const [pdf, setPdf] = usePdf();
   const [viewing, setViewing] = useState<string | null>(null);
+  const [envFor, setEnvFor] = useState<number | null>(null);   // 2.2.0 (#325): the donor whose envelope can be printed now
   const { run, dialog } = useConfirmable();
   const take = (x: any) => {
     setD(x);
@@ -211,7 +248,7 @@ export function DonationReceiptDialog({ txn, onClose, onChanged }: { txn: any; o
     try {
       const blob = await run((c) => api.postBlob(`/api/donations/transactions/${txn.id}/receipts`, { donor_entity_id: donor.entity_id, confirmations: c }));
       if (!blob) return;
-      setPdf(blob, "donation-receipt.pdf"); setViewing(`Donation receipt – ${donor.name}`); onChanged(); load();
+      setPdf(blob, "donation-receipt.pdf"); setViewing(`Donation receipt – ${donor.name}`); setEnvFor(donor.entity_id); onChanged(); load();
     } catch (x) { setErr(x); }
   };
   return (
@@ -303,6 +340,7 @@ export function DonationReceiptDialog({ txn, onClose, onChanged }: { txn: any; o
                         <button onClick={() => print(g)}>{printLabel(g)}</button>
                       </div>
                     ) : null}
+                    {envFor === g.entity_id && g.saved?.donation_id ? <ReceiptEnvelopePanel donationId={g.saved.donation_id} onChanged={onChanged} /> : null}
                   </div>
                 ))}
               </div>

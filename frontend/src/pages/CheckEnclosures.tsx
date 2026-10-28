@@ -154,7 +154,9 @@ function LetterPrinter({ current, onSaved }: { current: string; onSaved: () => v
   );
 }
 
-function EnvelopePrinter({ env, onSaved }: { env: any; onSaved: () => void }) {
+/** The user's own envelope printer settings. They belong to the template (2.2.0, #325: so they carry over to every
+ * feature that shares it); `url` is the saving feature's endpoint. */
+export function EnvelopePrinter({ env, onSaved, url = "/api/checks/my-printer/envelope" }: { env: any; onSaved: () => void; url?: string }) {
   const p = env.printer || {};
   const [page, setPage] = useState<string>(p.page || env.page || "LETTER");
   const [guide, setGuide] = useState<string>(p.guide || env.guide || "CENTER");
@@ -164,11 +166,11 @@ function EnvelopePrinter({ env, onSaved }: { env: any; onSaved: () => void }) {
   const [saved, setSaved] = useState(false);
   const save = async () => {
     setErr(null); setSaved(false);
-    try { await api.put("/api/checks/my-printer/envelope", { document_id: env.id, page, guide, dx, dy }); setSaved(true); onSaved(); } catch (x) { setErr(x); }
+    try { await api.put(url, { document_id: env.id, page, guide, dx, dy }); setSaved(true); onSaved(); } catch (x) { setErr(x); }
   };
   return (
     <div className="card subtle">
-      <p className="hint">These settings are yours only (this envelope template). Move the print by up to 1/4 inch if the address lands off-center.</p>
+      <p className="hint">These settings are yours only (this envelope template, wherever it is used). Move the print by up to 1/4 inch if the address lands off-center.</p>
       <ErrorBox error={err} />
       <div className="row form-row">
         <Field label="Page size"><select value={page} onChange={(e) => setPage(e.target.value)}><option value="LETTER">Letter page</option><option value="ENVELOPE">Envelope-sized page</option></select></Field>

@@ -22,6 +22,7 @@ import Fundraisers, { FundraiserDetail } from "./pages/Fundraisers";
 import FundraiserSeries from "./pages/FundraiserSeries";
 import CheckSetup from "./pages/CheckSetup";
 import DonationSetup from "./pages/Donations";
+import EnvelopesPage from "./pages/Envelopes";
 import Payments from "./pages/Payments";
 import DonationsPage from "./pages/DonationsPage";
 import Notifications, { REMINDERS_CHANGED } from "./pages/Notifications";
@@ -186,6 +187,8 @@ function navFor(me: Me) {
   const checkSetup = me.modules?.checks && me.permissions.includes("checks.setup") ? [["/check-setup", "Payments Setup"]] : [];
   // 2.1.0 (#312): Donations Setup (receipt letters) for Administrators when the Donations module is on
   if (me.modules?.donations && me.permissions.includes("donation.setup")) checkSetup.push(["/donation-setup", "Donations Setup"]);
+  // 2.2.0 (#325): the shared envelope library, when a feature that uses envelopes is on
+  if (checkSetup.length) checkSetup.push(["/envelopes", "Envelopes"]);
   if (me.security_domain === "ADMINISTRATOR") return [["/", "Dashboard"], ["/users", "Users"], ["/audit-log", "Audit Log"], ...checkSetup, ["/about", "System/About"]];
   // 2.0.0 (#126, #127): Auditors see System/About read-only (effective settings, sessions)
   if (me.security_domain === "AUDITOR") return [...fin, ["/users", "Users"], ["/audit-log", "Audit Log"], ...(me.permissions.includes("system.view") ? [["/about", "System/About"]] : [])];
@@ -243,6 +246,7 @@ function Shell({ workspace, warning, mode, testing, demo, onLogout }: { workspac
   else if (path === "/fundraiser-series") page = can("fundraiser.manage") ? guard("/fundraisers", <FundraiserSeries />) : <NotAuthorized />; // 2.1.0 (#277)
   else if (path === "/check-setup") page = guard("/check-setup", <CheckSetup />);
   else if (path === "/donation-setup") page = guard("/donation-setup", <DonationSetup />);
+  else if (path === "/envelopes") page = guard("/envelopes", <EnvelopesPage />);
   else if (path === "/payments") page = guard("/payments", <Payments />);
   else if (path === "/donations") page = guard("/donations", <DonationsPage />);
   else if ((m = match("/fundraisers/:id", path))) page = guard("/fundraisers", <FundraiserDetail id={Number(m.id)} />);

@@ -130,6 +130,36 @@ and Close reports under **Non-cash donations received**.
 **Note when a receipt lists items**: empty prints the default wording (shown in grey); **Default wording** puts it in
 the box to edit. Your own wording needs at least 8 words (a `{VARIABLE}` counts as one).
 
+**Window envelope and fold marks**: as on a cover letter, the receipt can carry the addresses for a #10
+double-window envelope (*On the receipt*, or *On a separate address page*), with or without the organization's address
+in the upper window, and fold marks on the front or on the back (two-sided printing). A window receipt needs no
+envelope, so the print screen hides that step (*Print an envelope anyway* brings it back).
+
+**Envelopes**: the envelopes used for Donations. **New #10 envelope** makes one for Donations; **Add to Donations**
+uses one of the other templates (for example Payments' envelope) as well. See *Envelopes: one library* below.
+
+### Printing the donor's envelope (Register Users)
+After printing a receipt (on the Donations page or in a deposit's *Donation receipt…* dialog), the **Envelope** step
+offers the envelopes used for Donations, the default first. Tick or untick **Print the return address**, use **Test on
+plain paper** to check where the address lands (not kept), and **My envelope printer settings** to move the print by
+up to 1/4 inch. The printed envelope is kept with the donation and on its deposit. With no envelope set up for
+Donations the step says so; an Administrator adds one in Donations Setup.
+
+## Envelopes: one library (Administrators)
+Envelope templates are one library shared by Payments and Donations. Each template is *used for* the features you
+choose, and each feature has its own default. **Envelopes** in the navigation (shown when Payments or Donations is on)
+lists every template with what it is used for: **Use for …** / **Remove from …**, **Make the … default**, **Edit**,
+**Deactivate**. Payments Setup and Donations Setup list their own envelopes and can remove only their own use.
+
+- Removing a feature from its default envelope asks which envelope it uses from now on. Removing it from its last
+  envelope leaves that feature with no envelope: printing an envelope is hidden there.
+- An envelope no feature uses stays on the Envelopes page as *Not used*. Templates are never deleted, because printed
+  copies refer to them.
+- Editing an envelope another feature also uses shows *Also used for …: changes apply there too*. **Duplicate for …
+  only** makes a copy for the feature you are setting up and moves that feature (and its default) to the copy.
+- Your *My envelope printer settings* belong to the template, so they apply wherever it is used.
+- After upgrading, every existing envelope is used for Payments and Payments keeps its default.
+
 ## Organization branding (Administrators)
 
 **System/About → Branding** gives generated reports and presentations your organization's look: every PDF report,

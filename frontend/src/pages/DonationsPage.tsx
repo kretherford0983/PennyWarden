@@ -9,6 +9,7 @@ import { useMe } from "../App";
 import { EntityPicker, ErrorBox, Field, GuardedForm, Loading, Modal, useConfirmable } from "../components";
 import { Link } from "../router";
 import { PdfViewer, usePdf } from "./checkShared";
+import { ReceiptEnvelopePanel } from "./Envelopes";
 import { TxnForm } from "./Register";
 
 const PUB_1771 = "https://www.irs.gov/pub/irs-pdf/p1771.pdf";
@@ -100,6 +101,7 @@ function DonationEditor({ id, canPrint, onClose, onChanged, onOpen }: { id: numb
   const [cancelAsk, setCancelAsk] = useState<string | null>(null);
   const [pdf, setPdf] = usePdf();
   const [viewing, setViewing] = useState(false);
+  const [printed, setPrinted] = useState(false);     // 2.2.0 (#325): after a receipt, its envelope can be printed
   const { run, dialog } = useConfirmable();
   const take = (x: any) => {
     setD(x); setDonor(String(x.donor.id)); setDetails(x.details || "");
@@ -144,7 +146,7 @@ function DonationEditor({ id, canPrint, onClose, onChanged, onOpen }: { id: numb
     try {
       const r = await run((confirmations) => api.postBlob(`/api/donations/${id}/receipts`, { confirmations }));
       if (!r) return;
-      setPdf(r, "receipt.pdf"); setViewing(true);
+      setPdf(r, "receipt.pdf"); setViewing(true); setPrinted(true);
       api.get(`/api/donations/${id}`).then(take); onChanged();
     } catch (x) { setErr(x); }
   };
@@ -216,6 +218,7 @@ function DonationEditor({ id, canPrint, onClose, onChanged, onOpen }: { id: numb
           {d && canPrint && d.cancellable ? <button type="button" className="danger" onClick={() => setCancelAsk("")}>Cancel donation…</button> : null}
         </div>
       </GuardedForm>
+      {printed && d && id != null && canPrint && d.printable ? <ReceiptEnvelopePanel donationId={id} onChanged={() => { api.get(`/api/donations/${id}`).then(take); onChanged(); }} /> : null}
       {d ? <ReceiptList d={d} /> : null}
       {cancelAsk != null ? (
         <Modal title="Cancel donation" onClose={() => setCancelAsk(null)}>

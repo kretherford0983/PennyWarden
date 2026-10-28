@@ -149,7 +149,27 @@ could not otherwise be corrected. Scope and safeguards:
   unlinked (amount kept), DEPOSIT donations keep their lines and their receipts show void.
 - Audit and Close reports: `non_cash_received()` → "Non-cash donations received" after the budgets (whole-year
   reports only).
-- Tests: `test_v220_donations_part2.py`.
+- Shared envelope library (migration `0055`): `check_document.features` and `default_for` (comma-separated PAYMENTS,
+  DONATIONS); every existing template is tagged PAYMENTS and `default_for` follows `is_default`. For envelopes,
+  `is_default` is kept equal to "the Payments default" (`services/envelopes._set`) so Payments' code reads it as before.
+  `services/envelopes`: `set_tag` (409 `DEFAULT_NEEDED` with `candidates` when removing a feature from its default
+  while other tagged active templates remain), `set_default`, `duplicate_for` (the copy takes the tag and default),
+  `tag_new` (created on a feature's page: that feature, its default if it had none; global page: none),
+  `require_feature` (the feature's setup permission and module). Cover letters stay Payments' (tagged PAYMENTS).
+- Routes: `/api/checks/documents*` (template CRUD, drafts, previews, test prints) use `doc_ctx` — `checks.setup` with
+  Payments on, or `donation.setup` with Donations on; letters still need Payments (`_kind_ok`). Creating takes
+  `feature` (PAYMENTS default, DONATIONS, or null = Not used); flags take `feature` for *Make default*.
+  `GET /api/envelopes`, `POST /api/envelopes/{id}/tags|default|duplicate-for`. Payments' print list and print routes
+  use only PAYMENTS-tagged envelopes (404 otherwise).
+- Receipt envelopes: `GET /api/donations/envelopes` (DONATIONS-tagged, default first, `receipt_window`),
+  `POST /api/donations/{id}/envelope|envelope-test`, `PUT /api/donations/my-printer/envelope` (the same per-template
+  `check_printer_setting` row as Payments). The donor's name and address; envelope variables `{ORG*}`, `{PAYEE}` (the
+  donor), `{PAYEE_ADDRESS}`, `{TODAY}`. The copy (`document_type` DONATION_ENVELOPE, drawn without feed offsets) is
+  kept with the donation and on every active linked deposit; Create transaction copies receipts and envelopes.
+- Receipt window options: `ReceiptConfig.window` (NONE | LETTER | ADDRESS_PAGE), `window_return`, `fold_marks`
+  (NONE | FRONT | BACK; the template's setting — no per-print or per-user override, unlike cover letters), drawn with
+  the cover letter's `window_blocks`, `fold_ticks` and `_with_back_pages`. The setup preview draws the window outlines.
+- Tests: `test_v220_donations_part2.py`, `test_v220_envelopes.py`.
 
 **2.1.0 — Donations module, part 1: receipt letters (#312, Kyle 2026-10-22; part of #256).**
 - Module switch `workspace.donations_enabled` (migration `0045`, off), the same pattern as Fundraisers and Payments:
