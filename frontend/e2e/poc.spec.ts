@@ -3970,12 +3970,19 @@ test("#315 / #316: first and last name, a display name and mailing address; each
   await expect(dlg).toHaveCount(0);
   // the list shows the display name with the name beside it
   await expect(page.getByRole("row", { name: /Robin Z\. \(volunteer\)/ })).toContainText("Robin Zephyr");
+  // a second person, with no display name of their own (the earlier entities were reinitialized away by #125)
+  const post = await apiAs(page);
+  expect((await post("/api/entities", { entity_type: "INDIVIDUAL", first_name: "Jordan", last_name: "Quill",
+                                           confirmations: ["DUPLICATE_ENTITY"] })).status()).toBe(201);
   // My account: Last, First - Individuals without a display name of their own show and sort by last name
   await page.goto("/account");
-  await page.getByLabel("Show people's names as").selectOption("LAST_FIRST");
+  // the choice is saved to the account: wait for that before leaving the page
+  await Promise.all([page.waitForResponse((r) => r.url().includes("/api/me/preferences") && r.ok()),
+                     page.getByLabel("Show people's names as").selectOption("LAST_FIRST")]);
   await page.goto("/entities");
-  await expect(page.getByRole("cell", { name: /^Donor Alpha, Sample/ })).toBeVisible();
+  await expect(page.getByRole("cell", { name: /^Quill, Jordan/ })).toBeVisible();
   await page.goto("/account");
-  await page.getByLabel("Show people's names as").selectOption("FIRST_LAST");
+  await Promise.all([page.waitForResponse((r) => r.url().includes("/api/me/preferences") && r.ok()),
+                     page.getByLabel("Show people's names as").selectOption("FIRST_LAST")]);
   await logout(page);
 });
