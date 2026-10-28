@@ -34,6 +34,7 @@ from ...money import fmt
 from ...security import crypto
 from .. import attachments as att_svc
 from .. import organization as org_svc
+from .. import entity_vars as _entity_vars
 from .. import checks as checknum
 from .. import register as reg
 from ..common import budget_display_code, get_scoped
@@ -491,7 +492,7 @@ def variable_values(db: Session, t: RegisterTransaction, cfg: cfgmod.StyleConfig
     ws = db.get(Workspace, t.workspace_id)
     acct = db.get(BankAccount, t.bank_account_id)
     return {
-        "PAYEE": t.parent_entity.display_name if t.parent_entity else "",
+        "PAYEE": t.parent_entity.legal_name if t.parent_entity else "",
         "DATE": format_date(t.transaction_date, cfg.date_format),
         "AMOUNT": f"{t.total_cents // 100:,}.{t.total_cents % 100:02d}",
         "BUDGET": patterns.first_and_others([n for _c, n in budgets]),
@@ -509,19 +510,22 @@ def variable_values(db: Session, t: RegisterTransaction, cfg: cfgmod.StyleConfig
         "PAYEE_ADDRESS": "\n".join(address_lines(t.parent_entity)),
         "SIGNER": "", "SIGNER_TITLE": "",
         **{k: v for k, v in org_svc.values_for(db, t.workspace_id).items() if k.startswith("ORG.")},   # #314
+        **_entity_vars.values("PAYEE", t.parent_entity),        # 2.2.0 (#317)
     }
 
 
-def address_lines(e) -> list[str]:
-    """The entity's postal address as lines (street, street 2, "City, ST 12345", country unless the US)."""
+def address_lines(e, mailing: bool = True) -> list[str]:
+    """The entity's postal address as lines (street, street 2, "City, ST 12345", country unless the US). 2.2.0 (#315):
+    letters, envelopes and receipts use the mailing address (which falls back to the address when "same as")."""
     if e is None:
         return []
-    lines = [x.strip() for x in (e.address_line1, e.address_line2) if x and x.strip()]
-    city = ", ".join(x.strip() for x in (e.city, e.state_region) if x and x.strip())
-    last = " ".join(x for x in (city, (e.postal_code or "").strip()) if x)
+    get = e.mailing if (mailing and hasattr(e, "mailing")) else (lambda f: getattr(e, f))
+    lines = [x.strip() for x in (get("address_line1"), get("address_line2")) if x and x.strip()]
+    city = ", ".join(x.strip() for x in (get("city"), get("state_region")) if x and x.strip())
+    last = " ".join(x for x in (city, (get("postal_code") or "").strip()) if x)
     if last:
         lines.append(last)
-    country = (e.country or "").strip()
+    country = (get("country") or "").strip()
     if country and country.upper() not in ("US", "USA", "UNITED STATES", "UNITED STATES OF AMERICA"):
         lines.append(country)
     return lines
@@ -913,6 +917,8 @@ SAMPLE_VALUES = {
 }
 for _v in SAMPLE_VALUES.values():                  # 2.1.0 (#314): a sample organization profile
     _v.update({k: v for k, v in org_svc.SAMPLE.items() if k.startswith("ORG.")})
+    # 2.2.0 (#317): a sample payee for {PAYEE.*}
+    _v.update(_entity_vars.sample("PAYEE", _v["PAYEE"], ["123 Main Street", "P.O. Box 123", "Sample Town, US 55555"]))
 SAMPLE_CENTS = {"NORMAL": 319930, "LONG": 98765432}
 # kept for tests that draw the long sample directly
 SAMPLES = {k: render.Content(SAMPLE_CENTS[k], "", SAMPLE_VALUES[k]["PAYEE"],
@@ -1299,8 +1305,15 @@ def _money(cents: int) -> str:
     return f"${cents // 100:,}.{cents % 100:02d}"
 
 
-def letter_data(db: Session, ctx, t: RegisterTransaction, date_format: str, signer: CheckSigner | None
-                ) -> documents.LetterData:
+def _payee_block(vals: dict, entity, lines: list[str] | None) -> list[str]:
+    """2.2.0 (#317): the letter's addressee block - the template's lines (default: name and mailing address)."""
+    if entity is None:
+        return []
+    return _entity_vars.addressee(lines or documents.DEFAULT_ADDRESSEE, vals, patterns.LETTER) or [entity.legal_name]
+
+
+def letter_data(db: Session, ctx, t: RegisterTransaction, date_format: str, signer: CheckSigner | None,
+                addressee: list[str] | None = None) -> documents.LetterData:
     vals = variable_values(db, t, SimpleNamespace(date_format=date_format))
     rows = []
     for a in t.live_allocations:
@@ -1309,7 +1322,7 @@ def letter_data(db: Session, ctx, t: RegisterTransaction, date_format: str, sign
                      "INVOICE_DATE": format_date(a.invoice_date, date_format) if a.invoice_date else "",
                      "DESCRIPTION": a.description or "", "BUDGET": f"{code} {bname}", "NOTES": a.notes or "",
                      "AMOUNT": _money(a.amount_cents)})
-    payee = [t.parent_entity.display_name] + address_lines(t.parent_entity) if t.parent_entity else []
+    payee = _payee_block(vals, t.parent_entity, addressee)
     return documents.LetterData(values=vals, rows=rows, total=_money(t.total_cents), payee_lines=payee,
                                 signer_name=signer.name if signer else "", signer_title=(signer.title or "") if signer
                                 else "")
@@ -1393,7 +1406,7 @@ def print_letter(db: Session, ctx, settings, t: RegisterTransaction, d: CheckDoc
         raise conflict("TEMPLATE_INACTIVE", "Choose an active letter template.")
     cfg = doc_config(d)
     signer = _letter_signer(db, ctx, signer_id)
-    data = letter_data(db, ctx, t, _date_format_for(db, ctx, t), signer)
+    data = letter_data(db, ctx, t, _date_format_for(db, ctx, t), signer, cfg.addressee)
     _texts, empty = documents.letter_texts(cfg, data)
     warnings = []
     if empty:
@@ -1453,7 +1466,7 @@ def save_envelope_printer(db: Session, ctx, d: CheckDocument, page: str | None, 
 
 def _envelope_content(db: Session, ctx, t: RegisterTransaction, cfg, return_address: bool):
     vals = variable_values(db, t, SimpleNamespace(date_format=_date_format_for(db, ctx, t)))
-    payee = [t.parent_entity.display_name] + address_lines(t.parent_entity) if t.parent_entity else []
+    payee = [t.parent_entity.legal_name] + address_lines(t.parent_entity) if t.parent_entity else []
     return documents.envelope_lines(cfg, vals, payee, return_address), payee
 
 
@@ -1520,9 +1533,11 @@ def handwritten_check(db: Session, ctx, t: RegisterTransaction, number: str) -> 
 def sample_letter_pdf(cfg, logo: bytes | None = None) -> bytes:
     values = {**SAMPLE_VALUES["NORMAL"], "PAYEE": documents.SAMPLE_PAYEE[0],
               "TODAY": format_date(dt.date.today(), "MM/DD/YYYY"), "INVOICE_DATE": "08/29/2026 and others",
-              "PAYEE_ADDRESS": "\n".join(documents.SAMPLE_PAYEE[1:]), "DATE": format_date(dt.date.today(), "MM/DD/YYYY")}
+              "PAYEE_ADDRESS": "\n".join(documents.SAMPLE_PAYEE[1:]), "DATE": format_date(dt.date.today(), "MM/DD/YYYY"),
+              **_entity_vars.sample("PAYEE", documents.SAMPLE_PAYEE[0], documents.SAMPLE_PAYEE[1:])}
+    payee = _entity_vars.addressee(cfg.addressee, values, patterns.LETTER) or documents.SAMPLE_PAYEE[:1]
     data = documents.LetterData(values=values, rows=documents.SAMPLE_ROWS, total="$200.00",
-                                payee_lines=documents.SAMPLE_PAYEE, signer_name="SAMPLE SIGNER",
+                                payee_lines=payee, signer_name="SAMPLE SIGNER",
                                 signer_title="Treasurer")
     return documents.letter_pdf(cfg, data, title="Letter test print", logo=logo, test=True)
 

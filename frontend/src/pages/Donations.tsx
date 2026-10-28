@@ -24,6 +24,7 @@ export default function DonationSetup() {
   const [pdf, setPdf] = usePdf();
   const [viewing, setViewing] = useState(false);
   // 2.2.0 (#325): the envelopes used for Donations (the shared library) and their editor, in place of the page
+  const [stmtPreview, setStmtPreview] = useState(false);
   const [lib, setLib] = useState<any>(null);
   const [editingEnv, setEditingEnv] = useState<any>(null);
   const [envFocus, setEnvFocus] = useState<DocFocus>(undefined);
@@ -48,6 +49,10 @@ export default function DonationSetup() {
       setCfg((cur: any) => (cur === sent ? d.config : cur));
       setSaved(true);
     } catch (x) { setErr(x); }
+  };
+  const statementTest = async () => {
+    setErr(null);
+    try { setPdf(await api.postBlob("/api/donations/setup/statement-test-print", { config: cfg }), "statement-test-print.pdf"); setViewing(true); } catch (x) { setErr(x); }
   };
   const testPrint = async () => {
     setErr(null);
@@ -99,6 +104,35 @@ export default function DonationSetup() {
                 Items are always listed by description only; the note can't be left off.</span>
             </div>
           </Section>
+          {/* 2.2.0 (#317): the donor's addressee block on receipts and statements, from {DONOR.*} */}
+          <Section id="adr" scope="pw-donations" title="Addressee">
+            {(cfg.addressee || []).map((line: string, i: number) => (
+              <div className="row" key={i}>
+                <PatternInput id={`adr-${i}`} label={`Addressee line ${i + 1}`} value={line} variables={s.variables} hint={false} maxLength={200}
+                              onChange={(v) => set("addressee", cfg.addressee.map((x: string, j: number) => (j === i ? v : x)))} />
+                <button type="button" className="small" aria-label={`Remove addressee line ${i + 1}`} onClick={() => set("addressee", cfg.addressee.filter((_: string, j: number) => j !== i))}>Remove</button>
+              </div>
+            ))}
+            {(cfg.addressee || []).length < 6 ? <button type="button" className="small" onClick={() => set("addressee", [...(cfg.addressee || []), ""])}>+ Add addressee line</button> : null}
+            <p className="hint">The donor's block on receipts and year-end statements (and in the lower window of a window envelope). The default is the
+              donor's name and mailing address: <code>{"{DONOR.NAME}"}</code>, <code>{"{DONOR.MAILING_ADDRESS}"}</code>.</p>
+          </Section>
+          {/* 2.2.0 (#256): the year-end giving statement's letter; layout, window and signer are the receipt's */}
+          <Section id="stmt" scope="pw-donations" title="Year-end statement letter">
+            <p className="hint">The letter printed with each donor's year-end giving statement (Donations page → <i>Year-end statements</i>). Put
+              <code>{" {DONATION_TABLE} "}</code> in a paragraph of its own where the table of the year's donations goes (without it the table prints after
+              the text). The organization, EIN, donor, year, total and the goods or services statement are always printed.</p>
+            <PatternInput id="st-title" label="Title" value={cfg.statement_title} variables={s.statement_variables} hint={false} maxLength={120} onChange={(v) => set("statement_title", v)} />
+            <PatternInput id="st-salutation" label="Salutation" value={cfg.statement_salutation} variables={s.statement_variables} hint={false} onChange={(v) => set("statement_salutation", v)} />
+            <PatternInput id="st-body" label="Statement text" value={cfg.statement_body} variables={s.statement_variables} multiline maxLength={2000} onChange={(v) => set("statement_body", v)} />
+            <PatternInput id="st-closing" label="Statement closing" value={cfg.statement_closing} variables={s.statement_variables} hint={false} onChange={(v) => set("statement_closing", v)} />
+            <div className="row">
+              <button type="button" onClick={statementTest}>Test print the statement (sample data)</button>
+              <button type="button" className="small" onClick={() => setStmtPreview((v) => !v)}>{stmtPreview ? "Hide the statement preview" : "Show the statement preview"}</button>
+            </div>
+            {stmtPreview ? <LivePreview imageUrl="/api/donations/setup/statement-preview-image" pdfUrl="/api/donations/setup/statement-preview" body={{ config: cfg }}
+                                        title="Year-end statement preview" aspect={8.5 / 11} deps={[JSON.stringify(cfg)]} /> : null}
+          </Section>
           {/* 2.2.0 (#325): the cover letter's window-envelope options (#177) and fold marks (#247) */}
           <Section id="win" scope="pw-donations" title="Window envelope and fold marks">
             <div className="row form-row">
@@ -145,7 +179,7 @@ export default function DonationSetup() {
 }
 
 // ------------------------------------------------------------------ a deposit's donations (register)
-type Line = { allocation_id: number; donor: string; donor_entity_id: number | null; donor_is_organization: boolean; description: string; amount: string; donation: boolean; purpose: string; goods: string; goods_description: string; date: string; amount_cents: number; linked_donation_id?: number | null };
+type Line = { allocation_id: number; donor: string; donor_entity_id: number | null; donor_is_organization: boolean; description: string; amount: string; donation: boolean; purpose: string; goods: string; goods_description: string; date: string; amount_cents: number; linked_donation_id?: number | null; suggested?: boolean; fundraiser?: string | null };
 
 const cents = (s: string): number | null => {
   const t = s.replace(/[$,\s]/g, "");
@@ -169,7 +203,8 @@ export function DonationReceiptDialog({ txn, onClose, onChanged }: { txn: any; o
   const take = (x: any) => {
     setD(x);
     setLines(x.lines.map((l: any) => ({ allocation_id: l.allocation_id, donor: l.donor, donor_entity_id: l.donor_entity_id, donor_is_organization: !!l.donor_is_organization, description: l.description, amount: l.amount, amount_cents: l.amount_cents,
-      donation: l.donation, purpose: l.purpose || "", goods: l.goods_cents ? (l.goods_cents / 100).toFixed(2) : "", goods_description: l.goods_description || "",
+      // 2.2.0 (#256): a line in a fundraiser's donation bucket starts ticked as a suggestion; Save confirms it
+      donation: l.donation || (!!l.suggested && canPrint && x.printable), suggested: !!l.suggested, fundraiser: l.fundraiser || null, purpose: l.purpose || "", goods: l.goods_cents ? (l.goods_cents / 100).toFixed(2) : "", goods_description: l.goods_description || "",
       date: l.date_received || x.date, linked_donation_id: l.linked_donation_id })));
     setDetails(Object.fromEntries(x.donors.map((o: any) => [o.entity_id, o.details || ""])));
   };
@@ -299,7 +334,7 @@ export function DonationReceiptDialog({ txn, onClose, onChanged }: { txn: any; o
                              title={l.donor_is_organization ? "Your own organization can't be the donor: record the donor as the line's entity" : undefined}
                              onChange={(e) => setLine(i, { donation: e.target.checked })} /></td>
                   <td>{l.donor || <span className="muted">No entity</span>}</td>
-                  <td>{l.description}</td>
+                  <td>{l.description}{l.suggested ? <span className="badge grey" data-testid="donation-suggested" title={`In a donation bucket of the fundraiser ${l.fundraiser}: ticked as a suggestion, saved only when you Save`}> Suggested ({l.fundraiser})</span> : null}</td>
                   <td className="num">{l.amount}</td>
                   <td>{l.donation ? <input type="date" aria-label={`Date received: ${l.donor} ${l.amount}`} value={l.date} max={d.date} disabled={!editable}
                                            title="When the donation was received, if before the deposit" onChange={(e) => setLine(i, { date: e.target.value || d.date })} /> : null}</td>

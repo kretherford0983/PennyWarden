@@ -107,6 +107,8 @@ class User(Base):
     last_payment_account_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # 2.1.0 (#262): the user's register sort, "<column>:<asc|desc>" (None = Date, oldest first)
     register_sort: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # 2.2.0 (#316): how this user sees and sorts Individuals - FIRST_LAST (None) or LAST_FIRST
+    name_order: Mapped[str | None] = mapped_column(String(12), nullable=True)
     password_changed_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
     created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("app_user.id"), nullable=True)
@@ -222,7 +224,18 @@ class Entity(Base):
     entity_number: Mapped[str] = mapped_column(String(16))
     entity_type: Mapped[str] = mapped_column(String(14))  # INDIVIDUAL | ORGANIZATION | SYSTEM
     organization_name: Mapped[str | None] = mapped_column(String(200), nullable=True)
-    primary_contact: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    # 2.2.0 (#316): the person of an Individual, the contact person of an Organization (was primary_contact)
+    first_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    last_name: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    name_review: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
+    # 2.2.0 (#315): the display name and mailing address when "same as" is unticked (empty = same: read-time fallback)
+    display_name_custom: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    mailing_address_line1: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    mailing_address_line2: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    mailing_city: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    mailing_state_region: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    mailing_postal_code: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    mailing_country: Mapped[str | None] = mapped_column(String(100), nullable=True)
     # 1.6.7: position in the organization (individuals only), offered as the signer's title on the audit review
     # signature page and the cash count sheet
     position: Mapped[str | None] = mapped_column(String(60), nullable=True)
@@ -250,10 +263,31 @@ class Entity(Base):
     __table_args__ = (UniqueConstraint("workspace_id", "entity_number", name="uq_entity_ws_number"),)
 
     @property
-    def display_name(self) -> str:
+    def primary_contact(self) -> str:
+        """The person's full name, "First Last" (2.2.0, #316: stored as first and last name)."""
+        return " ".join(x for x in (self.first_name, self.last_name) if x)
+
+    @property
+    def legal_name(self) -> str:
+        """2.2.0 (#315): the name - for "Pay to the order of", envelopes, the letter's address block and receipts."""
         if self.entity_type == "INDIVIDUAL":
-            return self.primary_contact or ""
+            return self.primary_contact
         return self.organization_name or ""
+
+    @property
+    def display_name(self) -> str:
+        """2.2.0 (#315): the display name everywhere else (register, pickers, lists, reports); falls back to the name."""
+        return (self.display_name_custom or "").strip() or self.legal_name
+
+    MAILING_FIELDS = ("address_line1", "address_line2", "city", "state_region", "postal_code", "country")
+
+    @property
+    def mailing_same(self) -> bool:
+        return not any(getattr(self, "mailing_" + f) for f in self.MAILING_FIELDS)
+
+    def mailing(self, field: str):
+        """2.2.0 (#315): a mailing address field - the address's own when *Mailing address same as Address*."""
+        return getattr(self, field) if self.mailing_same else getattr(self, "mailing_" + field)
 
 
 class BankAccount(Base):
@@ -431,6 +465,8 @@ class Attachment(Base):
     fundraiser_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     # 2.2.0 (#325): a printed receipt or envelope of a donation not (yet) linked to a deposit
     donation_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    # 2.2.0 (#256): a year-end giving statement's kept copy (and its envelope)
+    donation_statement_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     removed_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     removed_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("app_user.id"), nullable=True)
@@ -715,6 +751,8 @@ class FundraiserBucket(Base):
     # 2.1.0 (#278): one category or none; display order (buckets numbered in name order by migration 0039)
     category_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     display_order: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 2.2.0 (#256): the bucket holds donations - its deposits get the Donation box pre-ticked as a suggestion
+    is_donation: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
     created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
@@ -1107,6 +1145,32 @@ class DonationReceipt(Base):
     goods_cents: Mapped[int] = mapped_column(BigInteger, default=0)
     date_received: Mapped[dt.date | None] = mapped_column(Date, nullable=True)   # empty: printed blank (not received)
     allocation_ids: Mapped[str] = mapped_column(String(500))    # comma-separated, for the record
+    content_sha: Mapped[str] = mapped_column(String(64))
+    attachment_id: Mapped[int | None] = mapped_column(ForeignKey("attachment.id"), nullable=True)
+    printed_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    printed_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class DonationStatement(Base):
+    """2.2.0 (#256): a printed year-end giving statement - one donor, one calendar year, the donation lines received
+    in it. Numbered per year like receipts (S-2026-0001): ORIGINAL, DUPLICATE (same content, same number) or
+    CORRECTED (a new number replacing `replaces_id`). Never deleted."""
+    __tablename__ = "donation_statement"
+    __table_args__ = (Index("ix_donation_statement_year", "workspace_id", "year"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
+    donor_entity_id: Mapped[int] = mapped_column(ForeignKey("entity.id"), index=True)
+    donor_name: Mapped[str] = mapped_column(String(200))
+    year: Mapped[int] = mapped_column(Integer)
+    seq: Mapped[int] = mapped_column(Integer)
+    number: Mapped[str] = mapped_column(String(20))
+    kind: Mapped[str] = mapped_column(String(10))               # ORIGINAL | DUPLICATE | CORRECTED
+    replaces_id: Mapped[int | None] = mapped_column(ForeignKey("donation_statement.id"), nullable=True)
+    total_cents: Mapped[int] = mapped_column(BigInteger)        # money only
+    goods_cents: Mapped[int] = mapped_column(BigInteger, default=0)
+    gifts: Mapped[int] = mapped_column(Integer, default=0)
+    items: Mapped[int] = mapped_column(Integer, default=0)
+    line_ids: Mapped[str] = mapped_column(Text, default="")     # comma-separated donation_line ids, for the record
     content_sha: Mapped[str] = mapped_column(String(64))
     attachment_id: Mapped[int | None] = mapped_column(ForeignKey("attachment.id"), nullable=True)
     printed_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)

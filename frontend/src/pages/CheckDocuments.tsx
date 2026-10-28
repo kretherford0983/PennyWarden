@@ -180,7 +180,7 @@ function PreviewSection({ doc, e, scope, version = "" }: { doc: any; e: ReturnTy
   );
 }
 
-function Lines({ label, lines, max, onChange, variables, idBase }: { label: string; lines: string[]; max: number; onChange: (l: string[]) => void; variables: any[]; idBase: string }) {
+function Lines({ label, lines, max, onChange, variables, idBase, addLabel = "+ Add line" }: { label: string; lines: string[]; max: number; onChange: (l: string[]) => void; variables: any[]; idBase: string; addLabel?: string }) {
   return (
     <fieldset className="lines">
       <legend>{label}</legend>
@@ -190,7 +190,7 @@ function Lines({ label, lines, max, onChange, variables, idBase }: { label: stri
           <button type="button" className="small" onClick={() => onChange(lines.filter((_, j) => j !== i))} aria-label={`Remove ${label.toLowerCase()} line ${i + 1}`}>Remove</button>
         </div>
       ))}
-      {lines.length < max ? <button type="button" className="small" onClick={() => onChange([...lines, ""])}>+ Add line</button> : null}
+      {lines.length < max ? <button type="button" className="small" onClick={() => onChange([...lines, ""])}>{addLabel}</button> : null}
     </fieldset>
   );
 }
@@ -269,6 +269,12 @@ function LetterEditor({ setup, doc, focus, onClose, onSaved }: EditorProps) {
           <p className="hint">PNG or JPEG, at most 1 MB. It prints above the letterhead lines, scaled to fit 2.5 × 1 in. Adding or removing the logo takes effect at once.</p>
         </fieldset>
         <label className="check"><input type="checkbox" checked={c.show_date} onChange={(ev) => e.change((x) => { x.show_date = ev.target.checked; })} /> Print today's date under the letterhead</label>
+      </Section>
+      {/* 2.2.0 (#317): the addressee block, like the letterhead, from {PAYEE.*} */}
+      <Section id="ladr" scope="pw-letter" title="Addressee">
+        <Lines label="Addressee" idBase="adr" addLabel="+ Add addressee line" lines={c.addressee || []} max={6} variables={vars} onChange={(l) => e.change((x) => { x.addressee = l; })} />
+        <p className="hint">The payee's block under the date (and in the lower window of a window-envelope letter). The default is the payee's name and mailing
+          address: <code>{"{PAYEE.NAME}"}</code>, <code>{"{PAYEE.MAILING_ADDRESS}"}</code>. A several-line value prints as several lines; empty lines are left out.</p>
       </Section>
       <Section id="ltext" scope="pw-letter" title="Text">
         <p className="hint">The payee's name and address (from the payee's entity) print under "To:". Type <code>{"{"}</code> for the variables; a blank line starts a new paragraph.</p>

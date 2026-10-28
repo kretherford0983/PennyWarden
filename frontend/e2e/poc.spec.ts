@@ -3855,6 +3855,42 @@ test("#325: a receipt before the money and an item on the Donations page, then C
   await logout(page);
 });
 
+// ---------------------------------------------------------------- 2.2.0 #256: year-end statements, donor report
+test("#256: a Register User prints a year-end giving statement; the donor report totals by year", async ({ page }) => {
+  test.setTimeout(120_000);
+  const year = String(new Date().getFullYear());
+  await login(page, "ru1", "Brand-New-Pass-99");
+  await page.getByRole("link", { name: "Donations", exact: true }).click();
+  await page.getByRole("tab", { name: "Year-end statements" }).click();
+  await page.getByLabel("Year", { exact: true }).selectOption(year);
+  const list = page.getByRole("table", { name: `Year-end statements ${year}` });
+  const alpha = list.getByRole("row", { name: /Sample Donor Alpha/ });
+  await expect(alpha).toContainText("Not printed");
+  await alpha.getByRole("button", { name: /Open statement/ }).click();
+  const dlg = page.getByRole("dialog", { name: `Year-end statement ${year} – Sample Donor Alpha` });
+  await expect(dlg.getByRole("table", { name: "Donations in the year" })).toContainText("$250.00");
+  await dlg.getByRole("button", { name: "Print statement" }).click();
+  const conf = page.getByRole("dialog", { name: "Confirmation required" });
+  const pv = page.getByRole("dialog", { name: "Year-end statement", exact: true });
+  await expect.poll(async () => (await conf.isVisible()) || (await pv.isVisible())).toBe(true);
+  if (await conf.isVisible()) {
+    await conf.getByLabel("I have reviewed these warnings and explicitly confirm.").check();
+    await conf.getByRole("button", { name: "Confirm and continue" }).click();
+  }
+  await expect(pv.getByRole("button", { name: "Print…" })).toBeVisible();
+  await pv.getByRole("button", { name: "Close" }).first().click();
+  await expect(dlg.getByTestId("statement-history")).toContainText(`S-${year}-0001`);
+  await expect(dlg.getByRole("button", { name: "Print duplicate" })).toBeVisible();
+  await page.screenshot({ path: "e2e-screenshots/light-year-end-statement.png" });
+  await dlg.getByRole("button", { name: "Close" }).first().click();
+  // the donor report: a column per year and the total
+  await page.getByRole("tab", { name: "Donor report" }).click();
+  const rep = page.getByRole("table", { name: "Donor report" });
+  await expect(rep.getByRole("row", { name: /Sample Donor Alpha/ })).toBeVisible();
+  await expect(rep.getByRole("columnheader", { name: year })).toBeVisible();
+  await logout(page);
+});
+
 test("#125: an Administrator reinitializes (keeping the users); everyone sees the notice until it is acknowledged", async ({ page }) => {
   await login(page, "admin");
   await page.getByRole("link", { name: "System/About" }).click();
@@ -3908,4 +3944,45 @@ test("#280: an Administrator brands reports - a palette, a custom palette checke
   await card.screenshot({ path: "e2e-screenshots/light-branding.png" });
   await card.getByRole("button", { name: "Reset to the PennyWarden palette" }).click();
   await expect(card.getByRole("radio", { name: /PennyWarden/ })).toBeChecked();
+});
+
+// ---------------------------------------------------------------- 2.2.0 #315 / #316: entity names
+test("#315 / #316: first and last name, a display name and mailing address; each user's name order", async ({ page }) => {
+  await login(page, "ru1", "Brand-New-Pass-99");
+  await page.getByRole("link", { name: "Entities" }).click();
+  await page.getByRole("button", { name: "New entity" }).click();
+  const dlg = page.getByRole("dialog", { name: "New entity" });
+  await dlg.getByLabel("Type").selectOption("INDIVIDUAL");
+  await dlg.getByLabel("First name (required)").fill("Robin");
+  await dlg.getByLabel("Last name").fill("Zephyr");
+  await dlg.getByLabel("Display name same as Name").uncheck();
+  await dlg.getByLabel("Display name", { exact: true }).fill("Robin Z. (volunteer)");
+  await dlg.getByLabel("Mailing address same as Address").uncheck();
+  await dlg.getByLabel("Mailing address line 1").fill("P.O. Box 15");
+  await page.screenshot({ path: "e2e-screenshots/light-entity-names.png" });
+  await dlg.getByRole("button", { name: "Save" }).click();
+  const conf = page.getByRole("dialog", { name: "Confirmation required" });
+  await expect.poll(async () => (await conf.isVisible()) || (await dlg.count()) === 0).toBe(true);
+  if (await conf.isVisible()) {
+    await conf.getByLabel("I have reviewed these warnings and explicitly confirm.").check();
+    await conf.getByRole("button", { name: "Confirm and continue" }).click();
+  }
+  await expect(dlg).toHaveCount(0);
+  // the list shows the display name with the name beside it
+  await expect(page.getByRole("row", { name: /Robin Z\. \(volunteer\)/ })).toContainText("Robin Zephyr");
+  // a second person, with no display name of their own (the earlier entities were reinitialized away by #125)
+  const post = await apiAs(page);
+  expect((await post("/api/entities", { entity_type: "INDIVIDUAL", first_name: "Jordan", last_name: "Quill",
+                                           confirmations: ["DUPLICATE_ENTITY"] })).status()).toBe(201);
+  // My account: Last, First - Individuals without a display name of their own show and sort by last name
+  await page.goto("/account");
+  // the choice is saved to the account: wait for that before leaving the page
+  await Promise.all([page.waitForResponse((r) => r.url().includes("/api/me/preferences") && r.ok()),
+                     page.getByLabel("Show people's names as").selectOption("LAST_FIRST")]);
+  await page.goto("/entities");
+  await expect(page.getByRole("cell", { name: /^Quill, Jordan/ })).toBeVisible();
+  await page.goto("/account");
+  await Promise.all([page.waitForResponse((r) => r.url().includes("/api/me/preferences") && r.ok()),
+                     page.getByLabel("Show people's names as").selectOption("FIRST_LAST")]);
+  await logout(page);
 });
