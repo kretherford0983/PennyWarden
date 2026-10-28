@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { api } from "../api";
 import { BuildDetails, ErrorBox, Loading } from "../components";
 import { useRouter } from "../router";
@@ -13,8 +13,11 @@ import { BackupWarningSetting, DiagnosticsPanel, HealthPanel, OrganizationPanel,
 /** 2.0.0 build 11 (#216, docs/ui-standards.md): System/About in tabs, each at its own address (/about/<tab>, so it can
  * be bookmarked, reloaded and reached with Back). Tabs the user can't use are not shown; an unknown or unavailable tab
  * address shows About. */
+// 2.2.0 (#280): the palette generator library is loaded only when the Branding tab is opened
+const BrandingPanel = lazy(() => import("./Branding").then((m) => ({ default: m.BrandingPanel })));
+
 export const ABOUT_TABS = [
-  ["about", "About"], ["general", "General"], ["settings", "Settings"], ["backups", "Backups"],
+  ["about", "About"], ["general", "General"], ["branding", "Branding"], ["settings", "Settings"], ["backups", "Backups"],
   ["security", "Security"], ["health", "System health"], ["advanced", "Advanced"], ["testing", "Testing"],
 ] as const;
 export type AboutTab = (typeof ABOUT_TABS)[number][0];
@@ -34,7 +37,7 @@ export default function About() {
   const viewer = can("system.view");                  // Administrators and Auditors
   const backups = !!a && a.restore_max_mb != null;     // the backup/restore permission (the server says)
   const allowed: Record<AboutTab, boolean> = {
-    about: true, general: admin, settings: viewer, backups: backups || admin, security: viewer, health: admin,
+    about: true, general: admin, branding: admin, settings: viewer, backups: backups || admin, security: viewer, health: admin,
     advanced: admin || backups, testing: admin && testingMode,
   };
   const asked = (path.split("/")[2] || "about") as AboutTab;
@@ -61,6 +64,7 @@ export default function About() {
         <ModulesPanel />
       </>
     ),
+    branding: () => <Suspense fallback={<Loading />}><BrandingPanel org={org || ""} /></Suspense>,      // 2.2.0 (#280)
     settings: () => <SettingsPanel />,
     backups: () => (
       <>

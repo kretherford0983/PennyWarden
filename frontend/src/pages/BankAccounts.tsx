@@ -124,8 +124,8 @@ function AccountForm({ account, onClose, onSaved }: any) {
   const [fis, setFis] = useState<any[]>([]);
   const [newFi, setNewFi] = useState(false);
   const [f, setF] = useState<any>(isNew ? { account_name: "", financial_institution_entity_id: "", account_type: "CHECKING", account_subtype: "", account_number: "",
-    register_enabled: true, is_primary: false, interest_rate: "", opening_balance: "0.00", opening_balance_date: todayIso(), current_balance: "0.00", notes: "" }
-    : { ...account, account_number: "", interest_rate: account.interest_rate || "", account_subtype: account.account_subtype || "", notes: account.notes || "" });
+    register_enabled: true, is_primary: false, interest_rate: "", opening_balance: "0.00", opening_balance_date: todayIso(), current_balance: "0.00", account_opened_date: "", notes: "" }
+    : { ...account, account_number: "", interest_rate: account.interest_rate || "", account_subtype: account.account_subtype || "", account_opened_date: account.account_opened_date || "", notes: account.notes || "" });
   const [err, setErr] = useState<unknown>(null);
   const loadFis = () => api.get("/api/entities?financial_institution=true").then(setFis);
   useEffect(() => { loadFis(); }, []);
@@ -140,11 +140,13 @@ function AccountForm({ account, onClose, onSaved }: any) {
           account_name: f.account_name, financial_institution_entity_id: Number(f.financial_institution_entity_id), account_type: f.account_type,
           account_subtype: f.account_subtype || null, account_number: f.account_number, register_enabled: f.register_enabled,
           is_primary: f.register_enabled && f.is_primary, interest_rate: f.interest_rate || null, notes: f.notes || null,
+          account_opened_date: f.account_opened_date || null,
           ...(f.register_enabled ? { opening_balance: f.opening_balance, opening_balance_date: f.opening_balance_date } : { current_balance: f.current_balance }),
         });
       } else {
         const body: any = { account_name: f.account_name, financial_institution_entity_id: Number(f.financial_institution_entity_id),
-          account_type: f.account_type, account_subtype: f.account_subtype || null, interest_rate: f.interest_rate || null, notes: f.notes || null };
+          account_type: f.account_type, account_subtype: f.account_subtype || null, interest_rate: f.interest_rate || null, notes: f.notes || null,
+          account_opened_date: f.account_opened_date || null };
         if (f.account_number) body.account_number = f.account_number;
         if (!account.has_transactions && f.register_enabled) { body.opening_balance = f.opening_balance; body.opening_balance_date = f.opening_balance_date; }
         await api.patch(`/api/bank-accounts/${account.id}`, body);
@@ -182,6 +184,9 @@ function AccountForm({ account, onClose, onSaved }: any) {
             <Field label="Opening balance date"><input type="date" disabled={!isNew && account.has_transactions} value={f.opening_balance_date || ""} onChange={set("opening_balance_date")} /></Field>
           </div>
         ) : isNew ? <Field label="Current balance (manually maintained)"><input value={f.current_balance} onChange={set("current_balance")} /></Field> : null}
+        <Field label="Account opened (optional)" hint="Leave blank if the account existed before PennyWarden. Report comparisons to a date before it show $0; otherwise a date before any data uses the earliest data.">
+          <input type="date" aria-label="Account opened" value={f.account_opened_date || ""} onChange={set("account_opened_date")} />
+        </Field>
         <Field label="Notes"><textarea value={f.notes} onChange={set("notes")} /></Field>
         <div className="actions"><button type="button" onClick={onClose}>Cancel</button><button className="primary" type="submit">Save</button></div>
       </GuardedForm>

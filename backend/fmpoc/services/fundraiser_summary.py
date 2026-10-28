@@ -33,6 +33,7 @@ from sqlalchemy.orm import Session
 from ..models import Fundraiser, Workspace, utcnow
 from ..money import fmt
 from . import fundraisers as fsvc
+from . import branding
 from .reports import _FONT, _FONT_BOLD, FRAME_W, PM, P, S, _AuditDoc, _Mark, _stamp_and_write, money
 
 TWO_COLUMN_AFTER = 12
@@ -259,11 +260,18 @@ def safe_name(name: str) -> str:
 
 
 # ------------------------------------------------------------------ PDF
-_BAND = colors.HexColor("#1f3a5f")
-_TILE = colors.HexColor("#eef3f9")
+def _band():
+    return branding.color("primary")          # 2.2.0 (#280): title bands
+
+
+def _tile():
+    return branding.color("primary_container")
+
+
 _W = ParagraphStyle("fs_w", parent=S["body"], textColor=colors.white)
 _WT = ParagraphStyle("fs_wt", parent=S["h1"], textColor=colors.white, fontSize=18, leading=22, spaceAfter=0)
 _WB = ParagraphStyle("fs_wb", parent=_W, fontName=_FONT_BOLD)
+S["fs_wt"] = _WT
 _TILE_V = ParagraphStyle("fs_tv", parent=S["body"], fontName=_FONT_BOLD, fontSize=17, leading=21)
 _TILE_K = ParagraphStyle("fs_tk", parent=S["body"], fontName=_FONT_BOLD, fontSize=9, leading=11)
 _IND = ParagraphStyle("fs_ind", parent=S["cell"], leftIndent=10)
@@ -283,13 +291,13 @@ def heading(text: str, style: str = "h2") -> list:
 
 def _table(data, widths, header=True, bold_rows=(), italic_rows=()):
     t = Table(data, colWidths=widths, repeatRows=1 if header else 0)
-    st = [("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#c3cad3")), ("VALIGN", (0, 0), (-1, -1), "TOP"),
+    st = [("GRID", (0, 0), (-1, -1), 0.25, branding.color("outline_variant")), ("VALIGN", (0, 0), (-1, -1), "TOP"),
           ("LEFTPADDING", (0, 0), (-1, -1), 4), ("RIGHTPADDING", (0, 0), (-1, -1), 4),
           ("TOPPADDING", (0, 0), (-1, -1), 2), ("BOTTOMPADDING", (0, 0), (-1, -1), 2)]
     if header:
-        st.append(("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#dfe7f1")))
+        st.append(("BACKGROUND", (0, 0), (-1, 0), branding.color("primary_container")))
     for r in bold_rows:
-        st.append(("BACKGROUND", (0, r), (-1, r), colors.HexColor("#f2f5f9")))
+        st.append(("BACKGROUND", (0, r), (-1, r), branding.color("surface")))
     t.setStyle(TableStyle(st))
     return t
 
@@ -332,10 +340,10 @@ def build_pdf(s: dict) -> tuple[bytes, _AuditDoc]:
     W = FRAME_W - 12
     t = s["totals"]
     st = s["status"]
-    band = Table([[[P(s["organization"], "fs_w"), Paragraph(escape(s["fundraiser"]), _WT),
+    band = Table([[[P(s["organization"], "fs_w"), Paragraph(escape(s["fundraiser"]), S["fs_wt"]),
                     P("Financial & Proceeds Statement", "fs_wb"),
                     P(f"{event_dates(s)}  ·  {st['text']}", "fs_w")]]], colWidths=[W])
-    band.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), _BAND), ("LEFTPADDING", (0, 0), (-1, -1), 12),
+    band.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), _band()), ("LEFTPADDING", (0, 0), (-1, -1), 12),
                               ("TOPPADDING", (0, 0), (-1, -1), 10), ("BOTTOMPADDING", (0, 0), (-1, -1), 10)]))
     f: list = [_Mark(doc, "Transaction-level evidence is in the Audit report"), band, Spacer(1, 8)]
     if st["code"] == "CANCELLED":
@@ -352,8 +360,8 @@ def build_pdf(s: dict) -> tuple[bytes, _AuditDoc]:
              ("Net proceeds", t["net_proceeds"], f"Net margin {_p(t['net_margin'])} of net revenue")]
     cells = [[[P(k, "fs_tk"), PM(escape(money(v)), "fs_tv"), P(c, "small")] for k, v, c in tiles]]
     tt = Table(cells, colWidths=[W / 3] * 3)
-    tt.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), _TILE), ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#c3cad3")),
-                            ("LINEAFTER", (0, 0), (1, 0), 0.5, colors.HexColor("#c3cad3")), ("VALIGN", (0, 0), (-1, -1), "TOP"),
+    tt.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), _tile()), ("BOX", (0, 0), (-1, -1), 0.5, branding.color("outline_variant")),
+                            ("LINEAFTER", (0, 0), (1, 0), 0.5, branding.color("outline_variant")), ("VALIGN", (0, 0), (-1, -1), "TOP"),
                             ("LEFTPADDING", (0, 0), (-1, -1), 8), ("TOPPADDING", (0, 0), (-1, -1), 6),
                             ("BOTTOMPADDING", (0, 0), (-1, -1), 6)]))
     f += [*heading("Executive summary"), tt, Spacer(1, 8)]
@@ -513,10 +521,10 @@ def _itemized(title: str, lines: list[dict], subtotal: str, W: float) -> list:
             d.append(cells(left[i]) + [""] + cells(right[i] if i < len(right) else None))
         t = Table(d, colWidths=[0.75 * inch, cw - 1.75 * inch, 1.0 * inch, 12, 0.75 * inch, cw - 1.75 * inch, 1.0 * inch],
                   repeatRows=1)
-        grid = colors.HexColor("#c3cad3")
+        grid = branding.color("outline_variant")
         t.setStyle(TableStyle([("GRID", (0, 0), (2, -1), 0.25, grid), ("GRID", (4, 0), (6, len(right)), 0.25, grid),
-                               ("BACKGROUND", (0, 0), (2, 0), colors.HexColor("#dfe7f1")),
-                               ("BACKGROUND", (4, 0), (6, 0), colors.HexColor("#dfe7f1")),
+                               ("BACKGROUND", (0, 0), (2, 0), branding.color("primary_container")),
+                               ("BACKGROUND", (4, 0), (6, 0), branding.color("primary_container")),
                                ("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 4),
                                ("RIGHTPADDING", (0, 0), (-1, -1), 4), ("TOPPADDING", (0, 0), (-1, -1), 2),
                                ("BOTTOMPADDING", (0, 0), (-1, -1), 2)]))
@@ -531,6 +539,7 @@ def _itemized(title: str, lines: list[dict], subtotal: str, W: float) -> list:
     return out
 
 
+@branding.themed
 def pdf_file(db: Session, ctx, s: dict) -> tuple[str, str, int]:
     pdf, doc = build_pdf(s)
     title = (f"Prepared for committee & stakeholders  ·  Generated {_us(s['generated_at'])}  ·  {s['status']['text']}")
@@ -545,7 +554,8 @@ def pdf_file(db: Session, ctx, s: dict) -> tuple[str, str, int]:
 
 
 # ------------------------------------------------------------------ Word (.docx)
-_HEX_BAND, _HEX_TILE, _HEX_HEAD, _HEX_GROUP = "1F3A5F", "EEF3F9", "DFE7F1", "F2F5F9"
+def _hx(role: str) -> str:
+    return branding.hex_of(role)[1:].upper()     # 2.2.0 (#280)
 
 
 def _shade(cell, hex_color: str) -> None:
@@ -598,7 +608,7 @@ def _dtable(d, header: list[str], widths: list[float], right_cols: set[int]):
     t.alignment = WD_TABLE_ALIGNMENT.CENTER
     for i, h in enumerate(header):
         _cell(t.rows[0].cells[i], h, bold=True, right=i in right_cols)
-        _shade(t.rows[0].cells[i], _HEX_HEAD)
+        _shade(t.rows[0].cells[i], _hx("primary_container"))
     for i, w in enumerate(widths):
         for c in t.columns[i].cells:
             c.width = Inches(w)
@@ -629,7 +639,7 @@ def build_docx(s: dict) -> bytes:
     # title band
     band = d.add_table(rows=1, cols=1)
     c = band.rows[0].cells[0]
-    _shade(c, _HEX_BAND)
+    _shade(c, _hx("primary"))
     c.text = ""
     for i, (txt, size, bold) in enumerate(((s["organization"], 10, False), (s["fundraiser"], 18, True),
                                            ("Financial & Proceeds Statement", 11, True),
@@ -637,7 +647,7 @@ def build_docx(s: dict) -> bytes:
         p = c.paragraphs[0] if i == 0 else c.add_paragraph()
         p.paragraph_format.space_after = Pt(2)
         r = p.add_run(txt)
-        r.bold, r.font.size, r.font.color.rgb = bold, Pt(size), RGBColor(0xFF, 0xFF, 0xFF)
+        r.bold, r.font.size, r.font.color.rgb = bold, Pt(size), RGBColor.from_string(_hx("on_primary"))
     if st["code"] == "CANCELLED":
         p = d.add_paragraph()
         r = p.add_run(f"Cancelled: {st['cancel_reason'] or 'no reason given'}. The figures below are what was received "
@@ -652,7 +662,7 @@ def build_docx(s: dict) -> bytes:
              + ("; cash float returned excluded" if t["cash_float_returned"] != "0.00" else "")),
             ("Total expenses", t["expenses"], "Fundraiser expenses" + ("; cash float not included" if t["cash_float_out"] != "0.00" else "")),
             ("Net proceeds", t["net_proceeds"], f"Net margin {_p(t['net_margin'])} of net revenue"))):
-        _shade(cell, _HEX_TILE)
+        _shade(cell, _hx("primary_container"))
         _cell(cell, k, bold=True, size=9)
         p = cell.add_paragraph()
         r = p.add_run(money(v))
@@ -672,7 +682,7 @@ def build_docx(s: dict) -> bytes:
                                                          if t["cash_float_out"] != "0.00" else ""),
                _neg(t["expenses"])], {2}, widths=W3)
     _drow(tb, ["Net proceeds", f"Net margin {_p(t['net_margin'])}", money(t["net_proceeds"])], {2}, bold=True,
-          shade=_HEX_GROUP, widths=W3)
+          shade=_hx("surface"), widths=W3)
     p = d.add_paragraph(f"ROI (net proceeds ÷ expenses): {t['roi'] if t['roi'] is not None else 'n/a (no expenses)'}")
     p.runs[0].font.size = Pt(8)
     for y in s["per_fiscal_year"]:
@@ -696,7 +706,7 @@ def build_docx(s: dict) -> bytes:
             if g["income"] == "0.00":
                 continue
             _drow(tb, [g["name"], str(g["income_lines"]), money(g["income"]), _p(g["income_pct"])], {1, 2, 3}, bold=True,
-                  shade=_HEX_GROUP, widths=W4)
+                  shade=_hx("surface"), widths=W4)
             if g["kind"] == "category":
                 for b in g["buckets"]:
                     if b["income"] != "0.00":
@@ -731,7 +741,7 @@ def build_docx(s: dict) -> bytes:
         for g in groups:
             if g["expense"] == "0.00":
                 continue
-            _drow(tb, [g["name"], money(g["expense"]), _p(g["expense_pct"])], {1, 2}, bold=True, shade=_HEX_GROUP, widths=WE)
+            _drow(tb, [g["name"], money(g["expense"]), _p(g["expense_pct"])], {1, 2}, bold=True, shade=_hx("surface"), widths=WE)
             for b in g["buckets"]:
                 if not b["expense_lines"]:
                     continue
@@ -741,7 +751,7 @@ def build_docx(s: dict) -> bytes:
                     for label, amt in expense_line_rows(x):
                         _drow(tb, [label, amt, ""], {1, 2}, indent=2, widths=WE)
         if other["expense_lines"]:
-            _drow(tb, [other["name"], money(other["expense"]), _p(other["expense_pct"])], {1, 2}, bold=True, shade=_HEX_GROUP, widths=WE)
+            _drow(tb, [other["name"], money(other["expense"]), _p(other["expense_pct"])], {1, 2}, bold=True, shade=_hx("surface"), widths=WE)
             for x in other["expense_lines"]:
                 _drow(tb, [x["who"], money(x["amount"]), ""], {1, 2}, indent=2, widths=WE)
         _drow(tb, ["Total expenses", money(t["expenses"]), "100.0%" if t["expenses"] != "0.00" else "n/a"], {1, 2}, bold=True, widths=WE)
@@ -754,7 +764,7 @@ def build_docx(s: dict) -> bytes:
         tb = _dtable(d, ["Category / bucket", "Income", "Expenses", "Net"], WN, {1, 2, 3})
         for g in groups:
             _drow(tb, [g["name"], money(g["income"]), money(g["expense"]), money(g["net"])], {1, 2, 3}, bold=True,
-                  shade=_HEX_GROUP, widths=WN)
+                  shade=_hx("surface"), widths=WN)
             if g["kind"] == "category":
                 for b in g["buckets"]:
                     _drow(tb, [b["name"], money(b["income"]), money(b["expense"]), money(b["net"])], {1, 2, 3}, indent=1, widths=WN)
@@ -784,7 +794,7 @@ def build_docx(s: dict) -> bytes:
     for name in ("Heading 2",):
         hs = d.styles[name]
         hs.font.name = "Arial"
-        hs.font.color.rgb = RGBColor(0x1F, 0x3A, 0x5F)
+        hs.font.color.rgb = RGBColor.from_string(_hx("primary"))
     fp = sec.footer.paragraphs[0]
     fp.text = ""
     r = fp.add_run(f"Prepared for committee & stakeholders  ·  Generated {_us(s['generated_at'])}  ·  {st['text']}  ·  Page ")

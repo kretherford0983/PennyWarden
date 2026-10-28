@@ -547,7 +547,7 @@ def reinitialize_info(request: Request, db: Session = Depends(get_db), ctx: Ctx 
             "code_required": mfa.enabled(db, ctx.user), "confirm_word": reinit.CONFIRM_WORD,
             "kept": ["users and their roles", "passwords, two-step verification and security questions",
                      "the organization name", "the encryption key", "module switches", "personal preferences and "
-                     "reminders", "backup settings", "the audit log"],
+                     "reminders", "backup settings", "branding (report colors and logos)", "the audit log"],
             "removed": ["Fiscal Years and budgets", "entities", "bank accounts", "the register (transactions)",
                         "attachments", "fundraisers", "Payments module data (check styles, signers, letters, "
                         "envelopes)", "organization reminders"]}

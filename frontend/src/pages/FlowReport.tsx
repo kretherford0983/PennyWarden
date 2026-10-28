@@ -19,7 +19,7 @@ export function Signed({ c }: { c: number }) {
 
 export default function FlowReport({ accounts }: { accounts: any[] }) {
   const open = accounts.filter((a) => a.status === "ACTIVE");
-  const [p, setP] = useState({ title: "", date_from: "", date_to: "", include_balances: false, compare_date: "", notes: "" });
+  const [p, setP] = useState({ title: "", date_from: "", date_to: "", include_balances: false, compare_date: "", notes: "", show_substitution_notes: false });
   const [ids, setIds] = useState<number[]>(open.map((a) => a.id));
   const [review, setReview] = useState<any>(null);
   const [err, setErr] = useState<unknown>(null);
@@ -27,6 +27,7 @@ export default function FlowReport({ accounts }: { accounts: any[] }) {
   const params = () => ({
     title: p.title, date_from: p.date_from, date_to: p.date_to || null, bank_account_ids: ids,
     include_balances: p.include_balances, compare_date: p.include_balances && p.compare_date ? p.compare_date : null, notes: p.notes || null,
+    show_substitution_notes: p.include_balances && !!p.compare_date && p.show_substitution_notes,
   });
   const fieldErr = (f: string) => (err instanceof ApiError ? err.fieldErrors.find((x) => x.field === f)?.message : undefined);
   const submit = async (e: FormEvent) => {
@@ -68,6 +69,9 @@ export default function FlowReport({ accounts }: { accounts: any[] }) {
             <input type="date" aria-label="Compare Date" disabled={!p.include_balances} value={p.compare_date} aria-invalid={fieldErr("compare_date") ? true : undefined}
                    onChange={(e) => setP({ ...p, compare_date: e.target.value })} />
           </Field>
+          <label className="check" title="When an account has no data on the Compare Date, its earliest data is used instead of $0. This prints a note for each one.">
+            <input type="checkbox" disabled={!p.include_balances || !p.compare_date} checked={p.show_substitution_notes}
+                   onChange={(e) => setP({ ...p, show_substitution_notes: e.target.checked })} /> Show notes on substituted starting values</label>
         </div>
         <Field label="Notes" hint="Printed on the report."><textarea maxLength={4000} value={p.notes} onChange={(e) => setP({ ...p, notes: e.target.value })} /></Field>
         <div className="actions left"><button className="primary" type="submit" disabled={busy || !ids.length}>Review transactions</button></div>
@@ -165,6 +169,13 @@ function FlowReview({ review, onBack }: { review: any; onBack: () => void }) {
         </div>
       ) : null}
       {data.balances ? <p className="hint">The PDF also lists the balance of every account open on {usDate(data.balances.date)}{data.balances.compare_date ? `, compared with ${usDate(data.balances.compare_date)}` : ""}.</p> : null}
+      {data.balances?.substitutions?.length ? (
+        <ul className="hint substitutions" data-testid="flow-substitutions">
+          {data.balances.substitutions.map((s: any) => (
+            <li key={s.id}><span className="subst-marker" title={s.hint} aria-label={s.hint} tabIndex={0}>ⓘ</span> {s.text}</li>
+          ))}
+        </ul>
+      ) : null}
       <div className="actions left">
         <button className="primary" type="button" onClick={generate} disabled={busy}>{busy ? "Generating…" : "Generate PDF"}</button>
         {pdf ? <><a className="button" href={pdf.url} target="_blank" rel="noopener">Open PDF</a><a className="button" href={pdf.url} download={pdf.name}>Download PDF</a></> : null}

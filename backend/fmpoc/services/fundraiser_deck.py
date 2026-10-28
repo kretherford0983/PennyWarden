@@ -22,19 +22,31 @@ from pptx.enum.shapes import MSO_SHAPE
 from pptx.enum.text import PP_ALIGN
 from pptx.util import Emu, Inches, Pt
 
+from . import branding
 from .fundraiser_summary import _p, _us, event_dates, money, safe_name
 
 FONT = "Arial"
-NAVY = RGBColor(0x1F, 0x3A, 0x5F)
-BLUE = RGBColor(0x1F, 0x5F, 0xBF)
-GOLD = RGBColor(0xD4, 0xA0, 0x17)
-GOLD_DARK = RGBColor(0xA6, 0x7C, 0x0E)
-GREY = RGBColor(0x5B, 0x65, 0x73)
-LIGHT = RGBColor(0xEE, 0xF3, 0xF9)
-RED = RGBColor(0xB3, 0x26, 0x1E)
+RED = RGBColor(0xB3, 0x26, 0x1E)            # warnings keep their meaning
 WHITE = RGBColor(0xFF, 0xFF, 0xFF)
-SERIES = [RGBColor(0x1F, 0x5F, 0xBF), RGBColor(0xD4, 0xA0, 0x17), RGBColor(0x2E, 0x8B, 0x57), RGBColor(0x8E, 0x44, 0xAD),
-          RGBColor(0xC0, 0x39, 0x2B), RGBColor(0x16, 0xA0, 0x85), RGBColor(0x7F, 0x8C, 0x8D), RGBColor(0xE6, 0x7E, 0x22)]
+COIN, COIN_DARK = RGBColor(0xD4, 0xA0, 0x17), RGBColor(0xA6, 0x7C, 0x0E)   # PennyWarden's own coin
+
+
+class _Colors:
+    """2.2.0 (#280): the deck's colors come from the organization's branding (PennyWarden's palette by default), read
+    while the deck is built (branding.themed / branding.use)."""
+    NAVY = property(lambda self: branding.rgb("primary"))           # titles, bands
+    BLUE = property(lambda self: branding.rgb("series:0"))          # highlights, the first series
+    GOLD = property(lambda self: branding.rgb("secondary"))         # accents, the second series
+    GREEN = property(lambda self: branding.rgb("series:2"))
+    GREY = property(lambda self: branding.rgb("on_surface_variant"))
+    LIGHT = property(lambda self: branding.rgb("primary_container"))
+    TEXT = property(lambda self: branding.rgb("on_surface"))
+    LINE = property(lambda self: branding.rgb("outline_variant"))
+    ON_NAVY = property(lambda self: branding.rgb("on_primary"))
+    SERIES = property(lambda self: [branding.rgb(f"series:{i}") for i in range(branding.SERIES_COUNT)])
+
+
+C = _Colors()
 W, H = Emu(12192000), Emu(6858000)   # 13.333 x 7.5 in (16:9)
 TOP_N = 10
 BULLETS_PER_SLIDE = 5
@@ -45,7 +57,7 @@ def _f(x: str) -> float:
     return float(x)
 
 
-def _text(slide, x, y, w, h, text, size=18, bold=False, color=NAVY, align=None, wrap=True):
+def _text(slide, x, y, w, h, text, size=18, bold=False, color=None, align=None, wrap=True):
     box = slide.shapes.add_textbox(x, y, w, h)
     tf = box.text_frame
     tf.word_wrap = wrap
@@ -57,7 +69,7 @@ def _text(slide, x, y, w, h, text, size=18, bold=False, color=NAVY, align=None, 
         r = p.add_run()
         r.text = line
         r.font.name, r.font.size, r.font.bold = FONT, Pt(size), bold
-        r.font.color.rgb = color
+        r.font.color.rgb = color if color is not None else C.NAVY
     return box
 
 
@@ -65,10 +77,10 @@ def _title(slide, text, sub=None):
     _text(slide, Inches(0.6), Inches(0.35), Inches(12.1), Inches(0.8), text, size=30, bold=True)
     bar = slide.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(0.6), Inches(1.12), Inches(1.2), Inches(0.06))
     bar.fill.solid()
-    bar.fill.fore_color.rgb = GOLD
+    bar.fill.fore_color.rgb = C.GOLD
     bar.line.fill.background()
     if sub:
-        _text(slide, Inches(0.6), Inches(1.25), Inches(12.1), Inches(0.5), sub, size=14, color=GREY)
+        _text(slide, Inches(0.6), Inches(1.25), Inches(12.1), Inches(0.5), sub, size=14, color=C.GREY)
 
 
 def _notes(slide, lines: list[str]):
@@ -79,12 +91,45 @@ def _coin(slide, x, y, d):
     """The PennyWarden gold coin, drawn with plain shapes (no picture)."""
     outer = slide.shapes.add_shape(MSO_SHAPE.OVAL, x, y, d, d)
     outer.fill.solid()
-    outer.fill.fore_color.rgb = GOLD
-    outer.line.color.rgb = GOLD_DARK
+    outer.fill.fore_color.rgb = COIN
+    outer.line.color.rgb = COIN_DARK
     inner = slide.shapes.add_shape(MSO_SHAPE.OVAL, x + int(d * 0.16), y + int(d * 0.16), int(d * 0.68), int(d * 0.68))
     inner.fill.background()
-    inner.line.color.rgb = GOLD_DARK
+    inner.line.color.rgb = COIN_DARK
     inner.line.width = Pt(2)
+
+
+def _mark(slide, x, y, d, box_w=None):
+    """2.2.0 (#280): the organization's full logo (fitted in the box) when one is set, else PennyWarden's coin."""
+    t = branding.current()
+    if not t.logo_full:
+        _coin(slide, x, y, d)
+        return
+    bw = box_w or d
+    iw, ih = t.logo_full_size or (1, 1)
+    scale = min(bw / iw, d / ih)
+    w, h = int(iw * scale), int(ih * scale)
+    slide.shapes.add_picture(io.BytesIO(t.logo_full), x + (bw - w) // 2, y + (d - h) // 2, w, h)
+
+
+def brand_footers(prs) -> None:
+    """2.2.0 (#280): the small mark and the footer text at the bottom of every slide after the title slide (nothing
+    without them)."""
+    t = branding.current()
+    if not (t.logo_mark or t.footer_text):
+        return
+    for i, sl in enumerate(prs.slides):
+        if i == 0:
+            continue
+        x = Inches(0.35)
+        if t.logo_mark:
+            iw, ih = t.logo_mark_size or (1, 1)
+            h = Inches(0.24)
+            w = int(h * iw / ih)
+            sl.shapes.add_picture(io.BytesIO(t.logo_mark), x, Inches(7.2), w, h)
+            x += w + Inches(0.12)
+        if t.footer_text:
+            _text(sl, x, Inches(7.14), Inches(9), Inches(0.3), t.footer_text, size=10, color=C.GREY)
 
 
 def _nice_step(top: float) -> float:
@@ -153,9 +198,9 @@ def _table(slide, x, y, w, rows: list[list[str]], widths: list[float], right: se
             run.text = v
             run.font.name, run.font.size = FONT, Pt(size)
             run.font.bold = r == 0 or r in bold_rows
-            run.font.color.rgb = WHITE if r == 0 else RGBColor(0x1B, 0x1F, 0x24)
+            run.font.color.rgb = C.ON_NAVY if r == 0 else C.TEXT
             cell.fill.solid()
-            cell.fill.fore_color.rgb = NAVY if r == 0 else (LIGHT if r in bold_rows else WHITE)
+            cell.fill.fore_color.rgb = C.NAVY if r == 0 else (C.LIGHT if r in bold_rows else WHITE)
     return t
 
 
@@ -173,13 +218,13 @@ def build(s: dict) -> bytes:
     sl = prs.slides.add_slide(blank)
     band = sl.shapes.add_shape(MSO_SHAPE.RECTANGLE, 0, 0, W, Inches(0.5))
     band.fill.solid()
-    band.fill.fore_color.rgb = NAVY
+    band.fill.fore_color.rgb = C.NAVY
     band.line.fill.background()
-    _coin(sl, Inches(0.8), Inches(1.6), Inches(1.3))
+    _mark(sl, Inches(0.6), Inches(1.6), Inches(1.3), Inches(1.7))
     _text(sl, Inches(2.4), Inches(1.45), Inches(10), Inches(0.7), s["organization"], size=28, bold=True)
-    _text(sl, Inches(2.4), Inches(2.2), Inches(10), Inches(1.2), s["fundraiser"], size=44, bold=True, color=BLUE)
-    _text(sl, Inches(2.4), Inches(3.5), Inches(10), Inches(0.6), "Financial & Proceeds results", size=22, color=GREY)
-    _text(sl, Inches(2.4), Inches(4.1), Inches(10), Inches(0.6), f"{event_dates(s)}  ·  {st['text']}", size=18, color=GREY)
+    _text(sl, Inches(2.4), Inches(2.2), Inches(10), Inches(1.2), s["fundraiser"], size=44, bold=True, color=C.BLUE)
+    _text(sl, Inches(2.4), Inches(3.5), Inches(10), Inches(0.6), "Financial & Proceeds results", size=22, color=C.GREY)
+    _text(sl, Inches(2.4), Inches(4.1), Inches(10), Inches(0.6), f"{event_dates(s)}  ·  {st['text']}", size=18, color=C.GREY)
     notes = [f"{s['fundraiser']} — {s['organization']}", f"Event: {event_dates(s)}. Status: {st['text']}.",
              f"Generated {generated} by PennyWarden; the figures match the fundraiser's stakeholder report."]
     if st["code"] == "CANCELLED":
@@ -205,12 +250,12 @@ def build(s: dict) -> bytes:
         x = Inches(0.6 + i * 4.1)
         card = sl.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, x, Inches(2.0), Inches(3.8), Inches(2.6))
         card.fill.solid()
-        card.fill.fore_color.rgb = LIGHT
-        card.line.color.rgb = RGBColor(0xC3, 0xCA, 0xD3)
-        _text(sl, x + Inches(0.3), Inches(2.2), Inches(3.3), Inches(0.5), k, size=18, bold=True, color=GREY)
+        card.fill.fore_color.rgb = C.LIGHT
+        card.line.color.rgb = C.LINE
+        _text(sl, x + Inches(0.3), Inches(2.2), Inches(3.3), Inches(0.5), k, size=18, bold=True, color=C.GREY)
         _text(sl, x + Inches(0.3), Inches(2.9), Inches(3.3), Inches(0.9), money(v), size=36, bold=True,
-              color=BLUE if i == 2 else NAVY)
-        _text(sl, x + Inches(0.3), Inches(3.9), Inches(3.3), Inches(0.5), cap, size=14, color=GREY)
+              color=C.BLUE if i == 2 else C.NAVY)
+        _text(sl, x + Inches(0.3), Inches(3.9), Inches(3.3), Inches(0.5), cap, size=14, color=C.GREY)
     _notes(sl, [f"Net revenue {money(t['net_revenue'])} (gross deposits {money(t['gross_deposits'])} less cash float "
                 f"returned {money(t['cash_float_returned'])}).",
                 f"Expenses {money(t['expenses'])} (cash float taken out, {money(t['cash_float_out'])}, is not an expense).",
@@ -230,11 +275,11 @@ def build(s: dict) -> bytes:
     _labels(ch.plots[0], pos=XL_LABEL_POSITION.OUTSIDE_END, size=14)
     for i, pt in enumerate(ch.plots[0].series[0].points):
         pt.format.fill.solid()
-        pt.format.fill.fore_color.rgb = (BLUE, GOLD, RGBColor(0x2E, 0x8B, 0x57))[i]
+        pt.format.fill.fore_color.rgb = C.SERIES[i]
     if t["cash_float_returned"] != "0.00" or t["cash_float_out"] != "0.00":
         _text(sl, Inches(1.2), Inches(6.65), Inches(11), Inches(0.5),
               f"Cash float: {money(t['cash_float_out'])} taken out and {money(t['cash_float_returned'])} returned — "
-              "not counted as income or expense.", size=13, color=GREY)
+              "not counted as income or expense.", size=13, color=C.GREY)
     _notes(sl, [f"Gross deposits {money(t['gross_deposits'])}; less cash float returned {money(t['cash_float_returned'])} "
                 f"= net revenue {money(t['net_revenue'])}.", f"Less expenses {money(t['expenses'])} = net proceeds "
                 f"{money(t['net_proceeds'])}."] + [f"{y['fiscal_year']}: revenue {money(y['income'])}, expenses "
@@ -256,7 +301,7 @@ def build(s: dict) -> bytes:
         _labels(ch.plots[0], size=9)
         for i, ser in enumerate(ch.plots[0].series):
             ser.format.fill.solid()
-            ser.format.fill.fore_color.rgb = (BLUE, GOLD, RGBColor(0x2E, 0x8B, 0x57))[i]
+            ser.format.fill.fore_color.rgb = C.SERIES[i]
         rows = [["Year", "Net proceeds", "vs year before"]] + [[str(r["year"]) + ("" if r["source"] == "Recorded" else " (Entered)"),
                                                                money(r["net_proceeds"]), yoy_change(r)] for r in yy[-TABLE_ROWS:]]
         _table(sl, Inches(7.9), Inches(1.7), Inches(5.0), rows, [1.4, 1.5, 2.1], {1}, bold_rows=[len(rows) - 1], size=11)
@@ -282,7 +327,7 @@ def build(s: dict) -> bytes:
             ch.plots[0].data_labels.show_value = False
             for i, pt in enumerate(ch.plots[0].series[0].points):
                 pt.format.fill.solid()
-                pt.format.fill.fore_color.rgb = SERIES[i % len(SERIES)]
+                pt.format.fill.fore_color.rgb = C.SERIES[i % len(C.SERIES)]
             _notes(sl, [f"Share of net revenue ({money(t['net_revenue'])}) by category or bucket:"]
                    + [f"{n}: {money(v)} = {_p(p)}" for n, v, p in rev])
             # 5. category detail (table)
@@ -321,7 +366,7 @@ def build(s: dict) -> bytes:
         _labels(ch.plots[0], size=10)
         for i, ser in enumerate(ch.plots[0].series):
             ser.format.fill.solid()
-            ser.format.fill.fore_color.rgb = (BLUE, GOLD, RGBColor(0x2E, 0x8B, 0x57))[i]
+            ser.format.fill.fore_color.rgb = C.SERIES[i]
         rows = [["Category / bucket", "Income", "Expenses", "Net"]] + [[n, money(i), money(e), money(x)] for n, i, e, x in items[:TABLE_ROWS]]
         rows.append(["Total", money(t["net_revenue"]), money(t["expenses"]), money(t["net_proceeds"])])
         _table(sl, Inches(8.1), Inches(1.7), Inches(4.9), rows, [1.9, 1.0, 1.0, 1.0], {1, 2, 3}, bold_rows=[len(rows) - 1], size=10)
@@ -341,7 +386,7 @@ def build(s: dict) -> bytes:
         _style_chart(ch)
         _labels(ch.plots[0], pos=XL_LABEL_POSITION.ABOVE, size=10)
         for i, ser in enumerate(ch.plots[0].series):
-            ser.format.line.color.rgb = (BLUE, RGBColor(0x2E, 0x8B, 0x57))[i]
+            ser.format.line.color.rgb = (C.SERIES[0], C.SERIES[2])[i]
             ser.format.line.width = Pt(2.5)
             ser.smooth = False
         _notes(sl, [f"Cumulative income and net by transaction date, from {_us(cum[0]['date'])} to {_us(cum[-1]['date'])}.",
@@ -364,7 +409,7 @@ def build(s: dict) -> bytes:
             more = len(top) - TOP_N
             if more > 0:
                 _text(sl, Inches(1.5), Inches(1.8) + Inches(0.36) * (TOP_N + 1), Inches(10), Inches(0.5),
-                      f"and {more} more", size=14, color=GREY)
+                      f"and {more} more", size=14, color=C.GREY)
             _notes(sl, [f"Largest contributors to {g['name']} by total amount ({len(top)} in all)."]
                    + [f"{k}: {money(f'{v:.2f}')}" for k, v in top])
 
@@ -386,7 +431,7 @@ def build(s: dict) -> bytes:
         _style_chart(ch, legend=False)
         _labels(ch.plots[0], pos=XL_LABEL_POSITION.OUTSIDE_END, size=11)
         ch.plots[0].series[0].format.fill.solid()
-        ch.plots[0].series[0].format.fill.fore_color.rgb = GOLD
+        ch.plots[0].series[0].format.fill.fore_color.rgb = C.SERIES[1]
         rows = [["Line", "Amount"]]
         lines = [x for g in groups for b in g["buckets"] for x in b["expense_lines"]] + other["expense_lines"]
         for x in lines:
@@ -399,7 +444,7 @@ def build(s: dict) -> bytes:
         _table(sl, Inches(7.6), Inches(1.7), Inches(5.3), shown, [3.8, 1.5], {1}, size=10)
         if len(rows) > len(shown):
             _text(sl, Inches(7.6), Inches(1.8) + Inches(0.36) * len(shown), Inches(5.3), Inches(0.4),
-                  f"and {len(rows) - len(shown)} more rows — see the report", size=11, color=GREY)
+                  f"and {len(rows) - len(shown)} more rows — see the report", size=11, color=C.GREY)
         _notes(sl, [f"Expenses by bucket; amounts are net (charge less any credit). Credits received: {money(t['credits'])}.",
                     "% = share of total expenses."] + [f"{n}: {money(v)} ({_p(p)})" for n, v, p in items])
 
@@ -407,22 +452,22 @@ def build(s: dict) -> bytes:
     for k, part in enumerate(_chunks(s["takeaways"], BULLETS_PER_SLIDE)):
         sl = prs.slides.add_slide(blank)
         _title(sl, "Key takeaways" + (" (continued)" if k else ""))
-        _text(sl, Inches(0.9), Inches(1.8), Inches(11.5), Inches(5), [f"•  {x}" for x in part], size=22, color=RGBColor(0x1B, 0x1F, 0x24))
+        _text(sl, Inches(0.9), Inches(1.8), Inches(11.5), Inches(5), [f"•  {x}" for x in part], size=22, color=C.TEXT)
         _notes(sl, ["Worked out from the figures:"] + part)
     # 11. summary notes
     if s["summary_notes"]:
         sl = prs.slides.add_slide(blank)
         _title(sl, "Summary notes")
         _text(sl, Inches(0.9), Inches(1.8), Inches(11.5), Inches(5), s["summary_notes"].split("\n"), size=20,
-              color=RGBColor(0x1B, 0x1F, 0x24))
+              color=C.TEXT)
         _notes(sl, ["Written by the Budget Managers:", s["summary_notes"]])
     # 12. closing
     sl = prs.slides.add_slide(blank)
-    _coin(sl, Inches(6.07), Inches(1.7), Inches(1.2))
+    _mark(sl, Inches(5.17), Inches(1.7), Inches(1.2), Inches(3.0))
     _text(sl, Inches(0.6), Inches(3.2), Inches(12.1), Inches(1.2), "Questions?", size=48, bold=True, align=PP_ALIGN.CENTER)
     _text(sl, Inches(0.6), Inches(4.5), Inches(12.1), Inches(0.6), f"{s['fundraiser']} · {s['organization']}", size=20,
-          color=GREY, align=PP_ALIGN.CENTER)
-    _text(sl, Inches(0.6), Inches(5.1), Inches(12.1), Inches(0.6), f"Generated {generated}", size=14, color=GREY,
+          color=C.GREY, align=PP_ALIGN.CENTER)
+    _text(sl, Inches(0.6), Inches(5.1), Inches(12.1), Inches(0.6), f"Generated {generated}", size=14, color=C.GREY,
           align=PP_ALIGN.CENTER)
     _notes(sl, [f"Generated {generated}. Transaction-level evidence is in the Audit report."])
 
@@ -430,6 +475,7 @@ def build(s: dict) -> bytes:
     prs.core_properties.author = s["organization"]
     prs.core_properties.comments = ""
     prs.core_properties.last_modified_by = "PennyWarden"
+    brand_footers(prs)
     out = io.BytesIO()
     prs.save(out)
     return out.getvalue()

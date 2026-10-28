@@ -44,6 +44,7 @@ from . import bank_accounts as bank
 from . import budgets as bsvc
 from . import fundraisers as fsvc
 from . import register as reg
+from . import branding
 from .attachments import DISPLAY_ORDER, path_for
 from .common import budget_label
 from .documentation import review as documentation_review
@@ -61,7 +62,32 @@ except Exception:  # pragma: no cover - fall back to built-in fonts
     pass
 
 _ss = getSampleStyleSheet()
-S = {
+
+
+class _Styles(dict):
+    """2.2.0 (#280): the paragraph styles, with the headings (and the white text on title bands) in the organization's
+    branding colors while a document is built (branding.themed). Other styles are as defined."""
+    THEMED = {"title": "primary", "h1": "primary", "h2": "primary", "cover_title": "primary",
+              "fs_w": "on_primary", "fs_wb": "on_primary", "fs_wt": "on_primary", "br_head": "on_primary"}
+
+    def __init__(self, *a, **kw):
+        super().__init__(*a, **kw)
+        self._cache: dict[tuple[str, str], ParagraphStyle] = {}
+
+    def __getitem__(self, k):
+        base = dict.__getitem__(self, k)
+        role = self.THEMED.get(k)
+        if role is None:
+            return base
+        hx = branding.hex_of(role)
+        st = self._cache.get((k, hx))
+        if st is None:
+            st = ParagraphStyle(f"{base.name}_{hx[1:]}", parent=base, textColor=colors.HexColor(hx))
+            self._cache[(k, hx)] = st
+        return st
+
+
+S = _Styles({
     "title": ParagraphStyle("t", parent=_ss["Title"], fontName=_FONT_BOLD, fontSize=20, leading=24),
     "h1": ParagraphStyle("h1", parent=_ss["Heading1"], fontName=_FONT_BOLD, fontSize=15, leading=18, spaceAfter=6),
     "h2": ParagraphStyle("h2", parent=_ss["Heading2"], fontName=_FONT_BOLD, fontSize=12, leading=15, spaceAfter=4),
@@ -77,7 +103,7 @@ S = {
     "cover_sub": ParagraphStyle("cs", parent=_ss["Title"], fontName=_FONT, fontSize=14, leading=19, spaceAfter=0),
     "sig_body": ParagraphStyle("sb", parent=_ss["BodyText"], fontName=_FONT, fontSize=11.5, leading=16),
     "cellb": ParagraphStyle("cb", parent=_ss["BodyText"], fontName=_FONT_BOLD, fontSize=7.5, leading=9),
-}
+})
 PAGE_W, PAGE_H = letter
 MARGIN = 0.6 * inch
 FRAME_W = PAGE_W - 2 * MARGIN
@@ -105,15 +131,15 @@ def money(c: int | str | None) -> str:
 
 def _grid(data, widths, header_rows=1, zebra=True, extra=None) -> Table:
     t = Table(data, colWidths=widths, repeatRows=header_rows)
-    style = [("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#9aa3ad")),
-             ("BACKGROUND", (0, 0), (-1, header_rows - 1), colors.HexColor("#e8ecf1")),
+    style = [("GRID", (0, 0), (-1, -1), 0.25, branding.color("outline")),
+             ("BACKGROUND", (0, 0), (-1, header_rows - 1), branding.color("surface_variant")),
              ("VALIGN", (0, 0), (-1, -1), "TOP"),
              ("LEFTPADDING", (0, 0), (-1, -1), 3), ("RIGHTPADDING", (0, 0), (-1, -1), 3),
              ("TOPPADDING", (0, 0), (-1, -1), 2), ("BOTTOMPADDING", (0, 0), (-1, -1), 2)]
     if zebra:
         for r in range(header_rows, len(data)):
             if (r - header_rows) % 2:
-                style.append(("BACKGROUND", (0, r), (-1, r), colors.HexColor("#f6f8fa")))
+                style.append(("BACKGROUND", (0, r), (-1, r), branding.color("surface")))
     t.setStyle(TableStyle(style + (extra or [])))
     return t
 
@@ -245,6 +271,31 @@ class _AuditDoc(SimpleDocTemplate):
         self.page_labels.setdefault(self.page, self.current_label)
 
 
+_MARK_H = 14          # the small mark in the footer (points)
+_LOGO_H, _LOGO_W = 0.42 * inch, 2.2 * inch     # the full logo in the first page's top margin
+
+
+def _aspect(size: tuple[int, int] | None) -> float:
+    return (size[0] / size[1]) if size and size[1] else 1.0
+
+
+def _brand_page(c, theme, w: float, h: float, first: bool) -> None:
+    """2.2.0 (#280): the small mark at the left of every footer and the full logo at the top right of the first page,
+    in the margin (nothing is drawn without a logo)."""
+    if theme.logo_mark:
+        mw = _MARK_H * _aspect(theme.logo_mark_size)
+        c.drawImage(ImageReader(io.BytesIO(theme.logo_mark)), 18, 6, mw, _MARK_H, mask="auto",
+                    preserveAspectRatio=True)
+    if first and theme.logo_full:
+        a = _aspect(theme.logo_full_size)
+        lh = _LOGO_H
+        lw = lh * a
+        if lw > _LOGO_W:
+            lw, lh = _LOGO_W, _LOGO_W / a
+        c.drawImage(ImageReader(io.BytesIO(theme.logo_full)), w - MARGIN - lw, h - MARGIN + (MARGIN - lh) / 2 - 2,
+                    lw, lh, mask="auto", preserveAspectRatio=True)
+
+
 def _stamp_and_write(reader_bytes: bytes, doc: _AuditDoc, path: str, title: str) -> int:
     """Merges the reserved PDF-attachment slots (vector, scaled) and stamps footers."""
     writer = PdfWriter(clone_from=PdfReader(io.BytesIO(reader_bytes)))
@@ -278,14 +329,19 @@ def _stamp_and_write(reader_bytes: bytes, doc: _AuditDoc, path: str, title: str)
         notes.setdefault(last, []).append((sec["end"][1], sec["end"][2], [
             f"{what}: pages {first} to {last} of {total} ({n} pages, counting the start page and this end page).",
             f"Its first page is page {first}, headed \"Start of {thing}\"{whose}."]))
+    theme = branding.current()
     for i, page in enumerate(writer.pages):
         w, h = float(page.mediabox.width), float(page.mediabox.height)
         buf = io.BytesIO()
         c = rl_canvas.Canvas(buf, pagesize=(w, h))
+        _brand_page(c, theme, w, h, first=i == 0)
+        left = 18 + (_MARK_H * 1.1 * _aspect(theme.logo_mark_size) + 6 if theme.logo_mark else 0)
         c.setFont(_FONT, 7)
         c.setFillColor(colors.HexColor("#444444"))
-        c.drawString(18, 10, f"{title}  ·  {doc.page_labels.get(i + 1, '')}"[:160])
+        c.drawString(left, 10, f"{title}  ·  {doc.page_labels.get(i + 1, '')}"[:160])
         c.drawRightString(w - 18, 10, f"Page {i + 1} of {total}")
+        if theme.footer_text:
+            c.drawString(left, 19, theme.footer_text[:branding.FOOTER_MAX])
         if i + 1 in in_section:
             c.drawRightString(w - 18, 20, in_section[i + 1][:120])
         for x, y, lines in notes.get(i + 1, []):
@@ -478,6 +534,7 @@ def _id_list(ids: list[int], limit: int = 60) -> str:
 FY_DOC_LABELS = {"APPROVAL": "Approval document", "AUDIT_SIGNOFF": "Audit Signoff", "UNSPECIFIED": "Other document"}
 
 
+@branding.themed
 def build_audit_report(db: Session, ctx, settings, fy: FiscalYear, account_id: int | None = None,
                        include_void: bool = True, layout: str = "audit", signature=None,
                        fundraisers: bool = False) -> tuple[str, str, dict]:
@@ -931,6 +988,7 @@ def _fundraiser_section(db: Session, ctx, settings, doc: _AuditDoc, fr: Fundrais
     return f
 
 
+@branding.themed
 def build_fundraiser_report(db: Session, ctx, settings, fr: Fundraiser) -> tuple[str, str, dict]:
     """Standalone fundraiser report (the same section the Audit / Close reports include)."""
     ws = db.get(Workspace, ctx.workspace_id)
@@ -952,6 +1010,7 @@ def build_fundraiser_report(db: Session, ctx, settings, fr: Fundraiser) -> tuple
     return path, f"fundraiser-{safe}-report.pdf", {"pages": pages}
 
 
+@branding.themed
 def build_signature_page(db: Session, ctx, fy: FiscalYear, signature) -> tuple[str, str]:
     """v1.5.0 CR-029: the audit review signature page on its own (preview / separate printing)."""
     ws = db.get(Workspace, ctx.workspace_id)
@@ -1086,6 +1145,7 @@ COUNT_SHEET_DEFAULT_BLANK = 2         # blank rows when nothing is asked for (th
 COUNT_SHEET_MAX_BLANK_WITH_NAMED = 2  # blank rows next to chosen signers
 
 
+@branding.themed
 def build_count_sheet(db: Session, ctx, fr: Fundraiser, signers: list[tuple[str, str | None]],
                       blank_lines: int = 0, extra_checks: bool = True) -> tuple[str, str]:
     """One printable page, filled in by hand: bills and coins grid, checks list, totals (usable on their own when the

@@ -98,6 +98,17 @@ amount is 0; - no hard deletion of historically material budgets.
 
 Budget display identifiers are derived, not duplicated unnecessarily.
 
+### branding_settings (2.2.0, #280; migration 0053)
+
+-   id PK
+-   workspace_id FK unique (one row per organization; no row = the PennyWarden palette, no logos)
+-   preset (pennywarden, forest, ocean, plum, ember, custom)
+-   source_primary, source_secondary nullable (custom: the colors the palette was generated from)
+-   colors_json nullable (custom: the resolved role colors and eight series colors)
+-   footer_text nullable (one line, at most 120)
+-   logo_full_png / _sha256 / _width / _height nullable; logo_mark_png / _sha256 / _width / _height nullable (re-encoded PNG)
+-   updated_at, updated_by_user_id nullable
+
 ### budget_history_entry (2.2.0, #284)
 
 -   id PK
@@ -156,6 +167,7 @@ Seed hidden system Multiple entity.
 -   interest_rate nullable
 -   opening_balance decimal nullable
 -   opening_balance_date nullable
+-   account_opened_date nullable (2.2.0, #348; migration 0052)
 -   manual_current_balance decimal nullable
 -   active boolean
 -   closed_date nullable

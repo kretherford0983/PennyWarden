@@ -275,6 +275,8 @@ class BankAccount(Base):
     interest_rate: Mapped[str | None] = mapped_column(String(12), nullable=True)  # decimal percent string
     opening_balance_cents: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     opening_balance_date: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
+    # 2.2.0 (#348): when the account was really opened (empty = it existed before PennyWarden)
+    account_opened_date: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
     manual_current_balance_cents: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     status: Mapped[str] = mapped_column(String(10), default="ACTIVE", index=True)  # ACTIVE | CLOSED
     closed_date: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
@@ -653,6 +655,29 @@ class TestingState(Base):
     last_backup_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     reinitialize_cooldown_cleared_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     updated_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+
+
+class BrandingSettings(Base):
+    """2.2.0 (#280): organization branding for generated reports and presentations (services/branding.py). One row per
+    organization; no row = the PennyWarden palette, no logos. Organization settings (BR-003), not financial data."""
+    __tablename__ = "branding_settings"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), unique=True)
+    preset: Mapped[str] = mapped_column(String(20), default="pennywarden", server_default="pennywarden")
+    source_primary: Mapped[str | None] = mapped_column(String(7), nullable=True)
+    source_secondary: Mapped[str | None] = mapped_column(String(7), nullable=True)
+    colors_json: Mapped[str | None] = mapped_column(Text, nullable=True)        # custom palettes: resolved colors
+    footer_text: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    logo_full_png: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    logo_full_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    logo_full_width: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    logo_full_height: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    logo_mark_png: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    logo_mark_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    logo_mark_width: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    logo_mark_height: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updated_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    updated_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("app_user.id"), nullable=True)
 
 
 class FundraiserFyReportNote(Base):

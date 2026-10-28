@@ -109,10 +109,13 @@ def data(db: Session, ctx, fy: FiscalYear) -> dict:
                                .order_by(*bank.listing_order())))
     series, cents_by_acct = [], []
     for a in accounts:
+        opened = a.account_opened_date        # 2.2.0 (#348): no value for months before the account was opened
         if a.register_enabled:
-            vals = [bank.current_cents(db, a, as_of=e) if s <= today else None for s, e in months]
+            vals = [bank.current_cents(db, a, as_of=e) if s <= today and (opened is None or e >= opened) else None
+                    for s, e in months]
         else:
-            vals = [bank.manual_as_of(db, a, min(e, today)) if s <= today else None for s, e in months]
+            vals = [bank.manual_as_of(db, a, min(e, today)) if s <= today and (opened is None or e >= opened) else None
+                    for s, e in months]
         cents_by_acct.append(vals)
         series.append({"id": a.id, "label": f"{a.account_name} - {bank.masked(a)}",
                        "values": [None if v is None else fmt(v) for v in vals]})

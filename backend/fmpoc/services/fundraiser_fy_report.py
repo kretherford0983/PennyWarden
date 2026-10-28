@@ -9,19 +9,18 @@ import tempfile
 
 from pptx import Presentation
 from pptx.chart.data import CategoryChartData
-from pptx.dml.color import RGBColor
 from pptx.enum.chart import XL_CHART_TYPE, XL_LABEL_POSITION, XL_LEGEND_POSITION
 from pptx.enum.text import PP_ALIGN
 from pptx.util import Inches
-from reportlab.lib import colors
 from reportlab.lib.units import inch
 from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.platypus import KeepTogether, Paragraph, Spacer, Table, TableStyle
 from xml.sax.saxutils import escape
 
 from . import fundraiser_deck as deck
-from .fundraiser_summary import _BAND, _TILE, _b, _h, _p, _table, _us, heading, safe_name
-from .reports import FRAME_W, P, _AuditDoc, _Mark, _stamp_and_write, money
+from . import branding
+from .fundraiser_summary import _b, _band, _tile, _h, _p, _table, _us, heading, safe_name
+from .reports import FRAME_W, P, S, _AuditDoc, _Mark, _stamp_and_write, money
 
 NO_HISTORY = "No earlier years linked yet."
 
@@ -79,18 +78,18 @@ def build_pdf(org: str, rep: dict) -> tuple[bytes, _AuditDoc]:
     doc = _AuditDoc(buf, title="Fundraising report", author=org)
     W = FRAME_W - 12
     band = Table([[[P(org, "fs_w"), Paragraph(escape(f"Fundraising — {rep['fiscal_year']['display_name']}"),
-                                             __import__("fmpoc.services.fundraiser_summary", fromlist=["_WT"])._WT),
+                                             S["fs_wt"]),
                     P("Fiscal Year fundraising report", "fs_wb"),
                     P(f"History {rep['period'][0]}–{rep['year']}  ·  cumulative {money(rep['cumulative'])}  ·  "
                       f"peak year {rep['peak_year']}", "fs_w")]]], colWidths=[W])
-    band.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), _BAND), ("LEFTPADDING", (0, 0), (-1, -1), 12),
+    band.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), _band()), ("LEFTPADDING", (0, 0), (-1, -1), 12),
                               ("TOPPADDING", (0, 0), (-1, -1), 10), ("BOTTOMPADDING", (0, 0), (-1, -1), 10)]))
     f: list = [_Mark(doc, rep["fiscal_year"]["display_name"]), band, Spacer(1, 8), *heading("Executive highlights")]
     hl = highlights(rep)
     cells = [[[P(k, "fs_tk"), P(v, "fs_tv"), P(c, "small")] for k, v, c in hl]]
     tt = Table(cells, colWidths=[W / len(hl)] * len(hl))
-    tt.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), _TILE), ("BOX", (0, 0), (-1, -1), 0.5, colors.HexColor("#c3cad3")),
-                            ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#c3cad3")), ("VALIGN", (0, 0), (-1, -1), "TOP"),
+    tt.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), _tile()), ("BOX", (0, 0), (-1, -1), 0.5, branding.color("outline_variant")),
+                            ("INNERGRID", (0, 0), (-1, -1), 0.5, branding.color("outline_variant")), ("VALIGN", (0, 0), (-1, -1), "TOP"),
                             ("LEFTPADDING", (0, 0), (-1, -1), 6), ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6)]))
     f += [tt, Spacer(1, 8), *heading("This year by fundraiser")]
     data = [_h(["Fundraiser", "Event", "Status", "Net revenue", "Expenses", "Net", "Margin", "Share"])]
@@ -188,12 +187,12 @@ def build_pptx(org: str, rep: dict) -> bytes:
     fyn = rep["fiscal_year"]["display_name"]
     # 1. title
     sl = prs.slides.add_slide(blank)
-    deck._coin(sl, Inches(0.8), Inches(1.6), Inches(1.3))
+    deck._mark(sl, Inches(0.6), Inches(1.6), Inches(1.3), Inches(1.7))
     deck._text(sl, Inches(2.4), Inches(1.45), Inches(10), Inches(0.7), org, size=28, bold=True)
-    deck._text(sl, Inches(2.4), Inches(2.2), Inches(10), Inches(1.2), f"Fundraising — {fyn}", size=40, bold=True, color=deck.BLUE)
+    deck._text(sl, Inches(2.4), Inches(2.2), Inches(10), Inches(1.2), f"Fundraising — {fyn}", size=40, bold=True, color=deck.C.BLUE)
     deck._text(sl, Inches(2.4), Inches(3.5), Inches(10), Inches(0.6),
                f"History {rep['period'][0]}–{rep['year']} · cumulative {money(rep['cumulative'])} · peak year {rep['peak_year']}",
-               size=18, color=deck.GREY)
+               size=18, color=deck.C.GREY)
     deck._notes(sl, [f"Fiscal Year fundraising report for {fyn}, {len(rep['this_year'])} fundraisers selected.",
                      f"Cumulative net raised {rep['period'][0]}–{rep['year']}: {money(rep['cumulative'])}; peak year {rep['peak_year']} "
                      f"({money(rep['peak_total'])})."])
@@ -206,11 +205,11 @@ def build_pptx(org: str, rep: dict) -> bytes:
         x = Inches(0.6 + i * w)
         card = sl.shapes.add_shape(1, x, Inches(2.0), Inches(w - 0.25), Inches(2.6))  # rectangle
         card.fill.solid()
-        card.fill.fore_color.rgb = deck.LIGHT
-        card.line.color.rgb = RGBColor(0xC3, 0xCA, 0xD3)
-        deck._text(sl, x + Inches(0.2), Inches(2.15), Inches(w - 0.6), Inches(0.6), k, size=15, bold=True, color=deck.GREY)
+        card.fill.fore_color.rgb = deck.C.LIGHT
+        card.line.color.rgb = deck.C.LINE
+        deck._text(sl, x + Inches(0.2), Inches(2.15), Inches(w - 0.6), Inches(0.6), k, size=15, bold=True, color=deck.C.GREY)
         deck._text(sl, x + Inches(0.2), Inches(2.8), Inches(w - 0.6), Inches(1.0), v, size=26, bold=True)
-        deck._text(sl, x + Inches(0.2), Inches(3.85), Inches(w - 0.6), Inches(0.6), c, size=12, color=deck.GREY)
+        deck._text(sl, x + Inches(0.2), Inches(3.85), Inches(w - 0.6), Inches(0.6), c, size=12, color=deck.C.GREY)
     deck._notes(sl, [f"Raised this Fiscal Year = sum of the selected fundraisers' net proceeds = {money(rep['year_total'])}.",
                      f"Growth vs last year = (this year − last year) ÷ last year = {_growth(rep['growth_vs_last'])}.",
                      f"Growth vs {rep['period'][0]} = {_growth(rep['growth_vs_first'])}."]
@@ -243,15 +242,15 @@ def build_pptx(org: str, rep: dict) -> bytes:
         deck._style_chart(ch, legend=bool(est))
         deck._labels(ch.plots[0], pos=None if est else XL_LABEL_POSITION.OUTSIDE_END, size=12)
         ch.plots[0].series[0].format.fill.solid()
-        ch.plots[0].series[0].format.fill.fore_color.rgb = deck.BLUE
+        ch.plots[0].series[0].format.fill.fore_color.rgb = deck.C.SERIES[0]
         if est:
             ch.plots[0].series[1].format.fill.solid()
-            ch.plots[0].series[1].format.fill.fore_color.rgb = deck.GOLD
+            ch.plots[0].series[1].format.fill.fore_color.rgb = deck.C.SERIES[1]
         deck._notes(sl, [f"{t['year']}: {money(t['total'])}" for t in rep["trend"]]
                     + ([f"Targeted total {money(rep['targeted_total'])} = YTD + estimate {money(rep['estimate_total'])}: "
                         + "; ".join(f"{e['series']} average of {e['years']} years" for e in rep["estimates"])] if est else []))
     else:
-        deck._text(sl, Inches(0.9), Inches(2.4), Inches(11), Inches(1), NO_HISTORY, size=22, color=deck.GREY)
+        deck._text(sl, Inches(0.9), Inches(2.4), Inches(11), Inches(1), NO_HISTORY, size=22, color=deck.C.GREY)
         deck._notes(sl, ["Link fundraisers with “Continues from”, or enter earlier years in the Fundraiser series list."])
     # 5. share by series
     if rep["share"]:
@@ -267,7 +266,7 @@ def build_pptx(org: str, rep: dict) -> bytes:
         ch.plots[0].data_labels.show_value = False
         for i, pt in enumerate(ch.plots[0].series[0].points):
             pt.format.fill.solid()
-            pt.format.fill.fore_color.rgb = deck.SERIES[i % len(deck.SERIES)]
+            pt.format.fill.fore_color.rgb = deck.C.SERIES[i % len(deck.C.SERIES)]
         deck._notes(sl, [f"Share of the period total {money(rep['cumulative'])}:"]
                     + [f"{x['name']}: {money(x['total'])} ({_p(x['share'])})" + (f" — {', '.join(x['members'])}" if x.get("members") else "")
                        for x in rep["share"]])
@@ -287,7 +286,7 @@ def build_pptx(org: str, rep: dict) -> bytes:
         deck._notes(sl, ["Average per active year = total over the period ÷ the years the series was active."]
                     + [f"{a['name']}: {money(a['total'])} over {a['active_years']} years = {money(a['average'])}" for a in rep["averages"]])
     else:
-        deck._text(sl, Inches(0.9), Inches(2.4), Inches(11), Inches(1), NO_HISTORY, size=22, color=deck.GREY)
+        deck._text(sl, Inches(0.9), Inches(2.4), Inches(11), Inches(1), NO_HISTORY, size=22, color=deck.C.GREY)
         deck._notes(sl, [NO_HISTORY])
     # year over year by series (#277 feedback): a line per series, and the change table
     if rep["year_over_year"]:
@@ -301,7 +300,7 @@ def build_pptx(org: str, rep: dict) -> bytes:
         deck._style_chart(ch)
         deck._labels(ch.plots[0], pos=XL_LABEL_POSITION.ABOVE, size=9)
         for i, ser in enumerate(ch.plots[0].series):
-            ser.format.line.color.rgb = deck.SERIES[i % len(deck.SERIES)]
+            ser.format.line.color.rgb = deck.C.SERIES[i % len(deck.C.SERIES)]
             ser.smooth = False
         deck._notes(sl, ["Net raised by each series per year; a gap = not held that year."]
                     + [f"{x['name']}: " + ", ".join(f"{y} {money(v) if v is not None else '—'}" for y, v in zip(rep["period"], x["values"]))
@@ -326,17 +325,18 @@ def build_pptx(org: str, rep: dict) -> bytes:
     if lines:
         sl = prs.slides.add_slide(blank)
         deck._title(sl, "Notes")
-        deck._text(sl, Inches(0.9), Inches(1.8), Inches(11.5), Inches(5), lines, size=16, color=RGBColor(0x1B, 0x1F, 0x24))
+        deck._text(sl, Inches(0.9), Inches(1.8), Inches(11.5), Inches(5), lines, size=16, color=deck.C.TEXT)
         deck._notes(sl, lines)
     # closing
     sl = prs.slides.add_slide(blank)
-    deck._coin(sl, Inches(6.07), Inches(1.7), Inches(1.2))
+    deck._mark(sl, Inches(5.17), Inches(1.7), Inches(1.2), Inches(3.0))
     deck._text(sl, Inches(0.6), Inches(3.2), Inches(12.1), Inches(1.2), "Questions?", size=48, bold=True, align=PP_ALIGN.CENTER)
-    deck._text(sl, Inches(0.6), Inches(4.5), Inches(12.1), Inches(0.6), f"{org} · {fyn}", size=20, color=deck.GREY, align=PP_ALIGN.CENTER)
+    deck._text(sl, Inches(0.6), Inches(4.5), Inches(12.1), Inches(0.6), f"{org} · {fyn}", size=20, color=deck.C.GREY, align=PP_ALIGN.CENTER)
     deck._notes(sl, [f"Generated {_us(rep['generated_at'])}."])
     prs.core_properties.title = f"Fundraising — {fyn}"
     prs.core_properties.author = org
     out = io.BytesIO()
+    deck.brand_footers(prs)
     prs.save(out)
     return out.getvalue()
 

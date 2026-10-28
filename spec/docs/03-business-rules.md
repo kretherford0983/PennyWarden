@@ -190,6 +190,16 @@ The displayed starting balance for a Fiscal Year is the Bank Account balance as 
 
 A newly tracked register-enabled Bank Account has an Opening Balance and Opening Balance Date used to establish the beginning of reliable Register history.
 
+2.2.0 (#348): a point-in-time comparison to a date before the Opening Balance Date uses the opening balance (BR-044a); BR-043's derived Fiscal-Year starting balance already does.
+
+## BR-044a — Comparisons Before Any Data (2.2.0, #348)
+
+Every point-in-time comparison (the Financial Flow Report's Compare Date, and any later comparison of balances or year-over-year figures) uses the **earliest available data** for a date before any data, never $0: a register account before its Opening Balance Date (or, without one, the day it was added) uses its opening balance; a non-register account before its first dated balance uses that first balance; a year-over-year figure with no earlier year shows no comparison.
+
+A Bank Account may have an optional **Account opened** date (not in the future; editable; audited). Blank means the account existed before PennyWarden. A date before Account opened is $0, because the account really did not exist then, and an account opened after a report's Through Date is not listed. Dashboard balance charts show no value for months before Account opened.
+
+Each substituted value is marked on screen with an explanation (always). The PDF lists a note for each one — "Savings: starting balance is the first recorded balance, 2026-07-01 (no data on 2026-01-01)." — only when the report option **Show notes on substituted starting values** is on (off by default).
+
 ## BR-045 — Transaction Parent Plus Allocations
 
 Every Register Transaction has one or more Transaction Allocations. A normal transaction has one allocation; a split transaction has multiple. The backend uses the same model for both.

@@ -141,6 +141,7 @@ When explicit sub-budgets exist:
 
 A budget line's figures for a year **before the first Fiscal Year in PennyWarden**, entered by a Budget Manager from earlier records: Fiscal Year label (must include the year), budgeted amount, actual amount (may be negative), optional note. It is stored against the oldest budget of the line (the continuation links) and read for every budget of the line. It can be entered on any budget except Budget 0 and the system-managed `Other`; a parent without its own entry for a year shows the sum of its sub-budgets' entries (and, when both exist and differ, its own with a mismatch note). Labelled *Entered*; shown in the budget's History and the Budget Review (and so in the review appended to the Planning Sheet), not in dashboard charts. Reporting only: it never affects actuals, registers or Fiscal Year closure. Corrected or retired with a reason, never deleted; audited with before and after values. A year a Fiscal Year in PennyWarden covers is refused; an entry whose year a later-added Fiscal Year covers is kept but no longer counted.
 
+
 ## 7. Entity
 
 Represents a person or organization participating in financial activity.
@@ -194,6 +195,7 @@ Key properties:
 - optional interest rate.
 - opening balance.
 - opening balance date.
+- optional Account opened date (2.2.0, #348): when the account was really opened; blank means it existed before PennyWarden (BR-044a).
 - manually maintained current balance for applicable non-register accounts.
 - active/inactive/closed status.
 - closed date/reason where applicable.
@@ -358,3 +360,7 @@ Values that should be calculated rather than treated as independently authoritat
 - Fiscal Year starting balance display for a continuous Register.
 - Register running balance.
 - Fiscal quarter boundaries.
+
+## Branding Settings (2.2.0, #280)
+
+The organization's look for generated reports and presentations: a palette (a ready-made one or custom Material 3 role colors and eight chart series colors), a full logo and an optional small mark, and an optional one-line footer text. One per organization; an organization setting (BR-003), not financial data. See 05 §Organization branding.

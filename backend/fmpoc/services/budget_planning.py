@@ -44,6 +44,7 @@ from ..money import fmt
 from . import budgets as bsvc
 from . import fundraisers as fsvc
 from .common import active_allocation_totals, add_months, budget_display_code, fy_brief
+from . import branding
 from .reports import _FONT, BODY_H, MARGIN, PM, P, S, _AuditDoc, _csv_safe, _Mark, _stamp_and_write, money
 
 COMPLETE_FUNDRAISER = {"ENDED", "CANCELLED", "ARCHIVED"}
@@ -561,8 +562,8 @@ def _chart(rep: dict, row: dict) -> Drawing:
     ch.valueAxis.labels.fontSize = 7
     ch.valueAxis.labels.fontName = _FONT
     ch.valueAxis.valueMin = min(0, *bud, *act)
-    ch.bars[0].fillColor = colors.HexColor("#9aa3ad")
-    ch.bars[1].fillColor = colors.HexColor("#2f5d8a")
+    ch.bars[0].fillColor = branding.color("outline")
+    ch.bars[1].fillColor = branding.color("series:0")
     ch.barLabelFormat = "%.0f"
     ch.barLabels.fontSize = 6
     ch.barLabels.fontName = _FONT
@@ -574,7 +575,7 @@ def _chart(rep: dict, row: dict) -> Drawing:
     lg.fontName = _FONT
     lg.columnMaximum = 1
     lg.alignment = "right"
-    lg.colorNamePairs = [(colors.HexColor("#9aa3ad"), "Budgeted (left bar)"), (colors.HexColor("#2f5d8a"), "Actual (right bar)")]
+    lg.colorNamePairs = [(branding.color("outline"), "Budgeted (left bar)"), (branding.color("series:0"), "Actual (right bar)")]
     d.add(lg)
     d.add(String(0, 0, f"{row['code']} {row['name']}: budgeted and actual per Fiscal Year", fontSize=7, fontName=_FONT))
     return d
@@ -582,10 +583,7 @@ def _chart(rep: dict, row: dict) -> Drawing:
 
 _RIGHT = ParagraphStyle("br_right", parent=S["cell"], alignment=2)
 _LABEL = ParagraphStyle("br_label", parent=S["cell"], textColor=colors.HexColor("#4a5560"))
-_HEAD = ParagraphStyle("br_head", parent=S["cell"], alignment=2, textColor=colors.white)
-_BAND_C = colors.HexColor("#1f3a5f")
-_PARENT_C = colors.HexColor("#e8ecf1")
-_SUB_C = colors.HexColor("#f6f8fa")
+S["br_head"] = ParagraphStyle("br_head", parent=S["cell"], alignment=2, textColor=colors.white)   # on_primary (#280)
 
 
 def _r(text: str) -> object:
@@ -661,11 +659,11 @@ def _review_flowables(db: Session, ctx, rep: dict, doc) -> list:
     cols = _review_columns(rep)
     per_band = max(1, int((frame_w - label_w) // min_col))
     bands = [cols[i:i + per_band] for i in range(0, len(cols), per_band)]
-    band = Table([[Paragraph(f"<b>{escape(ws.name)}</b>", ParagraphStyle("brb", parent=S["body"], textColor=colors.white)),
+    band = Table([[Paragraph(f"<b>{escape(ws.name)}</b>", ParagraphStyle("brb", parent=S["body"], textColor=branding.color("on_primary"))),
                    Paragraph(f"<b>Budget Review — {escape(fyn)}</b>", ParagraphStyle("brt", parent=S["body"], alignment=2,
-                                                                                    textColor=colors.white))]],
+                                                                                    textColor=branding.color("on_primary")))]],
                  colWidths=[frame_w / 2, frame_w / 2])
-    band.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), _BAND_C), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+    band.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), branding.color("primary")), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                               ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
                               ("LEFTPADDING", (0, 0), (-1, -1), 8), ("RIGHTPADDING", (0, 0), (-1, -1), 8)]))
     f: list = [_Mark(doc, "Budget Review"), band, Spacer(1, 6),
@@ -698,8 +696,8 @@ def _review_flowables(db: Session, ctx, rep: dict, doc) -> list:
                 f.append(P(f"Columns {bi + 1} of {len(bands)}", "small"))
             cw = min(1.35 * inch, (frame_w - label_w) / len(bcols))
             n = len(bcols) + 1
-            head = [Paragraph("", _HEAD)] + [Paragraph(f"<b>{h}</b>", _HEAD) for h, _fn in bcols]
-            data, style = [head], [("BACKGROUND", (0, 0), (-1, 0), _BAND_C), ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            head = [Paragraph("", S["br_head"])] + [Paragraph(f"<b>{h}</b>", S["br_head"]) for h, _fn in bcols]
+            data, style = [head], [("BACKGROUND", (0, 0), (-1, 0), branding.color("primary")), ("VALIGN", (0, 0), (-1, -1), "TOP"),
                                    ("LEFTPADDING", (0, 0), (-1, -1), 3), ("RIGHTPADDING", (0, 0), (-1, -1), 4),
                                    ("TOPPADDING", (0, 0), (-1, -1), 1.5), ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5)]
             for r in rows:
@@ -708,7 +706,7 @@ def _review_flowables(db: Session, ctx, rep: dict, doc) -> list:
                 i = len(data)
                 data.append([Paragraph(f"<b>{label}</b>" if r["level"] == "parent" else "&nbsp;&nbsp;&nbsp;" + label,
                                        S["cell"])] + [""] * (n - 1))
-                style += [("SPAN", (0, i), (-1, i)), ("BACKGROUND", (0, i), (-1, i), _PARENT_C if r["level"] == "parent" else _SUB_C),
+                style += [("SPAN", (0, i), (-1, i)), ("BACKGROUND", (0, i), (-1, i), branding.color("surface_variant" if r["level"] == "parent" else "surface")),
                           ("LINEABOVE", (0, i), (-1, i), 0.4, colors.HexColor("#9aa3ad"))]
                 vals = [fn(r) for _h, fn in bcols]
                 for k, word in enumerate(("Budgeted", "Actual", "Difference")):
@@ -725,6 +723,7 @@ def _review_flowables(db: Session, ctx, rep: dict, doc) -> list:
     return f
 
 
+@branding.themed
 def budget_review_pdf(db: Session, ctx, rep: dict) -> tuple[str, str, int]:
     ws = db.get(Workspace, ctx.workspace_id)
     fyn = rep["fiscal_year"]["display_name"]
@@ -917,13 +916,14 @@ def _plan_table(rows: list[dict], heads: list[str], widths: list[float], blank: 
     heights = [None] + [0.27 * inch] * (len(data) - 1)
     t = Table(data, colWidths=widths, repeatRows=1, rowHeights=heights)
     t.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#6b7480")),
-                           ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e8ecf1")),
+                           ("BACKGROUND", (0, 0), (-1, 0), branding.color("surface_variant")),
                            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("VALIGN", (0, 0), (-1, 0), "BOTTOM"),
                            ("LEFTPADDING", (0, 0), (-1, -1), 3), ("RIGHTPADDING", (0, 0), (-1, -1), 3),
                            ("TOPPADDING", (0, 0), (-1, -1), 1), ("BOTTOMPADDING", (0, 0), (-1, -1), 1)]))
     return t
 
 
+@branding.themed
 def planning_sheet(db: Session, ctx, fy: FiscalYear | None, as_of: dt.date | None = None) -> tuple[str, str, dict]:
     """fy None: the year being planned is worked out (planning_context)."""
     auto_draft, auto = None, fy is None
@@ -986,7 +986,7 @@ def planning_sheet(db: Session, ctx, fy: FiscalYear | None, as_of: dt.date | Non
         t = Table([[PM(f"<b>{h}</b>", "cell") for h in blank_heads]] + [[""] * len(blank_heads)] * PLAN_PAGE2_ROWS,
                   colWidths=bw, rowHeights=[None] + [0.3 * inch] * PLAN_PAGE2_ROWS)
         t.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#6b7480")),
-                               ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e8ecf1"))]))
+                               ("BACKGROUND", (0, 0), (-1, 0), branding.color("surface_variant"))]))
         f += [PM(key, "h2"), t, Spacer(1, 10)]
     doc.build(f)
     fd, path = tempfile.mkstemp(prefix="fmpoc-planning-", suffix=".pdf")
@@ -1002,6 +1002,7 @@ def planning_sheet(db: Session, ctx, fy: FiscalYear | None, as_of: dt.date | Non
     return path, f"planning-sheet-{_safe(fy.display_name)}.pdf", summary
 
 
+@branding.themed
 def append_review(db: Session, ctx, sheet_path: str, summary: dict, as_of: dt.date | None) -> tuple[str, dict]:
     """2.1.0 (#283): the Planning Sheet with the Budget Review of the same year appended (last 3 years, projected with
     the person's projection choices, and the Draft year's budgets when there is one). Each part keeps its own page
