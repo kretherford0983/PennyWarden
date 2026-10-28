@@ -304,7 +304,9 @@ def build(current_db: Path, current_key: crypto.KeyMaterial | None, backup_db: P
     finally:
         src.close()
         dst.close()
-    con = sqlite3.connect(out_db, isolation_level=None)
+    # uri=True so the ATTACH below reads "file:...?mode=ro" as a URI; SQLite builds without SQLITE_USE_URI
+    # (e.g. the server's) would otherwise treat it as a literal file name and fail to open it
+    con = sqlite3.connect(f"file:{out_db.as_posix()}", uri=True, isolation_level=None)
     facts: dict = {"restored": [d for d in DOMAINS if d in chosen], "kept": [d for d in DOMAINS if d not in chosen]}
     try:
         con.execute("PRAGMA foreign_keys=OFF")
