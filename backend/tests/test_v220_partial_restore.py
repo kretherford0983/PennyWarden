@@ -243,3 +243,35 @@ def test_cli_only_skip_and_list(env, base, tmp_path, host, capsys):  # noqa: F81
     adm = _login(app2, "admin")
     ev = adm.get("/api/audit-events?action=SYSTEM_RESTORED").json()["items"][0]
     assert ev["after"]["via"] == "host_cli" and ev["after"]["kept"] == ["data", "reminders"]
+
+
+class _NoUriBuild:
+    """sqlite3 stand-in for a SQLite built without SQLITE_USE_URI: an ATTACH of a "file:" URI only works on a
+    connection opened with uri=True (dev/CI SQLite builds accept it either way, which hid the bug)."""
+
+    def __init__(self, real):
+        self._real = real
+
+    def __getattr__(self, name):
+        return getattr(self._real, name)
+
+    def connect(self, *a, uri=False, **kw):
+        real = self._real
+
+        class Con(real.Connection):
+            def execute(self, sql, *args):
+                if not uri and sql.lstrip().upper().startswith("ATTACH") and "'file:" in sql:
+                    raise real.OperationalError("unable to open database (URI filenames not enabled)")
+                return super().execute(sql, *args)
+
+        return real.connect(*a, uri=uri, factory=Con, **kw)
+
+
+def test_partial_restore_on_a_sqlite_without_uri_filenames(env, base, monkeypatch):
+    """2.2.0 test build 223: on the server, "Combining the chosen parts with the current data" failed with
+    'unable to open database: file:...?mode=ro' because the combining connection wasn't opened with uri=True."""
+    monkeypatch.setattr(pr, "sqlite3", _NoUriBuild(pr.sqlite3))
+    blob = _backup(env)
+    env.entity("Entered After Backup")
+    j = _restore_parts(env.admin, blob, ["data"])
+    assert j["state"] == "done", j
