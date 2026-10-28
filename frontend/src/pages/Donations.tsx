@@ -104,6 +104,19 @@ export default function DonationSetup() {
                 Items are always listed by description only; the note can't be left off.</span>
             </div>
           </Section>
+          {/* 2.2.0 (#317): the donor's addressee block on receipts and statements, from {DONOR.*} */}
+          <Section id="adr" scope="pw-donations" title="Addressee">
+            {(cfg.addressee || []).map((line: string, i: number) => (
+              <div className="row" key={i}>
+                <PatternInput id={`adr-${i}`} label={`Addressee line ${i + 1}`} value={line} variables={s.variables} hint={false} maxLength={200}
+                              onChange={(v) => set("addressee", cfg.addressee.map((x: string, j: number) => (j === i ? v : x)))} />
+                <button type="button" className="small" aria-label={`Remove addressee line ${i + 1}`} onClick={() => set("addressee", cfg.addressee.filter((_: string, j: number) => j !== i))}>Remove</button>
+              </div>
+            ))}
+            {(cfg.addressee || []).length < 6 ? <button type="button" className="small" onClick={() => set("addressee", [...(cfg.addressee || []), ""])}>+ Add line</button> : null}
+            <p className="hint">The donor's block on receipts and year-end statements (and in the lower window of a window envelope). The default is the
+              donor's name and mailing address: <code>{"{DONOR.NAME}"}</code>, <code>{"{DONOR.MAILING_ADDRESS}"}</code>.</p>
+          </Section>
           {/* 2.2.0 (#256): the year-end giving statement's letter; layout, window and signer are the receipt's */}
           <Section id="stmt" scope="pw-donations" title="Year-end statement letter">
             <p className="hint">The letter printed with each donor's year-end giving statement (Donations page → <i>Year-end statements</i>). Put

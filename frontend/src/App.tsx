@@ -23,6 +23,7 @@ import FundraiserSeries from "./pages/FundraiserSeries";
 import CheckSetup from "./pages/CheckSetup";
 import DonationSetup from "./pages/Donations";
 import EnvelopesPage from "./pages/Envelopes";
+import { setNameOrder } from "./names";
 import Payments from "./pages/Payments";
 import DonationsPage from "./pages/DonationsPage";
 import Notifications, { REMINDERS_CHANGED } from "./pages/Notifications";
@@ -55,7 +56,8 @@ export interface Me {
   dashboard_layout?: { key: string; visible: boolean }[]; // v1.5.0 CR-031
   dashboard_layout_customized?: boolean;
   register_sort?: string; // 2.1.0 (#262): "transaction_date:asc" | "transaction_date:desc" | "clear_date:asc" | "clear_date:desc"
-  modules?: { fundraisers?: boolean; checks?: boolean; donations?: boolean }; // v1.6.0 CR-033; 2.0.0 (#156) Check Printing; 2.1.0 (#312) Donations
+  modules?: { fundraisers?: boolean; checks?: boolean; donations?: boolean };
+  name_order?: string;   // 2.2.0 (#316) // v1.6.0 CR-033; 2.0.0 (#156) Check Printing; 2.1.0 (#312) Donations
   mfa_pending?: "VERIFY" | "ENROLL" | "PASSWORD" | "QUESTIONS" | null; // v1.4.1 CR-018; 1.8.0 (#113) setup steps
   sign_in_notices?: { kind: string; message: string }[]; // 1.8.0 (#113)
   csrf_token: string;
@@ -96,6 +98,7 @@ export default function App() {
       const m = await api.get<Me>("/api/auth/me");
       setCsrf(m.csrf_token);
       applyTheme(m.theme);
+      setNameOrder(m.name_order);       // 2.2.0 (#316)
       setMe(m);
     } catch {
       setCsrf(null);

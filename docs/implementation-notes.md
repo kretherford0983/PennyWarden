@@ -128,6 +128,28 @@ could not otherwise be corrected. Scope and safeguards:
   with a link; the variable picker completes dotted names.
 - Tests: `backend/tests/test_v210_organization.py` (6, including the data migration) and the E2E #126 and #312 steps.
 
+**2.2.0 — Entities: names, display name, mailing address, EIN, entity variables (#315, #316, #317; #318).**
+- Migration `0057`: `entity.display_name_custom`, `entity.mailing_*` (empty = "same as", resolved at read time),
+  `first_name`/`last_name` (from `primary_contact`, trimmed and split at the first space; `name_review` set for every
+  split name), `primary_contact` dropped; `app_user.name_order` (None = FIRST_LAST). Downgrade recombines the names.
+- Model: `Entity.legal_name` (Individual "First Last", Organization its name) - printed on checks (PAYEE), letters,
+  envelopes, receipts, statements; `display_name` = custom or legal name - everywhere else; `primary_contact` is a
+  read-only property ("First Last"); `mailing(field)` / `mailing_same`. `checkprint.address_lines(e, mailing=True)`
+  is the mailing address; `{ORG.ADDRESS}` therefore follows the organization's mailing address.
+- API: `EntityFields` first/last name, `display_name_custom`, `mailing_*`, `ein` (organizations only, validated like
+  the profile's); the legacy `primary_contact` input is split. Duplicates (BR-030) match the name or any existing
+  display name; search covers first, last, full and display names. `GET /api/entities/names-to-review`,
+  `POST /api/entities/{id}/confirm-name` (`entity.review_names`: Budget Manager); a PATCH that sends the names clears
+  `name_review`. `PreferencesIn.name_order`; `/api/auth/me` `name_order`. The organization profile takes `mailing_*`.
+- Variables (`services/entity_vars`): `{PAYEE.*}` (CHECK, LETTER, ENVELOPE, STUB; ADDRESS/MAILING_ADDRESS only where
+  line breaks are allowed) and `{DONOR.*}` (RECEIPT, STATEMENT); donation envelopes give the donor as PAYEE.*.
+  Addressee blocks: `LetterConfig.addressee` and `ReceiptConfig.addressee` (≤ 6 lines; default name + mailing
+  address, so existing templates print as before), resolved by `entity_vars.addressee`.
+- Frontend: `names.ts` (`entityName`, `entitySortKey`, set from `/api/auth/me`) - the Entities list and
+  `EntityPicker` follow the name order; the register keeps the display name. The variable picker groups dotted
+  names by role.
+- Tests: `test_v220_entities.py` (incl. the migration split); E2E "#315 / #316".
+
 **2.2.0 — Year-end giving statements, donor report, fundraiser donation buckets (#256, Kyle 2026-10-24).**
 - Migration `0056`: `donation_statement` (donor, calendar year, seq/number S-YYYY-NNNN, kind ORIGINAL | DUPLICATE |
   CORRECTED with `replaces_id`, totals, `line_ids`, `content_sha`, `attachment_id`), `attachment.donation_statement_id`

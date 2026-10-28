@@ -205,7 +205,8 @@ def update(db: Session, ctx, e: Entity, data) -> Entity:
         matches = _dup_matches(db, ctx.workspace_id, new, exclude_id=e.id)
         if matches:
             require_confirmations([_dup_warning(matches)], data.confirmations)
-    name_edited = (new["first_name"], new["last_name"]) != (e.first_name, e.last_name)
+    # #316: saving the names (the entity form always sends them) counts as reviewed
+    name_edited = bool({"first_name", "last_name", "primary_contact"} & fields)
     for f in FIELDS:
         setattr(e, f, new[f])
     if name_edited:

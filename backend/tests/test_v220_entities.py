@@ -138,9 +138,8 @@ def test_upgrade_splits_names_and_lists_them_to_review(env, tmp_path):
     assert env.ru.get("/api/entities/names-to-review").status_code == 403
     assert env.admin.get("/api/entities/names-to-review").status_code == 403
     _ok(env.bm.post(f"/api/entities/{b['id']}/confirm-name"))
-    _ok(env.bm.patch(f"/api/entities/{a['id']}", {"first_name": "John", "last_name": "Smith Jr.", "confirmations":
-                                                  ["DUPLICATE_ENTITY"]}))
-    # an unchanged name doesn't clear it; an edited one does
+    # another change leaves it listed; saving the names (as the entity form does) counts as reviewed
+    _ok(env.bm.patch(f"/api/entities/{a['id']}", {"notes": "x", "confirmations": ["DUPLICATE_ENTITY"]}))
     assert a["id"] in {x["id"] for x in _ok(env.bm.get("/api/entities/names-to-review"))}
     _ok(env.bm.patch(f"/api/entities/{a['id']}", {"first_name": "John", "last_name": "Smith, Jr.",
                                                   "confirmations": ["DUPLICATE_ENTITY"]}))

@@ -3945,3 +3945,37 @@ test("#280: an Administrator brands reports - a palette, a custom palette checke
   await card.getByRole("button", { name: "Reset to the PennyWarden palette" }).click();
   await expect(card.getByRole("radio", { name: /PennyWarden/ })).toBeChecked();
 });
+
+// ---------------------------------------------------------------- 2.2.0 #315 / #316: entity names
+test("#315 / #316: first and last name, a display name and mailing address; each user's name order", async ({ page }) => {
+  await login(page, "ru1", "Brand-New-Pass-99");
+  await page.getByRole("link", { name: "Entities" }).click();
+  await page.getByRole("button", { name: "New entity" }).click();
+  const dlg = page.getByRole("dialog", { name: "New entity" });
+  await dlg.getByLabel("Type").selectOption("INDIVIDUAL");
+  await dlg.getByLabel("First name (required)").fill("Robin");
+  await dlg.getByLabel("Last name").fill("Zephyr");
+  await dlg.getByLabel("Display name same as Name").uncheck();
+  await dlg.getByLabel("Display name", { exact: true }).fill("Robin Z. (volunteer)");
+  await dlg.getByLabel("Mailing address same as Address").uncheck();
+  await dlg.getByLabel("Mailing address line 1").fill("P.O. Box 15");
+  await page.screenshot({ path: "e2e-screenshots/light-entity-names.png" });
+  await dlg.getByRole("button", { name: "Save" }).click();
+  const conf = page.getByRole("dialog", { name: "Confirmation required" });
+  await expect.poll(async () => (await conf.isVisible()) || (await dlg.count()) === 0).toBe(true);
+  if (await conf.isVisible()) {
+    await conf.getByLabel("I have reviewed these warnings and explicitly confirm.").check();
+    await conf.getByRole("button", { name: "Confirm and continue" }).click();
+  }
+  await expect(dlg).toHaveCount(0);
+  // the list shows the display name with the name beside it
+  await expect(page.getByRole("row", { name: /Robin Z\. \(volunteer\)/ })).toContainText("Robin Zephyr");
+  // My account: Last, First - Individuals without a display name of their own show and sort by last name
+  await page.goto("/account");
+  await page.getByLabel("Show people's names as").selectOption("LAST_FIRST");
+  await page.goto("/entities");
+  await expect(page.getByRole("cell", { name: /^Donor Alpha, Sample/ })).toBeVisible();
+  await page.goto("/account");
+  await page.getByLabel("Show people's names as").selectOption("FIRST_LAST");
+  await logout(page);
+});

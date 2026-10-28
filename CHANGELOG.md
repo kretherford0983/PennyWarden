@@ -149,6 +149,24 @@ PennyWarden 2.2.0 (in progress).
   lines start ticked as a suggestion (saved only when you Save). The fundraiser lists **Donations without a receipt**
   with a link to each deposit.
 
+### Entities: names, display name, mailing address and template variables (#315, #316, #317)
+- **First and last name** replace the Primary Contact (the person of an Individual, an Organization's contact
+  person). An Individual needs a first name. The upgrade splits each Primary Contact at the first space; Budget
+  Managers see the split names under **Names to review** on the Entities page until each is edited or confirmed.
+- **Name order per user** (My account → *Show people's names as*): *First Last* or *Last, First*, for how Individuals
+  show and sort in the Entities list and the entity pickers.
+- **Display name** (optional, *Display name same as Name* unticked): shown in the register, pickers, lists and
+  reports; checks, envelopes, letters, receipts and statements print the **name**. **Mailing address** (optional,
+  *Mailing address same as Address* unticked): letters, envelopes, receipts and statements use it — the organization
+  profile has one too. "Same as" falls back when reading, so nothing is copied. Search and the duplicate warning use
+  both names. **EIN** on organizations (12-3456789).
+- **Entity variables by role**: `{PAYEE.*}` on checks, stubs, letters and envelopes and `{DONOR.*}` on receipts and
+  statements — NAME, DISPLAY_NAME, FIRST_NAME, LAST_NAME, ADDRESS, MAILING_ADDRESS, ADDRESS1, ADDRESS2, CITY, STATE,
+  ZIP, COUNTRY, PHONE, EMAIL, EIN, ENTITY_NUMBER (case doesn't matter; the older names still work). The variable list
+  groups them by role.
+- **Addressee block**: cover letters (Payments Setup) and receipts and statements (Donations Setup) have up to six
+  addressee lines built from these variables. The default — name and mailing address — prints as before.
+
 ### Organization branding (#280)
 - **Your colors and logo on reports and presentations.** *System/About → Branding* (Administrators): choose a
   ready-made palette (PennyWarden — the default —, Forest, Ocean, Plum, Ember) or a custom one generated from your

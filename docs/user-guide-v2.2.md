@@ -178,6 +178,31 @@ Mark a fundraiser bucket **Donations** (New bucket / Edit bucket). Deposits clas
 **Donation** box ticked in their *Donation receipt…* dialog — a suggestion: it is saved only when you Save. The
 fundraiser page lists **Donations without a receipt**; **Print receipts** opens each deposit in the register.
 
+## Entities: names, display name and mailing address
+
+- **First name** and **Last name** replace *Primary Contact* (for an Organization they are its contact person). An
+  Individual needs a first name; the last name is optional.
+- **Display name same as Name**: untick it to give the entity a display name (for example a nickname or a shorter
+  name). The register, pickers, lists and reports show the display name; checks, envelopes, letters, receipts and
+  year-end statements print the name.
+- **Mailing address same as Address**: untick it to add a mailing address (for example a P.O. Box). Letters,
+  envelopes, receipts and statements are addressed there. The organization profile (System/About) has a mailing
+  address too.
+- **EIN** for organizations, written as 12-3456789.
+- Searching finds an entity by its name, display name, first or last name.
+- **Names to review** (Budget Managers): after the upgrade, each Primary Contact was split into a first and a last name
+  at the first space. Names like "Mary Ann Smith" or "John Smith Jr." may need fixing: **Edit** one, or **Confirm** it
+  when it is right. Saving an entity's names also takes it off the list.
+- **My account → Show people's names as**: *First Last* or *Last, First* — how Individuals show and sort for you in
+  the Entities list and the entity pickers.
+
+### Template variables by role and the addressee block (Administrators)
+Letters, envelopes, checks and stubs can use `{PAYEE.NAME}`, `{PAYEE.FIRST_NAME}`, `{PAYEE.MAILING_ADDRESS}` and the
+other `{PAYEE.*}` fields; receipts and statements the same `{DONOR.*}` fields. Type `{` for the list, grouped by role.
+A cover letter's **Addressee** section (Payments Setup) and the receipt's **Addressee** section (Donations Setup)
+set the lines of the addressee's block — up to six, for example `Attn: {PAYEE.FIRST_NAME} {PAYEE.LAST_NAME}`. The
+default, name and mailing address, prints as before.
+
 ## Envelopes: one library (Administrators)
 Envelope templates are one library shared by Payments and Donations. Each template is *used for* the features you
 choose, and each feature has its own default. **Envelopes** in the navigation (shown when Payments or Donations is on)

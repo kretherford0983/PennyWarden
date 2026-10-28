@@ -9,7 +9,11 @@ import { formatPhone } from "./Entities";
  * Used by letters, envelopes and receipts ({ORG.*}); the entity can be chosen in the register like any other. */
 const ORG_FIELDS: [string, string, number][] = [["address_line1", "Street address", 200], ["address_line2", "Address line 2", 200],
   ["city", "City", 100], ["state_region", "State", 100], ["postal_code", "ZIP code", 20], ["country", "Country (outside the US)", 100],
-  ["phone", "Phone", 40], ["email", "Email", 254], ["ein", "EIN (Employer Identification Number)", 10]];
+  ["phone", "Phone", 40], ["email", "Email", 254], ["ein", "EIN (Employer Identification Number)", 10],
+  // 2.2.0 (#315): a mailing address only when it differs (empty = the address); letters, envelopes and receipts use it
+  ["mailing_address_line1", "Mailing address, if different (e.g. a P.O. Box)", 200], ["mailing_address_line2", "Mailing address line 2", 200],
+  ["mailing_city", "Mailing city", 100], ["mailing_state_region", "Mailing state", 100], ["mailing_postal_code", "Mailing ZIP code", 20],
+  ["mailing_country", "Mailing country (outside the US)", 100]];
 
 /** 2.1.0 (#314): 9 digits, typed with or without the dash, shown as 12-3456789 when the field is left. */
 export function formatEin(typed: string): string {
