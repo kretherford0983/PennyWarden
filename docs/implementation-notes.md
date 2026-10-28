@@ -128,6 +128,29 @@ could not otherwise be corrected. Scope and safeguards:
   with a link; the variable picker completes dotted names.
 - Tests: `backend/tests/test_v210_organization.py` (6, including the data migration) and the E2E #126 and #312 steps.
 
+**2.2.0 — Fundraiser series: Add to an existing series, years newest first and sortable (#302, #351, Kyle 2026-10-24).**
+- Migration `0058`: `app_user.fundraiser_series_sort` ("asc"; None = newest first, the default stored as no
+  preference, like `register_sort`). `PUT /api/me/preferences {fundraiser_series_sort: "asc"|"desc"}`; `/auth/me`
+  returns it ("desc" when unset).
+- `fundraiser_series.series_list(db, ctx, direction=None)` adds `rows` per series: recorded fundraisers
+  (`kind: "recorded"`) and entered results (`kind: "entered"`) in one list, by year in `direction` (default: the
+  user's choice). Within a year the order is fixed either way: recorded by start date newest first, then active
+  entered results, then retired ones. `fundraisers`/`results` stay as before (oldest first) for existing callers.
+  `GET /api/fundraiser-series?direction=asc|desc` overrides; every mutation returns the list in the user's order.
+- `add_to_series(db, ctx, f, series_id)` (`PUT /api/fundraisers/{id}/series {series_id}`, `fundraiser.manage`): only a
+  fundraiser in no series (else 409 `ALREADY_IN_SERIES` - merge instead); refused with 409 `YEAR_ENTERED` when the
+  series has an active entered result for the fundraiser's year. `continues_from_id` stays empty. Audited
+  `FUNDRAISER_SERIES_LINK_UPDATED`. `GET /api/fundraisers/{id}/series-add-options` lists every series with
+  `allowed`/`reason`.
+- UI: *Start a series…* offers *Start a new series* / *Add to an existing series*; the fundraiser page has
+  *Add to a series…* while it is in none (`AddChoice` is shared). The series page has a hint for events held more
+  than once a year; the Year heading flips every table (aria-sort) and shows *Sorted by year, oldest first* with
+  *Reset to default*.
+- Not changed: year over year in the stakeholder report, presentation and Fiscal Year report stays oldest first.
+- Choice: a fundraiser added by mistake is moved with *Change…* (Continues from) or by merging series; there is no
+  separate "remove from series" (same as a started series, #292).
+- Tests: `backend/tests/test_v220_fundraiser_series.py` (5) and the E2E "2.2.0 (#302, #351)" step.
+
 **2.2.0 — Entities: names, display name, mailing address, EIN, entity variables (#315, #316, #317; #318).**
 - Migration `0057`: `entity.display_name_custom`, `entity.mailing_*` (empty = "same as", resolved at read time),
   `first_name`/`last_name` (from `primary_contact`, trimmed and split at the first space; `name_review` set for every

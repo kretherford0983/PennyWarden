@@ -5,6 +5,7 @@ import { Attachments, EntityPicker, ErrorBox, Field, GuardedForm, Loading, Modal
 import { positionTitle } from "./SignatureOptions";
 import { Link, useRouter } from "../router";
 import { useMe } from "../App";
+import { AddChoice } from "./FundraiserSeries";
 
 const FundraiserCharts = lazy(() => import("./FundraiserCharts")); // chart library loaded on demand
 
@@ -155,6 +156,7 @@ export function FundraiserDetail({ id }: { id: number }) {
   const [reporting, setReporting] = useState(false);   // 2.1.0 (#275)
   const [nextYear, setNextYear] = useState<any>(null);  // 2.1.0 (#277)
   const [linking, setLinking] = useState(false);
+  const [adding, setAdding] = useState(false);          // 2.2.0 (#302)
   const [cancelling, setCancelling] = useState(false); // v1.6.4 CR-037
   const [countSheet, setCountSheet] = useState(false); // v1.6.4 CR-038
   const load = () => api.get(`/api/fundraisers/${id}`).then(setF, setErr);
@@ -198,7 +200,8 @@ export function FundraiserDetail({ id }: { id: number }) {
           ? <>{f.series_link.series.name}{f.series_link.continues_from ? <> — continues <Link to={`/fundraisers/${f.series_link.continues_from.id}`}>{f.series_link.continues_from.name}</Link></> : null}</>
           : <span className="muted">Not linked to an earlier year</span>}
           {manage ? <button className="small fr-final-btn" onClick={() => setLinking(true)}>Change…</button> : null}
-          {manage ? <button className="small fr-final-btn" onClick={() => act(async () => { const r = await api.post(`/api/fundraisers/${id}/series`); navigate(`/fundraiser-series?enter=${r.series_id}`); })}>Enter prior years…</button> : null}</dd>
+          {manage ? <button className="small fr-final-btn" onClick={() => act(async () => { const r = await api.post(`/api/fundraisers/${id}/series`); navigate(`/fundraiser-series?enter=${r.series_id}`); })}>Enter prior years…</button> : null}
+          {manage && !f.series_link.series ? <button className="small fr-final-btn" onClick={() => setAdding(true)}>Add to a series…</button> : null}</dd>
         {f.description ? <><dt>Description</dt><dd className="pre-wrap">{f.description}</dd></> : null}
         {f.filter_text ? <><dt>Description filter</dt><dd><code>{f.filter_text}</code>{f.filter_regex ? " (regular expression)" : " (contains, any case)"}</dd></> : null}
       </dl>
@@ -339,6 +342,7 @@ export function FundraiserDetail({ id }: { id: number }) {
       {categoryEdit ? <CategoryDialog f={f} category={categoryEdit} onClose={() => setCategoryEdit(null)} onSaved={(x) => { setF(x); setCategoryEdit(null); }} /> : null}
       {reporting ? <ReportDialog f={f} onClose={() => setReporting(false)} /> : null}
       {nextYear ? <FundraiserForm prefill={nextYear} onClose={() => setNextYear(null)} onSaved={(x) => { setNextYear(null); navigate(`/fundraisers/${x.id}`); }} /> : null}
+      {adding ? <AddToSeriesDialog f={f} onClose={() => setAdding(false)} onSaved={() => { setAdding(false); load(); }} /> : null}
       {linking ? <SeriesLinkDialog f={f} onClose={() => setLinking(false)} onSaved={(x) => { setF(x); setLinking(false); }} /> : null}
       {ordering ? <OrderDialog f={f} onClose={() => setOrdering(false)} onSaved={(x) => { setF(x); setOrdering(false); }} /> : null}
       {editing ? <FundraiserForm current={f} onClose={() => setEditing(false)} onSaved={(x) => { setF(x); setEditing(false); }} /> : null}
@@ -535,6 +539,23 @@ function BucketDialog({ f, bucket, onClose, onSaved }: { f: any; bucket: any; on
           <span className="hint"> – deposits in this bucket are suggested as donations for receipts (the Register User confirms)</span></label> : null}
         <div className="actions"><button type="button" onClick={onClose}>Cancel</button><button className="primary" type="submit">Save</button></div>
       </GuardedForm>
+    </Modal>
+  );
+}
+
+// 2.2.0 (#302): put a fundraiser in no series into an existing one (an event held more than once a year)
+function AddToSeriesDialog({ f, onClose, onSaved }: { f: any; onClose: () => void; onSaved: () => void }) {
+  const [into, setInto] = useState("");
+  const [err, setErr] = useState<unknown>(null);
+  const save = async () => {
+    setErr(null);
+    try { await api.put(`/api/fundraisers/${f.id}/series`, { series_id: Number(into) }); onSaved(); } catch (x) { setErr(x); }
+  };
+  return (
+    <Modal title="Add to an existing series" onClose={onClose}>
+      <ErrorBox error={err} />
+      <AddChoice fid={f.id} into={into} setInto={setInto} />
+      <div className="actions"><button onClick={onClose}>Cancel</button><button className="primary" disabled={!into} onClick={save}>Add to series</button></div>
     </Modal>
   );
 }

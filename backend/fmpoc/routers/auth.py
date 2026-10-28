@@ -75,6 +75,7 @@ def me_payload(ctx: Ctx) -> dict:
             "dashboard_layout": layout_for(u), "dashboard_layout_customized": is_customized(u),
             "register_sort": u.register_sort or DEFAULT_REGISTER_SORT,   # 2.1.0 (#262)
             "name_order": u.name_order or "FIRST_LAST",                  # 2.2.0 (#316)
+            "fundraiser_series_sort": u.fundraiser_series_sort or "desc",  # 2.2.0 (#351)
             "modules": {"fundraisers": module_enabled(object_session(u), u.workspace_id),  # v1.6.0 CR-033
                         "checks": checks_enabled(object_session(u), u.workspace_id),  # 2.0.0 (#156)
                         "donations": donations_enabled(object_session(u), u.workspace_id)},  # 2.1.0 (#312)
@@ -258,6 +259,8 @@ def preferences(body: PreferencesIn, db: Session = Depends(get_db), ctx: Ctx = D
         ctx.user.register_sort = None if body.register_sort == DEFAULT_REGISTER_SORT else body.register_sort
     if body.name_order is not None:  # 2.2.0 (#316)
         ctx.user.name_order = None if body.name_order == "FIRST_LAST" else body.name_order
+    if body.fundraiser_series_sort is not None:  # 2.2.0 (#351): the default (newest first) is stored as none
+        ctx.user.fundraiser_series_sort = None if body.fundraiser_series_sort == "desc" else body.fundraiser_series_sort
     if body.reset_dashboard_layout:  # v1.5.0 CR-031
         ctx.user.dashboard_layout = None
     elif body.dashboard_layout is not None:
@@ -266,7 +269,8 @@ def preferences(body: PreferencesIn, db: Session = Depends(get_db), ctx: Ctx = D
     return {"theme": ctx.user.theme, "nav_collapsed": bool(ctx.user.nav_collapsed),
             "dashboard_charts": charts_for(ctx.user), "dashboard_layout": layout_for(ctx.user),
             "dashboard_layout_customized": is_customized(ctx.user),
-            "register_sort": ctx.user.register_sort or DEFAULT_REGISTER_SORT}
+            "register_sort": ctx.user.register_sort or DEFAULT_REGISTER_SORT,
+            "fundraiser_series_sort": ctx.user.fundraiser_series_sort or "desc"}
 
 
 # ------------------------------------------------------------------ 1.8.0 (#113): forgotten password
