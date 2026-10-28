@@ -239,7 +239,7 @@ export function ReceiptEnvelopePanel({ donationId, onChanged }: { donationId: nu
       <ErrorBox error={err} />
       <div className="row form-row">
         <Field label="Envelope">
-          <select value={envId} onChange={(e) => { setEnvId(e.target.value); const en = ch.envelopes.find((x: any) => String(x.id) === e.target.value); setUseReturn(!!en?.return_address); }}>
+          <select aria-label="Envelope" value={envId} onChange={(e) => { setEnvId(e.target.value); const en = ch.envelopes.find((x: any) => String(x.id) === e.target.value); setUseReturn(!!en?.return_address); }}>
             {ch.envelopes.map((d: any) => <option key={d.id} value={d.id}>{d.name}{d.is_default ? " (default)" : ""}</option>)}
           </select>
         </Field>
