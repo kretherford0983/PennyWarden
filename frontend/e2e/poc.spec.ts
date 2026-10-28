@@ -3786,7 +3786,7 @@ test("#325: envelopes are one library tagged by feature; Donations Setup adds on
   await page.getByRole("button", { name: "Back to Donations Setup" }).click();
   // the receipt's window options are there; a window receipt hides the envelope step (left off here)
   await expect(page.getByLabel("Address for a window envelope")).toHaveValue("NONE");
-  await page.getByLabel("Fold marks").selectOption("FRONT");
+  await page.getByLabel("Fold marks", { exact: true }).selectOption("FRONT");
   await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.getByRole("status").filter({ hasText: "Saved." })).toBeVisible();
   await logout(page);
