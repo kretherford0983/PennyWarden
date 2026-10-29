@@ -855,7 +855,10 @@ test("2.1.0 (#262, #260, #259): register sort, electronic payment, reorder attac
   await cleared.getByRole("button").click();
   await expect(cleared).toHaveAttribute("aria-sort", "ascending");
   await expect(page.getByRole("columnheader", { name: "Cleared balance" })).toBeVisible();
+  // the sort is saved in the background: wait for that save before reloading (CI flake, 2.3.0 build 1)
+  const saved = page.waitForResponse((r) => r.url().includes("/api/me/preferences") && r.request().method() === "PUT");
   await cleared.getByRole("button").click();
+  await saved;
   await expect(cleared).toHaveAttribute("aria-sort", "descending");
   await page.reload();
   await expect(page.getByRole("columnheader", { name: "Cleared", exact: true })).toHaveAttribute("aria-sort", "descending");
