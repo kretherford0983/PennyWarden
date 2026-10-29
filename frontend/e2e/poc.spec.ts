@@ -3930,6 +3930,11 @@ test("#325: a receipt before the money and an item on the Donations page, then C
   await expect(dlg.getByText("Estimated value for our records (not printed)")).toBeVisible();
   await dlg.getByLabel("Line 2 description").fill("Television, 55 inch");
   await expect(dlg.getByText(/Value not entered/)).toBeVisible();
+  // Details offers the {VARIABLE} list after "{", as on the register's receipt form
+  const det = dlg.getByLabel("Details for the receipt (optional)");
+  await det.fill("{A");
+  await expect(dlg.getByRole("option", { name: /\{AMOUNT\}/ })).toBeVisible();
+  await det.fill("");
   await dlg.getByRole("button", { name: "Save donation" }).click();
   const ed = page.getByRole("dialog", { name: /Donation #\d+ – Sample Donor Alpha/ });
   await expect(ed.getByText("Awaiting deposit")).toBeVisible();

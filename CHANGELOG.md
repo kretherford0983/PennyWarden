@@ -47,8 +47,9 @@ PennyWarden 2.2.0 (in progress).
 
 ### Try the demo
 - **A ready-made demo (#243).** Each release now includes `pennywarden-demo-<version>.fmbak`: a made-up band boosters
-  club with this year's approved budget, a register with receipts, a fundraiser, reminders, printed checks and last
-  year closed. Restore it on the first screen of a new install (passphrase `pennywarden demo`) and sign in as
+  club with this year's approved budget, a register with receipts, a fundraiser, reminders, printed checks with a
+  ready-made payment cover letter, last year closed, and two years before PennyWarden entered from its "old
+  spreadsheets" (one budget renamed, one renumbered, one that stopped). Restore it on the first screen of a new install (passphrase `pennywarden demo`) and sign in as
   `demo-admin`, `demo-budget`, `demo-register` or `demo-auditor` (password `Demo-PennyWarden-2026`).
   - A **DEMO** banner on every page. Nothing is kept: the demo is put back on every start and by **Reset demo data**
     (on the banner, and on the sign-in page for anyone locked out).

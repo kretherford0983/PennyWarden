@@ -134,6 +134,9 @@ def test_cancel_items_value_flag_and_list(env, don):
     assert d["value_missing"] == 1
     lst = _ok(env.bu.get("/api/donations?show=value_missing"))
     assert [x["id"] for x in lst["items"]] == [d["id"]] and lst["counts"]["value_missing"] == 1
+    # the page's editor gets the receipt variables for Details' autocomplete (as the register's form), not {DETAILS}
+    names = [v["name"] for v in lst["variables"]]
+    assert "AMOUNT" in names and "DETAILS" not in names
     # "No value will be provided" needs a reason, and silences the flag
     v = _ok(env.ru.get(f"/api/donations/{d['id']}"))
     ln = v["lines"][0]
