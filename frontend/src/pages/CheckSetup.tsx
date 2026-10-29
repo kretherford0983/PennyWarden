@@ -558,6 +558,9 @@ function StyleEditor({ setup, style, onClose, onSaved }: { setup: any; style: an
                 {setup.signers.filter((x: any) => x.active && x.has_image).map((x: any) => <option key={x.id} value={x.id}>{x.name}</option>)}
               </select>
             </Field>
+          </div>
+          {/* 2.3.0 (#394): the buttons on a line of their own - in the narrower settings column the row wraps */}
+          <div className="actions left">
             <button disabled={busy} onClick={() => pdfReq("calibration")}>Calibration page</button>
             <button disabled={busy} onClick={() => pdfReq("test-print")}>Test print</button>
             {pdf && !viewing ? <button className="link" onClick={() => setViewing("Last test page")}>Show the last page again</button> : null}
