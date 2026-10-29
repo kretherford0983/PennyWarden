@@ -4,13 +4,45 @@
  * - DonationReceiptDialog (from a deposit in the register): Register Users mark lines as donations and print one receipt
  *   per donor; Budget Managers, Budget Users and Auditors see the donation lines and receipts. */
 import { useEffect, useRef, useState } from "react";
-import { api } from "../api";
+import { api, ApiError } from "../api";
 import { ErrorBox, Field, Loading, Modal, useConfirmable } from "../components";
 import { useMe } from "../App";
 import { Link } from "../router";
 import { LivePreview, PatternInput, PdfViewer, Section, usePdf } from "./checkShared";
 import { DocFocus, DocumentEditor } from "./CheckDocuments";
 import { EnvelopeLibrary, ReceiptEnvelopePanel } from "./Envelopes";
+
+/** 2.3.0 (#393): details that include the EIN while it is turned off for donations - confirmed, with a reason. */
+export const usesEin = (text: string) => /\{ORG[._]EIN\}/.test(text || "");
+
+export function useEinOverride() {
+  const [ask, setAsk] = useState<null | { message: string; resolve: (reason: string | null) => void }>(null);
+  const [reason, setReason] = useState("");
+  const [ack, setAck] = useState(false);
+  /** Runs fn(override); when the server asks for the EIN override, asks the user and runs it again with the reason. */
+  async function run<T>(fn: (o: { confirm_ein_override: boolean; ein_override_reason: string | null }) => Promise<T>): Promise<T | undefined> {
+    try {
+      return await fn({ confirm_ein_override: false, ein_override_reason: null });
+    } catch (e) {
+      if (!(e instanceof ApiError && e.code === "EIN_OVERRIDE_REQUIRED")) throw e;
+      setReason(""); setAck(false);
+      const why = await new Promise<string | null>((resolve) => setAsk({ message: e.message, resolve }));
+      setAsk(null);
+      if (!why) return undefined;
+      return fn({ confirm_ein_override: true, ein_override_reason: why });
+    }
+  }
+  const dialog = ask ? (
+    <Modal title="The EIN is turned off for donations" onClose={() => ask.resolve(null)}>
+      <div className="alert warn" role="alert">{ask.message}</div>
+      <Field label="Reason (required)"><input maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Form 8283 for a non-cash gift over $500" /></Field>
+      <label className="check"><input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} /> Include the EIN on this donor's receipt</label>
+      <div className="actions"><button onClick={() => ask.resolve(null)}>Cancel</button>
+        <button className="primary" disabled={!ack || !reason.trim()} onClick={() => ask.resolve(reason.trim())}>Confirm and save</button></div>
+    </Modal>
+  ) : null;
+  return { run, dialog };
+}
 
 const FONTS: [string, string][] = [["CARLITO", "Carlito (Calibri-compatible)"], ["SANS", "Liberation Sans (Arial-compatible)"], ["SERIF", "Liberation Serif (Times-compatible)"]];
 const KIND_LABEL: Record<string, string> = { ORIGINAL: "Original", DUPLICATE: "Duplicate", CORRECTED: "Corrected" };
@@ -75,7 +107,12 @@ export default function DonationSetup() {
               <dt>Address</dt><dd>{s.organization.address.length ? s.organization.address.map((l: string, i: number) => <div key={i}>{l}</div>) : <span className="muted">Not entered</span>}</dd>
               <dt>EIN</dt><dd>{s.organization.ein || <span className="muted">Not entered</span>}</dd>
             </dl>
-            <p className="hint">These come from <Link to="/about/general">System/About → Organization</Link>, where you change them. Every receipt prints the organization's name and EIN, the donor, the amount,
+            {/* 2.3.0 (#393) */}
+            <label className="check"><input type="checkbox" checked={cfg.include_ein !== false} onChange={(e) => set("include_ein", e.target.checked)} /> Include EIN on receipts</label>
+            <p className="hint">On: receipts and year-end statements show the EIN. Off: only the organization's name identifies it, and <code>{"{ORG.EIN}"}</code> prints blank in this
+              letter text. A Register User can still include the EIN on one receipt through its <code>{"{DETAILS}"}</code>, with a reason (for example Form 8283).</p>
+            {(s.warnings || []).map((w: any) => <div key={w.code} className="alert warn" role="alert" data-testid={`ein-warning-${w.code}`}>{w.message}</div>)}
+            <p className="hint">These come from <Link to="/about/general">System/About → Organization</Link>, where you change them. Every receipt prints the organization's name{cfg.include_ein !== false ? " and EIN" : ""}, the donor, the amount,
               the date received, the receipt number and the goods or services statement – these can't be removed.</p>
           </Section>
           <Section id="tpl" scope="pw-donations" title="Receipt letter">
@@ -200,6 +237,7 @@ export function DonationReceiptDialog({ txn, onClose, onChanged }: { txn: any; o
   const [viewing, setViewing] = useState<string | null>(null);
   const [envFor, setEnvFor] = useState<number | null>(null);   // 2.2.0 (#325): the donor whose envelope can be printed now
   const { run, dialog } = useConfirmable();
+  const ein = useEinOverride();   // 2.3.0 (#393)
   const take = (x: any) => {
     setD(x);
     setLines(x.lines.map((l: any) => ({ allocation_id: l.allocation_id, donor: l.donor, donor_entity_id: l.donor_entity_id, donor_is_organization: !!l.donor_is_organization, description: l.description, amount: l.amount, amount_cents: l.amount_cents,
@@ -263,7 +301,11 @@ export function DonationReceiptDialog({ txn, onClose, onChanged }: { txn: any; o
     if (!p) return false;
     const apply = latest(take);
     try {
-      apply(await api.put(`/api/donations/transactions/${txn.id}/lines`, p)); setSaved(true); onChanged(); return true;
+      // 2.3.0 (#393): details with the EIN while it's off ask for a confirmation and a reason, then save again
+      const r = await ein.run((o) => api.put(`/api/donations/transactions/${txn.id}/lines`,
+        { ...p, donors: p.donors.map((x: any) => (usesEin(x.details) && o.confirm_ein_override ? { ...x, ...o } : x)) }));
+      if (r === undefined) return false;
+      apply(r); setSaved(true); onChanged(); return true;
     } catch (x) { setErr(x); return false; }
   };
   /** 2.1.0 (Kyle, 2026-10-23): the receipt as it would print, from what's on screen, watermarked; nothing is saved */
@@ -295,7 +337,7 @@ export function DonationReceiptDialog({ txn, onClose, onChanged }: { txn: any; o
             their donation lines. The printed receipt is attached to the deposit.</p>
           {d.status !== "ACTIVE" ? <div className="alert warn" role="alert">This deposit is {d.status === "VOID" ? "void" : "deleted"}: its receipts are void and no receipt can be printed.</div>
             : d.closed ? <div className="alert info">This deposit belongs to a Closed Fiscal Year: its donations and receipts can be seen but not changed or printed.</div> : null}
-          {d.setup_missing.length && canPrint && d.printable ? <div className="alert warn" data-testid="donation-setup-missing">An Administrator must enter {d.setup_missing.join(" and ")} in Donations Setup before receipts can be printed.</div> : null}
+          {d.setup_missing.length && canPrint && d.printable ? <div className="alert warn" data-testid="donation-setup-missing">An Administrator must enter {d.setup_missing.join(" and ")} in System/About → Organization{d.setup_missing.some((m: string) => m.includes("EIN")) ? " (or turn off Include EIN on receipts in Donations Setup)" : ""} before receipts can be printed.</div> : null}
           {d.receipts.length ? (
             <details className="donation-printed">
               <summary>Printed receipts ({d.receipts.length})</summary>
@@ -402,6 +444,7 @@ export function DonationReceiptDialog({ txn, onClose, onChanged }: { txn: any; o
         </PdfViewer>
       ) : null}
       {dialog}
+      {ein.dialog}
     </Modal>
   );
 }

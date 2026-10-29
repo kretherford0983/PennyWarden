@@ -42,6 +42,17 @@ PennyWarden 2.3.0 (in progress).
   table, slide or chart. In the charts an estimated year's bar is also lighter; the \* and the footnote carry the
   meaning, never the color alone.
 
+### Donations
+- **Include EIN on receipts (#393).** Donations Setup → Organization has an **Include EIN on receipts** option, on by
+  default (also for existing setups, so nothing changes). Off: receipts and year-end statements leave out the EIN row,
+  `{ORG.EIN}` prints blank in the letter text, and Donations Setup warns if the text still uses it. On but no EIN
+  entered: Donations Setup, the receipt dialog and Donation Statements say so, and printing stays blocked until the
+  EIN is entered in System/About or the option is turned off. With the option off a Register User can still put
+  `{ORG.EIN}` in one donor's *Details for the receipt* (for example for a non-cash gift over $500 and Form 8283): saving
+  asks for a confirmation and a reason, printing asks once more, and both are in the audit log with the reason.
+- The receipt dialog's "setup missing" message now points to System/About → Organization, where the EIN and address
+  are entered.
+
 ### Bank accounts
 - **Correct or retire a balance history entry (#391).** In a non-register account's *History*, each entry's ⋯ menu
   has **Correct…** (change the amount and/or the *as of* date) and **Retire…** (take a wrong entry out). Both need a
@@ -71,6 +82,8 @@ PennyWarden 2.3.0 (in progress).
 - Migration `0060` adds `fundraiser.goal_amount_cents` (empty = no goal).
 - Migration `0061` adds correction and retirement columns to `bank_account_balance` (empty: nothing changes) and the
   table `fiscal_year_balance_change` (empty).
+- Migration `0063` adds `donation.ein_override_reason` (empty). Include EIN on receipts lives in the donation setup
+  settings and defaults to on, so no data changes.
 - Migration `0062` adds `estimated` to `fundraiser_series_result` and `budget_history_entry` (off for every existing
   entry).
 
