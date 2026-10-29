@@ -4,6 +4,15 @@
 
 ## Reports
 
+### Finding a report
+**Reports** now opens on a catalog of every report and presentation you can run, grouped by what you need it for. Type
+in **Find a report** to filter, or pick one from **Recently run** to open it again with the same choices. Each report
+has its own page — bookmark it if you use it often — and the list on the left takes you to another report without
+going back. Your last choices are filled in for you, on any computer you sign in from.
+
+The Fiscal Year fundraising report, the Planning Sheet and the cash count sheet are in Reports now too; the buttons on
+the Fundraisers and Fiscal Years pages still work and take you straight there.
+
 ### Quarterly and Annual financial report
 **Reports → Quarterly / Annual** makes the report for your board: choose the Fiscal Year and a quarter (Q1–Q4) or
 Annual, add a few lines of commentary if you like, then **Open report PDF** or **Download presentation (.pptx)**.

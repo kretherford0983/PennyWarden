@@ -128,6 +128,32 @@ could not otherwise be corrected. Scope and safeguards:
   with a link; the variable picker completes dotted names.
 - Tests: `backend/tests/test_v210_organization.py` (6, including the data migration) and the E2E #126 and #312 steps.
 
+**2.3.0 build 11 — Reports screen redesign (#375; layout chosen by Kyle 2026-10-29 from the mockups).**
+- Layout: the catalog of mockup (a) as the home (`/reports`), and each report on its own page (`/reports/<id>`) with
+  the compact grouped side list of (c) plus the search box of (b). The candidates stay on the design canvas.
+- One registry (`frontend/src/pages/reports/registry.ts`: id, name, short name, purpose, audience, group, outputs,
+  visibility) drives the catalog, the side list, search, deep links and Recently run; the components are mapped in
+  `Reports.tsx` (`BODIES`). Groups are by purpose (#376 will make grouping configurable). The registry ids are also
+  the server's (`services/report_prefs.REPORT_IDS`).
+- Navigation enforcement (04-security §3 per the issue): a report the user can't run (permission or module) is not
+  listed, and `/reports/<id>` for it shows *not authorized*; the report endpoints keep their own permission checks.
+- Every report page has the same header (name, purpose, audience, group, output badges) and one action row
+  (`ReportActions`: Open · Download PDF · Download PPTX · Download CSV). Reports with a run/review step (Entity
+  activity, Financial Flow, Budget Review) keep it; their result's own links are unchanged.
+- Moved into Reports: the Fiscal Year fundraising report (FY + the fundraisers to include), the Planning Sheet and the
+  cash count sheet (FY + fundraiser). The old buttons are shortcuts: they navigate to the report with the options in
+  the address (`?fiscal_year_id=…&ids=…`, `?fundraiser_id=…`), which come before remembered options.
+- Remembered per user, server-side (`app_user.report_prefs`, `0066`; `GET /api/me/report-preferences`,
+  `POST /api/me/report-runs`): the last 5 runs (report, options, a short label, time; a repeated run moves up) and
+  each report's last options. Options only - never output; free text (commentary, notes) and per-run choices that
+  would surprise later (Budget Review's optional columns, Financial Flow's balance options, as-of dates) are not
+  remembered. A run is recorded when a report is opened/downloaded or run on screen. *Recently run* opens the report
+  page with its options filled in (one click there; the file itself then needs **Open**, since a browser won't open
+  a new tab without a click on the page).
+- Restore re-entry reports stay at the bottom of the catalog, shown only when there are any.
+- Tests: `backend/tests/test_v230_report_prefs.py`; E2E "#375" (catalog per role, search, deep link and Back, side
+  list, remembered options, Recently run, a refused address); report E2E steps now open reports through the catalog.
+
 **2.3.0 build 10 — Dual branding: light and dark themes per output type (#386, decided with Kyle 2026-10-28/29).**
 - `branding_settings` (`0065`): `dark_preset` (a ready-made id, `custom`, or empty = the dark version of the light
   preset; PennyWarden's when the light palette is custom and no dark colors were saved), `dark_colors_json`,

@@ -6,6 +6,19 @@ Versions are `Breaking.Major.Minor` from 1.6.0 (docs/branching.md).
 PennyWarden 2.3.0 (in progress).
 
 ### Reports
+- **A new Reports screen (#375).** Reports opens on a **catalog**: every report and presentation you can run, grouped
+  by purpose — *Share with the board and members*, *Audit and year-end close*, *Analyze activity*, *Plan budgets*,
+  *Fundraisers* — each with what it is for, who it is for and what it produces (PDF, PPTX, CSV). A search box filters
+  by name and description, and **Recently run** shows your last 5 runs: one click opens the report with those options.
+- **Each report has its own page and address** (for example `/reports/quarterly`), which can be bookmarked; Back
+  works. Every page has the same header and one action row (**Open** · Download PDF · Download PPTX · Download CSV).
+  A compact list with its own search box on the left switches reports without going back to the catalog.
+- **Reports that lived elsewhere are here too:** the Fiscal Year fundraising report and deck, the Planning Sheet and
+  the cash count sheet. The buttons on Fundraisers, a fundraiser's page and Fiscal Years stay, as shortcuts that open
+  the report here with the year, fundraisers or fundraiser filled in.
+- Each report fills in **your last options** (Fiscal Year, account, period…), remembered on the server so they follow
+  you to another computer. Free text such as commentary or notes is not remembered.
+- Reports you can't run (your role, or a module that is off) are not listed, and their address is refused.
 - **Quarterly and Annual financial report (#373).** Reports → **Quarterly / Annual**: choose the Fiscal Year and Q1–Q4
   or Annual, add optional commentary, and open the PDF report or download a presentation (.pptx) for the board. Both
   show highlights (total cash, net cash change, budgets over budget, fundraiser net), every account's start and end
@@ -143,6 +156,7 @@ PennyWarden 2.3.0 (in progress).
   settings and defaults to on, so no data changes.
 - Migration `0062` adds `estimated` to `fundraiser_series_result` and `budget_history_entry` (off for every existing
   entry).
+- Migration `0066` adds `app_user.report_prefs` (empty): the Reports screen's Recently run and last options.
 - Migration `0065` adds the dark theme, the theme per output type and the dark-background logos to
   `branding_settings`. Every existing organization stays light for every output type (a branding row is added for an
   organization that had none, so nothing looks different).

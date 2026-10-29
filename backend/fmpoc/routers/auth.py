@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import re
 import secrets
+from typing import Any
 
 from fastapi import APIRouter, Depends, Request, Response
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session, object_session
 
 from .. import audit
@@ -15,6 +17,7 @@ from ..schemas import (ChangePasswordIn, ForgotCompleteIn, ForgotStartIn, LoginI
 from ..services import auth as svc
 from ..services import mfa
 from ..services import recovery
+from ..services import report_prefs
 from ..services import users as users_svc
 from ..services.charts import charts_for
 from ..services.dashboard_layout import encode as encode_layout
@@ -271,6 +274,27 @@ def preferences(body: PreferencesIn, db: Session = Depends(get_db), ctx: Ctx = D
             "dashboard_layout_customized": is_customized(ctx.user),
             "register_sort": ctx.user.register_sort or DEFAULT_REGISTER_SORT,
             "fundraiser_series_sort": ctx.user.fundraiser_series_sort or "desc"}
+
+
+# ------------------------------------------------------------------ 2.3.0 (#375): the Reports screen's memory
+class ReportRunIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    report: str = Field(max_length=40)
+    params: dict[str, Any] | None = Field(default=None, max_length=report_prefs.MAX_PARAMS)
+    label: str | None = Field(default=None, max_length=report_prefs.MAX_LABEL + 40)
+
+
+@router.get("/me/report-preferences")
+def report_preferences(ctx: Ctx = Depends(auth_ctx)):
+    """Recently run and each report's last options for the signed-in user (parameters only)."""
+    return report_prefs.get(ctx.user)
+
+
+@router.post("/me/report-runs")
+def report_run(body: ReportRunIn, db: Session = Depends(get_db), ctx: Ctx = Depends(auth_ctx)):
+    out = report_prefs.record_run(db, ctx.user, body.report, body.params, body.label)
+    db.commit()
+    return out
 
 
 # ------------------------------------------------------------------ 1.8.0 (#113): forgotten password

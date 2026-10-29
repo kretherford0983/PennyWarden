@@ -111,6 +111,8 @@ class User(Base):
     name_order: Mapped[str | None] = mapped_column(String(12), nullable=True)
     # 2.2.0 (#351): Fundraiser series years - None (newest first) or "asc"
     fundraiser_series_sort: Mapped[str | None] = mapped_column(String(4), nullable=True)
+    # 2.3.0 (#375): the Reports screen's recently run (last 5) and each report's last options - JSON, parameters only
+    report_prefs: Mapped[str | None] = mapped_column(Text, nullable=True)
     password_changed_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
     created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("app_user.id"), nullable=True)
