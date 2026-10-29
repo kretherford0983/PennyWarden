@@ -10,6 +10,9 @@ Never run it against an installation with real data - it refuses when the wizard
 Sign-ins afterwards (local mode; all with the password below) - 2.2.0 (#243), one per main role, as published with the
 demo: demo-admin (Administrator), demo-budget (Budget Manager), demo-register (Register User), demo-auditor (Auditor).
 The current Fiscal Year is the year it is built in; the year before is closed (with its approval and audit signoff).
+2.2.0: the organization profile and vendors have (made-up) addresses, a payment cover letter is set up for printed
+checks, and two years before PennyWarden are entered from the "old spreadsheets" (#381), including a budget that
+stopped and one that was renamed and renumbered.
 scripts/build_demo.py turns the result into the published demo backup.
 """
 from __future__ import annotations
@@ -23,6 +26,13 @@ from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
 PASSWORD = "Demo-PennyWarden-2026"
+# 2.2.0: made-up street addresses for the payees (every one ends in Riverside, OH 45999)
+ADDRESSES = {"Harmony Music Supply": ("410 Melody Lane", "Riverside"),
+             "Valley Coach Lines": ("88 Depot Road", "Riverside"),
+             "Stitchworks Uniforms": ("1200 Canal Street", "Riverside"),
+             "Wholesale Club": ("5 Commerce Park Drive", "Riverside"),
+             "State Band Association": ("300 Capitol Square", "Riverside"),
+             "Riverside Print Shop": ("27 Main Street", "Riverside")}
 ORG = "Riverside Band Boosters"
 
 
@@ -131,6 +141,10 @@ def main(base: str) -> dict:
                                   "display_name": f"{first} {last}", "first_name": first,
                                   "last_name": last, "security_domain": domain, "roles": roles})
     admin.put("/api/system/modules", {"fundraisers": True, "checks": True})   # 2.0.0: the Payments module
+    # 2.1.0 (#314): the organization profile (letterhead, receipts) - made up
+    admin.put("/api/system/organization", {"name": ORG, "address_line1": "PO Box 1250", "city": "Riverside",
+                                           "state_region": "OH", "postal_code": "45999", "country": "United States",
+                                           "phone": "(555) 010-2468", "email": "treasurer@example.org"})
     bm = Api(base).login("demo-budget")
     ru = Api(base).login("demo-register")
 
@@ -175,8 +189,12 @@ def main(base: str) -> dict:
 
     # ---- people, vendors, bank accounts
     def org(name, bank=False):
-        return bm.post("/api/entities", {"entity_type": "ORGANIZATION", "organization_name": name,
-                                         "is_financial_institution": bank, "confirmations": ["DUPLICATE_ENTITY"]})
+        body = {"entity_type": "ORGANIZATION", "organization_name": name, "is_financial_institution": bank,
+                "confirmations": ["DUPLICATE_ENTITY"]}
+        if name in ADDRESSES:          # 2.2.0: payees with an address, so the cover letter has one to print
+            street, city = ADDRESSES[name]
+            body.update(address_line1=street, city=city, state_region="OH", postal_code="45999")
+        return bm.post("/api/entities", body)
 
     def person(name, position=None):
         return bm.post("/api/entities", {"entity_type": "INDIVIDUAL", "primary_contact": name, "position": position,
@@ -206,6 +224,18 @@ def main(base: str) -> dict:
     cfg.update(memo_default="{BUDGET_CODE}, INVOICE {INVOICE}", default_signer_id=signer["id"])
     admin.put(f"/api/checks/styles/{style['id']}", {"name": "Voucher checks", "config": cfg})
     ru.put(f"/api/checks/accounts/{acct['chk']['id']}", {"check_style_id": style["id"]})
+    # 2.2.0: a payment cover letter (the default, offered when a check is printed); Administrators can edit it or add more
+    admin.post("/api/checks/documents", {"kind": "LETTER", "name": "Payment cover letter", "config": {
+        "letterhead": ["{ORG}", "{ORG.ADDRESS1}", "{ORG.CITY}, {ORG.STATE} {ORG.ZIP}", "{ORG.PHONE} · {ORG.EMAIL}"],
+        "subject": "Payment for invoices",
+        "salutation": "Dear {PAYEE.NAME},",
+        "opening": "Enclosed is our check for the following invoices:",
+        "columns": [{"key": "INVOICE", "heading": "Invoice #"}, {"key": "INVOICE_DATE", "heading": "Invoice Date"},
+                    {"key": "DESCRIPTION", "heading": "Description"}, {"key": "AMOUNT", "heading": "Amount"}],
+        "total_label": "Total enclosed:",
+        "closing": "Please apply this payment to the invoices listed above. If you have any questions, contact our "
+                   "treasurer at {ORG.PHONE} or {ORG.EMAIL}.\n\nThank you for supporting the Riverside band program.",
+        "signoff": "Sincerely,", "fallback_name": "Dana Whitfield", "fallback_role": "Treasurer"}})
 
     for f, label in ((last, year - 1), (fy, year)):
         bm.upload("fiscal_year", f["id"], "board-approval.pdf",
@@ -312,6 +342,29 @@ def main(base: str) -> dict:
     bm.post("/api/reminders", {"scope": "ORGANIZATION", "title": "Renew the liability insurance",
                                "due_date": (today + dt.timedelta(days=75)).isoformat(), "notify_days_before": 30,
                                "repeat_every": 1, "repeat_unit": "YEAR"})
+    # ---- 2.2.0 (#381): two years before PennyWarden, from the "old spreadsheets"
+    y3, y2 = f"FY{year - 3}", f"FY{year - 2}"
+    rows = [("4000", "", "4000", "Membership dues", y3, "5200.00", "5310.00"),
+            ("4000", "", "4000", "Membership dues", y2, "5500.00", "5480.00"),
+            ("4100", "", "4100", "Donations", y3, "6000.00", "6425.00"),                 # renamed the next year
+            ("4100", "", "4100", "Donations and sponsors", y2, "7000.00", "7810.00"),
+            ("4200-4210", "", "410", "Spring Concert", y3, "6500.00", "6930.00"),        # renumbered in PennyWarden
+            ("4200-4210", "", "410", "Spring Concert & Silent Auction", y2, "7500.00", "8115.00"),
+            ("", "Income", "420", "Car Wash", y3, "1200.00", "940.00"),                  # stopped: nothing continues it
+            ("", "Income", "420", "Car Wash", y2, "1000.00", "655.00"),
+            ("4300", "", "4300", "Concessions", y3, "6200.00", "6045.00"),
+            ("4300", "", "4300", "Concessions", y2, "6600.00", "6890.00"),
+            ("5000", "", "5000", "Instruments and repairs", y3, "8000.00", "8740.00"),
+            ("5000", "", "5000", "Instruments and repairs", y2, "8500.00", "8215.00"),
+            ("5200", "", "5200", "Travel and competitions", y3, "9000.00", "9480.00"),
+            ("5200", "", "5200", "Travel and competitions", y2, "9800.00", "9655.00"),
+            ("5300", "", "5300", "Concession supplies", y3, "3000.00", "2870.00"),
+            ("5300", "", "5300", "Concession supplies", y2, "3200.00", "3310.00"),
+            ("5900", "", "5900", "Administration", y3, "900.00", "1015.00"),
+            ("5900", "", "5900", "Administration", y2, "1000.00", "955.00")]
+    csv_text = "budget code,type,former code,former name,year,budgeted,actual,note\n" + "".join(
+        f"{c},{t},{fc},{fn},{y},{b},{a},from the {y} treasurer's spreadsheet\n" for c, t, fc, fn, y, b, a in rows)
+    bm.post("/api/budgets/history-entries/import", {"fiscal_year_id": fy["id"], "csv": csv_text})
     # ---- last year is closed (its audit signoff attached)
     bm.upload("fiscal_year", last["id"], "audit-signoff.pdf",
               pdf("Audit signoff", [f"{ORG} - Fiscal Year {year - 1}", "Reviewed by the audit committee (demo document)."]),
