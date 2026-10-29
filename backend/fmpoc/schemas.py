@@ -313,6 +313,19 @@ class ManualBalanceIn(In):
     current_balance: Amount
     reason: OptStr(500) = None
     as_of_date: OptDate = None  # 1.7.3 (#88): defaults to today
+    confirmations: list[str] = Field(default_factory=list, max_length=5)   # 2.3.0 (#391): CLOSED_FISCAL_YEAR
+
+
+class BalanceCorrectIn(In):                 # 2.3.0 (#391)
+    balance: Amount | None = None
+    as_of_date: OptDate = None
+    reason: Str(500)
+    confirmations: list[str] = Field(default_factory=list, max_length=5)
+
+
+class BalanceRetireIn(In):                  # 2.3.0 (#391)
+    reason: Str(500)
+    confirmations: list[str] = Field(default_factory=list, max_length=5)
 
 
 class MoveAccountIn(In):

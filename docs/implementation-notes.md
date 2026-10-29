@@ -128,6 +128,26 @@ could not otherwise be corrected. Scope and safeguards:
   with a link; the variable picker completes dotted names.
 - Tests: `backend/tests/test_v210_organization.py` (6, including the data migration) and the E2E #126 and #312 steps.
 
+**2.3.0 build 3 — Balance history: Correct and Retire, backfill, closed years (#391, decided with Kyle 2026-10-29).**
+- Clarifies the 1.7.3 append-only rule: entries are never deleted; they are corrected or retired with a reason.
+  `bank_account_balance` gains `corrected_at/by`, `correct_reason`, `previous_balance_cents/as_of_date` (the values
+  the last correction replaced; earlier corrections are in the audit log) and `retired_at/by`, `retire_reason`
+  (`0061`). Every reader of the history skips retired entries (`manual_as_of`, `balance_on`'s first entry,
+  `_recompute` for the current balance). `GET …/balance-history` keeps its list shape: counted entries newest first
+  (change computed over counted entries only), then retired ones (`retired` set); `entered` = dated before the first
+  Fiscal Year; `corrected` = the last correction.
+- Date rules (`_check_date`, used by add, Correct — on the old and the new date — and Retire): never in the future;
+  before the first Fiscal Year allowed even before the opening balance date (that rule stays inside PennyWarden
+  years); a Closed Fiscal Year refuses Budget Managers (`FISCAL_YEAR_CLOSED`) and lets a Budget Admin
+  (`bank_account.closed_year`) through with a reason and the `CLOSED_FISCAL_YEAR` confirmation naming the year.
+  Such a change writes `fiscal_year_balance_change` (per closed year touched; ADD/CORRECT/RETIRE, before/after) and
+  the audit event `BANK_ACCOUNT_BALANCE_CHANGED_AFTER_CLOSE` (Security, `closed_fiscal_years`) instead of the usual
+  event. `GET /api/fiscal-years/{id}` returns `balance_changes_after_close`; the audit/close report lists them under
+  the Fiscal Year Review's closure readiness (*Balance changed after close*).
+- Retiring the account's only counted entry is refused (`LAST_BALANCE_ENTRY`): the current balance would have nothing
+  to come from (correct it instead). Corrections/retirements need an active account, as balance updates do.
+- Tests: `backend/tests/test_v230_balance_correct_retire.py` (5); E2E "#88" extended (Correct, Retire).
+
 **2.3.0 build 2 — Update channel in the Settings editor (#379, decided with Kyle 2026-10-28).**
 - `admin_settings`: `update_channel` joins `EDITABLE` (choices `auto`/`stable`/`test`/`off`, plain-language
   `choice_labels`); `LOCAL_EDITABLE = ("update_channel",)` — on a local install it is the only editable key (any

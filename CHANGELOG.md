@@ -22,6 +22,20 @@ PennyWarden 2.3.0 (in progress).
   anything — and changing it is recorded in the audit log like other fundraiser edits. *Create next year's* does not
   copy the goal.
 
+### Bank accounts
+- **Correct or retire a balance history entry (#391).** In a non-register account's *History*, each entry's ⋯ menu
+  has **Correct…** (change the amount and/or the *as of* date) and **Retire…** (take a wrong entry out). Both need a
+  reason. Nothing is deleted: a corrected entry is marked *Corrected* (its earlier value in the tooltip), a retired
+  one no longer counts and is listed under *Retired entries* with the reason. The account's current balance is
+  recalculated straight away, and both are in the audit log with before and after values. A wrong *as of* date — which
+  used to stay the current balance for good — can now be fixed.
+- **Fill in balances from before PennyWarden (#391).** Balances dated before the first Fiscal Year in PennyWarden can
+  be added, corrected and retired — even before the account's opening balance date — and are marked *Entered*.
+- **A Closed Fiscal Year (#391).** Budget Managers still can't change balances in a Closed Fiscal Year. A **Budget
+  Admin** can add, correct or retire one there, with a reason and after confirming the change to the closed year. It
+  is recorded as its own audit event, and the Fiscal Year page and its End of Year Audit / Close reports show
+  **Balance changed after close** (when, who, the account, before and after, and the reason).
+
 ### System/About
 - **Choose which releases the update check looks at (#379).** *System/About → Settings* now lets an Administrator
   change **Update channel**: *Follow this build* (the default, as before), *Production releases only*, *Test builds
@@ -35,6 +49,8 @@ PennyWarden 2.3.0 (in progress).
 
 ### Upgrade
 - Migration `0060` adds `fundraiser.goal_amount_cents` (empty = no goal).
+- Migration `0061` adds correction and retirement columns to `bank_account_balance` (empty: nothing changes) and the
+  table `fiscal_year_balance_change` (empty).
 
 ## 2.2.0 — unreleased
 PennyWarden 2.2.0 (in progress).
