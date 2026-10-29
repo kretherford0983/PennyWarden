@@ -72,7 +72,7 @@ function Row({ r, level, editable, actions, parent, showOutside, registerLinks, 
           </Link>
         ) : <><span className="code">{r.display_code}</span> {r.name}</>}
         {r.is_other ? <span className="muted"> (system-managed, calculated)</span> : null}
-        {onHistory && (r.has_history || (historyForAll && !r.system_managed)) ? <button type="button" className="link small history-link" aria-label={`History of ${r.display_code}`} title="This budget across Fiscal Years" onClick={() => onHistory(r)}>History</button> : null}
+        {onHistory && (r.has_history || (historyForAll && (!r.system_managed || r.is_other))) ? <button type="button" className="link small history-link" aria-label={`History of ${r.display_code}`} title="This budget across Fiscal Years" onClick={() => onHistory(r)}>History</button> : null}
         {r.status === "REJECTED" && r.requested_amount ? <span className="muted"> · requested {money(r.requested_amount)}</span> : null}
       </td>
       <td className="num">{money(r.amount)}</td>

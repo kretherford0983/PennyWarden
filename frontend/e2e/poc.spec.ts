@@ -1803,6 +1803,52 @@ test("#284: a Budget Manager enters years before PennyWarden on History and impo
   expect(row.history[i]).toMatchObject({ source: "ENTERED", budgeted: "70.00", actual: "65.00" });
 });
 
+test("#381: a budget from before PennyWarden is created, given a year and continued by a budget", async ({ page }) => {
+  await login(page, "bm1");
+  const post = await apiAs(page);
+  const fys = await (await page.request.get("/api/fiscal-years")).json();
+  const f41 = fys.find((f: any) => f.display_name === "FY2041");
+  const bowl = await (await post("/api/budgets", { fiscal_year_id: f41.id, code: "8970", name: "Bowling", budget_type: "EXPENSE", amount: "50.00" })).json();
+  const firstYear = (await (await page.request.get(`/api/budgets/${bowl.id}/history/entered`)).json()).first_year;
+  const y = `FY${firstYear - 3}`;
+  await page.goto(`/budgets?fiscal_year_id=${f41.id}`);
+  await page.getByRole("button", { name: "Before PennyWarden…" }).click();
+  const list = page.getByRole("dialog", { name: "Budgets from before PennyWarden" });
+  await list.getByRole("button", { name: "New budget from before PennyWarden" }).click();
+  const nf = page.getByRole("dialog", { name: "New budget from before PennyWarden" });
+  await nf.getByLabel("Code").fill("450");
+  await nf.getByLabel("Name").fill("Bowling Tournament");
+  await nf.getByLabel("Type").selectOption("EXPENSE");
+  await nf.getByRole("button", { name: "Create" }).click();
+  const d = page.getByRole("dialog", { name: "450 Bowling Tournament (before PennyWarden)" });
+  await expect(d.getByTestId("former-continued-by")).toContainText("No budget in PennyWarden continues it.");
+  await d.getByRole("button", { name: "Add a year" }).click();
+  const add = page.getByRole("dialog", { name: "Add a year to 450 Bowling Tournament" });
+  await add.getByLabel("Fiscal Year").fill(y);
+  await add.getByLabel("Budgeted").fill("800.00");
+  await add.getByLabel("Actual").fill("760.00");
+  await add.getByRole("button", { name: "Add" }).click();
+  await expect(d.getByRole("table", { name: "Years before PennyWarden" })).toContainText("$760.00");
+  await d.getByRole("button", { name: "Link to a budget…" }).click();
+  const lk = page.getByRole("dialog", { name: "Link 450 Bowling Tournament to a budget" });
+  await lk.getByLabel("Link Fiscal Year").selectOption(String(f41.id));
+  await lk.getByLabel("Link budget").selectOption(String(bowl.id));
+  await lk.getByRole("button", { name: "Link" }).click();
+  await expect(d.getByTestId("former-continued-by")).toContainText("Continued by FY2041 8970 Bowling");
+  await page.screenshot({ path: "e2e-screenshots/light-before-pennywarden.png" });
+  await d.locator(".actions").getByRole("button", { name: "Close" }).last().click();
+  await expect(list.getByRole("table", { name: "Budgets from before PennyWarden" })).toContainText("FY2041 8970 Bowling");
+  await list.locator(".actions").getByRole("button", { name: "Close" }).last().click();
+  // the budget's History shows the years and the link; Unlink removes them from its History
+  await page.getByRole("button", { name: "History of 8970" }).click();
+  const h = page.getByRole("dialog", { name: "History of 8970 Bowling" });
+  await expect(h.getByTestId("former-link")).toContainText("continues 450 Bowling Tournament");
+  await expect(h.getByRole("table", { name: "Budget history" })).toContainText(y);
+  await h.getByTestId("former-link").getByRole("button", { name: "Unlink" }).click();
+  await expect(h.getByTestId("former-link")).toContainText("Not linked to a budget from before PennyWarden.");
+  await expect(h.getByRole("table", { name: "Budget history" })).not.toContainText(y);
+});
+
 // ---------------------------------------------------------------- v1.5.0 CR-031: dashboard layout
 test("CR-031: dashboard sections can be hidden, reordered and reset; saved per user", async ({ page }) => {
   await login(page, "ru1", "Brand-New-Pass-99");

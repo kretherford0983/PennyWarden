@@ -25,6 +25,7 @@ def snapshot(b: Budget) -> dict:
         "locked": b.locked, "system_managed": b.system_managed, "is_other": b.is_other,
         "is_budget_zero": b.is_budget_zero, "notes": b.notes, "status_reason": b.status_reason,
         "continues_budget_id": b.continues_budget_id,
+        "continues_former_budget_id": b.continues_former_budget_id,  # 2.2.0 (#381)
     }
 
 
@@ -137,8 +138,7 @@ def create(db: Session, ctx, data) -> Budget:
         db.flush()
         other = recalc_other(db, b)
         other.created_by_user_id = ctx.user.id
-        if getattr(data, "continues_budget_id", None):
-            _set_continues(db, b, data.continues_budget_id)
+        _set_links(db, ctx, b, data, data.model_fields_set)
         audit.record(db, ctx, "BUDGET_CREATED", "budget", b.id, None, {**snapshot(b), "other": snapshot(other)})
         return b
     parent = get_scoped(db, Budget, data.parent_budget_id, ctx, "Parent budget")
@@ -164,8 +164,7 @@ def create(db: Session, ctx, data) -> Budget:
     db.add(b)
     db.flush()
     other = recalc_other(db, parent)  # raises CHILDREN_EXCEED_PARENT -> whole request rolls back (BR-018)
-    if getattr(data, "continues_budget_id", None):
-        _set_continues(db, b, data.continues_budget_id)
+    _set_links(db, ctx, b, data, data.model_fields_set)
     audit.record(db, ctx, "BUDGET_CREATED", "budget", b.id, None,
                  {**snapshot(b), "parent_before": before_parent, "other_after": snapshot(other)})
     return b
@@ -194,8 +193,7 @@ def update(db: Session, ctx, b: Budget, data) -> Budget:
             b.amount_cents = parse_amount(data.amount)
         except ValueError as e:
             raise validation(str(e), "amount") from None
-    if "continues_budget_id" in fields:  # 1.8.0 (#89): set, change or remove the link (same rules as other edits)
-        _set_continues(db, b, data.continues_budget_id)
+    _set_links(db, ctx, b, data, fields)  # 1.8.0 (#89) / 2.2.0 (#381): same rules as other edits
     b.updated_by_user_id = ctx.user.id
     db.flush()
     other = recalc_other(db, parent)
@@ -298,6 +296,22 @@ def _set_continues(db: Session, b: Budget, target_id: int | None) -> None:
     if other is not None:
         raise conflict("ALREADY_CONTINUED", "That budget is already continued by another budget.")
     b.continues_budget_id = t.id
+    b.continues_former_budget_id = None  # 2.2.0 (#381): one predecessor - an earlier budget or a former budget
+
+
+def _set_links(db: Session, ctx, b: Budget, data, fields) -> None:
+    """1.8.0 (#89) continues_budget_id / 2.2.0 (#381) continues_former_budget_id from a create or update form: one
+    predecessor, so choosing a former budget removes the link to an earlier budget and the other way round."""
+    if "continues_former_budget_id" in fields and getattr(data, "continues_former_budget_id", None):
+        b.continues_budget_id = None
+        from . import budget_history as hist
+        hist.set_link(db, ctx, b, data.continues_former_budget_id, record=False)
+        return
+    if "continues_budget_id" in fields:
+        _set_continues(db, b, data.continues_budget_id)
+    if "continues_former_budget_id" in fields and not data.continues_former_budget_id \
+            and not getattr(data, "continues_budget_id", None):
+        b.continues_former_budget_id = None
 
 
 def lineage(db: Session, b: Budget) -> list[dict]:
@@ -365,6 +379,7 @@ def delete(db: Session, ctx, b: Budget, reason: str) -> Budget:
         t.status = "DELETED"
         t.status_reason = reason.strip()
         t.continues_budget_id = None  # 1.8.0 (#89): the earlier budget can be continued by another one again
+        t.continues_former_budget_id = None  # 2.2.0 (#381): so can the budget from before PennyWarden
         t.updated_by_user_id = ctx.user.id
     db.flush()
     after = {"budgets": [snapshot(t) for t in targets], "reason": reason.strip()}
@@ -429,7 +444,7 @@ def _row(b: Budget, parent: Budget | None, totals: dict, qtotals: list[dict], ou
         "above_budget": (fmt(actual - b.amount_cents) if b.budget_type == "INCOME" and not b.is_budget_zero
                          and actual > b.amount_cents else None),
         "quarters": [fmt(q.get(b.id, 0)) for q in qtotals], "outside_fiscal_year": fmt(outside.get(b.id, 0)),
-        "continues_budget_id": b.continues_budget_id,
+        "continues_budget_id": b.continues_budget_id, "continues_former_budget_id": b.continues_former_budget_id,
         "status": b.status, "locked": b.locked, "state": state(b), "system_managed": b.system_managed,
         "is_other": b.is_other, "is_budget_zero": b.is_budget_zero, "notes": b.notes,
         "status_reason": b.status_reason,
@@ -501,7 +516,8 @@ def tree(db: Session, fy: FiscalYear, include_hidden: bool = False, include_dele
         Budget.continues_budget_id.in_(ids), Budget.status != "DELETED"))) if ids else set()
     for r in [*sections["INCOME"], *sections["EXPENSE"]]:
         for x in [r, *r["children"]]:
-            x["has_history"] = bool(x.get("continues_budget_id")) or x["id"] in continued
+            x["has_history"] = bool(x.get("continues_budget_id") or x.get("continues_former_budget_id")) \
+                or x["id"] in continued
     # 2.2.0 (#284): ... or years before PennyWarden are entered for its line
     from . import budget_history as hist
     if db.scalar(select(hist.BudgetHistoryEntry.id).where(hist.BudgetHistoryEntry.workspace_id == fy.workspace_id,
