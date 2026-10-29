@@ -2,6 +2,9 @@
 
 Versions are `Breaking.Major.Minor` from 1.6.0 (docs/branching.md).
 
+## 2.3.0 — unreleased
+PennyWarden 2.3.0 (in progress).
+
 ## 2.2.0 — unreleased
 PennyWarden 2.2.0 (in progress).
 
