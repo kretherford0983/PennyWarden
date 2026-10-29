@@ -73,16 +73,32 @@ PennyWarden 2.2.0 (in progress).
   server owner can, with `pennywarden restore FILE --accept-testing-backup`). Local installs ignore the setting for now.
 
 ### Budgets
-- **Budget history before PennyWarden (#284).** Budget Managers can enter the budgeted and actual figures of years
-  before the first Fiscal Year in PennyWarden, from the old spreadsheets, so a budget's history is complete:
-  - **On a budget's History** (every budget now has one for Budget Managers): *Add an earlier year* — the year,
-    budgeted, actual and an optional note. Entries can be corrected or retired (with a reason), never deleted, and
-    every change is in the audit log. They follow the budget's continuation links, so a renumbered budget keeps them.
-  - **Any level.** Enter them on a budget, its sub-budgets, or both. A budget without its own figure for a year shows
-    the sum of its sub-budgets' (marked as such); if both are entered and differ, a note says so.
-  - **From a CSV file:** *Budgets → Import earlier years…* takes *year, budget code, budgeted, actual, note*, matched
-    on the chosen Fiscal Year's codes (a template with them is offered). A preview marks each row as matched, refused
-    (with the reason) or duplicate before anything is saved.
+- **Budget history before PennyWarden (#284, #381).** Budget Managers can enter the budgeted and actual figures of
+  years before the first Fiscal Year in PennyWarden, from the old spreadsheets, so a budget's history is complete:
+  - **Budgets from before PennyWarden** (*Budgets → Before PennyWarden…*): each budget as it was in the old
+    spreadsheets (code, name, Income or Expense) with its years. Every financial role and Auditors can read them.
+  - **Linked, never matched by code.** A budget in PennyWarden shows those years once it *continues* one of them:
+    choose it under **Continues** (a *Before PennyWarden* group) or link it from either side. So a budget that ran
+    in 2022 and 2023, skipped some years and comes back can show its old years again; and a code that was reused
+    for a different budget stays separate (unlink it, rename it, link it to the right budget — nothing is
+    re-entered).
+  - **Any level.** A former budget can be continued by a budget or a sub-budget (an old flat 101 by today's 100-01),
+    and by a parent's **Other** (-00), where the old spreadsheets kept the uncategorized amounts on the parent row.
+    A parent without its own figure for a year shows the sum of its sub-budgets' and Other's; if both are entered
+    and differ, a note says so.
+  - **Each year keeps the code and name it had**, and the budget is shown under its most recent ones (2024 *104
+    Raffle Fundraiser*, 2025 *104 Raffle* → *104 Raffle*). The Budget Review says *as …* where a year was called
+    differently.
+  - **On a budget's History:** *Add an earlier year* (creates the budget from before PennyWarden and the link the
+    first time), *Link… / Change… / Unlink*. Entries can be corrected or retired (with a reason), never deleted;
+    a budget from before PennyWarden can be retired too. Every change is in the audit log.
+  - **From a CSV file:** *Budgets → Import earlier years…* takes *budget code, type, former code, former name, year,
+    budgeted, actual, note, line*. The budget code is the budget of the chosen Fiscal Year that continues it (empty
+    for one nothing continues; then the type is needed). Rows with the same budget code are one budget; without
+    one, rows with the same former code are; the *line* column keeps a renumbered budget together. The template
+    lists the year's budgets (with -00 for Other) and template rows left empty are skipped. A preview shows each
+    budget from before PennyWarden (new or existing), the link it gets and each row (saved, duplicate or refused with
+    the reason) before anything is saved.
   - **Where they show:** the budget's History and the **Budget Review** (screen, PDF and CSV — and so the review
     appended to the Planning Sheet), after the Fiscal Years in PennyWarden, labelled *Entered*. Not in the dashboard
     charts. They never change actuals, registers or Fiscal Year closure.
@@ -207,6 +223,9 @@ PennyWarden 2.2.0 (in progress).
 - Migration `0049` adds the table `budget_history_entry` (empty); `0050` the table `testing_state` (empty); `0051`
   the column `workspace.demo_mode` (off).
 - Migration `0058` adds `app_user.fundraiser_series_sort` (empty = Fundraiser series newest year first).
+- Migration `0059` adds the table `former_budget`, `budget_history_entry.former_budget_id`/`code`/`name` and
+  `budget.continues_former_budget_id`: the years entered so far become one budget from before PennyWarden per budget
+  line, continued by the earliest budget of that line, so nothing shows differently (#381).
 - Migration `0048` adds two columns to `user_mfa` (`new_key_required`, `pending_own_key`; both off). No existing value
   changes. Going back to 2.1.2 needs the pre-upgrade data backup (2.1.2 does not know revisions 0048 and later).
 

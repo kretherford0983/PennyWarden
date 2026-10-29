@@ -128,6 +128,45 @@ could not otherwise be corrected. Scope and safeguards:
   with a link; the variable picker completes dotted names.
 - Tests: `backend/tests/test_v210_organization.py` (6, including the data migration) and the E2E #126 and #312 steps.
 
+**2.2.0 — Budgets from before PennyWarden (#381, decided with Kyle 2026-10-28; reshapes #284).**
+- Problem: #284 attached entered years to a PennyWarden budget's line and its CSV matched rows on the chosen Fiscal
+  Year's codes, so a budget with no PennyWarden year had nowhere to go, and a reused code put old figures on the wrong
+  budget without a warning.
+- Model: `former_budget` (code, name, type, note, retired) owns the entries (`budget_history_entry.former_budget_id`,
+  with `code`/`name` of that year when they differ; `budget_id` only on pre-#381 entries, kept, not read). A budget
+  reaches them only through `budget.continues_former_budget_id`, on the earliest budget of its line (`link_holder`);
+  Other's line is the Other of each budget of its parent's line, so it carries its own link only when its parent
+  starts the line. Migration `0059` converts each #284 line into one former budget linked from the line's oldest
+  budget (a deleted one: unlinked).
+- Rules (`services/budget_history.set_link`): one predecessor per budget (choosing a former budget clears
+  `continues_budget_id` and the other way round, `budgets._set_links`); any level, same type; Other may continue a
+  former budget, Budget 0 never; a former budget is continued by at most one non-deleted budget; deleting a budget
+  frees its former budget; allowed in any Fiscal Year state and on locked budgets (reporting only — the link is not
+  a budget edit). Former budgets are retired, never deleted; retiring unlinks. A type change only while unlinked.
+- Reports: `figures()` reads the line's former budget, and for a parent the former budgets of its sub-budget lines
+  and its Other's line; `year_labels()` counts only former budgets a budget continues, so an unlinked one adds no
+  empty column. Review cells carry `entered_as` (that year's code and name when they differ from the row). Rows for
+  budgets not in the chosen year are #382.
+- CSV: columns `budget code, type, former code, former name, year, budgeted, actual, note, line` (required: year,
+  budgeted, actual, and budget code or former code). Rows group by `line`, else budget code, else former code + type.
+  A group goes to its target line's former budget, else an existing former budget with the same code and name
+  (current or default; several = refused), else a new one; refusals per group (budget codes or types mixed, type
+  mismatch, former budget continued elsewhere, link holder continuing another, two groups creating or linking the
+  same). Template rows with only code/name/type are skipped; template cells are formula-neutralised.
+- Choices Kyle may want to check: the importer doesn't rename an existing former budget (the years carry their own
+  names and the most recent is shown); a new former budget created by *Add an earlier year* takes the earliest
+  budget's code and name; the CSV needs a type column for budgets nothing continues (not in the decision list, but
+  required to create one).
+- API: `GET/POST /api/budgets/former`, `GET/PATCH /api/budgets/former/{id}`, `POST .../retire`, `POST .../entries`,
+  `GET .../budget-options?fiscal_year_id=`, `GET /api/budgets/former/link-options?budget_id=`,
+  `PUT /api/budgets/{id}/former-link`. Reads `financial.view`, changes `budget.manage`. Audit:
+  `FORMER_BUDGET_CREATED/UPDATED/RETIRED`, `BUDGET_FORMER_LINKED/UNLINKED`, `BUDGET_HISTORY_*` now on
+  `former_budget`.
+- UI: `pages/FormerBudgets.tsx` (list, detail, link form, year form, History link line); Budgets *Before
+  PennyWarden…*; the Continues select has a *Before PennyWarden* group; History on Other rows for Budget Managers.
+- Tests: `backend/tests/test_v220_former_budgets.py` (17, including the migration) and the updated
+  `test_v220_budget_history.py`; E2E "#381".
+
 **2.2.0 — System/About read-only for financial users and Auditors (#349, decided 2026-10-24).**
 - Permission `system.about` (Administrator, Auditor, Budget Manager, Budget User, Register User; Budget/Register
   Admins hold it through their base role). `GET /api/system/organization` moved from `system.view` to it. New

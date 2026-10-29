@@ -49,27 +49,56 @@ whether a reset was marked and whether a setup used an own key — never the key
 Your budgets probably have years of history in spreadsheets from before you started using PennyWarden. You can now
 enter those years so the History and the Budget Review show the whole picture.
 
-**One year at a time.** On **Budgets**, every budget now has a **History** link for Budget Managers. Open it and
-choose **Add an earlier year**: the Fiscal Year (include the year, for example *FY2021*), what was **budgeted**, what
-was **actually** spent or received, and an optional note such as *from the 2021 treasurer's spreadsheet*. The year
-appears at the top of the History, marked **Entered**.
-- Only years **before your first Fiscal Year in PennyWarden** can be entered; later years come from PennyWarden itself.
-- **Correct** fixes a typo (a reason is required); **Retire** takes an entry out (a reason is required). Nothing is
-  deleted, and every change is in the audit log.
-- Enter the figures at whatever level your spreadsheet has: on a budget, on its sub-budgets, or both. A budget
-  without its own figure for a year shows the **sum of its sub-budgets'**. If you enter both and they don't add up,
-  the History and the Budget Review say so.
-- A renumbered budget keeps its entered years: they follow the *Continues* links.
+**Budgets from before PennyWarden.** **Budgets → Before PennyWarden…** lists your budgets as they were in the old
+spreadsheets — code, name, Income or Expense — with their years. A budget in PennyWarden shows those years once it
+**continues** one of them. The link is something you choose; it never goes by code. That covers:
+- a budget that **continued into PennyWarden** — the usual case;
+- a budget that **stopped** before PennyWarden — it stays in the list, and if it comes back (say a bowling tournament
+  that ran in 2022 and 2023 and returns in 2027), create the new budget and choose it under **Continues → Before
+  PennyWarden**. The 2027 Budget Review then shows 2022 and 2023, and its average counts only those years;
+- a budget that **skipped years** — just enter the years it ran;
+- a **different numbering**: in PennyWarden the fundraisers may be *100* with sub-budgets *100-01, 100-02*, where the
+  old sheets had *100, 101, 102*. Link old 101 to 100-01, old 102 to 100-02 — any level works — and old 100 to
+  **100-00 (Other)** if that row held the amounts not tied to one fundraiser;
+- a **code that was reused** for a different budget (100 was Bowling, then Golf Outing): link each old budget to the
+  right one. If old figures ended up on the wrong budget, **Unlink** them, rename the old budget, and link it where
+  it belongs — nothing has to be entered again.
 
-**Many years at once.** **Budgets → Import earlier years…** takes a CSV file with the columns **year, budget code,
-budgeted, actual, note** (one row per budget per year). **Download the template** to get every budget code of the
-Fiscal Year you're looking at. Choose **Preview** to see what will happen to each row — *will be saved*, *duplicate*
-(already entered, or twice in the file) or *refused* with the reason — then **Import**. Only the rows that will be
-saved are saved.
+Budget Managers add, link, correct and retire them; everyone else with access to Budgets (and Auditors) can look.
+
+**One year at a time.** Open a budget's **History** (every budget has one for Budget Managers, Other too) and choose
+**Add an earlier year**: the Fiscal Year (include the year, for example *FY2021*), what was **budgeted**, what was
+**actually** spent or received, and an optional note such as *from the 2021 treasurer's spreadsheet*. The first time,
+PennyWarden creates the budget from before PennyWarden (with this budget's code and name — rename it if it was called
+something else) and links it. If the budget was called differently that year, open **Called differently that
+year?** and enter that year's code and name. The History also shows which budget from before PennyWarden it
+continues, with **Link…**, **Change…** and **Unlink**.
+- Only years **before your first Fiscal Year in PennyWarden** can be entered; later years come from PennyWarden itself.
+- **Correct** fixes a typo (a reason is required); **Retire** takes an entry out (a reason is required). A whole budget
+  from before PennyWarden can be retired too. Nothing is deleted, and every change is in the audit log.
+- Enter the figures at whatever level your spreadsheet has. A budget without its own figure for a year shows the
+  **sum of its sub-budgets'** (and its Other's). If you enter both and they don't add up, the History and the Budget
+  Review say so.
+
+**Many years at once.** **Budgets → Import earlier years…** takes a CSV file with one row per budget per year and the
+columns **budget code, type, former code, former name, year, budgeted, actual, note, line**:
+- **budget code** — the budget of the Fiscal Year you're looking at that continues it (*100-00* for a parent's Other).
+  Leave it empty for a budget nothing continues; then fill in **type** (Income or Expense).
+- **former code** and **former name** — what it was called that year (empty: the same as the budget).
+- Rows with the same budget code are one budget, even if the old name changed over the years. Without a budget code,
+  rows with the same former code are one budget. If an old budget was renumbered, give its rows the same **line**
+  (any word, for example *carwash*).
+
+**Download the template** to get the year's budgets ready to fill in; rows you leave empty are skipped. Choose
+**Preview** to see, before anything is saved, each budget from before PennyWarden (*New* or existing), which budget
+will continue it (*New link*), and each row — *will be saved*, *duplicate* (already entered, or twice in the file) or
+*refused* with the reason. Then **Import**.
 
 **Where they show.** In the budget's History and in the **Budget Review** (on screen, in the PDF and the CSV, and in
-the review you can add to the Planning Sheet), after your PennyWarden years, with the column marked *entered*. They
-never change actuals, the registers or the Fiscal Year closure, and they are not in the dashboard charts.
+the review you can add to the Planning Sheet), after your PennyWarden years, with the column marked *entered* (and
+*as 104 Raffle Fundraiser* where the budget was called differently that year). They never change actuals, the
+registers or the Fiscal Year closure, and they are not in the dashboard charts. A budget from before PennyWarden that
+nothing continues isn't in a year's Budget Review yet.
 
 ## Reports: comparisons to a date before any data
 

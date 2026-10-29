@@ -217,6 +217,7 @@ class BudgetCreateIn(In):
     amount: Amount
     notes: OptStr(4000) = None
     continues_budget_id: int | None = None  # 1.8.0 (#89)
+    continues_former_budget_id: int | None = None  # 2.2.0 (#381)
 
 
 class BudgetUpdateIn(In):
@@ -224,6 +225,7 @@ class BudgetUpdateIn(In):
     amount: Amount | None = None
     notes: OptStr(4000) = None
     continues_budget_id: int | None = None  # 1.8.0 (#89): send null to remove the link
+    continues_former_budget_id: int | None = None  # 2.2.0 (#381): a budget from before PennyWarden instead
 
 
 class ReasonIn(In):
@@ -523,11 +525,14 @@ class FundraiserSeriesResultIn(In):
 
 
 class BudgetHistoryIn(In):
-    """2.2.0 (#284): a year before PennyWarden, entered on a budget's History."""
+    """2.2.0 (#284): a year before PennyWarden, entered on a budget's History (#381: or on a former budget, with the
+    code and name it had that year, optional)."""
     fiscal_year_label: Str(40)
     budgeted: Amount
     actual: Amount
     note: OptStr(500) = None
+    code: OptStr(20) = None
+    name: OptStr(120) = None
 
 
 class BudgetHistoryCorrectIn(In):
@@ -535,12 +540,35 @@ class BudgetHistoryCorrectIn(In):
     budgeted: Amount | None = None
     actual: Amount | None = None
     note: OptStr(500) = None
+    code: OptStr(20) = None
+    name: OptStr(120) = None
     reason: Str(500)
 
 
 class BudgetHistoryCsvIn(In):
     fiscal_year_id: int
     csv: str = Field(min_length=1, max_length=600_000)
+
+
+class FormerBudgetIn(In):
+    """2.2.0 (#381): a budget from before PennyWarden."""
+    code: Str(20)
+    name: Str(120)
+    budget_type: Literal["INCOME", "EXPENSE"]
+    note: OptStr(500) = None
+
+
+class FormerBudgetUpdateIn(In):
+    code: Str(20) | None = None
+    name: Str(120) | None = None
+    budget_type: Literal["INCOME", "EXPENSE"] | None = None
+    note: OptStr(500) = None
+    reason: OptStr(500) = None
+
+
+class FormerLinkIn(In):
+    """2.2.0 (#381): the former budget a budget continues; null removes the link."""
+    former_budget_id: int | None = None
 
 
 class FundraiserSeriesMergeIn(In):
