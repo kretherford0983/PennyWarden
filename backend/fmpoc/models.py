@@ -334,9 +334,10 @@ class BankAccount(Base):
 
 
 class BankAccountBalance(Base):
-    """1.7.3 (#88): dated balance history of a non-register account. Append-only: an entry is never edited or
-    deleted; a correction is a new entry (for the same "as of" date the one entered last counts). The account's
-    current balance (manual_current_balance_cents) is the entry with the latest "as of" date."""
+    """1.7.3 (#88): dated balance history of a non-register account. Never deleted (BR-001). 2.3.0 (#391): an entry
+    can be corrected (amount and/or "as of" date) or retired, each with a reason; a retired entry no longer counts.
+    For the same "as of" date the one entered last counts. The account's current balance
+    (manual_current_balance_cents) is the counted entry with the latest "as of" date."""
     __tablename__ = "bank_account_balance"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
@@ -347,8 +348,34 @@ class BankAccountBalance(Base):
     source: Mapped[str] = mapped_column(String(12), default="UPDATE")  # OPENING | UPDATE | UPGRADE
     entered_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
     entered_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 2.3.0 (#391): Correct (the last correction: when, who, why, and the values it replaced) and Retire
+    corrected_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    corrected_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    correct_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    previous_balance_cents: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    previous_as_of_date: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
+    retired_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    retired_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    retire_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     __table_args__ = (Index("ix_bank_account_balance_account_date", "bank_account_id", "as_of_date"),)
+
+
+class FiscalYearBalanceChange(Base):
+    """2.3.0 (#391): a non-register balance changed inside a Closed Fiscal Year (Budget Admins only, confirmed, with a
+    reason). Shown as "Balance changed after close" on the Fiscal Year page and in its reports."""
+    __tablename__ = "fiscal_year_balance_change"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
+    fiscal_year_id: Mapped[int] = mapped_column(ForeignKey("fiscal_year.id"), index=True)
+    bank_account_id: Mapped[int] = mapped_column(ForeignKey("bank_account.id"))
+    balance_entry_id: Mapped[int] = mapped_column(Integer)
+    action: Mapped[str] = mapped_column(String(10))          # ADD | CORRECT | RETIRE
+    before_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    after_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reason: Mapped[str] = mapped_column(String(500))
+    changed_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    changed_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 # ---------------------------------------------------------------- register

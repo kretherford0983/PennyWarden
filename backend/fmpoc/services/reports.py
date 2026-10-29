@@ -642,6 +642,19 @@ def build_audit_report(db: Session, ctx, settings, fy: FiscalYear, account_id: i
         items = ([f"Blocker: {b['message']}" for b in check["blockers"]]
                  + [f"Warning: {w['message']}" for w in check["warnings"]])
     f += [P("• " + x, "body") for x in (items or ["No blockers or warnings."])]
+    changed = bank.changes_after_close(db, fy)          # 2.3.0 (#391)
+    if changed:
+        f += [Spacer(1, 6), PM("Balance changed after close", "h2"),
+              P("These non-register account balances were changed by a Budget Admin after the Fiscal Year was closed "
+                "(it was closed with the earlier balance).", "small")]
+        word = {"ADD": "Added", "CORRECT": "Corrected", "RETIRE": "Retired"}
+        for c in changed:
+            b, a = c["before"] or {}, c["after"] or {}
+            what = (f"{money(a.get('balance'))} as of {a.get('as_of_date')}" if c["action"] == "ADD" else
+                    f"{money(b.get('balance'))} as of {b.get('as_of_date')}" + (
+                        f" → {money(a.get('balance'))} as of {a.get('as_of_date')}" if c["action"] == "CORRECT" else ""))
+            f.append(P(f"• {c['changed_at'][:16].replace('T', ' ')} UTC by {c['changed_by'] or '?'} — {c['account']}: "
+                       f"{word.get(c['action'], c['action'])} {what}. Reason: {c['reason']}", "body"))
     f += [Spacer(1, 8), PM("Documentation review", "h2"),
           P("A transaction is documented when it has an attachment or is marked 'no attachment will be provided' with a "
             "reason. When the transaction itself has neither, every allocation (child) must have an attachment or its "

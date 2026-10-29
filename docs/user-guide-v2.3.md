@@ -25,6 +25,27 @@ percentage of the goal reached and how much is still to go, or how far the goal 
 goal. The goal is for information only and never stops anything from being entered. *Create next year's* starts the
 new fundraiser without a goal.
 
+## Bank accounts
+
+### Fix a wrong balance in the history
+In **Bank Accounts → History** (accounts without a register), each entry's **⋯** menu has:
+- **Correct…** — change the amount and/or the *as of* date, for example a balance typed wrong or given the wrong
+  date. The entry is marked **Corrected**; hover over the mark to see what it was before.
+- **Retire…** — take a wrong entry out. It stops counting and is listed under **Retired entries** with your reason.
+
+Both ask for a reason and are recorded in the audit log. The account's current balance updates straight away.
+Nothing is ever deleted.
+
+### Balances from before PennyWarden
+You can add balances dated before your first Fiscal Year in PennyWarden (with *Update balance* and an earlier *As of*
+date) to fill in the history, even before the account's opening balance date. They are marked **Entered**.
+
+### Closed Fiscal Years
+Balances inside a Closed Fiscal Year can't be changed by Budget Managers. A **Budget Admin** can add, correct or retire
+one there: you give a reason and confirm that you are changing a closed year (it was closed with the old balance).
+The Fiscal Year page and its reports then show **Balance changed after close** with what changed, who changed it and
+why.
+
 ## System/About
 
 ### Choose which releases the update check looks at

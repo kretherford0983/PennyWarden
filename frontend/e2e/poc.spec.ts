@@ -1725,6 +1725,22 @@ test("#88: updating a non-register balance keeps a dated history", async ({ page
   await expect(hist).toContainText("September statement");
   await expect(hist).toContainText(d);
   await page.screenshot({ path: "e2e-screenshots/light-balance-history.png" });
+  // 2.3.0 (#391): Correct the entry (reason required), then Retire it - it stays listed under Retired entries
+  await rowAction(hist, `the balance as of ${d}`, "Correct…");
+  const cor = page.getByRole("dialog", { name: `Correct the balance of $5,150.25 as of ${d}` });
+  await cor.getByLabel("Balance", { exact: true }).fill("5105.25");
+  await cor.getByLabel("Reason (required)").fill("typed 5150.25 for 5105.25");
+  await cor.getByRole("button", { name: "Correct", exact: true }).click();
+  await expect(cor).toHaveCount(0);
+  await expect(hist.getByTestId("balance-corrected")).toHaveAttribute("title", /was \$5,150\.25 .*typed 5150\.25 for 5105\.25/);
+  await rowAction(hist, `the balance as of ${d}`, "Retire…");
+  const ret = page.getByRole("dialog", { name: `Retire the balance of $5,105.25 as of ${d}` });
+  await ret.getByLabel("Reason (required)").fill("not a real statement");
+  await ret.getByRole("button", { name: "Retire", exact: true }).click();
+  await expect(ret).toHaveCount(0);
+  await expect(hist.locator("tbody tr")).toHaveCount(1);
+  await page.getByText("Retired entries (1)").click();
+  await expect(page.getByRole("table", { name: "Retired balance entries" })).toContainText("not a real statement");
 });
 
 // ---------------------------------------------------------------- 1.8.0 #89: historic budget traceability
