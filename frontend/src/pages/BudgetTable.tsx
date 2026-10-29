@@ -27,7 +27,7 @@ export function BudgetSection({ title, rows, summary, fyStatus, actions, showOut
         <table className="table budget-table">
           <thead>
             <tr>
-              <th>Status</th><th>Budget</th><th className="num">Amount</th>
+              <th>Status</th><th>Budget</th><th className="num">Gross amount</th>
               <th className="num">Q1</th><th className="num">Q2</th><th className="num">Q3</th><th className="num">Q4</th>
               {showOutside ? <th className="num" title="Allocations dated outside this Fiscal Year (cross-FY)">Outside FY dates</th> : null}
               <th className="num">Actual (year)</th><th className="num">Remaining</th>{editable ? <th>Actions</th> : null}

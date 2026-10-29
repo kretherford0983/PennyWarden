@@ -45,7 +45,7 @@ from . import budgets as bsvc
 from . import fundraisers as fsvc
 from .common import active_allocation_totals, add_months, budget_display_code, fy_brief
 from . import branding
-from .reports import _FONT, BODY_H, MARGIN, PM, P, S, _AuditDoc, _csv_safe, _Mark, _stamp_and_write, money
+from .reports import _FONT, BODY_H, MARGIN, PM, P, S, _AuditDoc, _csv_safe, _Mark, _stamp_and_write, gross_note, money
 
 COMPLETE_FUNDRAISER = {"ENDED", "CANCELLED", "ARCHIVED"}
 STATUS_TEXT = {"APPROVED": "Approved", "DRAFT": "Draft", "REJECTED": "Rejected", "INACTIVE": "Inactive",
@@ -721,10 +721,10 @@ def _review_flowables(db: Session, ctx, rep: dict, doc) -> list:
                           ("NOSPLIT", (0, i), (-1, i + 3))]           # a budget's block stays on one page
             t = Table(data, colWidths=[label_w] + [cw] * len(bcols), repeatRows=1, hAlign="LEFT")
             t.setStyle(TableStyle(style))
-            f += [t, Spacer(1, 8)]
+            f += [t, gross_note(), Spacer(1, 8)]   # 2.3.0 (#371)
     if rep["filter"]["budget_id"] is not None:
         row = (rep["income"] + rep["expense"])[0]
-        f += [KeepTogether([PM("Budgeted and actual per year", "h2"), _chart(rep, row)])]
+        f += [KeepTogether([PM("Budgeted and actual per year", "h2"), _chart(rep, row), gross_note()])]
     f += [Spacer(1, 8), P(f"Generated {utcnow():%Y-%m-%d %H:%M} UTC by {ctx.user.username} — {ws.name}", "small")]
     return f
 
@@ -980,7 +980,7 @@ def planning_sheet(db: Session, ctx, fy: FiscalYear | None, as_of: dt.date | Non
         if i:   # a table that would start in the bottom 35% of the page starts on a new page (Kyle, 2026-10-20)
             f.append(CondPageBreak(0.35 * BODY_H))
         f += [PM(key.title(), "h2"),
-              _plan_table(data[key], heads, widths, PLAN_BLANK_ROWS, revision, ytd_head), Spacer(1, 8)]
+              _plan_table(data[key], heads, widths, PLAN_BLANK_ROWS, revision, ytd_head), gross_note(), Spacer(1, 8)]
     f.append(P("After the meeting the filled-in sheet can be scanned and attached to the new Fiscal Year as an Other "
                "document. It is not a required document for the Fiscal Year closure review.", "small"))
     # the blank tables always come last

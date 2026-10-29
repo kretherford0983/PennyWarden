@@ -487,13 +487,19 @@ def _remaining_cell(x: dict, bold: bool = False):
     return PM(f"<b>{escape(money(x['remaining']))}</b>", "cellr") if bold else P(money(x["remaining"]), "cellr")
 
 
+def gross_note():
+    """2.3.0 (#371, BR-109): the small italic gross-budget footnote placed directly beneath a budget table or chart."""
+    from .common import GROSS_BUDGET_NOTE
+    return PM(f"<i>{escape(GROSS_BUDGET_NOTE)}</i>", "small")
+
+
 def _budget_section(tree: dict) -> list:
     f: list = [PM("Fiscal Year Budgets", "h1")]
     qn = [q["name"] for q in tree["quarters"]]
     for label, rows, summ in (("Income", tree["income"], tree["income_summary"]),
                               ("Expense", tree["expense"], tree["expense_summary"])):
         f.append(PM(f"{label} budgets", "h2"))
-        data = [[PM("<b>Budget</b>", "cell"), PM("<b>Status</b>", "cell"), PM("<b>Amount</b>", "cellr"),
+        data = [[PM("<b>Budget</b>", "cell"), PM("<b>Status</b>", "cell"), PM("<b>Gross amount</b>", "cellr"),
                  *[PM(f"<b>{q}</b>", "cellr") for q in qn], PM("<b>Actual</b>", "cellr"), PM("<b>Remaining</b>", "cellr")]]
         for r in rows:
             for x, indent in [(r, ""), *[(c, "    ") for c in r["children"]]]:
@@ -506,6 +512,7 @@ def _budget_section(tree: dict) -> list:
         if len(data) == 2:
             data.insert(1, [P(f"No {label.lower()} budgets.", "cell")] + [""] * (len(qn) + 4))
         f.append(_grid(data, [1.95 * inch, 1.0 * inch, 0.75 * inch] + [0.52 * inch] * len(qn) + [0.7 * inch, 0.72 * inch]))
+        f.append(gross_note())   # 2.3.0 (#371): directly beneath each budget table, so it travels with the page
         f.append(Spacer(1, 8))
     if tree["budget_zero"]:
         b0 = tree["budget_zero"]

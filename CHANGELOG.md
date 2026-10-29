@@ -5,6 +5,26 @@ Versions are `Breaking.Major.Minor` from 1.6.0 (docs/branching.md).
 ## 2.3.0 — unreleased
 PennyWarden 2.3.0 (in progress).
 
+### Budgets
+- **Budget amounts are gross, and PennyWarden says so (#371).** When an expense is reimbursed, the reimbursement is
+  recorded in an income budget, so the expense budget's actual is not reduced. Wherever budget amounts appear,
+  PennyWarden now says this in one sentence: *Budget amounts are gross. Offsetting income or expense recorded in a
+  budget of the opposite type, such as a reimbursement, is not subtracted.* It appears under the budget tables on the
+  Budgets, Fiscal Year and Budget Review pages, behind an ⓘ on the Dashboard's budget tiles and the *Expense budgets:
+  budgeted vs spent* chart, and as a small footnote directly under every budget table in the End of Year Audit and
+  Fiscal Year Close reports, the Budget Review PDF (and its chart) and the Planning Sheet. The budget *Amount* is now
+  labelled **Gross amount** in the budget form and tables. No figure changes.
+
+### Fundraisers
+- **An optional goal for a fundraiser (#372).** *New/Edit fundraiser* has a **Goal (optional)** field. When a goal is
+  set, the fundraiser page shows it beside the totals with the net compared against it: the percentage of the goal
+  reached and how much is still to go (or how far it was exceeded). The goal is informational only — it never blocks
+  anything — and changing it is recorded in the audit log like other fundraiser edits. *Create next year's* does not
+  copy the goal.
+
+### Upgrade
+- Migration `0060` adds `fundraiser.goal_amount_cents` (empty = no goal).
+
 ## 2.2.0 — unreleased
 PennyWarden 2.2.0 (in progress).
 

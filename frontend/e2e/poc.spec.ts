@@ -855,7 +855,10 @@ test("2.1.0 (#262, #260, #259): register sort, electronic payment, reorder attac
   await cleared.getByRole("button").click();
   await expect(cleared).toHaveAttribute("aria-sort", "ascending");
   await expect(page.getByRole("columnheader", { name: "Cleared balance" })).toBeVisible();
+  // the sort is saved in the background: wait for that save before reloading (CI flake, 2.3.0 build 1)
+  const saved = page.waitForResponse((r) => r.url().includes("/api/me/preferences") && r.request().method() === "PUT");
   await cleared.getByRole("button").click();
+  await saved;
   await expect(cleared).toHaveAttribute("aria-sort", "descending");
   await page.reload();
   await expect(page.getByRole("columnheader", { name: "Cleared", exact: true })).toHaveAttribute("aria-sort", "descending");
@@ -1080,6 +1083,11 @@ test("CR-020: dashboard charts — defaults, choose charts per user, data tables
   await expect(charts.getByTestId("chart-income_pie")).toBeVisible();
   await expect(charts.getByTestId("chart-monthly")).toBeVisible();
   await expect(charts.getByTestId("chart-expense_vs_budget")).toBeVisible();
+  // 2.3.0 (#371): budget amounts are gross - the ⓘ on the budget chart explains it
+  await charts.getByRole("button", { name: "About Expense budgets: budgeted vs spent" }).click();
+  await expect(charts.getByRole("note").filter({ hasText: "Budget amounts are gross." })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(charts.getByRole("note").filter({ hasText: "Budget amounts are gross." })).toHaveCount(0);
   await expect(charts.getByTestId("chart-balances")).toHaveCount(0);
   await expect(charts.getByTestId("chart-monthly").locator(".recharts-surface").first()).toBeVisible();
   await charts.getByTestId("chart-income_pie").screenshot({ path: "e2e-screenshots/light-chart-income-pie.png" });
@@ -1109,6 +1117,18 @@ test("CR-020: dashboard charts — defaults, choose charts per user, data tables
   for (const n of ["Bank balances (month end)", "Cumulative net (income − expenses)"]) await charts.getByRole("checkbox", { name: n }).uncheck();
   await charts.getByRole("checkbox", { name: "Income by budget" }).check();
   await expect(charts.getByRole("status")).toHaveText("Chart choice saved");
+});
+
+test("#371: budgets are gross - Gross amount on the budget table and form, with the disclaimer line", async ({ page }) => {
+  await login(page, "bm1");
+  await page.getByRole("link", { name: "Budgets", exact: true }).click();
+  await expect(page.getByRole("columnheader", { name: "Gross amount" }).first()).toBeVisible();
+  await expect(page.getByTestId("gross-budget-note")).toContainText("Budget amounts are gross. Offsetting income or expense recorded in a budget of the opposite type, such as a reimbursement, is not subtracted.");
+  await page.getByRole("button", { name: "New budget" }).click();
+  const dlg = page.getByRole("dialog", { name: "New budget" });
+  await expect(dlg.getByLabel("Gross amount")).toBeVisible();
+  await dlg.getByRole("button", { name: "Cancel" }).click();
+  await logout(page);
 });
 
 // ---- CR-018: TOTP helper (RFC 6238, SHA-1, 30 s) for the E2E tests
@@ -1918,11 +1938,14 @@ test("CR-033: Administrator turns on fundraisers; Budget Manager creates, filter
   await page.getByRole("button", { name: "Edit" }).click();
   dlg = page.getByRole("dialog", { name: "Edit fundraiser" });
   await dlg.getByLabel("Description filter (optional)").fill("zzz-no-match");
+  await dlg.getByLabel("Goal (optional)").fill("500");   // 2.3.0 (#372)
   await expect(dlg.getByText("Filter in use:")).toBeVisible();
   await expect(dlg.getByTestId("fr-preview")).toContainText("0 of");
   await dlg.getByRole("button", { name: "Save" }).click();
   await expect(page.locator("[data-code=FILTER]")).toBeVisible();
   await expect(page.getByTestId("fr-totals")).toContainText("$0.00");
+  await expect(page.getByTestId("fr-goal")).toContainText("$500.00");
+  await expect(page.getByTestId("fr-goal")).toContainText("$500.00 to go");
   await page.screenshot({ path: "e2e-screenshots/light-fundraiser-detail.png", fullPage: true });
   // a shell for an event beyond every Fiscal Year: no budgets yet, listed as upcoming
   await page.getByRole("link", { name: "← Fundraisers" }).click();

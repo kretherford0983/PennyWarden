@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, money } from "../api";
-import { Attachments, ErrorBox, Field, FyStatus, Loading, Modal } from "../components";
+import { Attachments, ErrorBox, Field, FyStatus, GrossBudgetNote, Loading, Modal } from "../components";
 import { useMe } from "../App";
 import { Link } from "../router";
 import { BudgetSection } from "./BudgetTable";
@@ -39,6 +39,7 @@ export default function FiscalYearDetail({ id }: { id: number }) {
       </dl>
       <BudgetSection title="Income" rows={b.income} summary={b.income_summary} fyStatus="CLOSED" showOutside={showOutside} />
       <BudgetSection title="Expense" rows={b.expense} summary={b.expense_summary} fyStatus="CLOSED" showOutside={showOutside} />
+      <GrossBudgetNote />
       {d.status !== "CLOSED" ? <Closure c={d.closure} /> : null}
       <DocumentationReview fyId={d.id} />
       <FyDocuments fy={d} manage={manage} onChanged={load} />

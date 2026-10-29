@@ -128,6 +128,24 @@ could not otherwise be corrected. Scope and safeguards:
   with a link; the variable picker completes dotted names.
 - Tests: `backend/tests/test_v210_organization.py` (6, including the data migration) and the E2E #126 and #312 steps.
 
+**2.3.0 build 1 — Gross budgets (#371) and an optional fundraiser goal (#372), Kyle 2026-10-28/29.**
+- #371 (proposed BR-109, *Budgets Are Gross*; spec docs unchanged per this file's rule): budgets stay gross — an
+  offset recorded in a budget of the opposite type is never netted (netting isn't tractable in general; fundraiser
+  seed-cash netting is unchanged). One sentence, `GROSS_BUDGET_NOTE` in `services/common.py` and
+  `frontend/src/components.tsx`, kept identical by a test. UI: `GrossBudgetNote` under the budget tables (Budgets,
+  Fiscal Year detail, Budget Review), *Gross amount* label/header (`BudgetTable`, budget forms), `InfoTip` (ⓘ popup)
+  on the Dashboard budget tiles and the expense-vs-budget chart. PDFs: `reports.gross_note()` directly beneath each
+  budget table of the audit/close report, each Budget Review table and its per-budget chart, and each Planning Sheet
+  table. The fundraiser stakeholder report, deck and Fiscal Year fundraising report list no budget amounts, so they
+  carry no note. The income/expense pies show actuals, not budget amounts, so they have no ⓘ.
+- #372: `fundraiser.goal_amount_cents` (`0060`, nullable, ≥ 0). `FundraiserIn.goal_amount` (optional; an edit that
+  doesn't send it keeps the goal; null clears it). The goal is compared with the **net** (Kyle, 2026-10-29):
+  `totals.goal` = goal, net, difference (net − goal), `pct_of_goal` (one decimal; none for a goal of 0), `met`.
+  Snapshot (and so the audit before/after) includes `goal_amount`. Editing stays Budget Manager only. The
+  Quarterly/Annual report (#373) will reuse `fundraisers.goal_vs_actual`.
+- Tests: `backend/tests/test_v230_gross_budgets_goal.py` (5); E2E "#371" plus steps in "CR-020" (chart ⓘ) and
+  "CR-033" (goal).
+
 **2.2.0 — Budgets from before PennyWarden (#381, decided with Kyle 2026-10-28; reshapes #284).**
 - Problem: #284 attached entered years to a PennyWarden budget's line and its CSV matched rows on the chosen Fiscal
   Year's codes, so a budget with no PennyWarden year had nowhere to go, and a reused code put old figures on the wrong
