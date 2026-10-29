@@ -691,3 +691,12 @@ details.year-name summary { cursor: pointer; color: var(--muted); }
 .brand-preview .bp-foot { display: flex; gap: 8px; align-items: center; justify-content: space-between; border-top: 1px solid; margin-top: 10px; padding-top: 4px; font-size: 10px; }
 .brand-preview .bp-foot img { height: 14px; }
 .brand-preview .bp-foot span:first-of-type { flex: 1; }
+
+/* 2.3.0 (#371): gross-budget disclaimer line and the ⓘ popup */
+.gross-note { margin: 4px 0 12px; font-style: italic; }
+.info-tip { position: relative; display: inline-block; margin-left: 4px; }
+.info-tip-btn { background: none; border: 0; padding: 0 2px; min-height: 0; font-size: 14px; line-height: 1; color: var(--muted, inherit); cursor: pointer; }
+.info-tip-btn:focus-visible { outline: 2px solid var(--focus); border-radius: 50%; }
+.info-tip-pop { position: absolute; z-index: 30; top: 100%; left: 0; margin-top: 4px; width: 280px; max-width: 80vw; padding: 8px 10px;
+  background: var(--surface); color: var(--text, inherit); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 4px 14px rgba(0,0,0,.18);
+  font-size: 13px; font-weight: 400; line-height: 1.35; white-space: normal; }

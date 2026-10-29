@@ -1,6 +1,6 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api, money, qs } from "../api";
-import { ErrorBox, Field, Loading, Modal, GuardedForm } from "../components";
+import { ErrorBox, Field, GrossBudgetNote, Loading, Modal, GuardedForm } from "../components";
 import { useMe } from "../App";
 import { useRouter } from "../router";
 import { BudgetSection } from "./BudgetTable";
@@ -60,6 +60,7 @@ export default function Budgets() {
         <>
           <BudgetSection title="Income" rows={tree.income} summary={tree.income_summary} fyStatus={fy.status} actions={actions} registerLinks onHistory={(r) => setModal({ kind: "history", row: r })} historyForAll={manage} />
           <BudgetSection title="Expense" rows={tree.expense} summary={tree.expense_summary} fyStatus={fy.status} actions={actions} registerLinks onHistory={(r) => setModal({ kind: "history", row: r })} historyForAll={manage} />
+          <GrossBudgetNote />
           {tree.budget_zero ? (
             <p className="muted">Protected Budget 0 (non-budget activity such as transfers): inflows {money(tree.budget_zero.inflow)} · outflows {money(tree.budget_zero.outflow)}</p>
           ) : null}
@@ -106,7 +107,7 @@ function BudgetForm({ fys, fyId, parent, onClose, onSaved }: any) {
         {!parent ? (
           <Field label="Type"><select value={f.budget_type} onChange={(e) => setF({ ...f, budget_type: e.target.value })}><option value="INCOME">Income</option><option value="EXPENSE">Expense</option></select></Field>
         ) : null}
-        <Field label="Amount"><input required inputMode="decimal" pattern="\d+(\.\d{1,2})?" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} /></Field>
+        <Field label="Gross amount"><input required inputMode="decimal" pattern="\d+(\.\d{1,2})?" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} /></Field>
         <ContinuesField fyId={Number(f.fiscal_year_id)} budgetType={f.budget_type} subBudget={!!parent} value={cont} onChange={setCont} />
         <Field label="Notes"><textarea value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} /></Field>
         <div className="actions"><button type="button" onClick={onClose}>Cancel</button><button className="primary" type="submit">Create</button></div>
@@ -131,7 +132,7 @@ function BudgetEdit({ row, onClose, onSaved, canDelete, onDelete }: any) {
       <GuardedForm onSubmit={submit}>
         <ErrorBox error={err} />
         <Field label="Name"><input required value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></Field>
-        <Field label="Amount" hint="Other is recalculated automatically; sub-budgets may not exceed the parent."><input required value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} /></Field>
+        <Field label="Gross amount" hint="Other is recalculated automatically; sub-budgets may not exceed the parent."><input required value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} /></Field>
         <ContinuesField fyId={row.fiscal_year_id} budgetType={row.budget_type} subBudget={!!row.parent_budget_id} budgetId={row.id} value={cont} onChange={setCont} />
         <Field label="Notes"><textarea value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} /></Field>
         <div className="actions">

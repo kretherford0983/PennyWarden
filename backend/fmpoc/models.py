@@ -609,6 +609,8 @@ class Fundraiser(Base):
     # 2.1.0 (#277): the same event across years ("Continues from" puts it in the previous fundraiser's series)
     series_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     continues_from_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 2.3.0 (#372): optional goal, compared with the net (informational only; never blocks activity)
+    goal_amount_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
     created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)

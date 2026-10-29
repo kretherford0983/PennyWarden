@@ -3,7 +3,7 @@
 // Both use the same projection rule and the same per-user, per-budget projection choices.
 import { Fragment, useEffect, useState } from "react";
 import { api, money, qs } from "../api";
-import { BudgetState, ErrorBox, Field, Loading, Modal } from "../components";
+import { BudgetState, ErrorBox, Field, GrossBudgetNote, Loading, Modal } from "../components";
 
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -220,6 +220,7 @@ function BudgetReviewTable({ data, url }: { data: any; url: (format: string, dow
           ) : null)}
         </table>
       </div>
+      <GrossBudgetNote />
     </div>
   );
 }

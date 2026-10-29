@@ -229,6 +229,13 @@ export function FundraiserDetail({ id }: { id: number }) {
         <div className="tile"><div className="tile-label">Expenses</div><div className="tile-value">{money(t.expense)}</div></div>
         <div className="tile"><div className="tile-label">Net</div><div className={`tile-value ${Number(t.net) < 0 ? "neg" : ""}`}>{money(t.net)}</div></div>
         <div className="tile"><div className="tile-label">Return on expenses (net ÷ expenses)</div><div className="tile-value">{roiText(t.roi)}</div></div>
+        {t.goal ? (
+          <div className="tile" data-testid="fr-goal">
+            <div className="tile-label">Goal (compared with net)</div>
+            <div className="tile-value">{money(t.goal.goal)}</div>
+            <div className="muted">{t.goal.pct_of_goal === null ? "No percentage for a goal of 0" : `${t.goal.pct_of_goal}% of goal`} · {t.goal.met ? `Met (${money(t.goal.difference)} over)` : `${money(t.goal.difference.replace("-", ""))} to go`}</div>
+          </div>
+        ) : null}
       </div>
       {Number(t.cash_float_out) || Number(t.cash_float_returned) || t.excluded_lines ? (
         <p className="hint" data-testid="fr-adjustments">
@@ -366,6 +373,7 @@ function FundraiserForm({ current, prefill, onClose, onSaved }: { current?: any;
     name: src?.name || "", description: src?.description || "",
     start_date: src?.start_date || "", end_date: src?.end_date || "",
     filter_text: src?.filter_text || "", filter_regex: !!src?.filter_regex,
+    goal_amount: current?.goal_amount || "",   // 2.3.0 (#372); not copied into next year's
   });
   // 2.1.0 (#277): "Continues from (previous fundraiser)"
   const [cont, setCont] = useState<string>(src?.continues_from_id ? String(src.continues_from_id) : "");
@@ -428,7 +436,7 @@ function FundraiserForm({ current, prefill, onClose, onSaved }: { current?: any;
     setErr(null);
     const body: any = { name: v.name, description: v.description || null, start_date: v.start_date, end_date: v.end_date || null,
                    budget_ids: ids, filter_text: v.filter_text || null, filter_regex: v.filter_regex,
-                   continues_from_id: cont ? Number(cont) : null };
+                   continues_from_id: cont ? Number(cont) : null, goal_amount: v.goal_amount.trim() || null };
     if (!current && prefill?.copy_buckets_from_id) body.copy_buckets_from_id = prefill.copy_buckets_from_id;
     try {
       onSaved(current ? await api.put(`/api/fundraisers/${current.id}`, body) : await api.post("/api/fundraisers", body));
@@ -442,6 +450,7 @@ function FundraiserForm({ current, prefill, onClose, onSaved }: { current?: any;
         <ErrorBox error={err} />
         <Field label="Name"><input required maxLength={120} value={v.name} onChange={set("name")} /></Field>
         <Field label="Description"><textarea rows={2} maxLength={2000} value={v.description} onChange={set("description")} /></Field>
+        <Field label="Goal (optional)" hint="What the fundraiser aims to raise, compared with its net (income minus expenses). Informational only."><input inputMode="decimal" pattern="\d+(\.\d{1,2})?" maxLength={20} value={v.goal_amount} onChange={set("goal_amount")} placeholder="e.g. 5000" /></Field>
         <div className="row fields">
           <Field label="Event start date" hint="The day(s) the event takes place."><input type="date" required value={v.start_date} onChange={set("start_date")} /></Field>
           <Field label="Event end date" hint="Leave empty for a one-day event."><input type="date" min={v.start_date || undefined} value={v.end_date} onChange={set("end_date")} /></Field>
