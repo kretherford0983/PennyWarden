@@ -128,6 +128,24 @@ could not otherwise be corrected. Scope and safeguards:
   with a link; the variable picker completes dotted names.
 - Tests: `backend/tests/test_v210_organization.py` (6, including the data migration) and the E2E #126 and #312 steps.
 
+**2.3.0 build 6 — Include EIN on receipts (#393, decided with Kyle 2026-10-29).**
+- No donation BR series in 03-business-rules; recorded here and in the user guide. `ReceiptConfig.include_ein`
+  (default true; old saved configs read as true). `missing_setup` asks for the EIN only while it is on.
+  Off: `values_for`/`statement_values` blank `{ORG.EIN}`/`{ORG_EIN}` (`hide_ein`), the acknowledgment block has no
+  EIN row, and a blank EIN is not reported as an empty variable at print. `setup_out.warnings`: `EIN_MISSING` (on,
+  none entered) and `EIN_PLACEHOLDER_OFF` (off, the letter or statement text still uses it).
+- One-off EIN through `{DETAILS}` (off): saving details that use it (register receipt dialog, Donations page create
+  and update) needs `confirm_ein_override` + a non-blank `ein_override_reason` (409 `EIN_OVERRIDE_REQUIRED`
+  otherwise; 409 `EIN_NOT_ENTERED` without an EIN); the reason is kept on `donation.ein_override_reason` (`0063`) and
+  in `DONATION_DETAILS_UPDATED`. Printing adds the `EIN_OVERRIDE` warning, so the backend refuses without that
+  confirmation (BR-078); the EIN then prints only inside the details (`ReceiptData.ein_override`), and
+  `DONATION_RECEIPT_PRINTED` records `ein_override` and the reason. Details saved before the option was turned off
+  (no reason) are refused at print (`EIN_OVERRIDE_REASON_MISSING`) until saved again with one. Statements have no
+  details, so no override.
+- UI: Donations Setup checkbox + warnings; `useEinOverride` (Donations.tsx) asks for the confirmation and reason when
+  the save is refused with `EIN_OVERRIDE_REQUIRED` and saves again.
+- Tests: `backend/tests/test_v230_include_ein.py` (7).
+
 **2.3.0 build 5 — Estimated entered years: fundraisers and budgets (#390, decided with Kyle 2026-10-29).**
 - `estimated` (bool, default off) on `fundraiser_series_result` and `budget_history_entry` (`0062`). Server rule
   (BR-094): estimated ⇒ a non-blank note (`fundraiser_series.estimate_note_check`, `budget_history._estimate_check`,

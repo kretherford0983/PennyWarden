@@ -45,6 +45,18 @@ note and the Estimated box, with a reason). Estimated years are marked **\*** in
 presentation and in the Fiscal Year fundraising report and presentation, with a footnote giving your note; in the
 charts their bars are lighter.
 
+## Donations
+
+### Include EIN on receipts
+**Donations Setup → Organization** has **Include EIN on receipts** (on by default). Turn it off if your organization
+prefers receipts without its EIN (for example a small church without one): receipts and year-end statements then show
+only the organization's name, and `{ORG.EIN}` prints blank in your letter text (Donations Setup warns you if the text
+still uses it). When it is on but no EIN has been entered in System/About, receipts can't be printed until it is.
+
+With the EIN turned off, a Register User can still include it on **one** receipt by writing `{ORG.EIN}` in that
+donor's *Details for the receipt* — for example for a non-cash gift over $500, where the donor needs the EIN for
+Form 8283. Saving asks you to confirm and give a reason, and printing asks once more; both are recorded.
+
 ## Bank accounts
 
 ### Fix a wrong balance in the history

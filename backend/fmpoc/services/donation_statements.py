@@ -184,6 +184,7 @@ def _row_out(r: dict) -> dict:
 # ------------------------------------------------------------------ the letter
 def statement_values(cfg, org: dict, donor_name: str, donor_address: list[str], year: int, number: str,
                      total_cents: int, today: dt.date, donor_values: dict | None = None) -> dict[str, str]:
+    org = org if cfg.include_ein else dn.hide_ein(org)          # 2.3.0 (#393)
     return {"DONOR_NAME": donor_name, "DONOR_ADDRESS": "\n".join(donor_address), **org, **(donor_values or {}),
             "YEAR": str(year),
             "TOTAL": f"{total_cents // 100:,}.{total_cents % 100:02d}", "STATEMENT_NO": number,
@@ -196,7 +197,7 @@ def statement_texts(cfg, vals: dict) -> tuple[dict, list[str]]:
     for name in ("title", "salutation", "body", "closing"):
         r = patterns.resolve(getattr(cfg, f"statement_{name}"), vals, patterns.STATEMENT)
         out[name] = r.text
-        empty += [v for v in r.empty if v not in empty]
+        empty += [v for v in r.empty if v not in empty and (cfg.include_ein or v not in dn.EIN_VARS)]
     return out, empty
 
 
@@ -257,8 +258,8 @@ def statement_pdf(cfg, *, org: dict, donor_name: str, donor_address: list[str], 
                 middle += [Paragraph("<br/>".join(escape(x) for x in para.split("\n")), base), Spacer(1, size * 0.7)]
     if not placed:                                  # the table is required content: after the text when not placed
         middle += [table, Spacer(1, size * 0.7)]
-    rows_ack = [("Organization", org["ORG.NAME"]), ("EIN", org["ORG.EIN"]), ("Donor", donor_name),
-                ("Calendar year", str(year)), ("Total (money)", dn.money(total_cents))]
+    rows_ack = ([("Organization", org["ORG.NAME"])] + ([("EIN", org["ORG.EIN"])] if cfg.include_ein else [])   # #393
+                + [("Donor", donor_name), ("Calendar year", str(year)), ("Total (money)", dn.money(total_cents))])
     if items:
         rows_ack.append(("Items", "\n".join(f"• {x}" for x in items)))
     rows_ack.append(("Statement No.", number))

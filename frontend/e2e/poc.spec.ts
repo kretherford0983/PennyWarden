@@ -3848,6 +3848,7 @@ test("#312: Donations module - Administrator sets up the receipt; a Register Use
   await expect(page.getByTestId("setup-missing")).toHaveCount(0);
   await expect(page.getByTestId("donation-org")).toContainText("12-3456789");
   await expect(page.getByTestId("donation-org")).toContainText("Sampletown, US 55555");
+  await expect(page.getByLabel("Include EIN on receipts")).toBeChecked();   // 2.3.0 (#393): on by default
   await expect(page.getByRole("img", { name: "Donation receipt preview" })).toBeVisible();
   await page.getByLabel("Signer's name").fill("Pat Example");
   await page.getByLabel("Signer's title").fill("Treasurer");
