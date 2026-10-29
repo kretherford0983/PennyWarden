@@ -19,6 +19,12 @@ PennyWarden 2.3.0 (in progress).
 - Each report fills in **your last options** (Fiscal Year, account, period…), remembered on the server so they follow
   you to another computer. Free text such as commentary or notes is not remembered.
 - Reports you can't run (your role, or a module that is off) are not listed, and their address is refused.
+- **Report settings (#376).** *System/About → Report settings* lets an Administrator choose how the catalog is grouped
+  for the whole organization — by **Purpose** (the default), **Subject** (Fiscal Year · Budgets · Accounts/Register ·
+  Entities · Fundraisers · System) or **Audience** (Board & members · Treasurer/Budget Managers · Auditors) — and
+  within it add, rename, reorder and remove categories and move reports between them. Removing a category asks where
+  its reports go. Each grouping keeps its own changes; *Reset to defaults* puts one back. Grouping is only for finding
+  reports: who can run a report doesn't change. Changes are in the audit log.
 - **Quarterly and Annual financial report (#373).** Reports → **Quarterly / Annual**: choose the Fiscal Year and Q1–Q4
   or Annual, add optional commentary, and open the PDF report or download a presentation (.pptx) for the board. Both
   show highlights (total cash, net cash change, budgets over budget, fundraiser net), every account's start and end
@@ -156,6 +162,7 @@ PennyWarden 2.3.0 (in progress).
   settings and defaults to on, so no data changes.
 - Migration `0062` adds `estimated` to `fundraiser_series_result` and `budget_history_entry` (off for every existing
   entry).
+- Migration `0067` adds the table `report_grouping` (empty = grouped by Purpose, as in 2.3.0's catalog).
 - Migration `0066` adds `app_user.report_prefs` (empty): the Reports screen's Recently run and last options.
 - Migration `0065` adds the dark theme, the theme per output type and the dark-background logos to
   `branding_settings`. Every existing organization stays light for every output type (a branding row is added for an

@@ -10,6 +10,10 @@ in **Find a report** to filter, or pick one from **Recently run** to open it aga
 has its own page — bookmark it if you use it often — and the list on the left takes you to another report without
 going back. Your last choices are filled in for you, on any computer you sign in from.
 
+An Administrator can change how the catalog is grouped under **System/About → Report settings**: by purpose (the
+default), by subject or by audience, and rename, reorder, add or remove the categories and move reports between them.
+That only changes where a report is listed — not who can run it.
+
 The Fiscal Year fundraising report, the Planning Sheet and the cash count sheet are in Reports now too; the buttons on
 the Fundraisers and Fiscal Years pages still work and take you straight there.
 

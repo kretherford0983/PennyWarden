@@ -743,3 +743,9 @@ details.year-name summary { cursor: pointer; color: var(--muted); }
 .report-purpose { margin: 6px 0 2px; }
 .output-badge { font-size: 11px; font-weight: 700; }
 @media print { .report-side, .report-head .hint { display: none; } }
+/* 2.3.0 (#376): Report settings */
+.rs-categories { list-style: none; padding: 0; margin: 8px 0; display: flex; flex-direction: column; gap: 10px; }
+.rs-category { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; background: var(--surface); }
+.rs-reports { list-style: none; padding: 0; margin: 6px 0 0; display: flex; flex-direction: column; gap: 4px; }
+.rs-reports li { align-items: center; gap: 6px; }
+.rs-reports select { max-width: 220px; }

@@ -14,10 +14,11 @@ import { BackupWarningSetting, DiagnosticsPanel, HealthPanel, OrganizationPanel,
  * be bookmarked, reloaded and reached with Back). Tabs the user can't use are not shown; an unknown or unavailable tab
  * address shows About. */
 // 2.2.0 (#280): the palette generator library is loaded only when the Branding tab is opened
+import { ReportSettings } from "./reports/ReportSettings";
 const BrandingPanel = lazy(() => import("./Branding").then((m) => ({ default: m.BrandingPanel })));
 
 export const ABOUT_TABS = [
-  ["about", "About"], ["general", "General"], ["branding", "Branding"], ["settings", "Settings"], ["backups", "Backups"],
+  ["about", "About"], ["general", "General"], ["branding", "Branding"], ["reports", "Report settings"], ["settings", "Settings"], ["backups", "Backups"],
   ["security", "Security"], ["health", "System health"], ["advanced", "Advanced"], ["testing", "Testing"],
 ] as const;
 export type AboutTab = (typeof ABOUT_TABS)[number][0];
@@ -38,7 +39,7 @@ export default function About() {
   const reader = can("system.about");                 // 2.2.0 (#349): every role - About and General, read-only
   const backups = !!a && a.restore_max_mb != null;     // the backup/restore permission (the server says)
   const allowed: Record<AboutTab, boolean> = {
-    about: true, general: admin || reader, branding: admin, settings: viewer, backups: backups || admin, security: viewer, health: admin,
+    about: true, general: admin || reader, branding: admin, reports: admin, settings: viewer, backups: backups || admin, security: viewer, health: admin,
     advanced: admin || backups, testing: admin && testingMode,
   };
   const asked = (path.split("/")[2] || "about") as AboutTab;
@@ -66,6 +67,7 @@ export default function About() {
       </>
     ),
     branding: () => <Suspense fallback={<Loading />}><BrandingPanel org={org || ""} /></Suspense>,      // 2.2.0 (#280)
+    reports: () => <ReportSettings />,      // 2.3.0 (#376)
     settings: () => <SettingsPanel />,
     backups: () => (
       <>

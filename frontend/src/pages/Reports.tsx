@@ -8,7 +8,7 @@ import BudgetReview, { PlanningSheetReport } from "./BudgetReview";
 import FlowReport from "./FlowReport";
 import { CountSheetReport, FundraisingFyReport } from "./Fundraisers";
 import { currentFy, ReportActions, type ActionsFn, type Links, type RunFn } from "./reports/common";
-import { GROUPS, reportPath, searchReports, visibleReports, type ReportDef } from "./reports/registry";
+import { GROUPS, REPORTS, reportPath, searchReports, visibleReports, type ReportDef } from "./reports/registry";
 import { SIG_EMPTY, SignatureOptions, signatureProblem, type SigState } from "./SignatureOptions";
 
 /** 2.3.0 (#375): the Reports screen. Home (/reports) is the catalog: every report the user can run, grouped by purpose,
@@ -23,6 +23,7 @@ export default function Reports({ id }: { id?: string }) {
   const [fys, setFys] = useState<any[] | null>(null);
   const [accounts, setAccounts] = useState<any[]>([]);
   const [prefs, setPrefs] = useState<any>(null);
+  const [grouping, setGrouping] = useState<Group[] | null>(null);    // 2.3.0 (#376): the organization's grouping
   const [err, setErr] = useState<unknown>(null);
   useEffect(() => {
     Promise.all([api.get("/api/fiscal-years"), api.get("/api/bank-accounts")]).then(([y, a]) => {
@@ -30,15 +31,16 @@ export default function Reports({ id }: { id?: string }) {
       setAccounts(a.filter((x: any) => x.register_enabled));
     }, setErr);
     api.get("/api/me/report-preferences").then(setPrefs, () => setPrefs({ recent: [], last: {} }));
+    api.get("/api/reports/grouping").then((g) => setGrouping(g.categories), () => setGrouping(DEFAULT_GROUPS));
   }, []);
   const list = visibleReports({ can, modules: me.modules || {} });
   const def = id ? list.find((r) => r.id === id) : undefined;
   if (id && !def) return <NotAuthorized />;           // #375: an address the user can't use is refused, not just hidden
-  if (!fys || !prefs) return <><ErrorBox error={err} /><Loading /></>;
+  if (!fys || !prefs || !grouping) return <><ErrorBox error={err} /><Loading /></>;
   const onRun = (rid: string): RunFn => (params, label) => {
     api.post("/api/me/report-runs", { report: rid, params, label: label || null }).then(setPrefs, () => undefined);
   };
-  if (!def) return <ReportsHome list={list} prefs={prefs} />;
+  if (!def) return <ReportsHome list={list} prefs={prefs} groups={grouping} />;
   // a shortcut's or Recently run's options (the address) come before the remembered ones
   const q = new URLSearchParams(search);
   const fromUrl: Record<string, any> = {};
@@ -48,7 +50,7 @@ export default function Reports({ id }: { id?: string }) {
   const Body = BODIES[def.id];
   return (
     <div className="reports-page">
-      <ReportSideList list={list} current={def.id} />
+      <ReportSideList list={list} current={def.id} groups={grouping} />
       <div className="report-main">
         <header className="report-head">
           <div className="row report-title">
@@ -56,7 +58,7 @@ export default function Reports({ id }: { id?: string }) {
             {def.outputs.map((o) => <span key={o} className="badge output-badge">{o}</span>)}
           </div>
           <p className="report-purpose">{def.purpose}</p>
-          <p className="hint">For: {def.audience} · {GROUPS.find((g) => g.id === def.group)?.name}</p>
+          <p className="hint">For: {def.audience}{grouping.find((g) => g.reports.includes(def.id)) ? ` · ${grouping.find((g) => g.reports.includes(def.id))!.name}` : ""}</p>
         </header>
         <section className="card report-body" aria-label={`${def.name} options`}>
           {/* key: a Recently run or another shortcut re-fills the options */}
@@ -88,7 +90,12 @@ function runPath(r: any): string {
   return `${reportPath(r.report)}${qs(q)}`;
 }
 
-function ReportsHome({ list, prefs }: { list: ReportDef[]; prefs: any }) {
+/** A category of the catalog: the organization's grouping (#376), its reports in order. */
+type Group = { id: string; name: string; short?: string; why?: string; reports: string[] };
+const DEFAULT_GROUPS: Group[] = GROUPS.map((g) => ({ ...g, reports: REPORTS.filter((r) => r.group === g.id).map((r) => r.id) }));
+const inGroup = (g: Group, shown: ReportDef[]) => g.reports.map((id) => shown.find((r) => r.id === id)).filter((r): r is ReportDef => !!r);
+
+function ReportsHome({ list, prefs, groups }: { list: ReportDef[]; prefs: any; groups: Group[] }) {
   const [find, setFind] = useState("");
   const shown = searchReports(list, find);
   const recent = (prefs.recent || []).filter((r: any) => list.some((d) => d.id === r.report));
@@ -118,12 +125,13 @@ function ReportsHome({ list, prefs }: { list: ReportDef[]; prefs: any }) {
           </div>
         </section>
       ) : null}
-      {GROUPS.map((g) => {
-        const items = shown.filter((r) => r.group === g.id);
+      {groups.map((g) => {
+        const items = inGroup(g, shown);
         if (!items.length) return null;          // an empty group is hidden
+        const why = GROUPS.find((d) => d.id === g.id && d.name === g.name)?.why;
         return (
           <section key={g.id} aria-labelledby={`grp-${g.id}`} className="report-group">
-            <h2 id={`grp-${g.id}`}>{g.name} <span className="hint">— {g.why}</span></h2>
+            <h2 id={`grp-${g.id}`}>{g.name}{why ? <span className="hint"> — {why}</span> : null}</h2>
             <div className="report-cards">
               {items.map((r) => (
                 <Link key={r.id} to={reportPath(r.id)} className="report-card" aria-label={r.name} aria-describedby={`rc-${r.id}`}>
@@ -142,19 +150,19 @@ function ReportsHome({ list, prefs }: { list: ReportDef[]; prefs: any }) {
   );
 }
 
-function ReportSideList({ list, current }: { list: ReportDef[]; current: string }) {
+function ReportSideList({ list, current, groups }: { list: ReportDef[]; current: string; groups: Group[] }) {
   const [find, setFind] = useState("");
   const shown = searchReports(list, find);
   return (
     <aside className="report-side no-print" aria-label="Reports">
       <Link to="/reports" className="report-back">← All reports</Link>
       <input type="search" aria-label="Find a report" placeholder="Find a report" value={find} onChange={(e) => setFind(e.target.value)} />
-      {GROUPS.map((g) => {
-        const items = shown.filter((r) => r.group === g.id);
+      {groups.map((g) => {
+        const items = inGroup(g, shown);
         if (!items.length) return null;
         return (
           <nav key={g.id} aria-label={g.name} className="report-side-group">
-            <span className="report-side-h">{g.short}</span>
+            <span className="report-side-h">{g.short || g.name}</span>
             {items.map((r) => <Link key={r.id} to={reportPath(r.id)} className={r.id === current ? "current" : ""} aria-label={r.name}>{r.short}</Link>)}
           </nav>
         );

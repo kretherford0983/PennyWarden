@@ -3626,7 +3626,7 @@ test("#216: System/About tabs have their own addresses; Auditors see three; bann
   await login(page, "admin");
   await page.getByRole("link", { name: "System/About" }).click();
   const tabs = page.getByRole("tablist", { name: "System/About sections" });
-  await expect(tabs.getByRole("tab")).toHaveText(["About", "General", "Branding", "Settings", "Backups", "Security", "System health", "Advanced"]);
+  await expect(tabs.getByRole("tab")).toHaveText(["About", "General", "Branding", "Report settings", "Settings", "Backups", "Security", "System health", "Advanced"]);
   await expect(page).toHaveURL(/\/about$/);
   await expect(tabs.getByRole("tab", { name: "About" })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("tabpanel")).toContainText("Data protection");
@@ -3703,7 +3703,7 @@ test("2.2.0 (#349): a financial user sees System/About read-only - About and Gen
   await expect(mods.getByRole("row", { name: /Fundraisers/ })).toContainText(/Enabled|Disabled/);
   await page.screenshot({ path: "e2e-screenshots/light-about-financial.png" });
   // Administrator-only tab addresses fall back to /about
-  for (const t of ["settings", "backups", "security", "health", "advanced", "branding"]) {
+  for (const t of ["settings", "backups", "security", "health", "advanced", "branding", "reports"]) {
     await page.goto(`/about/${t}`);
     await expect(page).toHaveURL(/\/about$/);
   }
@@ -4276,6 +4276,50 @@ test("#280: an Administrator brands reports - a palette, a custom palette checke
   await card.screenshot({ path: "e2e-screenshots/light-branding.png" });
   await card.getByRole("button", { name: "Reset to the PennyWarden palette" }).click();
   await expect(card.getByRole("radio", { name: /PennyWarden/ })).toBeChecked();
+});
+
+// ---------------------------------------------------------------- 2.3.0 #376: report grouping
+test("#376: an Administrator groups the Reports catalog by Subject, renames and reorders categories, moves a report; users see it", async ({ page }) => {
+  await login(page, "admin");
+  await page.getByRole("link", { name: "System/About" }).click();
+  await aboutTab(page, "Report settings");
+  const card = page.getByRole("region", { name: "Report settings" });
+  await expect(card.getByRole("radio", { name: /Purpose/ })).toBeChecked();
+  await card.getByRole("radio", { name: /Subject/ }).check();
+  await card.getByLabel("Category 1 name").fill("This Fiscal Year");
+  await card.getByRole("button", { name: "Move Budgets up" }).click();           // Budgets first
+  await card.getByLabel("Category of Financial Flow").selectOption({ label: "This Fiscal Year" });
+  // removing a category with reports asks where they go
+  await card.getByRole("button", { name: "Remove…" }).last().click();       // System: no reports, removed at once
+  await expect(card.getByTestId("rs-category")).toHaveCount(5);
+  await card.getByRole("button", { name: "Remove…" }).nth(3).click();       // Entities: has a report
+  await expect(card.getByRole("group", { name: "Remove Entities" })).toBeVisible();
+  await card.getByRole("button", { name: "Keep it" }).click();
+  await card.getByLabel("New category").fill("Board packet");
+  await card.getByRole("button", { name: "Add category" }).click();
+  await card.getByLabel("Category of Quarterly / Annual financial report").selectOption({ label: "Board packet" });
+  await card.getByRole("button", { name: "Save and group by Subject" }).click();
+  await expect(card.getByRole("status")).toHaveText("Saved.");
+  await card.screenshot({ path: "e2e-screenshots/light-report-settings.png" });
+  await logout(page);
+  await login(page, "bm1");
+  await page.getByRole("link", { name: "Reports", exact: true }).click();
+  const heads = page.locator(".report-group h2");
+  await expect(heads.first()).toHaveText("Budgets");
+  await expect(page.locator(".report-group").filter({ hasText: "This Fiscal Year" })).toContainText("Financial Flow");
+  await expect(page.locator(".report-group").filter({ hasText: "Board packet" })).toContainText("Quarterly / Annual financial report");
+  await logout(page);
+  // back to the default grouping for the other tests
+  await login(page, "admin");
+  await page.goto("/about/reports");
+  page.once("dialog", (d) => d.accept());
+  await card.getByRole("button", { name: "Reset to defaults" }).click();
+  await expect(card.getByRole("status")).toHaveText("Saved.");
+  await expect(card.getByTestId("rs-category")).toHaveCount(6);
+  await card.getByRole("radio", { name: /Purpose/ }).check();
+  await card.getByRole("button", { name: "Save and group by Purpose" }).click();
+  await expect(card.getByRole("status")).toHaveText("Saved.");
+  await logout(page);
 });
 
 // ---------------------------------------------------------------- 2.3.0 #386: dual branding

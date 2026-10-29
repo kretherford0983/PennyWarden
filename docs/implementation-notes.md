@@ -128,6 +128,23 @@ could not otherwise be corrected. Scope and safeguards:
   with a link; the variable picker completes dotted names.
 - Tests: `backend/tests/test_v210_organization.py` (6, including the data migration) and the E2E #126 and #312 steps.
 
+**2.3.0 build 12 — Report settings: configurable report grouping (#376).**
+- New business rule (recorded here; spec docs aren't changed in the repo): **report grouping is workspace
+  configuration; every report belongs to exactly one category of the active scheme; grouping is display-only and
+  never grants access.** Administrators only (`system.manage`), audited `REPORT_GROUPING_UPDATED` / `_RESET`.
+- Table `report_grouping` (`0067`): the active scheme and, per customized scheme, its categories (`id`, `name`,
+  optional `short`, `reports` in order) as JSON; no row / no customization = `services/report_grouping.DEFAULTS`
+  (Purpose = the #375 groups). A report added in a later release that a saved grouping doesn't know goes to an
+  "Other" category (never lost). Empty categories are allowed (System has no report yet) and hidden in the catalog.
+- Validation: 1–20 categories, names 1–60 characters and unique (case-insensitive), ids generated from the name when
+  new, every report exactly once. Removing a category with reports asks where they go (another category or a new
+  "Other") in the screen; the server only accepts a complete grouping.
+- `GET /api/reports/grouping` (any signed-in user) feeds the catalog and side list; `GET/PUT
+  /api/system/report-settings`, `POST …/reset` for the Administrator. In backups; part of the *General* partial-restore
+  section; kept through a reinitialize (organization setting).
+- Tests: `backend/tests/test_v230_report_grouping.py` (defaults, scheme switch, customize, validation, reset, audit,
+  Administrators only, display-only); E2E "#376".
+
 **2.3.0 build 11 — Reports screen redesign (#375; layout chosen by Kyle 2026-10-29 from the mockups).**
 - Layout: the catalog of mockup (a) as the home (`/reports`), and each report on its own page (`/reports/<id>`) with
   the compact grouped side list of (c) plus the search box of (b). The candidates stay on the design canvas.
