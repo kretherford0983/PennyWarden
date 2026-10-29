@@ -24,3 +24,20 @@ fundraiser's page shows the goal beside the totals and compares the **net** (inc
 percentage of the goal reached and how much is still to go, or how far the goal was beaten. Leave it blank for no
 goal. The goal is for information only and never stops anything from being entered. *Create next year's* starts the
 new fundraiser without a goal.
+
+## System/About
+
+### Choose which releases the update check looks at
+Under **System/About → Settings**, an Administrator can change **Update channel**:
+
+| Choice | What the update notice tells you about |
+|---|---|
+| **Follow this build** (default) | Production builds: production releases. Test builds: newer test builds and production releases. |
+| **Production releases only** | Production releases — a test build is also told when the final release of its own version is out. |
+| **Test builds and production releases** | Test builds (pre-release) too, each linked to its GitHub release page. |
+| **Off** | Nothing; the check makes no requests. The *Check for updates* switch is still the usual way to turn it off. |
+
+The change is saved to `config.toml` and works straight away — no restart needed. On a **local install** this is
+the only setting you can change from the app. On a production installation, choosing test builds asks you to confirm:
+test builds are pre-release and not production ready, so only install them on a system you use for testing.
+PennyWarden never installs an update by itself.

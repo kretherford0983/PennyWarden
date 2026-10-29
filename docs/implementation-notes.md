@@ -128,6 +128,23 @@ could not otherwise be corrected. Scope and safeguards:
   with a link; the variable picker completes dotted names.
 - Tests: `backend/tests/test_v210_organization.py` (6, including the data migration) and the E2E #126 and #312 steps.
 
+**2.3.0 build 2 — Update channel in the Settings editor (#379, decided with Kyle 2026-10-28).**
+- `admin_settings`: `update_channel` joins `EDITABLE` (choices `auto`/`stable`/`test`/`off`, plain-language
+  `choice_labels`); `LOCAL_EDITABLE = ("update_channel",)` — on a local install it is the only editable key (any
+  other key → 409 `SERVER_ONLY`; the view's `editor` is true when something is editable). `LIVE = ("update_channel",)`:
+  never `restart_required`; after the save the router calls `apply_live`, which replaces `app.state.settings` with a
+  `dataclasses.replace` copy (Settings is frozen). `updates.check` reads `app.state.settings` each tick (every 30 s) and
+  fetches again whenever the channel differs from the last check's, so the new channel is used within about a minute.
+- Confirmation `PRE_RELEASE_CHANNEL` when the build is a production build (`build_info.branch == "main"`) and the new
+  value is `test` (BR-107: the default stays `auto`). Locked by `FM_UPDATE_CHANNEL`/command line as every setting.
+- Same-version rule: `updates.current` now gives the test-build number for every build made from `test`, whatever
+  the channel (still none for `main`), and `is_newer` on the stable channel reports the production release of the
+  running version to a test build. On the test channel nothing changes (a test build follows newer test builds).
+  The 1.10.0 unit assertion "a test build on stable doesn't see its own version" was turned around on purpose.
+- Tests: `backend/tests/test_v230_update_channel.py` (13); `test_v200_admin_settings` local-mode test updated (the
+  #126 criterion's one exception); E2E: the System/About settings step checks the channel row (locked by the E2E
+  server's `FM_UPDATE_CHANNEL`).
+
 **2.3.0 build 1 — Gross budgets (#371) and an optional fundraiser goal (#372), Kyle 2026-10-28/29.**
 - #371 (proposed BR-109, *Budgets Are Gross*; spec docs unchanged per this file's rule): budgets stay gross — an
   offset recorded in a budget of the opposite type is never netted (netting isn't tractable in general; fundraiser
