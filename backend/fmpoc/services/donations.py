@@ -1385,7 +1385,9 @@ def list_out(db: Session, ctx, show: str = "all", q: str | None = None) -> dict:
         k = q.strip().lower()
         rows = [r for r in rows if k in r["donor"]["name"].lower() or k == str(r["id"])
                 or (r["current_receipt"] or "").lower() == k]
-    return {"items": rows, "counts": counts, "status_text": STATUS_TEXT}
+    # 2.2.0: the variables a donation's Details can use (as on the register's receipt form), for the page's editor
+    return {"items": rows, "counts": counts, "status_text": STATUS_TEXT,
+            "variables": [v for v in patterns.variable_options(patterns.RECEIPT) if v["name"] != "DETAILS"]}
 
 
 def preview_donation(db: Session, ctx, d: Donation) -> tuple[bytes, dict]:
