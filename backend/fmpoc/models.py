@@ -208,6 +208,9 @@ class Budget(Base):
     # 1.8.0 (#89): the budget of an earlier Fiscal Year this one continues (independent of the code, so a budget can
     # be renumbered and keep its history). At most one later budget continues a budget (checked in the service).
     continues_budget_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    # 2.2.0 (#381): or the budget from before PennyWarden this one continues (at most one of the two is set; at most one
+    # budget continues a former budget - checked in the service). Any level, same type; Other may continue one.
+    continues_former_budget_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     status_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
@@ -663,14 +666,39 @@ class FundraiserSeriesResult(Base):
     created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
+class FormerBudget(Base):
+    """2.2.0 (#381): a budget from before PennyWarden - one line of the old spreadsheets (code, name and type as they were
+    most recently), whose yearly figures are BudgetHistoryEntry rows. A PennyWarden budget reaches them only through an
+    explicit link (Budget.continues_former_budget_id), never by code, so codes need not be unique. Reporting only.
+    Corrected or retired, never deleted."""
+    __tablename__ = "former_budget"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
+    code: Mapped[str] = mapped_column(String(20))
+    name: Mapped[str] = mapped_column(String(120))
+    budget_type: Mapped[str] = mapped_column(String(10))  # INCOME | EXPENSE
+    note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    retired_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    retired_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    retire_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updated_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    updated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
 class BudgetHistoryEntry(Base):
-    """2.2.0 (#284): a budget's budgeted and actual figures for a year before PennyWarden, entered by a Budget Manager
-    (labelled *Entered*; reporting only - never part of actuals, registers or closure). Stored against the oldest
-    budget of the line (#89 links) and read for every budget of the line. Corrected or retired, never deleted."""
+    """2.2.0 (#284, #381): a year's budgeted and actual figures of a former budget (before PennyWarden), entered by a
+    Budget Manager (labelled *Entered*; reporting only - never part of actuals, registers or closure). `code`/`name`:
+    what the budget was called that year when it differs (empty = the former budget's). `budget_id`: only on entries
+    made before #381 (kept for the record; not read). Corrected or retired, never deleted."""
     __tablename__ = "budget_history_entry"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
-    budget_id: Mapped[int] = mapped_column(ForeignKey("budget.id"), index=True)
+    budget_id: Mapped[int | None] = mapped_column(ForeignKey("budget.id"), nullable=True, index=True)
+    former_budget_id: Mapped[int | None] = mapped_column(ForeignKey("former_budget.id"), nullable=True, index=True)
+    code: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    name: Mapped[str | None] = mapped_column(String(120), nullable=True)
     fiscal_year_label: Mapped[str] = mapped_column(String(40))
     year: Mapped[int] = mapped_column(Integer)
     budgeted_cents: Mapped[int] = mapped_column(BigInteger)

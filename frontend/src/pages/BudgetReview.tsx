@@ -88,7 +88,7 @@ function columns(data: any): Col[] {
       // 2.2.0 (#284): a year before PennyWarden, entered from earlier records
       const entered = c.source === "ENTERED" ? (c.from_sub_budgets ? "entered · sum of sub-budgets" : "entered") : null;
       const mismatch = c.mismatch ? `sub-budgets: ${money(c.mismatch.budgeted)} / ${money(c.mismatch.actual)}` : null;
-      const note = [entered, mismatch, c.renumbered ? c.code : null, c.status && c.status !== "APPROVED" ? status(c.status) : null].filter(Boolean).join(" · ");
+      const note = [entered, mismatch, c.renumbered ? c.code : null, c.entered_as ? `as ${c.entered_as}` : null, c.status && c.status !== "APPROVED" ? status(c.status) : null].filter(Boolean).join(" · ");
       return [<>{money(c.budgeted)}{note ? <div className="muted small">{note}</div> : null}</>, money(c.actual), diffText(c.difference, c.difference_pct)];
     },
   }));

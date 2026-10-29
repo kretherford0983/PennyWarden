@@ -361,8 +361,10 @@ def budget_review(db: Session, ctx, fy: FiscalYear, *, years: int = 3, projected
                     cells.append(None)
                     continue
                 note = None      # an entered figure of its own: the row has history even without a link
+                # 2.2.0 (#381): what the budget was called that year, when it differs from this row
+                as_ = f"{f['code']} {f['name']}" if f.get("code") and (f["code"], f["name"]) != (code, b.name) else None
                 cells.append({"source": "ENTERED", "fiscal_year_id": None, "budget_id": None, "code": code,
-                              "name": b.name, "status": None, "renumbered": False,
+                              "name": b.name, "status": None, "renumbered": False, "entered_as": as_,
                               "from_sub_budgets": f["source"] == "subs", "mismatch": f["mismatch"],
                               **compare(f["budgeted"], f["actual"])})
                 continue
@@ -537,6 +539,8 @@ def _entered_text(c: dict) -> str:
     if c.get("mismatch"):
         m = c["mismatch"]
         t += f"; sub-budgets add up to {m['budgeted']} budgeted, {m['actual']} actual"
+    if c.get("entered_as"):                     # 2.2.0 (#381): called differently that year
+        t += f"; as {c['entered_as']}"
     return t
 
 
@@ -608,6 +612,8 @@ def _review_columns(rep: dict) -> list[tuple[str, callable]]:
             if c.get("source") == "ENTERED":          # 2.2.0 (#284)
                 extra.append("<i>entered" + (", sum of sub-budgets" if c.get("from_sub_budgets") else "")
                              + ("; sub-budgets differ" if c.get("mismatch") else "") + "</i>")
+                if c.get("entered_as"):               # 2.2.0 (#381): called differently that year
+                    extra.append(escape(c["entered_as"]))
             if c.get("renumbered"):
                 extra.append(escape(c["code"]))
             if c.get("status") and c["status"] != "APPROVED":

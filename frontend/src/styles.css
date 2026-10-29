@@ -642,6 +642,11 @@ label.check.small { font-size: 12px; }
 .entered-row td:first-child { white-space: nowrap; }
 .row-buttons { display: inline-flex; gap: 4px; }
 .retired-entries { margin: 6px 0; }
+/* 2.2.0 (#381): budgets from before PennyWarden */
+.former-link { margin: 8px 0; }
+.former-link p { margin: 4px 0; }
+details.year-name { margin: 6px 0; }
+details.year-name summary { cursor: pointer; color: var(--muted); }
 .retired-entries summary { cursor: pointer; color: var(--muted); }
 /* 2.2.0 (#319): What to restore */
 .what-to-restore { margin-top: 12px; padding: 12px; border: 1px solid var(--border); border-radius: 6px; }
