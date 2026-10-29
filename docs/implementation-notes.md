@@ -128,6 +128,26 @@ could not otherwise be corrected. Scope and safeguards:
   with a link; the variable picker completes dotted names.
 - Tests: `backend/tests/test_v210_organization.py` (6, including the data migration) and the E2E #126 and #312 steps.
 
+**2.3.0 build 7 — Shared signers (#395, decided with Kyle 2026-10-29).**
+- The table `check_signer` is kept (not renamed: checks, print snapshots and audit events refer to it) and gets
+  `areas` (comma list of CHECKS, COVER_LETTERS, DONATIONS), like the envelope library's `features`. New service
+  `services/signers.py` and router `/api/signers` (Administrators: `checks.setup` or `donation.setup`, at least one of
+  the modules on). The old `/api/checks/signers` routes stay for compatibility; Payments Setup now links to the
+  Signers page. Choosing a signer validates the area tag (`require_tagged`); `usage()` lists where a signer is in use,
+  which blocks retiring it or dropping that tag (409 `SIGNER_IN_USE`). Tag changes are audited `SIGNER_AREAS_CHANGED`.
+- Signature modes `NONE | PRINTED | IMAGE | SPACE` (`signers.block_for`/`flowables`). The image needs the key, so
+  `km` (the app key) is passed explicitly to every letter/receipt/statement render. The record copy (attachment kept
+  with the payment or donation) is always rendered with `with_image=False`, so IMAGE becomes PRINTED there; the
+  printed/downloaded copy carries the image. IMAGE without an uploaded image falls back to SPACE
+  (`SIGNER_NO_IMAGE` warning on Donations Setup).
+- `ReceiptConfig`: `signer_name`/`signer_title` removed (old saved keys are dropped on read); `signer_id`,
+  `signature_mode`, `statement_signer_id` and `statement_signature_mode` (None = the receipt's). `LetterConfig`:
+  `signer_source` (`SAME_AS_CHECK` default | `FIXED`), `signer_id`, `signature_mode` (default `PRINTED`, which is
+  the 2.2 behaviour).
+- Migration `0064` converts the typed names so nothing prints differently (see upgrade.md).
+- Tests: `backend/tests/test_v230_shared_signers.py` (7, including the data migration); E2E steps in the #158/#159,
+  #165-#166 and #312 tests now add signers on the Signers page.
+
 **2.3.0 build 6 — Include EIN on receipts (#393, decided with Kyle 2026-10-29).**
 - No donation BR series in 03-business-rules; recorded here and in the user guide. `ReceiptConfig.include_ein`
   (default true; old saved configs read as true). `missing_setup` asks for the EIN only while it is on.

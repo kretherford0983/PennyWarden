@@ -2840,15 +2840,19 @@ test("#156-#162: Administrator sets up check printing; a Register User prints a 
   await expect(page.getByText("Does not fit at the smallest size")).toBeVisible();
   page.once("dialog", (d) => d.accept());   // "Leave without saving your changes?"
   await page.getByRole("button", { name: "Back to check styles" }).click();
+  await page.screenshot({ path: "e2e-screenshots/light-check-setup.png", fullPage: true });
   // a signer with a (synthetic) signature image; only a SAMPLE preview is ever shown
+  // 2.3.0 (#395): signers live on the shared Signers page, tagged for the areas they sign
+  await page.goto("/signers");
   await page.getByRole("button", { name: "Add signer…" }).click();
   const sd = page.getByRole("dialog", { name: "Add signer" });
   await sd.getByLabel(/^Name/).fill("Jordan Sample");
   await sd.getByLabel("Title (optional)").fill("Treasurer");
+  await expect(sd.getByLabel("Checks")).toBeChecked();
   await sd.getByLabel(/Signature image/).setInputFiles({ name: "signature.png", mimeType: "image/png", buffer: await samplePng() });
   await sd.getByRole("button", { name: "Save" }).click();
   await expect(page.getByRole("img", { name: "Sample of Jordan Sample's signature" })).toBeVisible();
-  await page.screenshot({ path: "e2e-screenshots/light-check-setup.png", fullPage: true });
+  await page.screenshot({ path: "e2e-screenshots/light-signers.png", fullPage: true });
   await logout(page);
 
   // Register User: a withdrawal to a vendor, printed as a check
@@ -3193,6 +3197,7 @@ test("#167: Administrator sets up a voucher check with two signature lines; a Re
   await expect(tp.getByRole("button", { name: "Print…" })).toBeVisible();
   await tp.getByRole("button", { name: "Close" }).first().click();
   await page.getByRole("button", { name: "Back to check styles" }).click();
+  await page.goto("/signers");   // 2.3.0 (#395)
   await page.getByRole("button", { name: "Add signer…" }).click();
   const sd = page.getByRole("dialog", { name: "Add signer" });
   await sd.getByLabel(/^Name/).fill("Pat Example");
@@ -3850,8 +3855,19 @@ test("#312: Donations module - Administrator sets up the receipt; a Register Use
   await expect(page.getByTestId("donation-org")).toContainText("Sampletown, US 55555");
   await expect(page.getByLabel("Include EIN on receipts")).toBeChecked();   // 2.3.0 (#393): on by default
   await expect(page.getByRole("img", { name: "Donation receipt preview" })).toBeVisible();
-  await page.getByLabel("Signer's name").fill("Pat Example");
-  await page.getByLabel("Signer's title").fill("Treasurer");
+  // 2.3.0 (#395): the signer comes from the shared Signers page, tagged for donation letters
+  await expect(page.getByText("No signers are tagged for donation letters yet")).toBeVisible();
+  await page.goto("/signers");
+  await page.getByRole("button", { name: "Add signer…" }).click();
+  const sd = page.getByRole("dialog", { name: "Add signer" });
+  await sd.getByLabel(/^Name/).fill("Riley Sample");
+  await sd.getByLabel("Title (optional)").fill("Treasurer");
+  await expect(sd.getByLabel("Donation receipts and statements")).toBeChecked();
+  await sd.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByRole("row", { name: /Riley Sample/ })).toContainText("Donation receipts and statements");
+  await page.goto("/donation-setup");
+  await page.getByTestId("rc-signer").selectOption({ label: "Riley Sample (Treasurer)" });
+  await page.getByTestId("rc-signature-mode").selectOption("SPACE");
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.getByRole("status").filter({ hasText: "Saved." })).toBeVisible();
   await expect(page.getByTestId("setup-missing")).toHaveCount(0);

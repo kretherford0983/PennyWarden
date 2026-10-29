@@ -21,6 +21,7 @@ from ..services.checkprint import config as cfgmod
 from ..services.checkprint import documents, fonts, patterns, presets, raster, render
 from ..services.checkprint import service as svc
 from ..services import pdf_preview
+from ..services import signers as sg
 from ..services.common import get_scoped
 
 router = APIRouter(prefix="/api/checks", tags=["checks"])
@@ -141,7 +142,12 @@ def setup(request: Request, db: Session = Depends(get_db), ctx: Ctx = Depends(se
             "signature2_default": presets.SIGNATURE2_DEFAULT,
             "fonts": fonts.options(), "font_sizes": {"min": fonts.MIN_SIZE, "max": fonts.MAX_SIZE},
             "variables": patterns.variable_options(patterns.CHECK),
-            "signers": [svc.signer_out(s) for s in svc.list_signers(db, ctx)],
+            # 2.3.0 (#395): the signers tagged for checks (managed on the shared Signers page)
+            "signers": [svc.signer_out(s) for s in svc.list_signers(db, ctx) if "CHECKS" in svc.signer_out(s)["areas"]],
+            # 2.3.0 (#395): the cover letter editor's signer choices and signature modes
+            "letter_signers": [svc.signer_out(s) for s in svc.list_signers(db, ctx)
+                               if s.active and "COVER_LETTERS" in svc.signer_out(s)["areas"]],
+            "signature_modes": [{"id": m, "label": sg.MODE_LABELS[m]} for m in sg.MODES],
             "documents": [svc.doc_out(d) for d in svc.list_documents(db, ctx)],
             "letter_variables": patterns.variable_options(patterns.LETTER),
             "stub_variables": patterns.variable_options(patterns.STUB),
@@ -381,7 +387,8 @@ def print_options(txn_id: int, db: Session = Depends(get_db), ctx: Ctx = Depends
                            "bank_account_name": acct.account_name},
            "styles": [svc.style_out(s, full=False) for s in styles],
            "check_style_id": chosen.id if chosen else None,
-           "signers": [svc.signer_out(s) for s in svc.list_signers(db, ctx) if s.active and s.image_ciphertext],
+           "signers": [svc.signer_out(s) for s in svc.list_signers(db, ctx) if s.active and s.image_ciphertext
+                       and "CHECKS" in svc.signer_out(s)["areas"]],
            "variables": patterns.variable_options(patterns.CHECK),
            "next_check_number": svc.next_check_number(db, ctx, acct.id),
            "print_status": svc.print_status(db, t), "last_printed_number": svc.last_printed_number(db, t),
@@ -614,11 +621,11 @@ def _draft_parts(db, ctx, body: DraftIn):
 
 
 @router.post("/documents/draft/preview-image")
-def draft_preview_image(body: DraftIn, db: Session = Depends(get_db), ctx: Ctx = Depends(doc_ctx)):
+def draft_preview_image(body: DraftIn, request: Request, db: Session = Depends(get_db), ctx: Ctx = Depends(doc_ctx)):
     cfg, logo = _draft_parts(db, ctx, body)
     if not raster.available():
         raise AppError(501, "PREVIEW_UNAVAILABLE", "The picture preview is not available on this server.")
-    pdf = svc.sample_letter_pdf(cfg, logo) if body.kind == "LETTER" else svc.sample_envelope_pdf(cfg, preview=True)
+    pdf = svc.sample_letter_pdf(cfg, logo, db, ctx, request.app.state.key) if body.kind == "LETTER" else svc.sample_envelope_pdf(cfg, preview=True)
     png, pages = raster.pdf_to_png(pdf)
     return Response(png, media_type="image/png",
                     headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
@@ -626,16 +633,16 @@ def draft_preview_image(body: DraftIn, db: Session = Depends(get_db), ctx: Ctx =
 
 
 @router.post("/documents/draft/preview")
-def draft_preview(body: DraftIn, db: Session = Depends(get_db), ctx: Ctx = Depends(doc_ctx)):
+def draft_preview(body: DraftIn, request: Request, db: Session = Depends(get_db), ctx: Ctx = Depends(doc_ctx)):
     cfg, logo = _draft_parts(db, ctx, body)
-    pdf = svc.sample_letter_pdf(cfg, logo) if body.kind == "LETTER" else svc.sample_envelope_pdf(cfg, preview=True)
+    pdf = svc.sample_letter_pdf(cfg, logo, db, ctx, request.app.state.key) if body.kind == "LETTER" else svc.sample_envelope_pdf(cfg, preview=True)
     return _pdf(ctx, pdf, f"{body.kind.lower()}-preview.pdf")
 
 
 @router.post("/documents/draft/test-print")
-def draft_test_print(body: DraftIn, db: Session = Depends(get_db), ctx: Ctx = Depends(doc_ctx)):
+def draft_test_print(body: DraftIn, request: Request, db: Session = Depends(get_db), ctx: Ctx = Depends(doc_ctx)):
     cfg, logo = _draft_parts(db, ctx, body)
-    pdf = svc.sample_letter_pdf(cfg, logo) if body.kind == "LETTER" else svc.sample_envelope_pdf(cfg)
+    pdf = svc.sample_letter_pdf(cfg, logo, db, ctx, request.app.state.key) if body.kind == "LETTER" else svc.sample_envelope_pdf(cfg)
     audit.record(db, ctx, "CHECK_DOCUMENT_TEST_PRINT", "check_document", None, None,
                  {"unsaved_settings": True, "draft": True, "kind": body.kind})
     db.commit()
@@ -702,11 +709,11 @@ def document_logo_image(doc_id: int, db: Session = Depends(get_db), ctx: Ctx = D
 
 
 @router.post("/documents/{doc_id}/test-print")
-def document_test(doc_id: int, body: DocTestIn, db: Session = Depends(get_db), ctx: Ctx = Depends(doc_ctx)):
+def document_test(doc_id: int, body: DocTestIn, request: Request, db: Session = Depends(get_db), ctx: Ctx = Depends(doc_ctx)):
     d = svc.get_document(db, ctx, doc_id)
     _kind_ok(db, ctx, d.kind)
     cfg = svc._doc_config_or_422(d.kind, body.config) if body.config is not None else svc.doc_config(d)
-    pdf = svc.sample_letter_pdf(cfg, d.logo_png) if d.kind == "LETTER" else svc.sample_envelope_pdf(cfg)
+    pdf = svc.sample_letter_pdf(cfg, d.logo_png, db, ctx, request.app.state.key) if d.kind == "LETTER" else svc.sample_envelope_pdf(cfg)
     audit.record(db, ctx, "CHECK_DOCUMENT_TEST_PRINT", "check_document", d.id, None,
                  {"unsaved_settings": body.config is not None})
     db.commit()
@@ -714,18 +721,18 @@ def document_test(doc_id: int, body: DocTestIn, db: Session = Depends(get_db), c
 
 
 @router.post("/documents/{doc_id}/preview")
-def document_preview(doc_id: int, body: DocTestIn, db: Session = Depends(get_db), ctx: Ctx = Depends(doc_ctx)):
+def document_preview(doc_id: int, body: DocTestIn, request: Request, db: Session = Depends(get_db), ctx: Ctx = Depends(doc_ctx)):
     """#186: the live on-screen preview of a letter or envelope template with sample data (unsaved settings). Nothing
     is printed or stored, so it is not audited (the test print is)."""
     d = svc.get_document(db, ctx, doc_id)
     _kind_ok(db, ctx, d.kind)
     cfg = svc._doc_config_or_422(d.kind, body.config) if body.config is not None else svc.doc_config(d)
-    pdf = svc.sample_letter_pdf(cfg, d.logo_png) if d.kind == "LETTER" else svc.sample_envelope_pdf(cfg, preview=True)
+    pdf = svc.sample_letter_pdf(cfg, d.logo_png, db, ctx, request.app.state.key) if d.kind == "LETTER" else svc.sample_envelope_pdf(cfg, preview=True)
     return _pdf(ctx, pdf, f"{d.kind.lower()}-preview.pdf")
 
 
 @router.post("/documents/{doc_id}/preview-image")
-def document_preview_image(doc_id: int, body: DocTestIn, db: Session = Depends(get_db), ctx: Ctx = Depends(doc_ctx)):
+def document_preview_image(doc_id: int, body: DocTestIn, request: Request, db: Session = Depends(get_db), ctx: Ctx = Depends(doc_ctx)):
     """Build 11 (#217): the same live preview as a PNG picture, which every browser shows (Safari shows an inline PDF
     blank). 501 PREVIEW_UNAVAILABLE where the PDF renderer can't load; the editor then falls back to the PDF."""
     d = svc.get_document(db, ctx, doc_id)
@@ -733,7 +740,7 @@ def document_preview_image(doc_id: int, body: DocTestIn, db: Session = Depends(g
     cfg = svc._doc_config_or_422(d.kind, body.config) if body.config is not None else svc.doc_config(d)
     if not raster.available():
         raise AppError(501, "PREVIEW_UNAVAILABLE", "The picture preview is not available on this server.")
-    pdf = svc.sample_letter_pdf(cfg, d.logo_png) if d.kind == "LETTER" else svc.sample_envelope_pdf(cfg, preview=True)
+    pdf = svc.sample_letter_pdf(cfg, d.logo_png, db, ctx, request.app.state.key) if d.kind == "LETTER" else svc.sample_envelope_pdf(cfg, preview=True)
     png, pages = raster.pdf_to_png(pdf)
     return Response(png, media_type="image/png",
                     headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
@@ -776,7 +783,7 @@ def print_letter(txn_id: int, body: LetterIn, request: Request, db: Session = De
     t = svc.get_printable(db, ctx, txn_id, for_check=False)
     d = svc.get_document(db, ctx, body.document_id, "LETTER")
     pdf = svc.print_letter(db, ctx, request.app.state.settings, t, d, body.signer_id, body.confirmations,
-                           fold=body.fold_marks)
+                           fold=body.fold_marks, km=request.app.state.key)
     return _pdf(ctx, pdf, f"letter-{t.check_number or t.id}.pdf")
 
 

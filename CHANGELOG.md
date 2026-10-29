@@ -53,6 +53,20 @@ PennyWarden 2.3.0 (in progress).
 - The receipt dialog's "setup missing" message now points to System/About → Organization, where the EIN and address
   are entered.
 
+### Signers (#395)
+- **One shared Signers page** (Administrators, next to Envelopes, when Payments or Donations is on) replaces the
+  Signers section of Payments Setup and the typed signer name and title of Donations Setup. Each signer has a name,
+  title, optional signature image (still encrypted and never downloadable) and *Used for* tags: Checks, Payment cover
+  letters, Donation receipts and statements. Each area offers only the signers tagged for it, and a signer in use
+  can't be retired or lose that tag until those settings change.
+- **How the signature shows on letters.** Cover letters, donation receipts and year-end statements each choose a
+  signer and one of: *None*, *Printed name and title*, *Signature image and printed name*, or *Printed name with
+  space to sign by hand*. The year-end statement can use its own signer or follow the receipt. Cover letters can
+  still follow the check's signer (*Same as the check*, the default).
+- The signature image prints only on the copy you print or download; the copy kept with the payment or donation shows
+  the printed name instead, as a check's record copy does. A signer without an image falls back to space to sign
+  (Donations Setup warns).
+
 ### Bank accounts
 - **Correct or retire a balance history entry (#391).** In a non-register account's *History*, each entry's ⋯ menu
   has **Correct…** (change the amount and/or the *as of* date) and **Retire…** (take a wrong entry out). Both need a
@@ -86,6 +100,10 @@ PennyWarden 2.3.0 (in progress).
   settings and defaults to on, so no data changes.
 - Migration `0062` adds `estimated` to `fundraiser_series_result` and `budget_history_entry` (off for every existing
   entry).
+- Migration `0064` adds `check_signer.areas`: every existing signer is tagged for Checks. The Donations Setup signer
+  name and title become a signer tagged for donation letters, signed with space to sign by hand as before. Cover
+  letters keep signing with the check's signer by printed name; a typed fallback name (without variables) becomes a
+  signer tagged for cover letters. Nothing prints differently.
 
 ## 2.2.0 — unreleased
 PennyWarden 2.2.0 (in progress).

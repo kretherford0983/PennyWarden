@@ -1044,6 +1044,8 @@ class CheckSigner(Base):
     image_height: Mapped[int | None] = mapped_column(Integer, nullable=True)
     image_uploaded_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     image_uploaded_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 2.3.0 (#395): one shared list of signers - the areas a signer may be used in (CHECKS, COVER_LETTERS, DONATIONS)
+    areas: Mapped[str | None] = mapped_column(String(100), nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
     created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
