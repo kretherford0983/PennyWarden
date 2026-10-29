@@ -249,10 +249,11 @@ function BudgetHistory({ row, onClose, manage }: any) {
                 {shown.map((x, i) => (
                   <tr key={`e${x.id ?? `s${i}`}`} className="entered-row">
                     <td>{x.fiscal_year_label} <span className="badge grey" title="Entered from earlier records, before PennyWarden">Entered</span></td>
-                    <td />
+                    {/* 2.2.0 (#381): the code and name the budget had that year (from before PennyWarden) */}
+                    <td>{x.code_shown ? <span className="code">{x.code_shown}</span> : null}</td>
                     <td>
-                      {!x.from_sub_budgets && x.code_shown && en.former && `${x.code_shown} ${x.name_shown}` !== en.former.label ? <div className="small">as {x.code_shown} {x.name_shown}</div> : null}
-                      {x.from_sub_budgets ? <i>sum of its sub-budgets</i> : x.note ? <span className="muted">{x.note}</span> : null}
+                      {x.name_shown ? <div>{x.name_shown}</div> : null}
+                      {x.from_sub_budgets ? <i>sum of its sub-budgets</i> : x.note ? <div className="muted small">{x.note}</div> : null}
                       {!x.counted ? <div className="muted small">Not counted: a Fiscal Year in PennyWarden covers this year.</div> : null}
                       {x.mismatch ? <div className="muted small" data-testid="history-mismatch">Its sub-budgets add up to {money(x.mismatch.budgeted)} budgeted, {money(x.mismatch.actual)} actual.</div> : null}
                     </td>
