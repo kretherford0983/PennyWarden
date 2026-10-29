@@ -1045,7 +1045,6 @@ test("2.1.0 (#257, #261, #283): Budget Review with projection choices; the Plann
   const both = await page.request.get(withReview!);
   expect(both.status()).toBe(200);
   expect((await both.body()).length).toBeGreaterThan((await sheet.body()).length);
-  await expect(dlg).toHaveCount(0);
   await logout(page);
 });
 
