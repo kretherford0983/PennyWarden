@@ -1844,6 +1844,10 @@ test("#381: a budget from before PennyWarden is created, given a year and contin
   const h = page.getByRole("dialog", { name: "History of 8970 Bowling" });
   await expect(h.getByTestId("former-link")).toContainText("continues 450 Bowling Tournament");
   await expect(h.getByRole("table", { name: "Budget history" })).toContainText(y);
+  // the entered year shows the code and name it had then (ID and Name columns)
+  const er = h.locator("tr.entered-row").filter({ hasText: y });
+  await expect(er.locator("td").nth(1)).toHaveText("450");
+  await expect(er.locator("td").nth(2)).toContainText("Bowling Tournament");
   await h.getByTestId("former-link").getByRole("button", { name: "Unlink" }).click();
   await expect(h.getByTestId("former-link")).toContainText("Not linked to a budget from before PennyWarden.");
   await expect(h.getByRole("table", { name: "Budget history" })).not.toContainText(y);

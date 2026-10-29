@@ -89,7 +89,7 @@ PennyWarden 2.2.0 (in progress).
   - **Each year keeps the code and name it had**, and the budget is shown under its most recent ones (2024 *104
     Raffle Fundraiser*, 2025 *104 Raffle* → *104 Raffle*). The Budget Review says *as …* where a year was called
     differently.
-  - **On a budget's History:** *Add an earlier year* (creates the budget from before PennyWarden and the link the
+  - **On a budget's History** each entered year shows the code and name the budget had that year. *Add an earlier year* (creates the budget from before PennyWarden and the link the
     first time), *Link… / Change… / Unlink*. Entries can be corrected or retired (with a reason), never deleted;
     a budget from before PennyWarden can be retired too. Every change is in the audit log.
   - **From a CSV file:** *Budgets → Import earlier years…* takes *budget code, type, former code, former name, year,
