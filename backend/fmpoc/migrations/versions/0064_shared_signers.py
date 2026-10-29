@@ -58,8 +58,7 @@ def upgrade() -> None:
         if name:
             cfg["signer_id"] = _signer(con, ws_id, name, title, "DONATIONS")
             cfg["signature_mode"] = "SPACE"
-        else:
-            cfg.setdefault("signature_mode", "NONE")
+        # no typed signer: nothing to add - an absent signature_mode reads as NONE (the setting's default)
         con.execute(sa.text("UPDATE donation_settings SET config_json = :c WHERE id = :i"),
                     {"c": json.dumps(cfg, sort_keys=True), "i": rid})
     for rid, ws_id, raw in con.execute(sa.text("SELECT id, workspace_id, config_json FROM check_document "
