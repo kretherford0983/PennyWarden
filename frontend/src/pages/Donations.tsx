@@ -8,7 +8,7 @@ import { api, ApiError } from "../api";
 import { ErrorBox, Field, Loading, Modal, useConfirmable } from "../components";
 import { useMe } from "../App";
 import { Link } from "../router";
-import { LivePreview, PatternInput, PdfViewer, Section, usePdf } from "./checkShared";
+import { LivePreview, PatternInput, PdfViewer, PinToggle, Section, SetupLayout, usePdf, usePin } from "./checkShared";
 import { DocFocus, DocumentEditor } from "./CheckDocuments";
 import { EnvelopeLibrary, ReceiptEnvelopePanel } from "./Envelopes";
 
@@ -57,6 +57,7 @@ export default function DonationSetup() {
   const [viewing, setViewing] = useState(false);
   // 2.2.0 (#325): the envelopes used for Donations (the shared library) and their editor, in place of the page
   const [stmtPreview, setStmtPreview] = useState(false);
+  const [pin, setPin] = usePin("pw-donations-pin");   // 2.3.0 (#394): Keep at the top (narrow screens)
   const [lib, setLib] = useState<any>(null);
   const [editingEnv, setEditingEnv] = useState<any>(null);
   const [envFocus, setEnvFocus] = useState<DocFocus>(undefined);
@@ -99,8 +100,21 @@ export default function DonationSetup() {
       <ErrorBox error={err} />
       {s.missing.length ? <div className="alert warn" role="alert" data-testid="setup-missing">Receipts can't be printed until you enter {s.missing.join(" and ")} in{" "}
         <Link to="/about/general">System/About → Organization</Link>.</div> : null}
-      <div className="setup-grid">
-        <div>
+      {/* 2.3.0 (#394): the settings with the preview beside them (wide screens, locked) or at the top (narrow) */}
+      <SetupLayout preview={
+        <Section id="pv" scope="pw-donations" title="Preview (sample data)" className={`doc-preview letter ${pin ? "pinned" : ""}`} extra={
+          <div className="row form-row">
+            <label className="check"><input type="radio" name="dn-preview" checked={!stmtPreview} onChange={() => setStmtPreview(false)} /> Receipt</label>
+            <label className="check"><input type="radio" name="dn-preview" checked={stmtPreview} onChange={() => setStmtPreview(true)} /> Year-end statement</label>
+            <PinToggle pin={pin} setPin={setPin} />
+          </div>
+        }>
+          {stmtPreview ? <LivePreview key="st" imageUrl="/api/donations/setup/statement-preview-image" pdfUrl="/api/donations/setup/statement-preview" body={{ config: cfg }}
+                                      title="Year-end statement preview" aspect={8.5 / 11} deps={[JSON.stringify(cfg)]} />
+            : <LivePreview key="rc" imageUrl="/api/donations/setup/preview-image" pdfUrl="/api/donations/setup/preview" body={{ config: cfg }}
+                           title="Donation receipt preview" aspect={8.5 / 11} deps={[JSON.stringify(cfg)]} />}
+        </Section>
+      }>
           <Section id="org" scope="pw-donations" title="Organization">
             <dl className="dl" data-testid="donation-org">
               <dt>Name</dt><dd>{s.organization.name}</dd>
@@ -183,10 +197,8 @@ export default function DonationSetup() {
             </div>
             <div className="row">
               <button type="button" onClick={statementTest}>Test print the statement (sample data)</button>
-              <button type="button" className="small" onClick={() => setStmtPreview((v) => !v)}>{stmtPreview ? "Hide the statement preview" : "Show the statement preview"}</button>
             </div>
-            {stmtPreview ? <LivePreview imageUrl="/api/donations/setup/statement-preview-image" pdfUrl="/api/donations/setup/statement-preview" body={{ config: cfg }}
-                                        title="Year-end statement preview" aspect={8.5 / 11} deps={[JSON.stringify(cfg)]} /> : null}
+            <p className="hint">The preview beside these settings (or at the top, on a narrow screen) can show the statement: choose <i>Year-end statement</i> there.</p>
           </Section>
           {/* 2.2.0 (#325): the cover letter's window-envelope options (#177) and fold marks (#247) */}
           <Section id="win" scope="pw-donations" title="Window envelope and fold marks">
@@ -217,12 +229,7 @@ export default function DonationSetup() {
             <button onClick={() => { setCfg({ ...s.defaults, signer_id: cfg.signer_id, signature_mode: cfg.signature_mode, statement_signer_id: cfg.statement_signer_id, statement_signature_mode: cfg.statement_signature_mode }); setSaved(false); }}>Default wording</button>
             {saved && !dirty ? <span className="hint" role="status">Saved.</span> : dirty ? <span className="hint">Unsaved changes</span> : null}
           </div>
-        </div>
-        <Section id="pv" scope="pw-donations" title="Preview (sample data)" className="doc-preview letter">
-          <LivePreview imageUrl="/api/donations/setup/preview-image" pdfUrl="/api/donations/setup/preview" body={{ config: cfg }}
-                       title="Donation receipt preview" aspect={8.5 / 11} deps={[JSON.stringify(cfg)]} />
-        </Section>
-      </div>
+      </SetupLayout>
       {lib ? <EnvelopeLibrary feature="DONATIONS" docs={lib.envelopes} onChanged={loadLib} onEdit={(d, f) => { setEditingEnv(d); setEnvFocus(f); }} /> : null}
       {pdf && viewing ? (
         <PdfViewer pdf={pdf} title="Donation receipt test print" onClose={() => setViewing(false)}>

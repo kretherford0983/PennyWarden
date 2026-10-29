@@ -3030,6 +3030,37 @@ test("2.1.2: changing a deposit's Entity in the edit form saves it", async ({ pa
   await logout(page);
 });
 
+// ---------------------------------------------------------------- 2.3.0 build 8: one setup layout (#394)
+test("#394: setup editors put a locked preview beside the settings on wide screens and at the top (Keep at the top) on narrow ones", async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await login(page, "admin");
+  await page.getByRole("link", { name: "Payments Setup" }).click();
+  await page.getByRole("button", { name: "New cover letter" }).click();
+  const preview = page.getByTestId("setup-preview");
+  const general = page.getByRole("heading", { name: "Signed by" });
+  await expect(page.getByRole("img", { name: "Cover letter preview" })).toBeVisible();
+  // wide: the preview is to the right of the settings, Keep at the top is not offered, and it stays on screen
+  const pb = (await preview.boundingBox())!, gb = (await general.boundingBox())!;
+  expect(pb.x).toBeGreaterThan(gb.x + gb.width / 2);
+  await expect(page.getByLabel("Keep at the top")).toBeHidden();
+  await general.scrollIntoViewIfNeeded();
+  await page.locator(".content").evaluate((el) => el.scrollTo(0, el.scrollHeight));
+  await expect(page.getByRole("img", { name: "Cover letter preview" })).toBeInViewport();
+  // narrow: the preview is at the top of the page, with Keep at the top
+  await page.setViewportSize({ width: 900, height: 900 });
+  await page.locator(".content").evaluate((el) => el.scrollTo(0, 0));
+  const pb2 = (await page.getByRole("heading", { name: /^Preview/ }).boundingBox())!;
+  const gb2 = (await page.getByRole("heading", { name: "Signed by" }).boundingBox())!;
+  expect(pb2.y).toBeLessThan(gb2.y);
+  await page.getByLabel("Keep at the top").check();
+  await page.locator(".content").evaluate((el) => el.scrollTo(0, el.scrollHeight));
+  await expect(page.getByRole("img", { name: "Cover letter preview" })).toBeInViewport({ ratio: 0.3 });
+  await page.getByLabel("Keep at the top").uncheck();
+  page.once("dialog", (d) => d.accept());
+  await page.getByRole("button", { name: "Back to Payments Setup" }).click();
+  await logout(page);
+});
+
 // ---------------------------------------------------------------- 2.0.0 build 3: cover letters, envelopes (#165, #166)
 test("#165-#166: Administrator sets up a cover letter and an envelope; a Register User records a handwritten check and prints both", async ({ page }) => {
   await login(page, "admin");

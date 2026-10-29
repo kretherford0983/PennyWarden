@@ -333,6 +333,48 @@ export function Section({ id, title, children, extra, className = "", scope = "p
   );
 }
 
+/** 2.3.0 (#394): the one layout of every setup editor (Donations Setup, check styles, cover letters, envelopes; later
+ * Invoices #218). Wide screens (1200px and up): the settings on the left and the preview on the right, always locked -
+ * the preview column stays in the window while the settings scroll (capped at the window's height; a taller preview
+ * scrolls inside its column). Narrow screens: the preview at the top of the page, with *Keep at the top* (PinToggle)
+ * to lock it there. The settings come first in the page order (keyboard, screen readers); CSS places the preview. */
+export function SetupLayout({ preview, children, className = "" }: { preview: React.ReactNode; children: React.ReactNode; className?: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const el = ref.current;
+    const pane = el?.closest(".content") as HTMLElement | null;
+    if (!el || !pane) return;
+    // the height the locked preview may use: the scrolling pane less its padding and the sticky Save bar
+    const fit = () => {
+      const pad = parseFloat(getComputedStyle(pane).paddingTop || "0") + parseFloat(getComputedStyle(pane).paddingBottom || "0");
+      el.style.setProperty("--pane-h", `${Math.max(240, pane.clientHeight - pad - 64)}px`);
+    };
+    fit();
+    if (typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(fit);
+    ro.observe(pane);
+    return () => ro.disconnect();
+  }, []);
+  return (
+    <div className={`setup-layout ${className}`} ref={ref}>
+      <div className="setup-settings">{children}</div>
+      <div className="setup-preview" data-testid="setup-preview">{preview}</div>
+    </div>
+  );
+}
+
+/** 2.3.0 (#394): *Keep at the top* for a preview on narrow screens (hidden on wide ones, where it is always locked),
+ * remembered per page while the app is open. */
+export function usePin(key: string): [boolean, (v: boolean) => void] {
+  const [pin, setPin] = useState(() => viewState.get(key) ?? false);
+  useEffect(() => { viewState.set(key, pin); }, [pin, key]);
+  return [pin, setPin];
+}
+
+export function PinToggle({ pin, setPin }: { pin: boolean; setPin: (v: boolean) => void }) {
+  return <label className="check pin-toggle"><input type="checkbox" checked={pin} onChange={(e) => setPin(e.target.checked)} /> Keep at the top</label>;
+}
+
 /** #186 / build 11 (#217): the live preview of a letter or envelope template - the server draws the template with sample
  * data from the unsaved settings, shortly after each change; the previous picture stays until the new one is ready.
  * It is shown as a picture (PNG of the PDF that prints), because Safari shows a PDF in an inline frame blank. Where the
