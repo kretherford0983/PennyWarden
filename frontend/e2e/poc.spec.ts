@@ -1839,6 +1839,31 @@ test("#284: a Budget Manager enters years before PennyWarden on History and impo
   expect(row.history[i]).toMatchObject({ source: "ENTERED", budgeted: "70.00", actual: "65.00" });
 });
 
+test("#382: the Budget Review lists a budget of the years shown that is not in the chosen Fiscal Year", async ({ page }) => {
+  await login(page, "bm1");
+  const post = await apiAs(page);
+  const fys = await (await page.request.get("/api/fiscal-years")).json();
+  const f41 = fys.find((f: any) => f.display_name === "FY2041");
+  const darts = await (await post("/api/budgets/former", { code: "460", name: "Darts League", budget_type: "EXPENSE" })).json();
+  const anyBudget = (await (await page.request.get(`/api/budgets?fiscal_year_id=${f41.id}`)).json()).expense[0];
+  const firstYear = (await (await page.request.get(`/api/budgets/${anyBudget.id}/history/entered`)).json()).first_year;
+  const y = firstYear - 4;
+  const e = await post(`/api/budgets/former/${darts.id}/entries`, { fiscal_year_label: `FY${y}`, budgeted: "120.00", actual: "95.00" });
+  expect(e.status(), await e.text()).toBe(201);
+  await page.goto("/reports");
+  await page.getByRole("tab", { name: "Budget Review" }).click();
+  await page.getByLabel("Budget Review Fiscal Year").selectOption(String(f41.id));
+  await page.getByLabel("Prior years").selectOption("-1");
+  await page.getByRole("button", { name: "Run report" }).click();
+  const table = page.locator(".budget-review").getByRole("table", { name: "Budget Review" });
+  const head = table.locator("th", { hasText: "460 Darts League" });
+  await expect(head).toBeVisible();
+  await expect(head.getByTestId("not-in-year")).toHaveText(`Not in FY2041, last FY${y}`);
+  // nothing to keep: retire it again so later tests see the usual review
+  const r = await page.request.post(`/api/budgets/former/${darts.id}/retire`, { headers: { "X-CSRF-Token": (await (await page.request.get("/api/auth/me")).json()).csrf_token }, data: { reason: "E2E" } });
+  expect(r.status()).toBe(200);
+});
+
 test("#381: a budget from before PennyWarden is created, given a year and continued by a budget", async ({ page }) => {
   await login(page, "bm1");
   const post = await apiAs(page);

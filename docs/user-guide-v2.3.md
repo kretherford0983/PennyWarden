@@ -16,6 +16,13 @@ when the net cost was within plan. PennyWarden now says this wherever budget amo
 
 The budget form's **Amount** is now called **Gross amount**. Nothing is calculated differently.
 
+### Budget Review: budgets that are not in this year
+The **Budget Review** now also lists budgets that had figures in the years you chose to show but are **not in the
+chosen Fiscal Year** — for example a fundraiser budget that wasn't run this year, or one from before PennyWarden that
+no budget continues yet. They appear among the Income and Expense budgets, under the most recent code and name they
+had, with a **Not in FY…, last FY…** tag. Their earlier years and averages are shown as usual; the current year,
+*Projected* and next year show —. Budgets are matched by their continuation links, never just by the code.
+
 ## Fundraisers
 
 ### A goal for a fundraiser

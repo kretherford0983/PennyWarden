@@ -39,7 +39,8 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from ..errors import validation
-from ..models import Budget, BudgetProjectionChoice, FiscalYear, Fundraiser, FundraiserBudget, Workspace, utcnow
+from ..models import (Budget, BudgetProjectionChoice, FiscalYear, FormerBudget, Fundraiser, FundraiserBudget, Workspace,
+                      utcnow)
 from ..money import fmt
 from . import budgets as bsvc
 from . import fundraisers as fsvc
@@ -324,6 +325,138 @@ def adjacent_years(db: Session, ws_id: int, fy: FiscalYear) -> tuple[list[Fiscal
     return prior, nxt
 
 
+# ------------------------------------------------------------------ 2.3.0 (#382): budgets not in the chosen year
+def _add_not_in_year(db: Session, ctx, fy: FiscalYear, shown: list, first: int | None, sections: dict,
+                     entered_of, cache: dict, average) -> None:
+    """Rows for the lines with figures in the years shown that have no budget in the chosen Fiscal Year (decided with
+    Kyle 2026-10-29): mixed into Income and Expense in code order, tagged "not in <FY>, last <year>", shown under the
+    line's most recent code and name; no current-year, projection or next-year figures. Lines group on the #89 and
+    #381 links, never on the code. A discontinued parent's sub-budgets are in its figures (no rows of their own); a
+    dropped sub-budget of a continuing parent gets its own row."""
+    from . import budget_history as hist
+    rows_all = sections["income"] + sections["expense"]
+    covered: set[int] = {r["id"] for r in rows_all}
+    for r in rows_all:
+        covered |= {c["budget_id"] for c in r["history"] if c and c.get("budget_id")}
+    covered_formers: set[int] = set()
+    for r in rows_all:
+        b = db.get(Budget, r["id"])
+        f = hist.former_of(db, b)
+        if f is not None:
+            covered_formers.add(f.id)
+        if b.parent_budget_id is None:
+            covered_formers |= {x.id for x in hist._sub_formers(db, b)}
+    fy_years = [y for kind, y in shown if kind == "fy"]
+    entered_years = [y for kind, y in shown if kind == "entered"]
+
+    def latest(b: Budget) -> Budget:
+        cur, seen = b, {b.id}
+        while True:
+            n = bsvc._continued_by(db, cur.id)
+            if n is None or n.id in seen:
+                return cur
+            nfy = db.get(FiscalYear, n.fiscal_year_id)
+            if nfy is None or nfy.start_date >= fy.start_date:
+                return cur
+            seen.add(n.id)
+            cur = n
+
+    leads: dict[int, Budget] = {}
+    for y in fy_years:
+        for b in db.scalars(select(Budget).where(Budget.fiscal_year_id == y.id, Budget.status != "DELETED",
+                                                 Budget.is_budget_zero.is_(False), Budget.is_other.is_(False))):
+            if b.id in covered:
+                continue
+            if b.parent_budget_id is not None and b.parent_budget_id not in covered:
+                continue           # a discontinued parent's row includes it
+            L = latest(b)
+            leads.setdefault(L.id, L)
+    formers = list(db.scalars(select(FormerBudget).where(FormerBudget.workspace_id == ctx.workspace_id,
+                                                         FormerBudget.retired_at.is_(None))))
+    lone: list[FormerBudget] = []
+    for f in formers:
+        if f.id in covered_formers:
+            continue
+        holder = hist.continued_by(db, f)
+        if holder is None:
+            lone.append(f)
+            continue
+        L = latest(holder)
+        if L.fiscal_year_id != fy.id and L.id not in covered:
+            leads.setdefault(L.id, L)
+
+    def label_of(i: int) -> str:
+        kind, y = shown[i]
+        return y.display_name if kind == "fy" else (hist.year_labels(db, ctx.workspace_id, first, True).get(y) or str(y))
+
+    extra: dict[str, list[dict]] = {"INCOME": [], "EXPENSE": []}
+    for L in leads.values():
+        line = {x.fiscal_year_id: x for x in hist.pw_line(db, L) if x.status != "DELETED"}
+        code = _code(db, L)
+        figs = entered_of(L)
+        cells = []
+        for kind, y in shown:
+            if kind == "fy":
+                x = line.get(y.id)
+                if x is None:
+                    cells.append(None)
+                    continue
+                xc = _code(db, x)
+                cells.append({"source": "RECORDED", "fiscal_year_id": y.id, "budget_id": x.id, "code": xc,
+                              "name": x.name, "status": x.status, "renumbered": xc != code,
+                              **compare(x.amount_cents, _actual_all(db, x, cache))})
+            else:
+                f = figs.get(y)
+                if f is None:
+                    cells.append(None)
+                    continue
+                as_ = f"{f['code']} {f['name']}" if f.get("code") and (f["code"], f["name"]) != (code, L.name) else None
+                cells.append({"source": "ENTERED", "fiscal_year_id": None, "budget_id": None, "code": code,
+                              "name": L.name, "status": None, "renumbered": False, "entered_as": as_,
+                              "from_sub_budgets": f["source"] == "subs", "mismatch": f["mismatch"],
+                              **compare(f["budgeted"], f["actual"])})
+        if any(c is not None for c in cells):
+            extra[L.budget_type].append(_nic_row(f"b{L.id}", code, L.name, L.budget_type, cells, average, fy,
+                                                 label_of(max(i for i, c in enumerate(cells) if c is not None))))
+    for f in lone:
+        own = {e.year: e for e in hist._entries(db, [f.id])}
+        code, name = hist.current_label(db, f)
+        cells = []
+        for kind, y in shown:
+            e = own.get(y) if kind == "entered" else None
+            if e is None:
+                cells.append(None)
+                continue
+            ec, en = e.code or f.code, e.name or f.name
+            cells.append({"source": "ENTERED", "fiscal_year_id": None, "budget_id": None, "code": code, "name": name,
+                          "status": None, "renumbered": False,
+                          "entered_as": f"{ec} {en}" if (ec, en) != (code, name) else None,
+                          "from_sub_budgets": False, "mismatch": None, **compare(e.budgeted_cents, e.actual_cents)})
+        if any(c is not None for c in cells):
+            extra[f.budget_type].append(_nic_row(f"f{f.id}", code, name, f.budget_type, cells, average, fy,
+                                                 label_of(max(i for i, c in enumerate(cells) if c is not None))))
+    for key, rows in extra.items():
+        sec = sections[key.lower()]
+        for row in sorted(rows, key=lambda r: hist._sort_code(r["code"])):
+            k = hist._sort_code(row["code"])
+            at = next((i for i, r in enumerate(sec) if r["level"] == "parent" and hist._sort_code(r["code"]) > k),
+                      len(sec))
+            sec.insert(at, row)
+
+
+def _nic_row(rid: str, code: str, name: str, budget_type: str, cells: list, average, fy: FiscalYear,
+             last: str) -> dict:
+    return {"id": rid, "level": "parent", "parent_id": None, "code": code, "name": name, "budget_type": budget_type,
+            "status": None, "state": None, "is_other": False, "history": cells, "history_note": None,
+            "average": average(cells), "current": None, "projection": None, "next": None, "choosable": False,
+            "not_in_year": {"fiscal_year": fy.display_name, "last_year": last}}
+
+
+def not_in_year_text(r: dict) -> str:
+    n = r.get("not_in_year")
+    return f"not in {n['fiscal_year']}, last {n['last_year']}" if n else ""
+
+
 # ------------------------------------------------------------------ Budget Prep report (#257)
 def budget_review(db: Session, ctx, fy: FiscalYear, *, years: int = 3, projected: bool = False,
                 include_next: bool = False, budget_id: int | None = None, parent_budget_id: int | None = None,
@@ -335,7 +468,9 @@ def budget_review(db: Session, ctx, fy: FiscalYear, *, years: int = 3, projected
     # 2.2.0 (#284): after the Fiscal Years in PennyWarden come the years before it with entered figures (newest first)
     from . import budget_history as hist
     first = hist.first_year(db, ctx.workspace_id)
-    entered_labels = hist.year_labels(db, ctx.workspace_id, first)
+    filtered = budget_id is not None or parent_budget_id is not None
+    # 2.3.0 (#382): the full review also lists budgets not in the chosen year, so every former budget's years count
+    entered_labels = hist.year_labels(db, ctx.workspace_id, first, all_formers=not filtered)
     columns = [("fy", y) for y in prior] + [("entered", y) for y in sorted(entered_labels, reverse=True)]
     shown = list(reversed(columns[:min(years, MAX_YEARS)]))             # oldest first
     fig_cache: dict[int, dict] = {}
@@ -462,6 +597,8 @@ def budget_review(db: Session, ctx, fy: FiscalYear, *, years: int = 3, projected
                 group = [x for x in group if x["id"] == budget_id]
             out += group
         sections[key.lower()] = out
+    if not filtered:
+        _add_not_in_year(db, ctx, fy, shown, first, sections, entered_of, cache, average)
     if budget_id is not None and not (sections["income"] or sections["expense"]):
         raise validation("Choose a budget of this Fiscal Year (not Budget 0).", "budget_id")
     if parent_budget_id is not None and not (sections["income"] or sections["expense"]):
@@ -509,7 +646,7 @@ def budget_review_csv(rep: dict) -> str:
     for sec in ("income", "expense"):
         for r in rep[sec]:
             line = [sec.title(), "Sub-budget" if r["level"] == "sub" else "Budget", r["code"], r["name"],
-                    STATUS_TEXT.get(r["status"], r["status"])]
+                    "N" + not_in_year_text(r)[1:] if r.get("not_in_year") else STATUS_TEXT.get(r["status"], r["status"])]
             for c in r["history"]:
                 line += (["", "—", "—", "", "", ""] if c is None else
                          [c["code"], c["budgeted"], c["actual"], c["difference"], c["difference_pct"] or "n/a",
@@ -517,7 +654,8 @@ def budget_review_csv(rep: dict) -> str:
             av = r.get("average")
             line += (["", "", "", 0] if av is None else [av["budgeted"], av["actual"], av["difference"], av["years"]])
             cu = r["current"]
-            line += [cu["budgeted"], cu["actual"], cu["difference"], cu["difference_pct"] or "n/a", r["history_note"] or ""]
+            line += (["—", "—", "", "", r["history_note"] or ""] if cu is None else      # 2.3.0 (#382): not in this year
+                     [cu["budgeted"], cu["actual"], cu["difference"], cu["difference_pct"] or "n/a", r["history_note"] or ""])
             if rep["projected"]:
                 pr = r["projection"] or {}
                 state = pr.get("state")
@@ -627,9 +765,12 @@ def _review_columns(rep: dict) -> list[tuple[str, callable]]:
                      (money(r["average"]["budgeted"]), money(r["average"]["actual"]), _diff_short(r["average"]))))
     fyn = rep["fiscal_year"]["display_name"]
     cols.append((f"{escape(fyn)}<br/><font size=6>YTD {_us(rep['as_of'])}</font>",
-                 lambda r: (money(r["current"]["budgeted"]), money(r["current"]["actual"]), _diff_short(r["current"]))))
+                 lambda r: ("—", "", "") if r["current"] is None else       # 2.3.0 (#382)
+                 (money(r["current"]["budgeted"]), money(r["current"]["actual"]), _diff_short(r["current"]))))
     if rep["projected"]:
         def proj(r):
+            if r["current"] is None:      # 2.3.0 (#382): no projection for a budget not in this year
+                return ("—", "", "")
             pr = r["projection"] or {}
             st = pr.get("state")
             if st in PROJ_TEXT:
@@ -707,7 +848,9 @@ def _review_flowables(db: Session, ctx, rep: dict, doc) -> list:
                                    ("LEFTPADDING", (0, 0), (-1, -1), 3), ("RIGHTPADDING", (0, 0), (-1, -1), 4),
                                    ("TOPPADDING", (0, 0), (-1, -1), 1.5), ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5)]
             for r in rows:
-                status = "" if r["status"] == "APPROVED" else f" <font size=6>({STATUS_TEXT.get(r['status'], r['status'])})</font>"
+                status = ("" if r["status"] == "APPROVED" else f" <font size=6>({STATUS_TEXT.get(r['status'], r['status'])})</font>")
+                if r.get("not_in_year"):     # 2.3.0 (#382)
+                    status = f" <font size=6>— {escape(not_in_year_text(r))}</font>"
                 label = f"{escape(r['code'])} {escape(r['name'])}{status}"
                 i = len(data)
                 data.append([Paragraph(f"<b>{label}</b>" if r["level"] == "parent" else "&nbsp;&nbsp;&nbsp;" + label,

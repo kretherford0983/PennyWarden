@@ -14,6 +14,14 @@ PennyWarden 2.3.0 (in progress).
   budgeted vs spent* chart, and as a small footnote directly under every budget table in the End of Year Audit and
   Fiscal Year Close reports, the Budget Review PDF (and its chart) and the Planning Sheet. The budget *Amount* is now
   labelled **Gross amount** in the budget form and tables. No figure changes.
+- **Budget Review: budgets that are not in the chosen year (#382).** The review now also lists the budgets that had
+  figures in the years shown but have no budget in the chosen Fiscal Year — a PennyWarden budget that was dropped, a
+  sub-budget that was dropped from a parent that continues, and a budget from before PennyWarden that nothing
+  continues. They are mixed in with the Income and Expense budgets in code order, under the line's **most recent**
+  code and name, tagged **Not in FY…, last FY…**, with their years and the average of the years they had figures; the
+  current-year, projection and next-year columns show —. Lines follow the continuation links, never the code, so a
+  reused code is never merged with an unrelated budget. On the screen, in the PDF and the CSV (and so in the review
+  appended to the Planning Sheet). A review of one budget or one parent is unchanged.
 
 ### Fundraisers
 - **An optional goal for a fundraiser (#372).** *New/Edit fundraiser* has a **Goal (optional)** field. When a goal is

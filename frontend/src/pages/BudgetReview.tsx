@@ -97,12 +97,13 @@ function columns(data: any): Col[] {
       cells: (r: any) => r.average ? [money(r.average.budgeted), money(r.average.actual), diffText(r.average.difference, r.average.difference_pct)] : [<span className="muted">—</span>, null, null] });
   }
   cols.push({ key: "cur", head: <>{data.fiscal_year.display_name}<div className="muted small">YTD {data.as_of}</div></>,
-    cells: (r: any) => [money(r.current.budgeted), money(r.current.actual), diffText(r.current.difference, r.current.difference_pct)] });
+    cells: (r: any) => !r.current ? [<span className="muted" title={`No budget in ${data.fiscal_year.display_name}`}>—</span>, null, null]   // 2.3.0 (#382)
+      : [money(r.current.budgeted), money(r.current.actual), diffText(r.current.difference, r.current.difference_pct)] });
   if (data.projected) {
     cols.push({ key: "proj", head: <>Projected<div className="muted small">to {data.fiscal_year.end_date}</div></>,
       cells: (r: any) => {
         const p = r.projection;
-        if (!p) return [null, null, null];
+        if (!p) return [r.current ? null : <span className="muted">—</span>, null, null];
         if (p.state === "NOT_PROJECTED") return [money(r.current.budgeted), <i>Complete: no projection</i>, null];
         if (p.state === "TOO_EARLY") return [money(r.current.budgeted), <i>too early to project</i>, null];
         const word = p.state === "ROLLUP" ? "sum of sub-budgets" : p.state === "YEAR_ENDED" ? "year ended: actual" : "projected";
@@ -148,7 +149,7 @@ export default function BudgetReview({ fys }: { fys: any[] }) {
   return (
     <section className="card">
       <h2 className="no-print">Budget Review</h2>
-      <p className="no-print">Each budget of the Fiscal Year with its history over earlier years (following the budget continuation links, so a renumbered budget stays on one line), budgeted against actual, the year-to-date actual and, optionally, a projection to the year end and next year's continuing budget. For Budget Managers.</p>
+      <p className="no-print">Each budget of the Fiscal Year with its history over earlier years (following the budget continuation links, so a renumbered budget stays on one line) — and the budgets of those years that are not in this Fiscal Year, marked <i>Not in</i> — budgeted against actual, the year-to-date actual and, optionally, a projection to the year end and next year's continuing budget. For Budget Managers.</p>
       <div className="report-options no-print">
         <Field label="Fiscal Year">
           <select aria-label="Budget Review Fiscal Year" value={f.fiscal_year_id} onChange={(e) => setF({ ...f, fiscal_year_id: e.target.value, budget: "" })}>
@@ -204,7 +205,9 @@ function BudgetReviewTable({ data, url }: { data: any; url: (format: string, dow
                   <Fragment key={r.id}>
                     <tr className={r.level === "parent" ? "budget-head parent-row" : "budget-head"}>
                       <th colSpan={span} scope="rowgroup" className={r.level === "sub" ? "indent" : ""}>
-                        {r.level === "parent" ? <b>{r.code} {r.name}</b> : `${r.code} ${r.name}`} <BudgetState state={r.state} />
+                        {r.level === "parent" ? <b>{r.code} {r.name}</b> : `${r.code} ${r.name}`} {r.state ? <BudgetState state={r.state} /> : null}
+                        {/* 2.3.0 (#382): a budget of the years shown that has no budget in the chosen Fiscal Year */}
+                        {r.not_in_year ? <span className="badge grey" data-testid="not-in-year">Not in {r.not_in_year.fiscal_year}, last {r.not_in_year.last_year}</span> : null}
                       </th>
                     </tr>
                     {(["Budgeted", "Actual", "Difference"] as const).map((word, k) => (
