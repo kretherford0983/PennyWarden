@@ -174,6 +174,9 @@ def update_style(db: Session, ctx, s: CheckStyle, name: str, config: dict) -> Ch
             signer = db.get(CheckSigner, sid)
             if signer is None or signer.workspace_id != ctx.workspace_id or not signer.active:
                 raise validation("The default signer does not exist or is inactive.", field)
+            from .. import signers as sg
+            if sg.CHECKS not in sg.areas_of(signer):          # 2.3.0 (#395)
+                raise validation(f"{signer.name} is not tagged for checks (Signers page).", field)
     before = _snapshot(s)
     s.name = name
     s.config_json = json.dumps(cfg.model_dump())
@@ -203,12 +206,16 @@ def get_style(db: Session, ctx, style_id: int) -> CheckStyle:
 
 # ------------------------------------------------------------------ signers (#159)
 def signer_out(s: CheckSigner) -> dict:
+    from .. import signers as sg
     return {"id": s.id, "name": s.name, "title": s.title, "active": s.active, "has_image": bool(s.image_ciphertext),
-            "image_uploaded_at": s.image_uploaded_at.isoformat() if s.image_uploaded_at else None}
+            "image_uploaded_at": s.image_uploaded_at.isoformat() if s.image_uploaded_at else None,
+            "areas": sg.areas_of(s)}                       # 2.3.0 (#395)
 
 
 def _signer_snapshot(s: CheckSigner) -> dict:
-    return {"name": s.name, "title": s.title, "active": s.active, "image_sha256": s.image_sha256}
+    from .. import signers as sg
+    return {"name": s.name, "title": s.title, "active": s.active, "image_sha256": s.image_sha256,
+            "areas": sg.areas_of(s)}
 
 
 def list_signers(db: Session, ctx) -> list[CheckSigner]:
@@ -265,11 +272,18 @@ def _store_image(km, s: CheckSigner, png: bytes, w: int, h: int, ctx) -> None:
     s.image_uploaded_by_user_id = ctx.user.id
 
 
-def create_signer(db: Session, ctx, km, name: str, title: str | None, data: bytes | None) -> CheckSigner:
+def create_signer(db: Session, ctx, km, name: str, title: str | None, data: bytes | None,
+                  areas: list[str] | None = None) -> CheckSigner:
+    """2.3.0 (#395): `areas` - the areas it may be used in (default: Checks, as when made on Check Setup)."""
+    from .. import signers as sg
     if len(list_signers(db, ctx)) >= MAX_SIGNERS:
         raise conflict("TOO_MANY", f"At most {MAX_SIGNERS} signers can be kept.")
     name, title = _signer_fields(name, title)
-    s = CheckSigner(workspace_id=ctx.workspace_id, name=name, title=title, active=True, created_by_user_id=ctx.user.id)
+    areas = [sg.CHECKS] if areas is None else areas
+    if any(a not in sg.AREAS for a in areas):
+        raise validation("Unknown area.", "areas")
+    s = CheckSigner(workspace_id=ctx.workspace_id, name=name, title=title, active=True, created_by_user_id=ctx.user.id,
+                    areas=",".join(a for a in sg.AREAS if a in areas) or None)
     if data:
         png, w, h = normalize_signature(data)
         _store_image(km, s, png, w, h, ctx)
@@ -311,6 +325,9 @@ def remove_signature(db: Session, ctx, s: CheckSigner) -> CheckSigner:
 
 
 def set_signer_active(db: Session, ctx, s: CheckSigner, active: bool) -> CheckSigner:
+    if s.active and not active:          # 2.3.0 (#395): a signer in use can't be retired until those settings change
+        from .. import signers as sg
+        sg.check_can_retire(db, ctx, s)
     if s.active != active:
         s.active = active
         db.flush()
@@ -595,9 +612,12 @@ def _signer_choice(db: Session, ctx, cfg: cfgmod.StyleConfig, cents: int, signer
 
 
 def _usable_signer(db: Session, ctx, signer_id: int) -> CheckSigner:
+    from .. import signers as sg
     s = get_signer(db, ctx, signer_id)
     if not s.active:
         raise conflict("SIGNER_INACTIVE", "That signer is deactivated.")
+    if sg.CHECKS not in sg.areas_of(s):                       # 2.3.0 (#395): only signers tagged for checks
+        raise conflict("SIGNER_NOT_FOR_CHECKS", f"{s.name} is not tagged for checks.")
     if not s.image_ciphertext:
         raise conflict("NO_SIGNATURE_IMAGE", "That signer has no signature image.")
     return s
@@ -1257,6 +1277,11 @@ def update_document(db: Session, ctx, d: CheckDocument, name: str, config: dict)
     if any(x.id != d.id and x.name.lower() == name.lower() for x in list_documents(db, ctx, d.kind)):
         raise conflict("DUPLICATE_NAME", f"A template named \"{name}\" already exists.")
     cfg = _doc_config_or_422(d.kind, config)
+    if d.kind == "LETTER":                 # 2.3.0 (#395): only signers tagged for payment cover letters
+        from .. import signers as sg
+        sg.require_tagged(db, ctx, cfg.signer_id, sg.COVER_LETTERS, "signer_id")
+        if cfg.signer_source == "FIXED" and cfg.signer_id is None and cfg.signature_mode != "NONE":
+            raise validation("Choose the signer, or Same as the check's signer.", "signer_id")
     before = _doc_snapshot(d)
     d.name, d.config_json = name, json.dumps(cfg.model_dump())
     d.updated_by_user_id, d.updated_at = ctx.user.id, utcnow()
@@ -1313,7 +1338,7 @@ def _payee_block(vals: dict, entity, lines: list[str] | None) -> list[str]:
 
 
 def letter_data(db: Session, ctx, t: RegisterTransaction, date_format: str, signer: CheckSigner | None,
-                addressee: list[str] | None = None) -> documents.LetterData:
+                addressee: list[str] | None = None, signature=None) -> documents.LetterData:
     vals = variable_values(db, t, SimpleNamespace(date_format=date_format))
     rows = []
     for a in t.live_allocations:
@@ -1325,7 +1350,8 @@ def letter_data(db: Session, ctx, t: RegisterTransaction, date_format: str, sign
     payee = _payee_block(vals, t.parent_entity, addressee)
     return documents.LetterData(values=vals, rows=rows, total=_money(t.total_cents), payee_lines=payee,
                                 signer_name=signer.name if signer else "", signer_title=(signer.title or "") if signer
-                                else "")
+                                else "", signature_mode=signature.mode if signature else "PRINTED",
+                                signature_image=signature.image if signature else None)
 
 
 def _date_format_for(db: Session, ctx, t: RegisterTransaction) -> str:
@@ -1339,6 +1365,19 @@ def _letter_signer(db: Session, ctx, signer_id: int | None) -> CheckSigner | Non
         return None
     s = get_signer(db, ctx, signer_id)
     return s if s.active else None
+
+
+def letter_signature(db: Session, ctx, cfg, check_signer_id: int | None, km, with_image: bool):
+    """2.3.0 (#395): the cover letter's signer - the check's signer when the template says Same as the check's
+    signer (else the template's chosen signer) - and its signature block. A Register User can't change it."""
+    from .. import signers as sg
+    s = _letter_signer(db, ctx, check_signer_id) if cfg.signer_source == "SAME_AS_CHECK" else None
+    if s is None and cfg.signer_id is not None:
+        x = db.get(CheckSigner, cfg.signer_id)
+        s = x if x is not None and x.workspace_id == ctx.workspace_id and x.active else None
+    if s is None:                          # no signer: the template's typed fallback (2.2.0 templates with variables)
+        return None, sg.SignatureBlock(mode="PRINTED" if cfg.signature_mode != "NONE" else "NONE")
+    return s, sg.block_for(km, s, cfg.signature_mode, with_image)
 
 
 def _store_doc_copy(db: Session, ctx, settings, t: RegisterTransaction, kind_type: str, filename: str,
@@ -1401,12 +1440,12 @@ def letter_fold_default(db: Session, ctx, d: CheckDocument) -> str:
 
 
 def print_letter(db: Session, ctx, settings, t: RegisterTransaction, d: CheckDocument, signer_id: int | None,
-                 confirmations: list[str], fold: str | None = None) -> bytes:
+                 confirmations: list[str], fold: str | None = None, km=None) -> bytes:
     if d.kind != "LETTER" or not d.active:
         raise conflict("TEMPLATE_INACTIVE", "Choose an active letter template.")
     cfg = doc_config(d)
-    signer = _letter_signer(db, ctx, signer_id)
-    data = letter_data(db, ctx, t, _date_format_for(db, ctx, t), signer, cfg.addressee)
+    signer, sig = letter_signature(db, ctx, cfg, signer_id, None, False)   # record copy: never the image (#395)
+    data = letter_data(db, ctx, t, _date_format_for(db, ctx, t), signer, cfg.addressee, sig)
     _texts, empty = documents.letter_texts(cfg, data)
     warnings = []
     if empty:
@@ -1421,11 +1460,19 @@ def print_letter(db: Session, ctx, settings, t: RegisterTransaction, d: CheckDoc
     pdf = documents.letter_pdf(cfg, data, logo=d.logo_png, fold=fold)
     added, path = _store_doc_copy(db, ctx, settings, t, LETTER_COPY,
                                   f"letter-{t.check_number or t.id}.pdf", pdf)
+    printed = pdf
+    if cfg.signature_mode == "IMAGE" and km is not None and signer is not None:   # #395: the image only when printed
+        _s, sig2 = letter_signature(db, ctx, cfg, signer_id, km, True)
+        if sig2.image:
+            printed = documents.letter_pdf(cfg, data.model_copy(update={"signature_mode": "IMAGE",
+                                                                        "signature_image": sig2.image}),
+                                           logo=d.logo_png, fold=fold)
     audit.record(db, ctx, "CHECK_LETTER_PRINTED", "register_transaction", t.id, None,
                  {"transaction_id": t.id, "document_id": d.id, "signer_id": signer.id if signer else None,
-                  "check_number": t.check_number, "attached": added, "fold_marks": fold})
+                  "check_number": t.check_number, "attached": added, "fold_marks": fold,
+                  "signature": sig.mode if signer else "NONE"})
     _commit_or_unlink(db, path)
-    return pdf
+    return printed
 
 
 def envelope_options(db: Session, ctx, d: CheckDocument, feed_override: dict | None = None) -> dict:
@@ -1530,15 +1577,22 @@ def handwritten_check(db: Session, ctx, t: RegisterTransaction, number: str) -> 
                  {"check_number": t.check_number})
 
 
-def sample_letter_pdf(cfg, logo: bytes | None = None) -> bytes:
+def sample_letter_pdf(cfg, logo: bytes | None = None, db: Session | None = None, ctx=None, km=None) -> bytes:
     values = {**SAMPLE_VALUES["NORMAL"], "PAYEE": documents.SAMPLE_PAYEE[0],
               "TODAY": format_date(dt.date.today(), "MM/DD/YYYY"), "INVOICE_DATE": "08/29/2026 and others",
               "PAYEE_ADDRESS": "\n".join(documents.SAMPLE_PAYEE[1:]), "DATE": format_date(dt.date.today(), "MM/DD/YYYY"),
               **_entity_vars.sample("PAYEE", documents.SAMPLE_PAYEE[0], documents.SAMPLE_PAYEE[1:])}
     payee = _entity_vars.addressee(cfg.addressee, values, patterns.LETTER) or documents.SAMPLE_PAYEE[:1]
+    name, title, mode, image = "SAMPLE SIGNER", "Treasurer", cfg.signature_mode, None
+    if db is not None and ctx is not None and cfg.signer_id is not None:   # 2.3.0 (#395): the chosen signer, real
+        s = db.get(CheckSigner, cfg.signer_id)                             # signature (Administrator's preview)
+        if s is not None and s.workspace_id == ctx.workspace_id:
+            from .. import signers as sg
+            b = sg.block_for(km, s, cfg.signature_mode, with_image=True)
+            name, title, mode, image = s.name, s.title or "", b.mode, b.image
     data = documents.LetterData(values=values, rows=documents.SAMPLE_ROWS, total="$200.00",
-                                payee_lines=payee, signer_name="SAMPLE SIGNER",
-                                signer_title="Treasurer")
+                                payee_lines=payee, signer_name=name, signer_title=title,
+                                signature_mode=mode, signature_image=image)
     return documents.letter_pdf(cfg, data, title="Letter test print", logo=logo, test=True)
 
 

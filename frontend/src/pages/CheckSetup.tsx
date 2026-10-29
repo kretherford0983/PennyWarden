@@ -5,6 +5,7 @@
 import { DocFocus, DocumentEditor, DocumentsSection } from "./CheckDocuments";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "../api";
+import { Link } from "../router";
 import { ErrorBox, Field, GuardedForm, Loading, Modal, RowMenu } from "../components";
 import { BrowserTips, CheckPreview, FIELD_LABELS, PatternInput, PdfViewer, Section, TEXT_FIELDS, useCheckFonts, usePdf, viewState, type FieldText, type StubDrawing } from "./checkShared";
 
@@ -80,7 +81,11 @@ export default function CheckSetup() {
         </GuardedForm>
         <p className="hint">{s.presets.find((p: any) => p.key === preset)?.description}</p>
       </section>
-      <Signers setup={s} onChanged={load} />
+      <section className="card" aria-labelledby="signers-h">
+        <h2 id="signers-h">Signers and signatures</h2>
+        <p className="hint">Signers are shared with cover letters and donation letters (2.3.0). Add signers, upload signature images and tag
+          them for checks on the <Link to="/signers">Signers</Link> page; only signers tagged for checks are offered here.</p>
+      </section>
       <DocumentsSection setup={s} onChanged={load} onEdit={editDoc} />
       {copyOf ? <CopyStyle style={copyOf} onClose={() => setCopyOf(null)} onDone={() => { setCopyOf(null); load(); }} /> : null}
     </div>
@@ -568,83 +573,3 @@ function StyleEditor({ setup, style, onClose, onSaved }: { setup: any; style: an
   );
 }
 
-// ------------------------------------------------------------------ signers (#159)
-function Signers({ setup, onChanged }: { setup: any; onChanged: () => void }) {
-  const [err, setErr] = useState<unknown>(null);
-  const [add, setAdd] = useState(false);
-  const [edit, setEdit] = useState<any>(null);
-  const [v, setV] = useState(0);
-  const act = async (fn: () => Promise<any>) => { setErr(null); try { await fn(); setV(v + 1); onChanged(); } catch (x) { setErr(x); } };
-  return (
-    <section className="card" aria-labelledby="signers-h">
-      <h2 id="signers-h">Signers and signatures</h2>
-      <p className="hint">A signature image (PNG) is stored encrypted and can never be downloaded again – only a small preview marked SAMPLE is shown.
-        It prints only on real checks and, when you choose it, on your test prints. Every print that uses it is recorded in the audit log.</p>
-      <ErrorBox error={err} />
-      {setup.signers.length ? (
-        <table className="table compact">
-          <thead><tr><th>Name</th><th>Title</th><th>Signature</th><th>Status</th><th /></tr></thead>
-          <tbody>
-            {setup.signers.map((x: any) => (
-              <tr key={x.id}>
-                <td>{x.name}</td><td>{x.title || ""}</td>
-                <td>{x.has_image ? <img src={`/api/checks/signers/${x.id}/preview?v=${v}-${x.image_uploaded_at}`} alt={`Sample of ${x.name}'s signature`} height={40} /> : <span className="muted">No image</span>}</td>
-                <td>{x.active ? "Active" : <span className="badge grey">Deactivated</span>}</td>
-                <td className="actions-cell">
-                  <button className="small" onClick={() => setEdit(x)}>Edit…</button>
-                  <input type="file" accept="image/png" hidden id={`signer-image-${x.id}`} aria-label={`Signature image for ${x.name}`} onChange={(e) => {
-                    const f = e.target.files?.[0]; e.target.value = "";
-                    if (f) act(() => api.upload(`/api/checks/signers/${x.id}/image`, f));
-                  }} />
-                  <RowMenu name={x.name} actions={[
-                    { label: x.has_image ? "Replace image…" : "Upload image…", onClick: () => (document.getElementById(`signer-image-${x.id}`) as HTMLInputElement | null)?.click() },
-                    x.has_image && { label: "Remove image", onClick: () => window.confirm(`Remove ${x.name}'s signature image?`) && act(() => api.post(`/api/checks/signers/${x.id}/image/remove`)), danger: true },
-                    x.active ? { label: "Deactivate", onClick: () => act(() => api.post(`/api/checks/signers/${x.id}/active`, { active: false })), danger: true }
-                      : { label: "Activate", onClick: () => act(() => api.post(`/api/checks/signers/${x.id}/active`, { active: true })) },
-                  ]} />
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      ) : <p className="muted">No signers yet.</p>}
-      <div className="actions left"><button onClick={() => setAdd(true)}>Add signer…</button></div>
-      {add ? <SignerForm onClose={() => setAdd(false)} onDone={() => { setAdd(false); onChanged(); }} /> : null}
-      {edit ? <SignerForm signer={edit} onClose={() => setEdit(null)} onDone={() => { setEdit(null); onChanged(); }} /> : null}
-    </section>
-  );
-}
-
-function SignerForm({ signer, onClose, onDone }: { signer?: any; onClose: () => void; onDone: () => void }) {
-  const [name, setName] = useState(signer?.name || "");
-  const [title, setTitle] = useState(signer?.title || "");
-  const [file, setFile] = useState<File | null>(null);
-  const [err, setErr] = useState<unknown>(null);
-  const go = async (e: FormEvent) => {
-    e.preventDefault();
-    setErr(null);
-    try {
-      if (signer) await api.put(`/api/checks/signers/${signer.id}`, { name, title: title || null });
-      else {
-        const fd = new FormData();
-        fd.append("name", name);
-        if (title) fd.append("title", title);
-        if (file) fd.append("file", file);
-        await api.postForm("/api/checks/signers", fd);
-      }
-      onDone();
-    } catch (x) { setErr(x); }
-  };
-  return (
-    <Modal title={signer ? `Edit ${signer.name}` : "Add signer"} onClose={onClose}>
-      <GuardedForm onSubmit={go}>
-        <ErrorBox error={err} />
-        <Field label="Name (prints on record copies as 'SIGNATURE ON FILE: NAME')"><input required maxLength={120} value={name} onChange={(e) => setName(e.target.value)} /></Field>
-        <Field label="Title (optional)"><input maxLength={80} value={title} onChange={(e) => setTitle(e.target.value)} placeholder="e.g. Treasurer" /></Field>
-        {!signer ? <Field label="Signature image (PNG, optional now)" hint="A scan or photo of the signature on white paper, cropped close. Transparent backgrounds work best.">
-          <input type="file" accept="image/png" onChange={(e) => setFile(e.target.files?.[0] || null)} /></Field> : null}
-        <div className="actions"><button type="button" onClick={onClose}>Cancel</button><button className="primary" type="submit">Save</button></div>
-      </GuardedForm>
-    </Modal>
-  );
-}

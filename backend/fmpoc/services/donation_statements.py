@@ -183,12 +183,14 @@ def _row_out(r: dict) -> dict:
 
 # ------------------------------------------------------------------ the letter
 def statement_values(cfg, org: dict, donor_name: str, donor_address: list[str], year: int, number: str,
-                     total_cents: int, today: dt.date, donor_values: dict | None = None) -> dict[str, str]:
+                     total_cents: int, today: dt.date, donor_values: dict | None = None,
+                     signature=None) -> dict[str, str]:
     org = org if cfg.include_ein else dn.hide_ein(org)          # 2.3.0 (#393)
     return {"DONOR_NAME": donor_name, "DONOR_ADDRESS": "\n".join(donor_address), **org, **(donor_values or {}),
             "YEAR": str(year),
             "TOTAL": f"{total_cents // 100:,}.{total_cents % 100:02d}", "STATEMENT_NO": number,
-            "SIGNER": cfg.signer_name, "SIGNER_TITLE": cfg.signer_title, "TODAY": format_date(today, cfg.date_format),
+            "SIGNER": (signature.name if signature else ""), "SIGNER_TITLE": (signature.title if signature else ""),
+            "TODAY": format_date(today, cfg.date_format),
             "DONATION_TABLE": TABLE_MARK}
 
 
@@ -227,11 +229,12 @@ def _donation_table(rows: list[dict], total_cents: int, cfg, st: dict) -> Table:
 def statement_pdf(cfg, *, org: dict, donor_name: str, donor_address: list[str], year: int, number: str, kind: str,
                   kind_note: str, rows: list[dict], total_cents: int, goods: list[tuple[int, str]], items: list[str],
                   today: dt.date | None = None, sample: bool = False, watermark: str | None = None,
-                  donor_values: dict | None = None) -> bytes:
+                  donor_values: dict | None = None, signature=None) -> bytes:
     today = today or dt.date.today()
     if sample and watermark is None:
         watermark = "SAMPLE - NOT A STATEMENT"
-    vals = statement_values(cfg, org, donor_name, donor_address, year, number, total_cents, today, donor_values)
+    vals = statement_values(cfg, org, donor_name, donor_address, year, number, total_cents, today, donor_values,
+                            signature)
     texts, _empty = statement_texts(cfg, vals)
     st = dn._styles(cfg)
     size, base = st["size"], st["base"]
@@ -274,10 +277,10 @@ def statement_pdf(cfg, *, org: dict, donor_name: str, donor_address: list[str], 
     return dn.donor_letter_pdf(cfg, org=org, donor_lines=lines, today=today,
                                kind=kind, sample=sample, watermark=watermark,
                                doc_title=f"Year-end giving statement {number}", middle=middle,
-                               closing=texts["closing"].replace(TABLE_MARK, ""))
+                               closing=texts["closing"].replace(TABLE_MARK, ""), signature=signature)
 
 
-def sample_pdf(db: Session, ctx, data: dict | None) -> bytes:
+def sample_pdf(db: Session, ctx, data: dict | None, km=None) -> bytes:
     """Setup preview and test print: sample data only (BR-003)."""
     cfg = dn.parse_config(data) if data is not None else dn.get_config(db, ctx.workspace_id)
     year = dt.date.today().year - 1
@@ -292,7 +295,8 @@ def sample_pdf(db: Session, ctx, data: dict | None) -> bytes:
                          donor_address=dn.SAMPLE_DONOR[1:], year=year, number=f"S-{year}-0000", kind=dn.ORIGINAL,
                          kind_note="", rows=rows, total_cents=40000, goods=[(6000, "Dinner")],
                          items=["SAMPLE ITEM - a television for the auction"], sample=True,
-                         donor_values=entity_vars.sample("DONOR", dn.SAMPLE_DONOR[0], dn.SAMPLE_DONOR[1:]))
+                         donor_values=entity_vars.sample("DONOR", dn.SAMPLE_DONOR[0], dn.SAMPLE_DONOR[1:]),
+                         signature=dn.signature_for(db, ctx.workspace_id, km, cfg, "statement", with_image=True))
 
 
 # ------------------------------------------------------------------ printing
@@ -330,7 +334,7 @@ def _compose(db: Session, ctx, e: Entity, year: int, seq: int | None = None) -> 
     org = org_svc.values_for(db, ctx.workspace_id)
     addr = address_lines(e)
     vals = statement_values(cfg, org, e.legal_name, addr, year, number, c["total"], dt.date.today(),
-                            entity_vars.values("DONOR", e))
+                            entity_vars.values("DONOR", e), dn.signature_for(db, ctx.workspace_id, None, cfg, "statement"))
     _t, empty = statement_texts(cfg, vals)
     warnings = []
     if empty:
@@ -345,7 +349,8 @@ def _compose(db: Session, ctx, e: Entity, year: int, seq: int | None = None) -> 
                                  f"statement {cur.number}. Print a corrected statement {number} that replaces it?",
                                  replaces=cur.number))
     return {"cfg": cfg, "c": c, "e": e, "org": org, "addr": addr, "kind": kind, "number": number, "seq": seq,
-            "cur": cur, "sha": sha, "note": note, "warnings": warnings, "year": year}
+            "cur": cur, "sha": sha, "note": note, "warnings": warnings, "year": year,
+            "signature": dn.signature_for(db, ctx.workspace_id, None, cfg, "statement")}   # #395: no image yet
 
 
 def _pdf(x: dict, watermark: str | None = None) -> bytes:
@@ -354,7 +359,8 @@ def _pdf(x: dict, watermark: str | None = None) -> bytes:
                          year=x["year"], number=x["number"], kind=x["kind"], kind_note=x["note"], rows=c["rows"],
                          total_cents=c["total"], goods=[(r["goods_cents"], r["goods_description"]) for r in c["rows"]
                                                         if r["goods_cents"]],
-                         items=c["items"], watermark=watermark, donor_values=entity_vars.values("DONOR", x["e"]))
+                         items=c["items"], watermark=watermark, donor_values=entity_vars.values("DONOR", x["e"]),
+                         signature=x["signature"])
 
 
 def preview(db: Session, ctx, year: int, donor_id: int) -> tuple[bytes, dict]:
@@ -409,18 +415,28 @@ def _commit(db: Session, paths: list) -> None:
         raise
 
 
-def print_one(db: Session, ctx, settings, year: int, donor_id: int, confirmations: list[str]
-              ) -> tuple[bytes, DonationStatement]:
+def _printed(db: Session, ctx, x: dict, km) -> bytes | None:
+    """2.3.0 (#395): the printed copy with the signature image (None: same as the record copy)."""
+    if km is None:
+        return None
+    sig = dn.signature_for(db, ctx.workspace_id, km, x["cfg"], "statement", with_image=True)
+    if not sig.image:
+        return None
+    return _pdf({**x, "signature": sig})
+
+
+def print_one(db: Session, ctx, settings, year: int, donor_id: int, confirmations: list[str],
+              km=None) -> tuple[bytes, DonationStatement]:
     x = _compose(db, ctx, _donor(db, ctx, donor_id), _year(year))
     require_confirmations(x["warnings"], confirmations)
-    pdf = _pdf(x)
+    pdf = _pdf(x)                                   # kept with the record: never the signature image (#395)
     s, path = _keep(db, ctx, settings, x, pdf)
     _commit(db, [path])
-    return pdf, s
+    return _printed(db, ctx, x, km) or pdf, s
 
 
-def print_all(db: Session, ctx, settings, year: int, min_cents: int, confirmations: list[str]
-              ) -> tuple[bytes, list[DonationStatement]]:
+def print_all(db: Session, ctx, settings, year: int, min_cents: int, confirmations: list[str],
+              km=None) -> tuple[bytes, list[DonationStatement]]:
     """All donors with donations received in the year (and at least `min_cents` of money), one statement each,
     as one combined PDF. Each is kept and numbered on its own; asks once for what needs confirming."""
     year = _year(year)
@@ -458,7 +474,7 @@ def print_all(db: Session, ctx, settings, year: int, min_cents: int, confirmatio
         s, path = _keep(db, ctx, settings, x, pdf)
         out.append(s)
         paths.append(path)
-        for page in PdfReader(io.BytesIO(pdf)).pages:
+        for page in PdfReader(io.BytesIO(_printed(db, ctx, x, km) or pdf)).pages:     # #395: image only here
             writer.add_page(page)
     writer.add_metadata({"/Title": f"Year-end giving statements {year}", "/Creator": "PennyWarden"})
     buf = io.BytesIO()

@@ -111,7 +111,7 @@ export default function DonationSetup() {
             <label className="check"><input type="checkbox" checked={cfg.include_ein !== false} onChange={(e) => set("include_ein", e.target.checked)} /> Include EIN on receipts</label>
             <p className="hint">On: receipts and year-end statements show the EIN. Off: only the organization's name identifies it, and <code>{"{ORG.EIN}"}</code> prints blank in this
               letter text. A Register User can still include the EIN on one receipt through its <code>{"{DETAILS}"}</code>, with a reason (for example Form 8283).</p>
-            {(s.warnings || []).map((w: any) => <div key={w.code} className="alert warn" role="alert" data-testid={`ein-warning-${w.code}`}>{w.message}</div>)}
+            {(s.warnings || []).map((w: any, i: number) => <div key={`${w.code}-${i}`} className="alert warn" role="alert" data-testid={`ein-warning-${w.code}`}>{w.message}</div>)}
             <p className="hint">These come from <Link to="/about/general">System/About → Organization</Link>, where you change them. Every receipt prints the organization's name{cfg.include_ein !== false ? " and EIN" : ""}, the donor, the amount,
               the date received, the receipt number and the goods or services statement – these can't be removed.</p>
           </Section>
@@ -125,11 +125,19 @@ export default function DonationSetup() {
             <PatternInput id="rc-salutation" label="Salutation" value={cfg.salutation} variables={vars} hint={false} onChange={(v) => set("salutation", v)} />
             <PatternInput id="rc-body" label="Thank-you text" value={cfg.body} variables={vars} multiline maxLength={2000} onChange={(v) => set("body", v)} />
             <PatternInput id="rc-closing" label="Closing" value={cfg.closing} variables={vars} hint={false} onChange={(v) => set("closing", v)} />
+            {/* 2.3.0 (#395): a signer from the shared Signers page (tagged for donation letters) and how the signature shows */}
             <div className="row form-row">
-              <Field label="Signer's name"><input value={cfg.signer_name} maxLength={120} onChange={(e) => set("signer_name", e.target.value)} /></Field>
-              <Field label="Signer's title"><input value={cfg.signer_title} maxLength={120} onChange={(e) => set("signer_title", e.target.value)} /></Field>
+              <Field label="Signer"><select data-testid="rc-signer" value={cfg.signer_id ?? ""} onChange={(e) => set("signer_id", e.target.value ? Number(e.target.value) : null)}>
+                <option value="">(none)</option>
+                {s.signers.map((x: any) => <option key={x.id} value={x.id}>{x.name}{x.title ? ` (${x.title})` : ""}</option>)}
+              </select></Field>
+              <Field label="Signature"><select data-testid="rc-signature-mode" value={cfg.signature_mode} onChange={(e) => set("signature_mode", e.target.value)}>
+                {s.signature_modes.map((m: any) => <option key={m.id} value={m.id}>{m.label}</option>)}
+              </select></Field>
             </div>
-            <p className="hint">The signer's name and title print under the closing, with room to sign by hand. Put <code>{"{DETAILS}"}</code> where a write-up for each donation should go
+            {!s.signers.length ? <p className="hint">No signers are tagged for donation letters yet: add or tag one on the <Link to="/signers">Signers</Link> page.</p> : null}
+            <p className="hint">The signature prints under the closing. A signature image prints only on the copy you print or download – the copy
+              kept with the donation shows the printed name instead. Put <code>{"{DETAILS}"}</code> where a write-up for each donation should go
               (the Register User writes it when printing; a paragraph of only <code>{"{DETAILS}"}</code> is left out when there is none). Statement when no goods or services were given:
               <i> {s.no_goods_statement}</i> Confirm the receipt wording with your organization's own tax advisor.</p>
             {/* 2.2.0 (#325): the note printed whenever a receipt lists items (empty = the default wording) */}
@@ -163,6 +171,16 @@ export default function DonationSetup() {
             <PatternInput id="st-salutation" label="Salutation" value={cfg.statement_salutation} variables={s.statement_variables} hint={false} onChange={(v) => set("statement_salutation", v)} />
             <PatternInput id="st-body" label="Statement text" value={cfg.statement_body} variables={s.statement_variables} multiline maxLength={2000} onChange={(v) => set("statement_body", v)} />
             <PatternInput id="st-closing" label="Statement closing" value={cfg.statement_closing} variables={s.statement_variables} hint={false} onChange={(v) => set("statement_closing", v)} />
+            <div className="row form-row">
+              <Field label="Statement signer"><select data-testid="st-signer" value={cfg.statement_signer_id ?? ""} onChange={(e) => set("statement_signer_id", e.target.value ? Number(e.target.value) : null)}>
+                <option value="">Same as the receipt</option>
+                {s.signers.map((x: any) => <option key={x.id} value={x.id}>{x.name}{x.title ? ` (${x.title})` : ""}</option>)}
+              </select></Field>
+              <Field label="Statement signature"><select data-testid="st-signature-mode" value={cfg.statement_signature_mode ?? ""} onChange={(e) => set("statement_signature_mode", e.target.value || null)}>
+                <option value="">Same as the receipt</option>
+                {s.signature_modes.map((m: any) => <option key={m.id} value={m.id}>{m.label}</option>)}
+              </select></Field>
+            </div>
             <div className="row">
               <button type="button" onClick={statementTest}>Test print the statement (sample data)</button>
               <button type="button" className="small" onClick={() => setStmtPreview((v) => !v)}>{stmtPreview ? "Hide the statement preview" : "Show the statement preview"}</button>
@@ -196,7 +214,7 @@ export default function DonationSetup() {
           <div className="actions left">
             <button className="primary" onClick={save} disabled={!dirty}>Save</button>
             <button onClick={testPrint}>Test print (sample data)</button>
-            <button onClick={() => { setCfg({ ...s.defaults, signer_name: cfg.signer_name, signer_title: cfg.signer_title }); setSaved(false); }}>Default wording</button>
+            <button onClick={() => { setCfg({ ...s.defaults, signer_id: cfg.signer_id, signature_mode: cfg.signature_mode, statement_signer_id: cfg.statement_signer_id, statement_signature_mode: cfg.statement_signature_mode }); setSaved(false); }}>Default wording</button>
             {saved && !dirty ? <span className="hint" role="status">Saved.</span> : dirty ? <span className="hint">Unsaved changes</span> : null}
           </div>
         </div>

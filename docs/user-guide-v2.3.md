@@ -57,6 +57,18 @@ With the EIN turned off, a Register User can still include it on **one** receipt
 donor's *Details for the receipt* — for example for a non-cash gift over $500, where the donor needs the EIN for
 Form 8283. Saving asks you to confirm and give a reason, and printing asks once more; both are recorded.
 
+### Signers for receipts and statements
+Signers are now kept on one **Signers** page (Administrators, next to Envelopes), shared by checks, payment cover
+letters and donation letters. Add a signer there, upload a signature image if you want one, and tick what the signer
+is **Used for**. In **Donations Setup → Receipt letter**, pick the signer and how the signature shows: none, the
+printed name and title, the signature image with the printed name, or the printed name with space to sign by hand.
+The year-end statement can use a different signer or follow the receipt. A signature image prints only on the copy
+you print; the copy kept with the donation shows the printed name.
+
+Cover letters (**Payments Setup → cover letter → Signed by**) can follow the check's signer, as before, or always use
+one signer tagged for cover letters, with the same choice of how the signature shows. After the upgrade everything
+prints as it did: your existing signers are tagged for checks, and the typed donation signer became a signer.
+
 ## Bank accounts
 
 ### Fix a wrong balance in the history

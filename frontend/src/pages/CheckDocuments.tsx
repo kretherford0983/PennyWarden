@@ -2,6 +2,7 @@
  * Text sections use the pattern syntax with autocomplete; test prints use sample data only (BR-003). */
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
+import { Link } from "../router";
 import { ErrorBox, Field, RowMenu } from "../components";
 import { LivePreview, PatternInput, PdfViewer, Section, usePdf, viewState } from "./checkShared";
 import { EnvelopeLibrary, SharedNotice } from "./Envelopes";
@@ -368,9 +369,24 @@ function LetterEditor({ setup, doc, focus, onClose, onSaved }: EditorProps) {
           </div>
         ) : null}
       </Section>
+      {/* 2.3.0 (#395): who signs the letter (the check's signer, or a signer tagged for cover letters) and how */}
       <Section id="lsign" scope="pw-letter" title="Signed by">
-        <p className="hint">The letter is signed (by name — never the signature image) by the check's signer: name, title and organization. When the check prints
-          without a signer, these are used instead:</p>
+        <div className="row form-row">
+          <Field label="Signer">
+            <select data-testid="letter-signer-source" value={c.signer_source === "FIXED" ? String(c.signer_id ?? "") : "SAME_AS_CHECK"}
+                    onChange={(ev) => e.change((x) => { if (ev.target.value === "SAME_AS_CHECK") { x.signer_source = "SAME_AS_CHECK"; x.signer_id = null; } else { x.signer_source = "FIXED"; x.signer_id = Number(ev.target.value) || null; } })}>
+              <option value="SAME_AS_CHECK">Same as the check</option>
+              {(setup.letter_signers || []).map((x: any) => <option key={x.id} value={x.id}>{x.name}{x.title ? ` (${x.title})` : ""}</option>)}
+            </select>
+          </Field>
+          <Field label="Signature">
+            <select data-testid="letter-signature-mode" value={c.signature_mode || "PRINTED"} onChange={(ev) => e.change((x) => { x.signature_mode = ev.target.value; })}>
+              {(setup.signature_modes || []).map((m: any) => <option key={m.id} value={m.id}>{m.label}</option>)}
+            </select>
+          </Field>
+        </div>
+        <p className="hint">Signers come from the <Link to="/signers">Signers</Link> page (tagged for payment cover letters). A signature image prints only on the
+          printed letter – the copy kept with the payment shows the printed name. With <i>Same as the check</i> and a check printed without a signer, these are used instead:</p>
         <div className="row form-row">
           <PatternInput id="fbname" label="Name when there is no signer" value={c.fallback_name} variables={vars} hint={false} onChange={(v) => e.change((x) => { x.fallback_name = v; })} />
           <PatternInput id="fbrole" label="Role when there is no signer" value={c.fallback_role} variables={vars} hint={false} placeholder="e.g. Treasurer, {ORG}" onChange={(v) => e.change((x) => { x.fallback_role = v; })} />

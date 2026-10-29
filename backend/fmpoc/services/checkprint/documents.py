@@ -83,6 +83,11 @@ class LetterConfig(_M):
     signoff: str = Field(default="Sincerely,", max_length=60)
     fallback_name: str = Field(default="", max_length=120)
     fallback_role: str = Field(default="", max_length=120)
+    # 2.3.0 (#395): the signer - the check's signer (else the chosen one) or always the chosen one - and how the
+    # signature is shown (NONE, PRINTED, IMAGE: the image above the name, SPACE: room to sign by hand)
+    signer_source: Literal["SAME_AS_CHECK", "FIXED"] = "SAME_AS_CHECK"
+    signer_id: int | None = None
+    signature_mode: Literal["NONE", "PRINTED", "IMAGE", "SPACE"] = "PRINTED"
     include_by_default: bool = True
     # #176: logo position (the logo itself is stored with the template) and pre-printed letterhead paper
     logo_position: Literal["LEFT", "CENTER"] = "LEFT"
@@ -195,6 +200,8 @@ class LetterData(BaseModel):
     payee_lines: list[str]              # name + address lines
     signer_name: str = ""
     signer_title: str = ""
+    signature_mode: str = "PRINTED"     # 2.3.0 (#395)
+    signature_image: bytes | None = None   # PNG, only in the printed copy (never the record copy)
 
 
 def _resolve(text: str, values: dict, context: str, empty: list[str]) -> str:
@@ -218,7 +225,9 @@ def letter_texts(cfg: LetterConfig, data: LetterData) -> tuple[dict, list[str]]:
         "closing": _resolve(cfg.closing, vals, patterns.LETTER, empty),
         "signoff": _resolve(cfg.signoff, vals, patterns.LETTER, empty),
     }
-    if data.signer_name:
+    if data.signature_mode == "NONE":                 # 2.3.0 (#395): the letter ends at the sign-off
+        name = role = ""
+    elif data.signer_name:
         name, role = data.signer_name, ", ".join(x for x in (data.signer_title, vals.get("ORG", "")) if x)
     else:
         name = _resolve(cfg.fallback_name, vals, patterns.LETTER, empty)
@@ -398,12 +407,27 @@ def letter_pdf(cfg: LetterConfig, data: LetterData, title: str = "Cover letter",
             story.append(Paragraph(_para_text(para), base))
             story.append(Spacer(1, size * 0.7))
     story.append(Spacer(1, size * 0.5))
-    lines = [escape(texts["signoff"])] if texts["signoff"].strip() else []
+    if texts["signoff"].strip():
+        story.append(Paragraph(escape(texts["signoff"]), base))
+    lines = []
     if texts["signer_name"].strip():
         lines.append(f"<font name='{bold}'>{escape(texts['signer_name'])}</font>")
     if texts["signer_role"].strip():
         lines.append(escape(texts["signer_role"]))
     if lines:
+        # 2.3.0 (#395): the signature image (printed copy only) or room to sign by hand above the name
+        if data.signature_mode == "IMAGE" and data.signature_image:
+            from ..signers import IMAGE_BOX
+            from PIL import Image as _PIL
+            from reportlab.platypus import Image as _RLImage
+            with _PIL.open(io.BytesIO(data.signature_image)) as im:
+                w, h = im.size
+            k = min(IMAGE_BOX[0] / w, IMAGE_BOX[1] / h)
+            img = _RLImage(io.BytesIO(data.signature_image), width=w * k, height=h * k)
+            img.hAlign = "LEFT"
+            story += [Spacer(1, size * 0.3), img]
+        elif data.signature_mode == "SPACE":
+            story.append(Spacer(1, size * 2.6))
         story.append(Paragraph("<br/>".join(lines), base))
     doc.build(story, onFirstPage=first_page)
     if fold == "BACK":
