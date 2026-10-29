@@ -325,6 +325,26 @@ def adjacent_years(db: Session, ws_id: int, fy: FiscalYear) -> tuple[list[Fiscal
     return prior, nxt
 
 
+def _estimate(f: dict) -> dict:
+    """2.3.0 (#390): an estimated entered year - marked * with "Estimated: <note>" in the review."""
+    if f.get("source") == "subs":
+        notes = [n for n in f.get("estimate_notes", []) if n]
+        return {"estimated": bool(f.get("estimated")), "estimate_note": "; ".join(notes) or None}
+    return {"estimated": bool(f.get("estimated")), "estimate_note": f.get("note") if f.get("estimated") else None}
+
+
+def estimate_footnotes(rep: dict) -> list[str]:
+    """One "* Estimated: <year> <code name> — <note>" line per estimated cell of the review."""
+    out = []
+    for sec in ("income", "expense"):
+        for r in rep[sec]:
+            for i, c in enumerate(r["history"]):
+                if c and c.get("estimated"):
+                    out.append(f"* Estimated: {rep['years'][i]['display_name']} {r['code']} {r['name']} — "
+                               f"{c.get('estimate_note') or ''}")
+    return out
+
+
 # ------------------------------------------------------------------ 2.3.0 (#382): budgets not in the chosen year
 def _add_not_in_year(db: Session, ctx, fy: FiscalYear, shown: list, first: int | None, sections: dict,
                      entered_of, cache: dict, average) -> None:
@@ -414,7 +434,7 @@ def _add_not_in_year(db: Session, ctx, fy: FiscalYear, shown: list, first: int |
                 cells.append({"source": "ENTERED", "fiscal_year_id": None, "budget_id": None, "code": code,
                               "name": L.name, "status": None, "renumbered": False, "entered_as": as_,
                               "from_sub_budgets": f["source"] == "subs", "mismatch": f["mismatch"],
-                              **compare(f["budgeted"], f["actual"])})
+                              **_estimate(f), **compare(f["budgeted"], f["actual"])})
         if any(c is not None for c in cells):
             extra[L.budget_type].append(_nic_row(f"b{L.id}", code, L.name, L.budget_type, cells, average, fy,
                                                  label_of(max(i for i, c in enumerate(cells) if c is not None))))
@@ -431,7 +451,9 @@ def _add_not_in_year(db: Session, ctx, fy: FiscalYear, shown: list, first: int |
             cells.append({"source": "ENTERED", "fiscal_year_id": None, "budget_id": None, "code": code, "name": name,
                           "status": None, "renumbered": False,
                           "entered_as": f"{ec} {en}" if (ec, en) != (code, name) else None,
-                          "from_sub_budgets": False, "mismatch": None, **compare(e.budgeted_cents, e.actual_cents)})
+                          "from_sub_budgets": False, "mismatch": None,
+                          "estimated": bool(e.estimated), "estimate_note": e.note if e.estimated else None,
+                          **compare(e.budgeted_cents, e.actual_cents)})
         if any(c is not None for c in cells):
             extra[f.budget_type].append(_nic_row(f"f{f.id}", code, name, f.budget_type, cells, average, fy,
                                                  label_of(max(i for i, c in enumerate(cells) if c is not None))))
@@ -501,7 +523,7 @@ def budget_review(db: Session, ctx, fy: FiscalYear, *, years: int = 3, projected
                 cells.append({"source": "ENTERED", "fiscal_year_id": None, "budget_id": None, "code": code,
                               "name": b.name, "status": None, "renumbered": False, "entered_as": as_,
                               "from_sub_budgets": f["source"] == "subs", "mismatch": f["mismatch"],
-                              **compare(f["budgeted"], f["actual"])})
+                              **_estimate(f), **compare(f["budgeted"], f["actual"])})
                 continue
             x = line.get(y.id)
             if x is None:
@@ -679,6 +701,8 @@ def _entered_text(c: dict) -> str:
         t += f"; sub-budgets add up to {m['budgeted']} budgeted, {m['actual']} actual"
     if c.get("entered_as"):                     # 2.2.0 (#381): called differently that year
         t += f"; as {c['entered_as']}"
+    if c.get("estimated"):                      # 2.3.0 (#390)
+        t += f"; estimated: {c.get('estimate_note') or ''}"
     return t
 
 
@@ -688,7 +712,7 @@ _IND = ParagraphStyle("bp_ind", parent=S["cell"], leftIndent=10)
 def _chart(rep: dict, row: dict) -> Drawing:
     labels, bud, act = [], [], []
     for y, c in zip(rep["years"], row["history"]):
-        labels.append(y["display_name"])
+        labels.append(y["display_name"] + ("*" if c and c.get("estimated") else ""))   # 2.3.0 (#390)
         bud.append(float(c["budgeted"]) if c else 0)
         act.append(float(c["actual"]) if c else 0)
     labels.append(f"{rep['fiscal_year']['display_name']} (YTD)")
@@ -706,6 +730,12 @@ def _chart(rep: dict, row: dict) -> Drawing:
     ch.valueAxis.valueMin = min(0, *bud, *act)
     ch.bars[0].fillColor = branding.color("outline")
     ch.bars[1].fillColor = branding.color("series:0")
+    for i, c in enumerate(row["history"]):    # 2.3.0 (#390): an estimated year lighter; the * label carries the meaning
+        if c and c.get("estimated"):
+            for s in (0, 1):
+                base = ch.bars[s].fillColor
+                ch.bars[(s, i)].fillColor = colors.Color(base.red + (1 - base.red) * 0.55, base.green + (1 - base.green) * 0.55,
+                                                         base.blue + (1 - base.blue) * 0.55)
     ch.barLabelFormat = "%.0f"
     ch.barLabels.fontSize = 6
     ch.barLabels.fontName = _FONT
@@ -757,7 +787,8 @@ def _review_columns(rep: dict) -> list[tuple[str, callable]]:
             if c.get("status") and c["status"] != "APPROVED":
                 extra.append(STATUS_TEXT.get(c["status"], c["status"]))
             tail = f"<br/><font size=6>{' · '.join(extra)}</font>" if extra else ""
-            return (money(c["budgeted"]) + tail, money(c["actual"]), _diff_short(c))
+            star = "*" if c.get("estimated") else ""      # 2.3.0 (#390): the footnote gives the note
+            return (money(c["budgeted"]) + star + tail, money(c["actual"]) + star, _diff_short(c))
         cols.append((escape(y["display_name"]) + ("<br/><font size=6>entered</font>" if y.get("entered") else ""),
                      cell))
     if rep["years"]:
@@ -865,9 +896,11 @@ def _review_flowables(db: Session, ctx, rep: dict, doc) -> list:
             t = Table(data, colWidths=[label_w] + [cw] * len(bcols), repeatRows=1, hAlign="LEFT")
             t.setStyle(TableStyle(style))
             f += [t, gross_note(), Spacer(1, 8)]   # 2.3.0 (#371)
+    f += [P(x, "small") for x in estimate_footnotes(rep)]          # 2.3.0 (#390)
     if rep["filter"]["budget_id"] is not None:
         row = (rep["income"] + rep["expense"])[0]
-        f += [KeepTogether([PM("Budgeted and actual per year", "h2"), _chart(rep, row), gross_note()])]
+        f += [KeepTogether([PM("Budgeted and actual per year", "h2"), _chart(rep, row)]
+                           + [P(x, "small") for x in estimate_footnotes(rep)] + [gross_note()])]
     f += [Spacer(1, 8), P(f"Generated {utcnow():%Y-%m-%d %H:%M} UTC by {ctx.user.username} — {ws.name}", "small")]
     return f
 

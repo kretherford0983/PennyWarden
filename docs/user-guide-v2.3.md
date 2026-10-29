@@ -23,6 +23,12 @@ no budget continues yet. They appear among the Income and Expense budgets, under
 had, with a **Not in FY…, last FY…** tag. Their earlier years and averages are shown as usual; the current year,
 *Projected* and next year show —. Budgets are matched by their continuation links, never just by the code.
 
+### Estimated figures from before PennyWarden
+When you enter a budget year from before PennyWarden (*Add an earlier year*, *Before PennyWarden*, or a CSV import),
+tick **Estimated** if the figure is an estimate — the note then has to say why. The year is marked **\*** in the
+History and the Budget Review, with a footnote *\* Estimated: <your note>*. In a CSV file, put *yes* in the
+optional **estimated** column.
+
 ## Fundraisers
 
 ### A goal for a fundraiser
@@ -31,6 +37,13 @@ fundraiser's page shows the goal beside the totals and compares the **net** (inc
 percentage of the goal reached and how much is still to go, or how far the goal was beaten. Leave it blank for no
 goal. The goal is for information only and never stops anything from being entered. *Create next year's* starts the
 new fundraiser without a goal.
+
+### Estimated results of earlier years
+In **Fundraisers → Fundraiser series**, *Enter a prior year* has an **Estimated** box for a result you only know
+roughly; a note saying why is then required. An entered result can now be fixed with **Correct…** (the amounts, the
+note and the Estimated box, with a reason). Estimated years are marked **\*** in the fundraiser's report and
+presentation and in the Fiscal Year fundraising report and presentation, with a footnote giving your note; in the
+charts their bars are lighter.
 
 ## Bank accounts
 

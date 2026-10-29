@@ -22,6 +22,11 @@ PennyWarden 2.3.0 (in progress).
   current-year, projection and next-year columns show —. Lines follow the continuation links, never the code, so a
   reused code is never merged with an unrelated budget. On the screen, in the PDF and the CSV (and so in the review
   appended to the Planning Sheet). A review of one budget or one parent is unchanged.
+- **Estimated years before PennyWarden (#390).** A budget year entered from before PennyWarden (*Add an earlier
+  year*, *Before PennyWarden*, *Correct*) has an **Estimated** box; when it is ticked a note saying why is required.
+  The CSV import takes an optional *estimated* column (yes/no; an estimated row needs a note). The year is marked
+  **\*** in the budget's History and the Budget Review (screen, PDF and CSV), with a footnote *\* Estimated: <the
+  note>*; in the Budget Review chart its bars are lighter and its label carries the \*.
 
 ### Fundraisers
 - **An optional goal for a fundraiser (#372).** *New/Edit fundraiser* has a **Goal (optional)** field. When a goal is
@@ -29,6 +34,13 @@ PennyWarden 2.3.0 (in progress).
   reached and how much is still to go (or how far it was exceeded). The goal is informational only — it never blocks
   anything — and changing it is recorded in the audit log like other fundraiser edits. *Create next year's* does not
   copy the goal.
+- **Estimated results of earlier years (#390).** *Fundraiser series → Enter a prior year* has an **Estimated** box
+  (a note saying why is then required), and an entered result now has **Correct…** (amounts, note and Estimated, with
+  a reason; recorded in the audit log with before and after values). An estimated year is marked **\*** — e.g.
+  *2022\** — in the stakeholder report (PDF and Word), its presentation, the Fiscal Year fundraising report and
+  presentation (tables, chart labels and speaker notes), with the footnote *\* Estimated: <the note>* under the
+  table, slide or chart. In the charts an estimated year's bar is also lighter; the \* and the footnote carry the
+  meaning, never the color alone.
 
 ### Bank accounts
 - **Correct or retire a balance history entry (#391).** In a non-register account's *History*, each entry's ⋯ menu
@@ -59,6 +71,8 @@ PennyWarden 2.3.0 (in progress).
 - Migration `0060` adds `fundraiser.goal_amount_cents` (empty = no goal).
 - Migration `0061` adds correction and retirement columns to `bank_account_balance` (empty: nothing changes) and the
   table `fiscal_year_balance_change` (empty).
+- Migration `0062` adds `estimated` to `fundraiser_series_result` and `budget_history_entry` (off for every existing
+  entry).
 
 ## 2.2.0 — unreleased
 PennyWarden 2.2.0 (in progress).

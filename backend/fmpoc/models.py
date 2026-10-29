@@ -688,6 +688,8 @@ class FundraiserSeriesResult(Base):
     income_cents: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     expense_cents: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # 2.3.0 (#390): an estimate (the note then says why); marked * with a footnote in reports and presentations
+    estimated: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
     retired_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     retired_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     retire_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
@@ -733,6 +735,7 @@ class BudgetHistoryEntry(Base):
     budgeted_cents: Mapped[int] = mapped_column(BigInteger)
     actual_cents: Mapped[int] = mapped_column(BigInteger)
     note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    estimated: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)  # 2.3.0 (#390)
     retired_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     retired_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     retire_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)

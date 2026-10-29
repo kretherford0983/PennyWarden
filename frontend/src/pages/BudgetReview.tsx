@@ -89,7 +89,9 @@ function columns(data: any): Col[] {
       const entered = c.source === "ENTERED" ? (c.from_sub_budgets ? "entered · sum of sub-budgets" : "entered") : null;
       const mismatch = c.mismatch ? `sub-budgets: ${money(c.mismatch.budgeted)} / ${money(c.mismatch.actual)}` : null;
       const note = [entered, mismatch, c.renumbered ? c.code : null, c.entered_as ? `as ${c.entered_as}` : null, c.status && c.status !== "APPROVED" ? status(c.status) : null].filter(Boolean).join(" · ");
-      return [<>{money(c.budgeted)}{note ? <div className="muted small">{note}</div> : null}</>, money(c.actual), diffText(c.difference, c.difference_pct)];
+      // 2.3.0 (#390): an estimated year is marked * (the footnote under the table gives the note)
+      const star = c.estimated ? <span title={`Estimated: ${c.estimate_note || ""}`}>*</span> : null;
+      return [<>{money(c.budgeted)}{star}{note ? <div className="muted small">{note}</div> : null}</>, <>{money(c.actual)}{star}</>, diffText(c.difference, c.difference_pct)];
     },
   }));
   if (data.years.length) {
@@ -183,6 +185,11 @@ export default function BudgetReview({ fys }: { fys: any[] }) {
 
 function BudgetReviewTable({ data, url }: { data: any; url: (format: string, download?: boolean) => string }) {
   const cols = columns(data);
+  // 2.3.0 (#390): one footnote line per estimated year
+  const estimates: any[] = [];
+  for (const sec of ["income", "expense"]) for (const r of data[sec]) r.history.forEach((c: any, i: number) => {
+    if (c?.estimated) estimates.push({ label: data.years[i].display_name, code: r.code, name: r.name, note: c.estimate_note });
+  });
   const span = cols.length + 1;
   return (
     <div className="budget-review">
@@ -223,6 +230,11 @@ function BudgetReviewTable({ data, url }: { data: any; url: (format: string, dow
           ) : null)}
         </table>
       </div>
+      {estimates.length ? (
+        <ul className="hint estimate-notes" data-testid="estimate-notes">
+          {estimates.map((e, i) => <li key={i}>* Estimated: {e.label} {e.code} {e.name} — {e.note}</li>)}
+        </ul>
+      ) : null}
       <GrossBudgetNote />
     </div>
   );
