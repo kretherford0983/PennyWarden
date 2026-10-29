@@ -296,7 +296,7 @@ def build_pptx(org: str, rep: dict) -> bytes:
     deck._text(sl, Inches(2.0), Inches(0.8), Inches(10.5), Inches(0.6), org, size=24, bold=True)
     deck._text(sl, Inches(2.0), Inches(1.35), Inches(10.5), Inches(0.9), title(rep), size=34, bold=True, color=deck.C.BLUE)
     deck._text(sl, Inches(2.0), Inches(2.25), Inches(10.5), Inches(0.5), as_of(rep), size=18,
-               color=deck.RED if rep["preliminary"] else deck.C.GREY)
+               color=(deck.C.GOLD if deck.C.DARK else deck.RED) if rep["preliminary"] else deck.C.GREY)
     hl = highlight_tiles(rep)
     w = 12.1 / len(hl)
     for i, (k, v, c) in enumerate(hl):

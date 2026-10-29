@@ -128,6 +128,38 @@ could not otherwise be corrected. Scope and safeguards:
   with a link; the variable picker completes dotted names.
 - Tests: `backend/tests/test_v210_organization.py` (6, including the data migration) and the E2E #126 and #312 steps.
 
+**2.3.0 build 10 — Dual branding: light and dark themes per output type (#386, decided with Kyle 2026-10-28/29).**
+- `branding_settings` (`0065`): `dark_preset` (a ready-made id, `custom`, or empty = the dark version of the light
+  preset; PennyWarden's when the light palette is custom and no dark colors were saved), `dark_colors_json`,
+  `theme_reports` / `theme_presentations` (LIGHT | DARK), `dark_logos` and `logo_dark_full_*` / `logo_dark_mark_*`.
+  The light source colors are shared by both themes.
+- **Upgrade vs new setup** (Kyle 2026-10-29: existing branding stays light): the migration adds a row with both
+  outputs LIGHT for every existing workspace, so an upgraded installation that never touched branding stays light
+  too. A new installation has no row until branding is saved, and no row (or a row created after 2.3.0, model
+  default) means presentations DARK, reports LIGHT. Flagged for Kyle: this treats "existing branding" as "existing
+  installation".
+- `DARK_PRESETS`: the dark version of each ready-made palette, generated with material-color-utilities 0.4.0 (dark
+  scheme from the preset's two source colors; series tones 80/70/80/60/90/60/70/45 so bars show on a dark surface);
+  `palette.ts generate(..., dark)` makes the same for custom colors. Dark contrast pairs = the light pairs without the
+  white-paper ones, plus primary on surface.
+- **Direct editing (decision 4)** is a UI change: every role and series is editable on both theme tabs and an edit
+  switches that palette to *Custom* (the server already accepted custom colors). The API keeps the old body shape;
+  the dark fields, `themes` and `dark_logos` are optional (omitted = unchanged).
+- **Applying a theme:** `branding.load/use(db, output=...)` with `output` "reports" (default, every `@themed` PDF
+  builder), "presentations" (the three decks) or "word" (the stakeholder Word report: always light — Word is printed
+  on white paper). `Theme.dark` / `Theme.page`. Decks: `paint_background` (called from `brand_footers`, which every
+  deck calls last) fills each slide with the surface; table bodies use the page color; chart and data-label text the
+  theme's text color on dark (donut labels sit on light slices: dark text). PDFs: `_Styles` gives every non-themed
+  style the on-surface text color on dark; `_stamp_and_write` merges a surface-colored page under each page; the few
+  fixed light-design lines/shades go through `branding.pick(light_hex, dark_role)` so light reports are unchanged.
+  Semantic colors (red warnings, green *above budget*) keep their meaning on both.
+- Dark logos: on a dark theme with *Use a separate logo on dark backgrounds* on, each slot uses its dark version
+  when uploaded, else the light one. Uploads follow BR-100/BR-101 (`normalize_logo`).
+- Backups / partial restore (`settings.branding`) / reinitialize: the new columns live on `branding_settings`, so
+  they follow the existing handling unchanged.
+- Tests: `backend/tests/test_v230_dual_branding.py` (5, including the migration); `test_v220_branding` updated for
+  the new logo slots and to request light presentations where it checks the light palette; E2E "#386".
+
 **2.3.0 build 9 — Quarterly / Annual Fiscal Year financial report and presentation (#373, issue decisions of
 2026-10-28/29).** Spec docs are not changed in the repo, so the issue's new rules are recorded here:
 - **BR-110 Period Report Cutoff:** cutoff = the end of the period, or the run date while the period is under way

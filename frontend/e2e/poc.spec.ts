@@ -4216,6 +4216,38 @@ test("#280: an Administrator brands reports - a palette, a custom palette checke
   await expect(card.getByRole("radio", { name: /PennyWarden/ })).toBeChecked();
 });
 
+// ---------------------------------------------------------------- 2.3.0 #386: dual branding
+test("#386: light and dark themes - presentations dark for a new setup, a dark palette edited directly, logos for dark backgrounds", async ({ page }) => {
+  await login(page, "admin");
+  await page.getByRole("link", { name: "System/About" }).click();
+  await aboutTab(page, "Branding");
+  const card = page.getByRole("region", { name: "Organization branding" });
+  // a new installation: printed reports light, presentations dark
+  await expect(card.getByLabel("Theme for PDF reports (printed)")).toHaveValue("LIGHT");
+  await expect(card.getByLabel("Theme for Presentations (.pptx)")).toHaveValue("DARK");
+  await card.getByRole("tab", { name: "Dark theme" }).click();
+  await expect(page.getByTestId("branding-preview-dark")).toBeVisible();
+  await card.getByRole("radio", { name: /Ocean/ }).check();
+  // any color can be changed directly: the palette becomes Custom
+  await card.getByText("Color roles", { exact: true }).click();
+  await card.getByLabel("Text on Primary", { exact: true }).fill("#001e2f");
+  await expect(card.getByRole("radio", { name: "Custom" })).toBeChecked();
+  // the guardrail holds on the dark theme too
+  await card.getByLabel("Text", { exact: true }).fill("#303030");
+  await expect(card.getByTestId("branding-contrast")).toContainText("WCAG AA");
+  await expect(card.getByRole("button", { name: "Save branding" })).toBeDisabled();
+  await card.getByLabel("Text", { exact: true }).fill("#e0e3e8");
+  await card.getByLabel("Use a separate logo on dark backgrounds").check();
+  await card.getByRole("button", { name: "Save branding" }).click();
+  await expect(card.getByRole("status")).toHaveText("Saved.");
+  await card.getByLabel("Full logo for dark backgrounds image").setInputFiles({ name: "logo-dark.png", mimeType: "image/png", buffer: BRAND_LOGO });
+  await expect(page.getByTestId("branding-preview-dark").getByRole("img", { name: "Full logo" })).toBeVisible();
+  await card.screenshot({ path: "e2e-screenshots/light-branding-dark-theme.png" });
+  // the light theme is unchanged
+  await card.getByRole("tab", { name: "Light theme" }).click();
+  await expect(page.getByTestId("branding-preview")).toBeVisible();
+});
+
 // ---------------------------------------------------------------- 2.2.0 #315 / #316: entity names
 test("#315 / #316: first and last name, a display name and mailing address; each user's name order", async ({ page }) => {
   await login(page, "ru1", "Brand-New-Pass-99");

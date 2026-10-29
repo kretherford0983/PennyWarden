@@ -776,6 +776,21 @@ class BrandingSettings(Base):
     logo_mark_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     logo_mark_width: Mapped[int | None] = mapped_column(Integer, nullable=True)
     logo_mark_height: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 2.3.0 (#386): dual branding - the dark palette (empty = the dark version of the light palette), the theme each
+    # type of output uses (new setups: presentations dark; upgraded installations: both light) and dark-background logos
+    dark_preset: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    dark_colors_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    theme_reports: Mapped[str] = mapped_column(String(5), default="LIGHT", server_default="LIGHT")
+    theme_presentations: Mapped[str] = mapped_column(String(5), default="DARK", server_default="LIGHT")
+    dark_logos: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false())
+    logo_dark_full_png: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    logo_dark_full_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    logo_dark_full_width: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    logo_dark_full_height: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    logo_dark_mark_png: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    logo_dark_mark_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    logo_dark_mark_width: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    logo_dark_mark_height: Mapped[int | None] = mapped_column(Integer, nullable=True)
     updated_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     updated_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("app_user.id"), nullable=True)
 
