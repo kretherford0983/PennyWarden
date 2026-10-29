@@ -240,3 +240,53 @@ def planning_sheet(fiscal_year_id: int | None = None, as_of: dt.date | None = No
     audit.record(db, ctx, "REPORT_GENERATED", "fiscal_year", summary["fiscal_year_id"], None, summary)
     db.commit()
     return _pdf_response(path, fname, download)
+
+
+# ------------------------------------------------------------------ 2.3.0 (#373) Quarterly / Annual FY report
+def _today() -> dt.date:
+    """Computed when the request runs (never at import), so a run that crosses midnight uses the right day."""
+    return dt.date.today()
+
+
+@router.get("/period/options")
+def period_options(fiscal_year_id: int = Query(...), db: Session = Depends(get_db),
+                   ctx: Ctx = Depends(require("financial.view"))):
+    from ..services import period_report as prep
+    fy = get_scoped(db, FiscalYear, fiscal_year_id, ctx, "Fiscal Year")
+    prior = prep.previous_fy(db, fy)
+    return {"periods": prep.options(fy, _today()), "prior_fiscal_year": prior.display_name if prior else None,
+            "max_commentary": prep.MAX_COMMENTARY}
+
+
+@router.get("/period")
+def period_report(fiscal_year_id: int = Query(...), period: Literal["Q1", "Q2", "Q3", "Q4", "ANNUAL"] = Query(...),
+                  commentary: str | None = Query(None, max_length=2000),
+                  format: Literal["json", "pdf", "pptx"] = "pdf", download: bool = False,
+                  db: Session = Depends(get_db), ctx: Ctx = Depends(require("financial.view"))):
+    """The Quarterly or Annual Fiscal Year financial report (PDF) or presentation (.pptx), as of the end of the
+    period (BR-110). Generation is audited with its parameters."""
+    from ..services import branding
+    from ..services import period_report as prep
+    from ..services import period_report_output as out
+    fy = get_scoped(db, FiscalYear, fiscal_year_id, ctx, "Fiscal Year")
+    rep = prep.build(db, ctx, fy, period, _today(), commentary)
+    if format == "json":
+        db.rollback()
+        return rep
+    org = db.get(Workspace, ctx.workspace_id).name
+    summary = {"report": "FY_PERIOD_PRESENTATION" if format == "pptx" else "FY_PERIOD_REPORT",
+               "fiscal_year_id": fy.id, "period": period, "cutoff": rep["cutoff"], "preliminary": rep["preliminary"],
+               "commentary": bool(rep["commentary"]), "format": format.upper()}
+    if format == "pptx":
+        with branding.use(db):
+            data = out.build_pptx(org, rep)
+        audit.record(db, ctx, "REPORT_GENERATED", "fiscal_year", fy.id, None, summary)
+        db.commit()
+        return Response(data, media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                        headers={"Content-Disposition": _disposition("attachment", out.file_stem(org, rep) + "-presentation.pptx"),
+                                 "Cache-Control": "private, no-store"})
+    with branding.use(db):
+        path, fname, pages = out.pdf_file(org, rep)
+    audit.record(db, ctx, "REPORT_GENERATED", "fiscal_year", fy.id, None, {**summary, "pages": pages})
+    db.commit()
+    return _pdf_response(path, fname, download)

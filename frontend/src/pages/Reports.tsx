@@ -8,7 +8,7 @@ import FlowReport from "./FlowReport";
 import { SIG_EMPTY, SignatureOptions, signatureProblem, type SigState } from "./SignatureOptions";
 
 export default function Reports() {
-  const [tab, setTab] = useState<"audit" | "close" | "entity" | "flow" | "prep" | "frdetail">("audit");
+  const [tab, setTab] = useState<"audit" | "close" | "period" | "entity" | "flow" | "prep" | "frdetail">("audit");
   const { can, me } = useMe();
   const [fys, setFys] = useState<any[] | null>(null);
   const [accounts, setAccounts] = useState<any[]>([]);
@@ -27,6 +27,7 @@ export default function Reports() {
         <div role="tablist" className="row">
           <button role="tab" aria-selected={tab === "audit"} className={tab === "audit" ? "primary" : ""} onClick={() => setTab("audit")}>End of Year Audit</button>
           <button role="tab" aria-selected={tab === "close"} className={tab === "close" ? "primary" : ""} onClick={() => setTab("close")}>Fiscal Year Close</button>
+          <button role="tab" aria-selected={tab === "period"} className={tab === "period" ? "primary" : ""} onClick={() => setTab("period")}>Quarterly / Annual</button>
           <button role="tab" aria-selected={tab === "entity"} className={tab === "entity" ? "primary" : ""} onClick={() => setTab("entity")}>Entity activity</button>
           <button role="tab" aria-selected={tab === "flow"} className={tab === "flow" ? "primary" : ""} onClick={() => setTab("flow")}>Financial Flow</button>
           {me.modules?.fundraisers ? <button role="tab" aria-selected={tab === "frdetail"} className={tab === "frdetail" ? "primary" : ""} onClick={() => setTab("frdetail")}>Fundraiser detail (audit)</button> : null}
@@ -35,6 +36,7 @@ export default function Reports() {
       </div>
       {tab === "audit" ? <AuditReport fys={fys} accounts={accounts} /> : null}
       {tab === "close" ? <CloseReport fys={fys} /> : null}
+      {tab === "period" ? <PeriodReport fys={fys} /> : null}
       {tab === "entity" ? <EntityReport fys={fys} accounts={accounts} /> : null}
       {tab === "flow" ? <FlowReport accounts={accounts} /> : null}
       {tab === "prep" && can("budget.manage") ? <BudgetReview fys={fys} /> : null}
@@ -283,6 +285,67 @@ function FundraiserDetailReport({ fys }: { fys: any[] }) {
         {sel ? <><a className="button primary" href={`/api/fundraisers/${sel.id}/report`} target="_blank" rel="noopener">Open detail PDF</a>
           <a className="button" href={`/api/fundraisers/${sel.id}/report?download=true`}>Download PDF</a></>
           : <button className="primary" disabled>Open detail PDF</button>}
+      </div>
+    </section>
+  );
+}
+
+/** 2.3.0 (#373): the Quarterly / Annual Fiscal Year financial report (PDF) and presentation (.pptx) for the board -
+ * accounts, cash flow, budgets and fundraisers as of the end of the period. A period still in progress is reported
+ * as Preliminary, as of today; a period that hasn't started can't be chosen. */
+function PeriodReport({ fys }: { fys: any[] }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const cur = fys.find((f) => f.start_date <= today && f.end_date >= today) || fys[fys.length - 1];
+  const [fy, setFy] = useState(cur ? String(cur.id) : "");
+  const [opts, setOpts] = useState<any>(null);
+  const [period, setPeriod] = useState("");
+  const [note, setNote] = useState("");
+  const [err, setErr] = useState<unknown>(null);
+  useEffect(() => {
+    if (!fy) return;
+    setErr(null);
+    api.get(`/api/reports/period/options?fiscal_year_id=${fy}`).then((o) => {
+      setOpts(o);
+      // the latest period that has started: the current quarter (or the year's last one)
+      const ok = o.periods.filter((p: any) => p.selectable && p.id !== "ANNUAL");
+      setPeriod(ok.length ? ok[ok.length - 1].id : (o.periods.find((p: any) => p.selectable)?.id || ""));
+    }, setErr);
+  }, [fy]);
+  const sel = opts?.periods.find((p: any) => p.id === period);
+  const url = (format: string, download: boolean) =>
+    `/api/reports/period${qs({ fiscal_year_id: fy, period, commentary: note.trim() || null, format: format === "pdf" ? null : format, download: download || null })}`;
+  return (
+    <section className="card">
+      <h2>Quarterly and Annual financial report</h2>
+      <p>The state of the organization's finances for the board: accounts (start and end balances), cash flow by month, budgets
+        (the quarter and the year to date, or Q1–Q4 for the year) and fundraisers, with last year's figures beside them when there are
+        any. Everything is as of the end of the period; a PDF report and a presentation with charts.</p>
+      <ErrorBox error={err} />
+      <div className="report-options">
+        <Field label="Fiscal Year">
+          <select aria-label="Period report Fiscal Year" value={fy} onChange={(e) => setFy(e.target.value)}>
+            {fys.map((y) => <option key={y.id} value={y.id}>{y.label}</option>)}
+          </select>
+        </Field>
+        <Field label="Period">
+          <select aria-label="Period" value={period} onChange={(e) => setPeriod(e.target.value)}>
+            {(opts?.periods || []).map((p: any) => <option key={p.id} value={p.id} disabled={!p.selectable}>
+              {p.label}{p.id !== "ANNUAL" ? ` (${p.start_date} – ${p.end_date})` : ""}{!p.selectable ? " – not started" : ""}</option>)}
+          </select>
+        </Field>
+      </div>
+      {sel?.preliminary ? <p className="hint" data-testid="period-preliminary">{sel.id === "ANNUAL" ? "The Fiscal Year has not ended or is not closed yet" : "This quarter has not ended yet"}:
+        the report is marked <b>Preliminary</b>, as of {sel.id === "ANNUAL" && today > sel.end_date ? sel.end_date : today}.</p> : null}
+      {opts && !opts.prior_fiscal_year ? <p className="hint">No earlier Fiscal Year: the prior-year columns are left out.</p> : null}
+      <Field label="Commentary (optional)" hint="Printed on the first page of the report and placed in the presentation's speaker notes.">
+        <textarea rows={4} maxLength={opts?.max_commentary || 2000} value={note} onChange={(e) => setNote(e.target.value)} />
+      </Field>
+      <div className="actions left">
+        {sel?.selectable ? <>
+          <a className="button primary" href={url("pdf", false)} target="_blank" rel="noopener">Open report PDF</a>
+          <a className="button" href={url("pdf", true)}>Download PDF</a>
+          <a className="button" href={url("pptx", true)}>Download presentation (.pptx)</a>
+        </> : <button className="primary" disabled>Open report PDF</button>}
       </div>
     </section>
   );

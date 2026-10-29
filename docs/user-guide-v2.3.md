@@ -2,6 +2,19 @@
 
 *2.3.0 is in progress. The full list is in the [changelog](../CHANGELOG.md).*
 
+## Reports
+
+### Quarterly and Annual financial report
+**Reports → Quarterly / Annual** makes the report for your board: choose the Fiscal Year and a quarter (Q1–Q4) or
+Annual, add a few lines of commentary if you like, then **Open report PDF** or **Download presentation (.pptx)**.
+You get the highlights (total cash, how much it changed, how many budgets are over, fundraiser net), each account's
+balance at the start and end, money in and out by month, the budgets for the quarter and the year so far, and the
+fundraisers — with last year's figures beside them when PennyWarden has the year before.
+
+The report is as of the end of the period: transactions dated later are left out. You can run it before the quarter
+ends; it is then marked **Preliminary — as of** today. A fundraiser counts in the quarter its event ends in; if money
+for an earlier quarter's fundraiser comes in later, it shows as **Revised**.
+
 ## Budgets
 
 ### Budget amounts are gross
