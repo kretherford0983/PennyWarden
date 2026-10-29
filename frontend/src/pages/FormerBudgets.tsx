@@ -130,7 +130,7 @@ function FormerDetail({ id, fys, manage, onClose, onChanged }: { id: number; fys
                 {!shown.length ? <tr><td colSpan={6} className="muted">No years entered yet.</td></tr> : null}
                 {shown.map((x: any) => (
                   <tr key={x.id}>
-                    <td>{x.fiscal_year_label} <span className="badge grey">Entered</span>{!x.counted ? <div className="muted small">Not counted: a Fiscal Year in PennyWarden covers this year.</div> : null}</td>
+                    <td>{x.fiscal_year_label}{x.estimated ? <span title="Estimated" data-testid="estimated-mark">*</span> : null} <span className="badge grey">Entered</span>{!x.counted ? <div className="muted small">Not counted: a Fiscal Year in PennyWarden covers this year.</div> : null}</td>
                     <td><span className="code">{x.code_shown}</span> {x.name_shown}</td>
                     <td className="num">{money(x.budgeted)}</td><td className="num">{money(x.actual)}</td>
                     <td className="muted">{x.note}</td>
@@ -239,14 +239,14 @@ export function YearForm({ title, addUrl, edit, defaults, onClose, onSaved }: {
 }) {
   const e = edit.e || {};
   const [f, setF] = useState({ fiscal_year_label: e.fiscal_year_label || "", budgeted: e.budgeted || "", actual: e.actual || "", note: e.note || "",
-                               code: e.code || "", name: e.name || "", reason: "" });
+                               code: e.code || "", name: e.name || "", reason: "", estimated: !!e.estimated });
   const [err, setErr] = useState<unknown>(null);
   const submit = async (ev: FormEvent) => {
     ev.preventDefault();
     setErr(null);
     try {
-      if (edit.mode === "add") await api.post(addUrl, { fiscal_year_label: f.fiscal_year_label, budgeted: f.budgeted, actual: f.actual, note: f.note || null, code: f.code || null, name: f.name || null });
-      else if (edit.mode === "correct") await api.patch(`/api/budgets/history-entries/${e.id}`, { fiscal_year_label: f.fiscal_year_label, budgeted: f.budgeted, actual: f.actual, note: f.note, code: f.code || null, name: f.name || null, reason: f.reason });
+      if (edit.mode === "add") await api.post(addUrl, { fiscal_year_label: f.fiscal_year_label, budgeted: f.budgeted, actual: f.actual, note: f.note || null, code: f.code || null, name: f.name || null, estimated: f.estimated });
+      else if (edit.mode === "correct") await api.patch(`/api/budgets/history-entries/${e.id}`, { fiscal_year_label: f.fiscal_year_label, budgeted: f.budgeted, actual: f.actual, note: f.note, code: f.code || null, name: f.name || null, estimated: f.estimated, reason: f.reason });
       else await api.post(`/api/budgets/history-entries/${e.id}/retire`, { reason: f.reason });
       onSaved();
     } catch (x) { setErr(x); }
@@ -265,7 +265,9 @@ export function YearForm({ title, addUrl, edit, defaults, onClose, onSaved }: {
               <Field label="Budgeted"><input required inputMode="decimal" maxLength={20} value={f.budgeted} onChange={(x) => setF({ ...f, budgeted: x.target.value })} /></Field>
               <Field label="Actual"><input required inputMode="decimal" maxLength={20} value={f.actual} onChange={(x) => setF({ ...f, actual: x.target.value })} /></Field>
             </div>
-            <Field label="Note (optional)" hint="For example: from the 2021 treasurer's spreadsheet."><input maxLength={500} value={f.note} onChange={(x) => setF({ ...f, note: x.target.value })} /></Field>
+            {/* 2.3.0 (#390): an estimated year needs a note saying why (shown as the * footnote in reports) */}
+            <label className="check"><input type="checkbox" checked={f.estimated} onChange={(x) => setF({ ...f, estimated: x.target.checked })} /> Estimated</label>
+            <Field label={f.estimated ? "Note (required: why it is estimated)" : "Note (optional)"} hint={f.estimated ? "Printed as the footnote wherever the year is marked *." : "For example: from the 2021 treasurer's spreadsheet."}><input required={f.estimated} maxLength={500} value={f.note} onChange={(x) => setF({ ...f, note: x.target.value })} /></Field>
             <details className="year-name" open={!!(f.code || f.name)}>
               <summary>Called differently that year?</summary>
               <div className="row fields">

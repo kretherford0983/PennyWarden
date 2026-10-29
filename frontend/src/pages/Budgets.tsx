@@ -249,7 +249,7 @@ function BudgetHistory({ row, onClose, manage }: any) {
               <tbody>
                 {shown.map((x, i) => (
                   <tr key={`e${x.id ?? `s${i}`}`} className="entered-row">
-                    <td>{x.fiscal_year_label} <span className="badge grey" title="Entered from earlier records, before PennyWarden">Entered</span></td>
+                    <td>{x.fiscal_year_label}{x.estimated ? <span title={`Estimated: ${x.note || ""}`} data-testid="estimated-mark">*</span> : null} <span className="badge grey" title="Entered from earlier records, before PennyWarden">Entered</span></td>
                     {/* 2.2.0 (#381): the code and name the budget had that year (from before PennyWarden) */}
                     <td>{x.code_shown ? <span className="code">{x.code_shown}</span> : null}</td>
                     <td>
@@ -335,12 +335,13 @@ function ImportHistory({ fy, onClose, onSaved }: any) {
         <>
           <p>
             A CSV file from your earlier spreadsheets, one row per budget per year, with the columns <b>budget code, type,
-            former code, former name, year, budgeted, actual, note, line</b>.
+            former code, former name, year, budgeted, actual, note, line, estimated</b>.
           </p>
           <ul className="small">
             <li><b>Budget code</b>: the budget of <b>{fy.display_name}</b> that continues it (a sub-budget, or <i>-00</i> for a parent's Other, works too). Leave it empty for a budget that no budget of PennyWarden continues; then <b>type</b> (Income or Expense) is needed.</li>
             <li><b>Former code</b> and <b>former name</b>: the budget as it was called that year (empty: the same as the budget). Rows with the same budget code are one budget; without a budget code, rows with the same former code are. Use <b>line</b> (any label) to keep a renumbered budget together.</li>
             <li>Only years before the first Fiscal Year in PennyWarden. Template rows you don't fill in are skipped.</li>
+            <li><b>Estimated</b> (optional): <i>yes</i> for a figure that is an estimate — its <b>note</b> must then say why; empty or <i>no</i> otherwise.</li>
           </ul>
           <p><a className="button" href={`/api/budgets/history-entries/template${qs({ fiscal_year_id: fy.id })}`}>Download the template</a> <span className="hint">(this year's budgets, ready to fill in)</span></p>
           <ErrorBox error={err} />

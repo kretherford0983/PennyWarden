@@ -15,7 +15,7 @@ from .. import audit
 from ..deps import Ctx, get_db, require
 from ..errors import validation
 from ..schemas import (ReasonIn, FundraiserBucketIn, FundraiserCategoryIn, FundraiserFinalIn, FundraiserFyNotesIn, FundraiserIn,
-                       FundraiserLineIn, FundraiserLinkIn, FundraiserSeriesAddIn, FundraiserSeriesIn, FundraiserSeriesMergeIn, FundraiserSeriesResultIn,
+                       FundraiserLineIn, FundraiserLinkIn, FundraiserSeriesAddIn, FundraiserSeriesIn, FundraiserSeriesMergeIn, FundraiserSeriesResultIn, FundraiserSeriesResultCorrectIn,
                        FundraiserNotesIn, FundraiserOrderIn,
                        FundraiserPreviewIn, ModulesIn)
 from ..services import branding  # 2.2.0 (#280)
@@ -215,6 +215,15 @@ def update_series(sid: int, body: FundraiserSeriesIn, db: Session = Depends(get_
 @router.post("/fundraiser-series/{sid}/results", status_code=201)
 def add_result(sid: int, body: FundraiserSeriesResultIn, db: Session = Depends(get_db), ctx: Ctx = Depends(manager)):
     series.add_result(db, ctx, series._series(db, ctx, sid), body)
+    db.commit()
+    return series.series_list(db, ctx)
+
+
+@router.post("/fundraiser-series/{sid}/results/{rid}/correct")
+def correct_result(sid: int, rid: int, body: FundraiserSeriesResultCorrectIn, db: Session = Depends(get_db),
+                   ctx: Ctx = Depends(manager)):
+    """2.3.0 (#390): correct an entered result (amounts, note, Estimated) - reason required."""
+    series.correct_result(db, ctx, series._series(db, ctx, sid), rid, body)
     db.commit()
     return series.series_list(db, ctx)
 

@@ -107,7 +107,8 @@ def history_entered(budget_id: int, db: Session = Depends(get_db), ctx: Ctx = De
 def history_add(budget_id: int, body: BudgetHistoryIn, db: Session = Depends(get_db),
                 ctx: Ctx = Depends(require("budget.manage"))):
     b = get_scoped(db, Budget, budget_id, ctx, "Budget")
-    e = hist.add(db, ctx, b, body.fiscal_year_label, body.budgeted, body.actual, body.note, body.code, body.name)
+    e = hist.add(db, ctx, b, body.fiscal_year_label, body.budgeted, body.actual, body.note, body.code, body.name,
+                 estimated=body.estimated)
     db.commit()
     return hist.entry_out(e, hist.former_of_entry(db, e))
 
@@ -158,7 +159,8 @@ def former_retire(former_id: int, body: ReasonIn, db: Session = Depends(get_db),
 def former_add_entry(former_id: int, body: BudgetHistoryIn, db: Session = Depends(get_db),
                      ctx: Ctx = Depends(require("budget.manage"))):
     f = hist.get_former(db, ctx, former_id)
-    e = hist.add_entry(db, ctx, f, body.fiscal_year_label, body.budgeted, body.actual, body.note, body.code, body.name)
+    e = hist.add_entry(db, ctx, f, body.fiscal_year_label, body.budgeted, body.actual, body.note, body.code, body.name,
+                       estimated=body.estimated)
     db.commit()
     return hist.entry_out(e, f)
 

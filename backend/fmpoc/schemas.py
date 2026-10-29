@@ -536,6 +536,16 @@ class FundraiserSeriesResultIn(In):
     income: Amount | None = None
     expense: Amount | None = None
     note: OptStr(500) = None
+    estimated: bool = False                    # 2.3.0 (#390): the note is then required
+
+
+class FundraiserSeriesResultCorrectIn(In):     # 2.3.0 (#390)
+    net: Amount
+    income: Amount | None = None
+    expense: Amount | None = None
+    note: OptStr(500) = None
+    estimated: bool = False
+    reason: Str(500)
 
 
 class BudgetHistoryIn(In):
@@ -547,6 +557,7 @@ class BudgetHistoryIn(In):
     note: OptStr(500) = None
     code: OptStr(20) = None
     name: OptStr(120) = None
+    estimated: bool = False                    # 2.3.0 (#390): the note is then required
 
 
 class BudgetHistoryCorrectIn(In):
@@ -556,6 +567,7 @@ class BudgetHistoryCorrectIn(In):
     note: OptStr(500) = None
     code: OptStr(20) = None
     name: OptStr(120) = None
+    estimated: bool | None = None              # 2.3.0 (#390)
     reason: Str(500)
 
 

@@ -128,6 +128,26 @@ could not otherwise be corrected. Scope and safeguards:
   with a link; the variable picker completes dotted names.
 - Tests: `backend/tests/test_v210_organization.py` (6, including the data migration) and the E2E #126 and #312 steps.
 
+**2.3.0 build 5 — Estimated entered years: fundraisers and budgets (#390, decided with Kyle 2026-10-29).**
+- `estimated` (bool, default off) on `fundraiser_series_result` and `budget_history_entry` (`0062`). Server rule
+  (BR-094): estimated ⇒ a non-blank note (`fundraiser_series.estimate_note_check`, `budget_history._estimate_check`,
+  also after a Correct that clears the note). Request models take `estimated` explicitly (BR-097/098).
+- Fundraiser series: `POST /api/fundraiser-series/{sid}/results/{rid}/correct` (amounts, note, Estimated; reason
+  required; `FUNDRAISER_RESULT_CORRECTED` before/after incl. the flag; the year itself isn't changed — retire and
+  enter again). `series_history` rows carry `estimated`/`estimate_notes`; `fy_report` carries `estimated` on history
+  rows, trend years and per-series yoy values, and adds "* Estimated: <year> <series> — <note>" lines to its
+  footnotes (`fundraiser_fy_report.est_lines` puts them under the trend, yoy and history tables and in the slides).
+- Outputs: the year gets `*` (tables, chart categories, speaker notes); the PPTX charts colour an estimated point
+  lighter (`fundraiser_deck._lighter`), the Budget Review PDF chart too (`ch.bars[(s, i)]`). Not hatched: python-pptx
+  and reportlab bar charts have no pattern fill per point; lighter was the decision's alternative.
+- Budgets: `figures` carries `estimated` (a parent's sum of sub-budgets is estimated when any part is, with their
+  notes); review cells get `estimated`/`estimate_note`; `estimate_footnotes(rep)` under the PDF tables (and the
+  one-budget chart); CSV status column "Entered; estimated: <note>"; the History, Before PennyWarden and the review
+  screen show `*`. CSV import: optional `estimated` column (yes/y/true/1/x, no/n/false/0/empty; anything else or yes
+  without a note → refused row); the template has the column.
+- Tests: `backend/tests/test_v230_estimated_years.py` (5); `test_v220_budget_history` template header updated; E2E
+  "#292" extended (Correct as estimated).
+
 **2.3.0 build 4 — Budget Review: budgets not in the chosen Fiscal Year (#382, decided with Kyle 2026-10-29).**
 - `budget_planning._add_not_in_year` (full review only; a `budget_id`/`parent_budget_id` filter skips it). Covered =
   the chosen year's rows and every budget in their history cells; covered former budgets = each row's `former_of`

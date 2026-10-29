@@ -2196,6 +2196,17 @@ test("2.1.0 (#292): prior years for an event with nothing earlier in PennyWarden
   await expect(card).toContainText("Spring Fair 2028");
   await expect(card).toContainText("FY2025");
   await expect(card).toContainText("$410.00");
+  // 2.3.0 (#390): Correct it as estimated - the note is required once Estimated is ticked, then the year is marked *
+  await card.getByRole("button", { name: "Correct…" }).click();
+  dlg = page.getByRole("dialog", { name: "Correct FY2025 — Spring Fair" });
+  await dlg.getByLabel("Estimated").check();
+  await dlg.getByLabel("Reason for the correction (required)").fill("records were partial");
+  await expect(dlg.getByRole("button", { name: "Save" })).toBeDisabled();
+  await dlg.getByLabel("Note (required: why it is estimated)").fill("only the bank deposit is known");
+  await dlg.getByRole("button", { name: "Save" }).click();
+  await expect(dlg).toHaveCount(0);
+  await expect(card.getByTestId("estimated-mark")).toBeVisible();
+  await expect(card).toContainText("only the bank deposit is known");
   await logout(page);
 });
 

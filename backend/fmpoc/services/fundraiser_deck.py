@@ -57,6 +57,13 @@ def _f(x: str) -> float:
     return float(x)
 
 
+def _lighter(rgb, amount: float = 0.55) -> RGBColor:
+    """2.3.0 (#390): an estimated year's bar or point - the series color mixed with white (the * label and the
+    footnote carry the meaning; never color alone, BR-079)."""
+    r, g, b = (int(str(rgb)[i:i + 2], 16) for i in (0, 2, 4))
+    return RGBColor(*(int(c + (255 - c) * amount) for c in (r, g, b)))
+
+
 def _text(slide, x, y, w, h, text, size=18, bold=False, color=None, align=None, wrap=True):
     box = slide.shapes.add_textbox(x, y, w, h)
     tf = box.text_frame
@@ -287,12 +294,12 @@ def build(s: dict) -> bytes:
 
     # year over year (#277 feedback): only when earlier years of the series are known
     if s.get("year_over_year"):
-        from .fundraiser_summary import YOY_HEAD, yoy_rows, yoy_change
+        from .fundraiser_summary import YOY_HEAD, estimate_lines, yoy_rows, yoy_change
         yy = s["year_over_year"]
         sl = prs.slides.add_slide(blank)
         _title(sl, "Year over year", "Each year this fundraiser was held")
         cd = CategoryChartData(number_format='"$"#,##0.00')
-        cd.categories = [str(r["year"]) for r in yy]
+        cd.categories = [str(r["year"]) + ("*" if r.get("estimated") else "") for r in yy]   # 2.3.0 (#390)
         cd.add_series("Net revenue", [float(r["net_revenue"]) if r["net_revenue"] is not None else None for r in yy])
         cd.add_series("Expenses", [float(r["expenses"]) if r["expenses"] is not None else None for r in yy])
         cd.add_series("Net proceeds", [float(r["net_proceeds"]) for r in yy])
@@ -302,12 +309,22 @@ def build(s: dict) -> bytes:
         for i, ser in enumerate(ch.plots[0].series):
             ser.format.fill.solid()
             ser.format.fill.fore_color.rgb = C.SERIES[i]
-        rows = [["Year", "Net proceeds", "vs year before"]] + [[str(r["year"]) + ("" if r["source"] == "Recorded" else " (Entered)"),
+        rows = [["Year", "Net proceeds", "vs year before"]] + [[str(r["year"]) + ("*" if r.get("estimated") else "")
+                                                               + ("" if r["source"] == "Recorded" else " (Entered)"),
                                                                money(r["net_proceeds"]), yoy_change(r)] for r in yy[-TABLE_ROWS:]]
         _table(sl, Inches(7.9), Inches(1.7), Inches(5.0), rows, [1.4, 1.5, 2.1], {1}, bold_rows=[len(rows) - 1], size=11)
+        est = estimate_lines(s)            # 2.3.0 (#390): the footnote on the slide and in the speaker notes
+        if est:
+            _text(sl, Inches(7.9), Inches(6.3), Inches(5.0), Inches(0.9), est, size=10, color=C.GREY)
+            for i, r in enumerate(yy):     # an estimated year's bars lighter (the * label carries the meaning)
+                if r.get("estimated"):
+                    for ser in ch.plots[0].series:
+                        pt = ser.points[i]
+                        pt.format.fill.solid()
+                        pt.format.fill.fore_color.rgb = _lighter(ser.format.fill.fore_color.rgb)
         _notes(sl, ["Year over year for this fundraiser's series (linked with “Continues from”); Entered = a year before "
                     "PennyWarden entered by hand, which may have only the net amount.", " | ".join(YOY_HEAD)]
-               + [" | ".join(r) for r in yoy_rows(s)])
+               + [" | ".join(r) for r in yoy_rows(s)] + est)
 
     if s["has_buckets"]:
         rev = [(g["name"], g["income"], g["income_pct"]) for g in groups if g["income"] != "0.00"]
