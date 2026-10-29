@@ -109,6 +109,7 @@ export function OrganizationPanel({ name, onRenamed }: { name: string; onRenamed
 type Row = {
   name: string; label: string; value: any; source: string; editable: boolean; locked: boolean; read_only_reason: string | null;
   restart_required: boolean; saved_value: any; choices: string[] | null; range: [number, number] | null; type: "bool" | "int" | "text";
+  choice_labels?: Record<string, string> | null; live?: boolean;   // 2.3.0 (#379): the update channel
 };
 
 const show = (v: any) => (Array.isArray(v) ? (v.length ? v.join(", ") : "—") : typeof v === "boolean" ? (v ? "On" : "Off") : v === "" || v == null ? "—" : String(v));
@@ -142,7 +143,7 @@ export function SettingsPanel() {
     const v = r.name in edit ? edit[r.name] : r.saved_value;
     const set = (x: any) => setEdit({ ...edit, [r.name]: x });
     if (r.type === "bool") return <input type="checkbox" aria-label={r.label} checked={!!v} onChange={(e) => set(e.target.checked)} />;
-    if (r.choices) return <select aria-label={r.label} value={v} onChange={(e) => set(e.target.value)}>{r.choices.map((c) => <option key={c} value={c}>{c}</option>)}</select>;
+    if (r.choices) return <select aria-label={r.label} value={v} onChange={(e) => set(e.target.value)}>{r.choices.map((c) => <option key={c} value={c}>{r.choice_labels?.[c] ?? c}</option>)}</select>;
     if (r.type === "int") return <input type="number" aria-label={r.label} min={r.range?.[0]} max={r.range?.[1]} value={v} onChange={(e) => set(e.target.value === "" ? "" : Number(e.target.value))} style={{ width: "8em" }} />;
     return <input aria-label={r.label} maxLength={1000} value={v ?? ""} placeholder="none" onChange={(e) => set(e.target.value)} />;
   };
@@ -152,7 +153,8 @@ export function SettingsPanel() {
       <p className="hint">
         Every setting in effect and where it comes from: the built-in <b>default</b>, <code>{d.config_file}</code> in the data folder, an
         <b> environment</b> variable (FM_…) or a <b>command line</b> option — each one overrides the one before.
-        {d.editor ? " Settings marked editable are saved to config.toml and take effect when the service is restarted. A setting set by the environment or the command line can only be changed there." :
+        {d.editor && d.mode === "server" ? " Settings marked editable are saved to config.toml and take effect when the service is restarted (the update channel takes effect at once). A setting set by the environment or the command line can only be changed there." :
+          d.editor ? " On a local install only the update channel can be changed here (it is saved to config.toml and takes effect at once); change other settings in config.toml (docs/configuration.md)." :
           d.mode === "server" ? "" : " On a local install, change settings in config.toml (docs/configuration.md)."}
       </p>
       {d.restart_required ? <div className="alert warn" role="status" data-testid="restart-required"><strong>Restart required:</strong> saved changes take effect when the PennyWarden service is restarted.</div> : null}
@@ -163,7 +165,7 @@ export function SettingsPanel() {
           {rows.map((r) => (
             <tr key={r.name}>
               <td>{r.label}</td>
-              <td>{show(r.value)}{r.restart_required ? <span className="badge" title={`Saved: ${show(r.saved_value)}`}> restart required</span> : null}</td>
+              <td>{r.choice_labels?.[r.value] ?? show(r.value)}{r.restart_required ? <span className="badge" title={`Saved: ${show(r.saved_value)}`}> restart required</span> : null}</td>
               <td>{r.source}</td>
               {d.editor ? <td>{r.editable ? input(r) : <span className="muted">{r.read_only_reason || "Read-only"}</span>}</td> : null}
             </tr>

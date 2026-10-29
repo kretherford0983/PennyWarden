@@ -3217,6 +3217,9 @@ test("#126: an Administrator renames the organization, sees the effective settin
   const settings = page.getByRole("region", { name: "Settings" });
   await expect(settings.getByRole("row", { name: /Session idle timeout \(minutes\) 30 default/ })).toBeVisible();
   await expect(settings.getByRole("button", { name: "Save settings" })).toHaveCount(0);   // local install: view only
+  // 2.3.0 (#379): the update channel is the one setting editable on a local install - here it's set by the
+  // environment (FM_UPDATE_CHANNEL in the E2E server), so it is shown with its plain-language name and stays locked
+  await expect(settings.getByRole("row", { name: /Update channel Production releases only environment/ })).toBeVisible();
   await aboutTab(page, "Backups");
   await page.getByLabel("Warn when there is no backup for (days, 0 = never)").fill("3");
   await page.getByRole("region", { name: "Backup reminder" }).getByRole("button", { name: "Save" }).click();

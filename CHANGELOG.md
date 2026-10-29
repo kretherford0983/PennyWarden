@@ -22,6 +22,17 @@ PennyWarden 2.3.0 (in progress).
   anything — and changing it is recorded in the audit log like other fundraiser edits. *Create next year's* does not
   copy the goal.
 
+### System/About
+- **Choose which releases the update check looks at (#379).** *System/About → Settings* now lets an Administrator
+  change **Update channel**: *Follow this build* (the default, as before), *Production releases only*, *Test builds
+  and production releases*, or *Off*. It is saved to `config.toml` like the other settings (the previous file kept as
+  `config.toml.bak`) and **takes effect at once** — no restart; the next check runs within about a minute. It is the
+  one setting that can also be changed on a **local install**. Switching a production build to test builds asks for a
+  confirmation first (*test builds are pre-release and not production ready*). Set by `FM_UPDATE_CHANNEL` or the
+  command line, it is shown locked. Every change is in the audit log with before and after values. PennyWarden still
+  never installs updates itself.
+- A test build set to *Production releases only* is now told when the production release of its own version is out.
+
 ### Upgrade
 - Migration `0060` adds `fundraiser.goal_amount_cents` (empty = no goal).
 
