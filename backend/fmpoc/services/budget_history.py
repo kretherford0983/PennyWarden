@@ -244,14 +244,17 @@ def figures(db: Session, b: Budget, first: int | None) -> dict[int, dict]:
     return out
 
 
-def year_labels(db: Session, ws_id: int, first: int | None) -> dict[int, str]:
+def year_labels(db: Session, ws_id: int, first: int | None, all_formers: bool = False) -> dict[int, str]:
     """year -> column heading for every entered year before the first Fiscal Year (the label most often used), of the
-    former budgets a budget continues (one nothing continues adds no empty column to a Fiscal Year's review)."""
+    former budgets a budget continues (one nothing continues adds no empty column to a Fiscal Year's review).
+    2.3.0 (#382): `all_formers` - every former budget, for the review that also lists budgets not in the chosen year."""
     linked = select(Budget.continues_former_budget_id).where(Budget.workspace_id == ws_id, Budget.status != "DELETED",
                                                              Budget.continues_former_budget_id.is_not(None))
     q = (select(BudgetHistoryEntry).join(FormerBudget, FormerBudget.id == BudgetHistoryEntry.former_budget_id)
          .where(BudgetHistoryEntry.workspace_id == ws_id, BudgetHistoryEntry.retired_at.is_(None),
-                FormerBudget.retired_at.is_(None), FormerBudget.id.in_(linked)))
+                FormerBudget.retired_at.is_(None)))
+    if not all_formers:
+        q = q.where(FormerBudget.id.in_(linked))
     counts: dict[int, dict[str, int]] = {}
     for e in db.scalars(q):
         if first is not None and e.year >= first:

@@ -128,6 +128,24 @@ could not otherwise be corrected. Scope and safeguards:
   with a link; the variable picker completes dotted names.
 - Tests: `backend/tests/test_v210_organization.py` (6, including the data migration) and the E2E #126 and #312 steps.
 
+**2.3.0 build 4 — Budget Review: budgets not in the chosen Fiscal Year (#382, decided with Kyle 2026-10-29).**
+- `budget_planning._add_not_in_year` (full review only; a `budget_id`/`parent_budget_id` filter skips it). Covered =
+  the chosen year's rows and every budget in their history cells; covered former budgets = each row's `former_of`
+  (+ a parent's `_sub_formers`). Candidates: budgets of the PennyWarden years shown (not deleted, not Budget 0, not
+  Other) not covered — a sub-budget only when its parent is covered (a discontinued parent's figures already include
+  its subs, no rows for them). Each is taken to the latest budget of its line before the chosen year
+  (`_continued_by` chain) — one row per line, under that budget's code and name. Former budgets not covered: one
+  continued by a PennyWarden budget joins that budget's line; one nothing continues gets its own row (its own years,
+  most recent code and name, `entered_as` for years called differently).
+- Rows: `id` "b<budget id>" / "f<former id>", `level` parent, `current`/`projection`/`next`/`state`/`status` None,
+  `not_in_year` {fiscal_year, last_year}, `average` over the years with figures. Inserted by natural code order before
+  the first parent row with a higher code (existing order untouched; equal codes go after).
+- Entered-year columns: `budget_history.year_labels(all_formers=True)` for the full review, so a former budget
+  nothing continues adds its years (2.2.0 left them out). Three 2.2.0 tests that asserted the old columns were updated.
+- PDF charts are drawn only for a one-budget review, which can't choose a line that isn't in the chosen year — so the
+  decision "include them in the charts, marked" has nothing to apply to yet (reported to Kyle).
+- Tests: `backend/tests/test_v230_review_not_in_year.py` (6); E2E "#382".
+
 **2.3.0 build 3 — Balance history: Correct and Retire, backfill, closed years (#391, decided with Kyle 2026-10-29).**
 - Clarifies the 1.7.3 append-only rule: entries are never deleted; they are corrected or retired with a reason.
   `bank_account_balance` gains `corrected_at/by`, `correct_reason`, `previous_balance_cents/as_of_date` (the values
