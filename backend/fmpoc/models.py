@@ -111,6 +111,8 @@ class User(Base):
     name_order: Mapped[str | None] = mapped_column(String(12), nullable=True)
     # 2.2.0 (#351): Fundraiser series years - None (newest first) or "asc"
     fundraiser_series_sort: Mapped[str | None] = mapped_column(String(4), nullable=True)
+    # 2.3.0 (#375): the Reports screen's recently run (last 5) and each report's last options - JSON, parameters only
+    report_prefs: Mapped[str | None] = mapped_column(Text, nullable=True)
     password_changed_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
     created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("app_user.id"), nullable=True)
@@ -334,9 +336,10 @@ class BankAccount(Base):
 
 
 class BankAccountBalance(Base):
-    """1.7.3 (#88): dated balance history of a non-register account. Append-only: an entry is never edited or
-    deleted; a correction is a new entry (for the same "as of" date the one entered last counts). The account's
-    current balance (manual_current_balance_cents) is the entry with the latest "as of" date."""
+    """1.7.3 (#88): dated balance history of a non-register account. Never deleted (BR-001). 2.3.0 (#391): an entry
+    can be corrected (amount and/or "as of" date) or retired, each with a reason; a retired entry no longer counts.
+    For the same "as of" date the one entered last counts. The account's current balance
+    (manual_current_balance_cents) is the counted entry with the latest "as of" date."""
     __tablename__ = "bank_account_balance"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
@@ -347,8 +350,34 @@ class BankAccountBalance(Base):
     source: Mapped[str] = mapped_column(String(12), default="UPDATE")  # OPENING | UPDATE | UPGRADE
     entered_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
     entered_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 2.3.0 (#391): Correct (the last correction: when, who, why, and the values it replaced) and Retire
+    corrected_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    corrected_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    correct_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    previous_balance_cents: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    previous_as_of_date: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
+    retired_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    retired_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    retire_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     __table_args__ = (Index("ix_bank_account_balance_account_date", "bank_account_id", "as_of_date"),)
+
+
+class FiscalYearBalanceChange(Base):
+    """2.3.0 (#391): a non-register balance changed inside a Closed Fiscal Year (Budget Admins only, confirmed, with a
+    reason). Shown as "Balance changed after close" on the Fiscal Year page and in its reports."""
+    __tablename__ = "fiscal_year_balance_change"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
+    fiscal_year_id: Mapped[int] = mapped_column(ForeignKey("fiscal_year.id"), index=True)
+    bank_account_id: Mapped[int] = mapped_column(ForeignKey("bank_account.id"))
+    balance_entry_id: Mapped[int] = mapped_column(Integer)
+    action: Mapped[str] = mapped_column(String(10))          # ADD | CORRECT | RETIRE
+    before_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    after_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    reason: Mapped[str] = mapped_column(String(500))
+    changed_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    changed_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 # ---------------------------------------------------------------- register
@@ -609,6 +638,8 @@ class Fundraiser(Base):
     # 2.1.0 (#277): the same event across years ("Continues from" puts it in the previous fundraiser's series)
     series_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     continues_from_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 2.3.0 (#372): optional goal, compared with the net (informational only; never blocks activity)
+    goal_amount_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
     created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
@@ -659,6 +690,8 @@ class FundraiserSeriesResult(Base):
     income_cents: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     expense_cents: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # 2.3.0 (#390): an estimate (the note then says why); marked * with a footnote in reports and presentations
+    estimated: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
     retired_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     retired_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     retire_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
@@ -704,6 +737,7 @@ class BudgetHistoryEntry(Base):
     budgeted_cents: Mapped[int] = mapped_column(BigInteger)
     actual_cents: Mapped[int] = mapped_column(BigInteger)
     note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    estimated: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)  # 2.3.0 (#390)
     retired_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     retired_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     retire_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
@@ -744,6 +778,33 @@ class BrandingSettings(Base):
     logo_mark_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     logo_mark_width: Mapped[int | None] = mapped_column(Integer, nullable=True)
     logo_mark_height: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 2.3.0 (#386): dual branding - the dark palette (empty = the dark version of the light palette), the theme each
+    # type of output uses (new setups: presentations dark; upgraded installations: both light) and dark-background logos
+    dark_preset: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    dark_colors_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    theme_reports: Mapped[str] = mapped_column(String(5), default="LIGHT", server_default="LIGHT")
+    theme_presentations: Mapped[str] = mapped_column(String(5), default="DARK", server_default="LIGHT")
+    dark_logos: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false())
+    logo_dark_full_png: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    logo_dark_full_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    logo_dark_full_width: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    logo_dark_full_height: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    logo_dark_mark_png: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    logo_dark_mark_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    logo_dark_mark_width: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    logo_dark_mark_height: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updated_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    updated_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("app_user.id"), nullable=True)
+
+
+class ReportGrouping(Base):
+    """2.3.0 (#376): how the Reports catalog is grouped - the active scheme and each customized scheme's categories
+    (services/report_grouping.py). Workspace configuration, display only: it never grants access. No row = Purpose."""
+    __tablename__ = "report_grouping"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), unique=True)
+    scheme: Mapped[str] = mapped_column(String(10), default="PURPOSE", server_default="PURPOSE")
+    config_json: Mapped[str | None] = mapped_column(Text, nullable=True)
     updated_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     updated_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("app_user.id"), nullable=True)
 
@@ -1012,6 +1073,8 @@ class CheckSigner(Base):
     image_height: Mapped[int | None] = mapped_column(Integer, nullable=True)
     image_uploaded_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     image_uploaded_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 2.3.0 (#395): one shared list of signers - the areas a signer may be used in (CHECKS, COVER_LETTERS, DONATIONS)
+    areas: Mapped[str | None] = mapped_column(String(100), nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
     created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
@@ -1106,6 +1169,8 @@ class Donation(Base):
     cancelled_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     cancelled_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     details: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # 2.3.0 (#393): the reason the details include the EIN while Include EIN on receipts is off
+    ein_override_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
     created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)

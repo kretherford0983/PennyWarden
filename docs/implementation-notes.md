@@ -128,6 +128,278 @@ could not otherwise be corrected. Scope and safeguards:
   with a link; the variable picker completes dotted names.
 - Tests: `backend/tests/test_v210_organization.py` (6, including the data migration) and the E2E #126 and #312 steps.
 
+**2.3.0 build 14 — Push builds skip the repeated test suite (#420, Kyle 2026-10-30).**
+- `build.yml`: the `tests` job runs only on `workflow_dispatch`; `package`, `windows-exe`, `macos-app`, `assemble`,
+  `publish` and `site` use `!failure() && !cancelled()` (a skipped job otherwise skips everything that depends on it,
+  directly or not). A failed hand-run test job still stops packaging. The packaging smoke tests are unchanged.
+- Safe because the ruleset (develop, test, main) requires a pull request with the `tests / test` and
+  `promotion-rules` checks **and** branches up to date before merging (strict, set by Kyle in the repository
+  settings). The develop build's `notices: regenerate` only ever affected its own test run, never the package, so
+  nothing is lost there.
+- No spec impact (CI only).
+
+**2.3.0 build 13 — Users: filters and sortable columns (#409, Kyle 2026-10-29).**
+- Client-side on the already-loaded list (`pages/Users.tsx`): Roles (multi-select, OR), Security domain, Status
+  (`ACTIVE` / `DISABLED` / `LOCKED` = active with `locked_until` in the future), combined with the search (AND).
+  Sortable headings as in the register (`aria-sort`, a button per heading); default Last name ascending; empty values
+  last either way; ties by last name, first name, username. Not remembered between visits. No API or data change.
+- Test: E2E "#134" extended (roles OR, domain, status, clear, sort and reverse).
+
+**2.3.0 build 12 — Report settings: configurable report grouping (#376).**
+- New business rule (recorded here; spec docs aren't changed in the repo): **report grouping is workspace
+  configuration; every report belongs to exactly one category of the active scheme; grouping is display-only and
+  never grants access.** Administrators only (`system.manage`), audited `REPORT_GROUPING_UPDATED` / `_RESET`.
+- Table `report_grouping` (`0067`): the active scheme and, per customized scheme, its categories (`id`, `name`,
+  optional `short`, `reports` in order) as JSON; no row / no customization = `services/report_grouping.DEFAULTS`
+  (Purpose = the #375 groups). A report added in a later release that a saved grouping doesn't know goes to an
+  "Other" category (never lost). Empty categories are allowed (System has no report yet) and hidden in the catalog.
+- Validation: 1–20 categories, names 1–60 characters and unique (case-insensitive), ids generated from the name when
+  new, every report exactly once. Removing a category with reports asks where they go (another category or a new
+  "Other") in the screen; the server only accepts a complete grouping.
+- `GET /api/reports/grouping` (any signed-in user) feeds the catalog and side list; `GET/PUT
+  /api/system/report-settings`, `POST …/reset` for the Administrator. In backups; part of the *General* partial-restore
+  section; kept through a reinitialize (organization setting).
+- Tests: `backend/tests/test_v230_report_grouping.py` (defaults, scheme switch, customize, validation, reset, audit,
+  Administrators only, display-only); E2E "#376".
+
+**2.3.0 build 11 — Reports screen redesign (#375; layout chosen by Kyle 2026-10-29 from the mockups).**
+- Layout: the catalog of mockup (a) as the home (`/reports`), and each report on its own page (`/reports/<id>`) with
+  the compact grouped side list of (c) plus the search box of (b). The candidates stay on the design canvas.
+- One registry (`frontend/src/pages/reports/registry.ts`: id, name, short name, purpose, audience, group, outputs,
+  visibility) drives the catalog, the side list, search, deep links and Recently run; the components are mapped in
+  `Reports.tsx` (`BODIES`). Groups are by purpose (#376 will make grouping configurable). The registry ids are also
+  the server's (`services/report_prefs.REPORT_IDS`).
+- Navigation enforcement (04-security §3 per the issue): a report the user can't run (permission or module) is not
+  listed, and `/reports/<id>` for it shows *not authorized*; the report endpoints keep their own permission checks.
+- Every report page has the same header (name, purpose, audience, group, output badges) and one action row
+  (`ReportActions`: Open · Download PDF · Download PPTX · Download CSV). Reports with a run/review step (Entity
+  activity, Financial Flow, Budget Review) keep it; their result's own links are unchanged.
+- Moved into Reports: the Fiscal Year fundraising report (FY + the fundraisers to include), the Planning Sheet and the
+  cash count sheet (FY + fundraiser). The old buttons are shortcuts: they navigate to the report with the options in
+  the address (`?fiscal_year_id=…&ids=…`, `?fundraiser_id=…`), which come before remembered options.
+- Remembered per user, server-side (`app_user.report_prefs`, `0066`; `GET /api/me/report-preferences`,
+  `POST /api/me/report-runs`): the last 5 runs (report, options, a short label, time; a repeated run moves up) and
+  each report's last options. Options only - never output; free text (commentary, notes) and per-run choices that
+  would surprise later (Budget Review's optional columns, Financial Flow's balance options, as-of dates) are not
+  remembered. A run is recorded when a report is opened/downloaded or run on screen. *Recently run* opens the report
+  page with its options filled in (one click there; the file itself then needs **Open**, since a browser won't open
+  a new tab without a click on the page).
+- Restore re-entry reports stay at the bottom of the catalog, shown only when there are any.
+- Tests: `backend/tests/test_v230_report_prefs.py`; E2E "#375" (catalog per role, search, deep link and Back, side
+  list, remembered options, Recently run, a refused address); report E2E steps now open reports through the catalog.
+
+**2.3.0 build 10 — Dual branding: light and dark themes per output type (#386, decided with Kyle 2026-10-28/29).**
+- `branding_settings` (`0065`): `dark_preset` (a ready-made id, `custom`, or empty = the dark version of the light
+  preset; PennyWarden's when the light palette is custom and no dark colors were saved), `dark_colors_json`,
+  `theme_reports` / `theme_presentations` (LIGHT | DARK), `dark_logos` and `logo_dark_full_*` / `logo_dark_mark_*`.
+  The light source colors are shared by both themes.
+- **Upgrade vs new setup** (Kyle 2026-10-29: existing branding stays light): the migration adds a row with both
+  outputs LIGHT for every existing workspace, so an upgraded installation that never touched branding stays light
+  too. A new installation has no row until branding is saved, and no row (or a row created after 2.3.0, model
+  default) means presentations DARK, reports LIGHT. Flagged for Kyle: this treats "existing branding" as "existing
+  installation".
+- `DARK_PRESETS`: the dark version of each ready-made palette, generated with material-color-utilities 0.4.0 (dark
+  scheme from the preset's two source colors; series tones 80/70/80/60/90/60/70/45 so bars show on a dark surface);
+  `palette.ts generate(..., dark)` makes the same for custom colors. Dark contrast pairs = the light pairs without the
+  white-paper ones, plus primary on surface.
+- **Direct editing (decision 4)** is a UI change: every role and series is editable on both theme tabs and an edit
+  switches that palette to *Custom* (the server already accepted custom colors). The API keeps the old body shape;
+  the dark fields, `themes` and `dark_logos` are optional (omitted = unchanged).
+- **Applying a theme:** `branding.load/use(db, output=...)` with `output` "reports" (default, every `@themed` PDF
+  builder), "presentations" (the three decks) or "word" (the stakeholder Word report: always light — Word is printed
+  on white paper). `Theme.dark` / `Theme.page`. Decks: `paint_background` (called from `brand_footers`, which every
+  deck calls last) fills each slide with the surface; table bodies use the page color; chart and data-label text the
+  theme's text color on dark (donut labels sit on light slices: dark text). PDFs: `_Styles` gives every non-themed
+  style the on-surface text color on dark; `_stamp_and_write` merges a surface-colored page under each page; the few
+  fixed light-design lines/shades go through `branding.pick(light_hex, dark_role)` so light reports are unchanged.
+  Semantic colors (red warnings, green *above budget*) keep their meaning on both.
+- Dark logos: on a dark theme with *Use a separate logo on dark backgrounds* on, each slot uses its dark version
+  when uploaded, else the light one. Uploads follow BR-100/BR-101 (`normalize_logo`).
+- Backups / partial restore (`settings.branding`) / reinitialize: the new columns live on `branding_settings`, so
+  they follow the existing handling unchanged.
+- Tests: `backend/tests/test_v230_dual_branding.py` (5, including the migration); `test_v220_branding` updated for
+  the new logo slots and to request light presentations where it checks the light palette; E2E "#386".
+
+**2.3.0 build 9 — Quarterly / Annual Fiscal Year financial report and presentation (#373, issue decisions of
+2026-10-28/29).** Spec docs are not changed in the repo, so the issue's new rules are recorded here:
+- **BR-110 Period Report Cutoff:** cutoff = the end of the period, or the run date while the period is under way
+  (*Preliminary — as of <date>* in the title band, the PDF footer and on the deck's first slide); an Annual report
+  for a Fiscal Year that isn't Closed is Preliminary too (as of its end date once it has ended). A period that hasn't
+  started → 422. "Today" is `routers.reports._today()`, called per request (tests patch it).
+- **BR-111 Quarterly Isolation:** a quarterly report has one *Quarter* column plus year-to-date figures; earlier
+  quarters are never shown on their own. Annual: Q1–Q4 + the year.
+- **BR-112 Fundraiser Period Attribution:** by event end date (one quarter); only lines dated ≤ cutoff count
+  (`fundraisers._lines` filtered, `_money_totals` → gross = counted income, net = income − expenses, seed cash
+  (classified cash float) netted out and shown separately); *activity after <date> not included*; *Revised* = a
+  fundraiser that ended in an earlier quarter of the same year with counted lines dated in the selected quarter
+  (its quarter change and updated cumulative figures). Fundraisers ending after the cutoff are not listed yet.
+- Choices where the issue left room: **cash flow** = money in (deposits) and money out (withdrawals) of register
+  accounts by Transaction Date, Budget 0 (transfers) left out. **Account balances** by Transaction Date
+  (`available_cents`; BR-043/BR-047), non-register accounts from their balance history, $0 before *Account opened*,
+  "—" before any data; closed accounts listed while they were open in the period. **Budgets:** the FY's budgets with
+  their sub-budgets (the parent rolls up every sub-budget, a hidden Other included, AC-REG-011); Draft budgets show
+  while the year isn't approved, Rejected/Inactive only with activity, Budget 0 as a note. Over / under = budgeted −
+  actual (negative = over, BR-022), with the #371 gross note under each table. **Prior year** = the Fiscal Year
+  starting before this one; budgets matched by type + Budget ID (display code); columns left out without one.
+  *Budgets over budget* on the highlights counts parent budgets with negative over/under year to date.
+- Acceptance mapping (issue AC-RPT-001…010) → `backend/tests/test_v230_period_report.py`:
+  001/002/003/005/006 `test_periods_cutoff_preliminary_and_future_blocked`; 004 the same test's account figures;
+  007 `test_fundraiser_attribution_revised_and_cutoff`; 008 `test_prior_year_comparison`; 009/010
+  `test_pdf_pptx_audit_and_permissions` (commentary on page 1 and in the notes; the deck's monthly bars with the net
+  line). E2E "#373" covers the selection screen and both downloads.
+- Code: `services/period_report.py` (the data), `services/period_report_output.py` (PDF with the shared report
+  toolkit; deck with the `fundraiser_deck` helpers — python-pptx has no combo chart, so the net line is added as a
+  `c:lineChart` sharing the bar chart's axes), routes `GET /api/reports/period/options` and `GET /api/reports/period`
+  (`format=pdf|pptx|json`; audited `REPORT_GENERATED` with report `FY_PERIOD_REPORT`/`FY_PERIOD_PRESENTATION`).
+  Out of scope per the issue: signature block, CSV.
+
+**2.3.0 build 8 — One setup layout with a locked preview (#394, decided with Kyle 2026-10-29).**
+- `SetupLayout` (checkShared.tsx) with one CSS rule set (`.setup-layout`) replaces the Donations-only `.setup-grid`;
+  `usePin`/`PinToggle` replace the per-page *Keep at the top* code. Used by Donations Setup, the check style editor and
+  `EditorFrame` (cover letter and envelope editors, so the Envelopes page and Donations Setup's envelope editor too).
+- Settings come first in the DOM; on narrow screens the preview column is `display: contents` with `order: -1`, so the
+  preview shows at the top and the existing `.collapsible.pinned` sticky works against the whole layout. The pinned
+  rules now apply below 1200px only.
+- Wide (≥ 1200px, the breakpoint Donations Setup already used): the preview column is `position: sticky; top: 0`.
+  Of the issue's two options, the simpler one was taken: the column is capped at the scrolling pane's height
+  (`--pane-h`, measured with a ResizeObserver on `.content`, less padding and the sticky Save bar) and letter
+  pictures are scaled to fit it, so the preview never scrolls away; anything taller scrolls inside the column. A true
+  two-way sticky can follow if the cap feels cramped.
+- The preview's own controls stay with it (check: Sample / Long text sample; Donations Setup: Receipt / Year-end
+  statement). Test print stays in each page's Save bar.
+- Test: E2E "#394" (wide: beside and in view after scrolling; narrow: at the top, Keep at the top keeps it in view).
+
+**2.3.0 build 7 — Shared signers (#395, decided with Kyle 2026-10-29).**
+- The table `check_signer` is kept (not renamed: checks, print snapshots and audit events refer to it) and gets
+  `areas` (comma list of CHECKS, COVER_LETTERS, DONATIONS), like the envelope library's `features`. New service
+  `services/signers.py` and router `/api/signers` (Administrators: `checks.setup` or `donation.setup`, at least one of
+  the modules on). The old `/api/checks/signers` routes stay for compatibility; Payments Setup now links to the
+  Signers page. Choosing a signer validates the area tag (`require_tagged`); `usage()` lists where a signer is in use,
+  which blocks retiring it or dropping that tag (409 `SIGNER_IN_USE`). Tag changes are audited `SIGNER_AREAS_CHANGED`.
+- Signature modes `NONE | PRINTED | IMAGE | SPACE` (`signers.block_for`/`flowables`). The image needs the key, so
+  `km` (the app key) is passed explicitly to every letter/receipt/statement render. The record copy (attachment kept
+  with the payment or donation) is always rendered with `with_image=False`, so IMAGE becomes PRINTED there; the
+  printed/downloaded copy carries the image. IMAGE without an uploaded image falls back to SPACE
+  (`SIGNER_NO_IMAGE` warning on Donations Setup).
+- `ReceiptConfig`: `signer_name`/`signer_title` removed (old saved keys are dropped on read); `signer_id`,
+  `signature_mode`, `statement_signer_id` and `statement_signature_mode` (None = the receipt's). `LetterConfig`:
+  `signer_source` (`SAME_AS_CHECK` default | `FIXED`), `signer_id`, `signature_mode` (default `PRINTED`, which is
+  the 2.2 behaviour).
+- Migration `0064` converts the typed names so nothing prints differently (see upgrade.md).
+- Tests: `backend/tests/test_v230_shared_signers.py` (7, including the data migration); E2E steps in the #158/#159,
+  #165-#166 and #312 tests now add signers on the Signers page.
+
+**2.3.0 build 6 — Include EIN on receipts (#393, decided with Kyle 2026-10-29).**
+- No donation BR series in 03-business-rules; recorded here and in the user guide. `ReceiptConfig.include_ein`
+  (default true; old saved configs read as true). `missing_setup` asks for the EIN only while it is on.
+  Off: `values_for`/`statement_values` blank `{ORG.EIN}`/`{ORG_EIN}` (`hide_ein`), the acknowledgment block has no
+  EIN row, and a blank EIN is not reported as an empty variable at print. `setup_out.warnings`: `EIN_MISSING` (on,
+  none entered) and `EIN_PLACEHOLDER_OFF` (off, the letter or statement text still uses it).
+- One-off EIN through `{DETAILS}` (off): saving details that use it (register receipt dialog, Donations page create
+  and update) needs `confirm_ein_override` + a non-blank `ein_override_reason` (409 `EIN_OVERRIDE_REQUIRED`
+  otherwise; 409 `EIN_NOT_ENTERED` without an EIN); the reason is kept on `donation.ein_override_reason` (`0063`) and
+  in `DONATION_DETAILS_UPDATED`. Printing adds the `EIN_OVERRIDE` warning, so the backend refuses without that
+  confirmation (BR-078); the EIN then prints only inside the details (`ReceiptData.ein_override`), and
+  `DONATION_RECEIPT_PRINTED` records `ein_override` and the reason. Details saved before the option was turned off
+  (no reason) are refused at print (`EIN_OVERRIDE_REASON_MISSING`) until saved again with one. Statements have no
+  details, so no override.
+- UI: Donations Setup checkbox + warnings; `useEinOverride` (Donations.tsx) asks for the confirmation and reason when
+  the save is refused with `EIN_OVERRIDE_REQUIRED` and saves again.
+- Tests: `backend/tests/test_v230_include_ein.py` (7).
+
+**2.3.0 build 5 — Estimated entered years: fundraisers and budgets (#390, decided with Kyle 2026-10-29).**
+- `estimated` (bool, default off) on `fundraiser_series_result` and `budget_history_entry` (`0062`). Server rule
+  (BR-094): estimated ⇒ a non-blank note (`fundraiser_series.estimate_note_check`, `budget_history._estimate_check`,
+  also after a Correct that clears the note). Request models take `estimated` explicitly (BR-097/098).
+- Fundraiser series: `POST /api/fundraiser-series/{sid}/results/{rid}/correct` (amounts, note, Estimated; reason
+  required; `FUNDRAISER_RESULT_CORRECTED` before/after incl. the flag; the year itself isn't changed — retire and
+  enter again). `series_history` rows carry `estimated`/`estimate_notes`; `fy_report` carries `estimated` on history
+  rows, trend years and per-series yoy values, and adds "* Estimated: <year> <series> — <note>" lines to its
+  footnotes (`fundraiser_fy_report.est_lines` puts them under the trend, yoy and history tables and in the slides).
+- Outputs: the year gets `*` (tables, chart categories, speaker notes); the PPTX charts colour an estimated point
+  lighter (`fundraiser_deck._lighter`), the Budget Review PDF chart too (`ch.bars[(s, i)]`). Not hatched: python-pptx
+  and reportlab bar charts have no pattern fill per point; lighter was the decision's alternative.
+- Budgets: `figures` carries `estimated` (a parent's sum of sub-budgets is estimated when any part is, with their
+  notes); review cells get `estimated`/`estimate_note`; `estimate_footnotes(rep)` under the PDF tables (and the
+  one-budget chart); CSV status column "Entered; estimated: <note>"; the History, Before PennyWarden and the review
+  screen show `*`. CSV import: optional `estimated` column (yes/y/true/1/x, no/n/false/0/empty; anything else or yes
+  without a note → refused row); the template has the column.
+- Tests: `backend/tests/test_v230_estimated_years.py` (5); `test_v220_budget_history` template header updated; E2E
+  "#292" extended (Correct as estimated).
+
+**2.3.0 build 4 — Budget Review: budgets not in the chosen Fiscal Year (#382, decided with Kyle 2026-10-29).**
+- `budget_planning._add_not_in_year` (full review only; a `budget_id`/`parent_budget_id` filter skips it). Covered =
+  the chosen year's rows and every budget in their history cells; covered former budgets = each row's `former_of`
+  (+ a parent's `_sub_formers`). Candidates: budgets of the PennyWarden years shown (not deleted, not Budget 0, not
+  Other) not covered — a sub-budget only when its parent is covered (a discontinued parent's figures already include
+  its subs, no rows for them). Each is taken to the latest budget of its line before the chosen year
+  (`_continued_by` chain) — one row per line, under that budget's code and name. Former budgets not covered: one
+  continued by a PennyWarden budget joins that budget's line; one nothing continues gets its own row (its own years,
+  most recent code and name, `entered_as` for years called differently).
+- Rows: `id` "b<budget id>" / "f<former id>", `level` parent, `current`/`projection`/`next`/`state`/`status` None,
+  `not_in_year` {fiscal_year, last_year}, `average` over the years with figures. Inserted by natural code order before
+  the first parent row with a higher code (existing order untouched; equal codes go after).
+- Entered-year columns: `budget_history.year_labels(all_formers=True)` for the full review, so a former budget
+  nothing continues adds its years (2.2.0 left them out). Three 2.2.0 tests that asserted the old columns were updated.
+- PDF charts are drawn only for a one-budget review, which can't choose a line that isn't in the chosen year — so the
+  decision "include them in the charts, marked" has nothing to apply to yet (reported to Kyle).
+- Tests: `backend/tests/test_v230_review_not_in_year.py` (6); E2E "#382".
+
+**2.3.0 build 3 — Balance history: Correct and Retire, backfill, closed years (#391, decided with Kyle 2026-10-29).**
+- Clarifies the 1.7.3 append-only rule: entries are never deleted; they are corrected or retired with a reason.
+  `bank_account_balance` gains `corrected_at/by`, `correct_reason`, `previous_balance_cents/as_of_date` (the values
+  the last correction replaced; earlier corrections are in the audit log) and `retired_at/by`, `retire_reason`
+  (`0061`). Every reader of the history skips retired entries (`manual_as_of`, `balance_on`'s first entry,
+  `_recompute` for the current balance). `GET …/balance-history` keeps its list shape: counted entries newest first
+  (change computed over counted entries only), then retired ones (`retired` set); `entered` = dated before the first
+  Fiscal Year; `corrected` = the last correction.
+- Date rules (`_check_date`, used by add, Correct — on the old and the new date — and Retire): never in the future;
+  before the first Fiscal Year allowed even before the opening balance date (that rule stays inside PennyWarden
+  years); a Closed Fiscal Year refuses Budget Managers (`FISCAL_YEAR_CLOSED`) and lets a Budget Admin
+  (`bank_account.closed_year`) through with a reason and the `CLOSED_FISCAL_YEAR` confirmation naming the year.
+  Such a change writes `fiscal_year_balance_change` (per closed year touched; ADD/CORRECT/RETIRE, before/after) and
+  the audit event `BANK_ACCOUNT_BALANCE_CHANGED_AFTER_CLOSE` (Security, `closed_fiscal_years`) instead of the usual
+  event. `GET /api/fiscal-years/{id}` returns `balance_changes_after_close`; the audit/close report lists them under
+  the Fiscal Year Review's closure readiness (*Balance changed after close*).
+- Retiring the account's only counted entry is refused (`LAST_BALANCE_ENTRY`): the current balance would have nothing
+  to come from (correct it instead). Corrections/retirements need an active account, as balance updates do.
+- Tests: `backend/tests/test_v230_balance_correct_retire.py` (5); E2E "#88" extended (Correct, Retire).
+
+**2.3.0 build 2 — Update channel in the Settings editor (#379, decided with Kyle 2026-10-28).**
+- `admin_settings`: `update_channel` joins `EDITABLE` (choices `auto`/`stable`/`test`/`off`, plain-language
+  `choice_labels`); `LOCAL_EDITABLE = ("update_channel",)` — on a local install it is the only editable key (any
+  other key → 409 `SERVER_ONLY`; the view's `editor` is true when something is editable). `LIVE = ("update_channel",)`:
+  never `restart_required`; after the save the router calls `apply_live`, which replaces `app.state.settings` with a
+  `dataclasses.replace` copy (Settings is frozen). `updates.check` reads `app.state.settings` each tick (every 30 s) and
+  fetches again whenever the channel differs from the last check's, so the new channel is used within about a minute.
+- Confirmation `PRE_RELEASE_CHANNEL` when the build is a production build (`build_info.branch == "main"`) and the new
+  value is `test` (BR-107: the default stays `auto`). Locked by `FM_UPDATE_CHANNEL`/command line as every setting.
+- Same-version rule: `updates.current` now gives the test-build number for every build made from `test`, whatever
+  the channel (still none for `main`), and `is_newer` on the stable channel reports the production release of the
+  running version to a test build. On the test channel nothing changes (a test build follows newer test builds).
+  The 1.10.0 unit assertion "a test build on stable doesn't see its own version" was turned around on purpose.
+- Tests: `backend/tests/test_v230_update_channel.py` (13); `test_v200_admin_settings` local-mode test updated (the
+  #126 criterion's one exception); E2E: the System/About settings step checks the channel row (locked by the E2E
+  server's `FM_UPDATE_CHANNEL`).
+
+**2.3.0 build 1 — Gross budgets (#371) and an optional fundraiser goal (#372), Kyle 2026-10-28/29.**
+- #371 (proposed BR-109, *Budgets Are Gross*; spec docs unchanged per this file's rule): budgets stay gross — an
+  offset recorded in a budget of the opposite type is never netted (netting isn't tractable in general; fundraiser
+  seed-cash netting is unchanged). One sentence, `GROSS_BUDGET_NOTE` in `services/common.py` and
+  `frontend/src/components.tsx`, kept identical by a test. UI: `GrossBudgetNote` under the budget tables (Budgets,
+  Fiscal Year detail, Budget Review), *Gross amount* label/header (`BudgetTable`, budget forms), `InfoTip` (ⓘ popup)
+  on the Dashboard budget tiles and the expense-vs-budget chart. PDFs: `reports.gross_note()` directly beneath each
+  budget table of the audit/close report, each Budget Review table and its per-budget chart, and each Planning Sheet
+  table. The fundraiser stakeholder report, deck and Fiscal Year fundraising report list no budget amounts, so they
+  carry no note. The income/expense pies show actuals, not budget amounts, so they have no ⓘ.
+- #372: `fundraiser.goal_amount_cents` (`0060`, nullable, ≥ 0). `FundraiserIn.goal_amount` (optional; an edit that
+  doesn't send it keeps the goal; null clears it). The goal is compared with the **net** (Kyle, 2026-10-29):
+  `totals.goal` = goal, net, difference (net − goal), `pct_of_goal` (one decimal; none for a goal of 0), `met`.
+  Snapshot (and so the audit before/after) includes `goal_amount`. Editing stays Budget Manager only. The
+  Quarterly/Annual report (#373) will reuse `fundraisers.goal_vs_actual`.
+- Tests: `backend/tests/test_v230_gross_budgets_goal.py` (5); E2E "#371" plus steps in "CR-020" (chart ⓘ) and
+  "CR-033" (goal).
+
 **2.2.0 — Budgets from before PennyWarden (#381, decided with Kyle 2026-10-28; reshapes #284).**
 - Problem: #284 attached entered years to a PennyWarden budget's line and its CSV matched rows on the chosen Fiscal
   Year's codes, so a budget with no PennyWarden year had nowhere to go, and a reused code put old figures on the wrong

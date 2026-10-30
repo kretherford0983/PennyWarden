@@ -80,8 +80,10 @@ def test_effective_view_sources_and_who_sees_it(server, monkeypatch):
 
 
 def test_local_mode_has_the_view_but_no_editor(env):
+    # 2.3.0 (#379): the one exception - the update channel is editable on local installs (test_v230_update_channel)
     r = env.admin.get("/api/system/settings")
-    assert r.status_code == 200 and r.json()["editor"] is False and r.json()["mode"] == "local"
+    assert r.status_code == 200 and r.json()["mode"] == "local"
+    assert [x["name"] for x in r.json()["settings"] if x["editable"]] == ["update_channel"]
     r = env.admin.put("/api/system/settings", {"changes": {"session_idle_minutes": 20}})
     assert r.status_code == 409 and r.json()["error"]["code"] == "SERVER_ONLY"
 

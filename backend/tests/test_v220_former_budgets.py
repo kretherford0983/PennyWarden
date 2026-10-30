@@ -66,8 +66,11 @@ def test_bowling_resurrected_from_a_former_budget(env, base):
     _year(env, bowl["id"], "FY2024", "900.00", "910.00")
     lst = env.bm.get("/api/budgets/former").json()
     assert [(f["label"], f["years"], f["continued_by"]) for f in lst] == [("450 Bowling Tournament", 2, None)]
-    # nothing continues it yet: no empty Entered column in the year's review
-    assert _review(env, base["fy"]["id"])["years"] == []
+    # nothing continues it yet: 2.3.0 (#382) the review lists it anyway, as a budget not in this Fiscal Year
+    rep = _review(env, base["fy"]["id"])
+    assert [y["display_name"] for y in rep["years"]] == ["FY2023", "FY2024"]
+    nic = _row(rep, f"f{bowl['id']}")
+    assert nic["not_in_year"] == {"fiscal_year": "FY2027", "last_year": "FY2024"} and nic["current"] is None
     # create the resurrected budget and choose it under Continues
     b = env.bm.post("/api/budgets", {"fiscal_year_id": base["fy"]["id"], "code": "3000", "name": "Bowling",
                                      "budget_type": "EXPENSE", "amount": "1000.00",
@@ -106,7 +109,11 @@ def test_reused_code_is_fixed_by_unlinking(env, base):
     r = env.bm.patch(f"/api/budgets/former/{fid}", {"name": "Bowling", "reason": "code 100 was reused"})
     assert r.status_code == 200 and r.json()["label"] == "100 Bowling" and r.json()["years"] == 2
     assert _view(env, golf27["id"])["former"] is None and _view(env, golf27["id"])["entries"] == []
-    assert [y["entered"] for y in _review(env, base["fy"]["id"])["years"]] == [False]   # only FY2026 remains
+    # 2.3.0 (#382): the unlinked years stay in the review, as "100 Bowling", not in FY2027
+    rep = _review(env, base["fy"]["id"])
+    assert [y["entered"] for y in rep["years"]] == [True, True, False]
+    assert _row(rep, golf27["id"])["history"][:2] == [None, None]
+    assert _row(rep, f"f{fid}")["not_in_year"]["last_year"] == "FY2025"
     ev = _audit(env, "BUDGET_FORMER_UNLINKED")[0]
     assert str(ev["object_id"]) == str(golf26["id"]) and ev["before"]["former"]["id"] == fid and ev["after"]["former"] is None
     assert _audit(env, "FORMER_BUDGET_UPDATED")[0]["after"]["reason"] == "code 100 was reused"
@@ -334,7 +341,8 @@ def test_csv_lines_by_budget_code_former_code_and_line_column(env, base):
     assert [(x["code_shown"], x["fiscal_year_label"]) for x in d["entries"]] == [("98", "FY2022"), ("99", "FY2023")]
     assert _view(env, trav["id"])["former"]["label"] == "101 Pumpkin Patch"
     p = _row(_review(env, base["fy"]["id"]), base["exp"]["id"])["history"]
-    assert [c and c["actual"] for c in p] == ["8050.00", "5900.00"]    # 2024: 1850 + 6200; 2025: 5900
+    # 2024: 1850 + 6200; 2025: 5900 (FY2022/FY2023 come from the lines nothing continues, 2.3.0 #382)
+    assert [c and c["actual"] for c in p] == [None, None, "8050.00", "5900.00"]
 
 
 def test_csv_matches_existing_former_budgets_and_refuses_conflicts(env, base):

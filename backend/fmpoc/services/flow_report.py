@@ -288,7 +288,7 @@ def _lines_table(lines: list[dict], with_notes: bool, total: int, empty: str) ->
     data.append([PM("<b>Total</b>", "cell"), PM(f"<b>{escape(money(total))}</b>", "cellr"), "",
                  *([""] if with_notes else [])])
     n = len(data) - 1
-    extra += [("LINEABOVE", (0, n), (-1, n), 0.8, colors.black), ("BACKGROUND", (0, n), (-1, n), branding.color("surface_variant"))]
+    extra += [("LINEABOVE", (0, n), (-1, n), 0.8, branding.pick("#000000", "on_surface")), ("BACKGROUND", (0, n), (-1, n), branding.color("surface_variant"))]
     return _grid(data, widths, extra=extra)
 
 
@@ -301,7 +301,7 @@ def _diff_table(rows: list[tuple[str, int, bool]]) -> Table:
     t = Table(data, colWidths=[2.2 * inch, 1.6 * inch], hAlign="LEFT")
     t.setStyle(TableStyle([("ALIGN", (1, 0), (1, -1), "RIGHT"), ("LEFTPADDING", (0, 0), (-1, -1), 2),
                            ("TOPPADDING", (0, 0), (-1, -1), 1), ("BOTTOMPADDING", (0, 0), (-1, -1), 1),
-                           ("LINEABOVE", (0, len(data) - 1), (-1, len(data) - 1), 0.6, colors.black)]))
+                           ("LINEABOVE", (0, len(data) - 1), (-1, len(data) - 1), 0.6, branding.pick("#000000", "on_surface"))]))
     return t
 
 
@@ -329,7 +329,7 @@ def _balances_table(b: dict) -> Table:
         if comp:
             row += [PM(f"<b>{escape(money(s['compare_total']))}</b>", "cellr"), _color_cell(signed(s["change"]), s["change"])]
         data.append(row)
-        extra.append(("LINEABOVE", (0, len(data) - 1), (-1, len(data) - 1), 0.6, colors.black))
+        extra.append(("LINEABOVE", (0, len(data) - 1), (-1, len(data) - 1), 0.6, branding.pick("#000000", "on_surface")))
     for t in b["totals"]:
         row = [PM(f"<b>{escape(t['label'])}</b>", "cell"), PM(f"<b>{escape(money(t['total']))}</b>", "cellr"), ""]
         if comp:
@@ -337,7 +337,7 @@ def _balances_table(b: dict) -> Table:
         data.append(row)
         r = len(data) - 1
         extra += [("BACKGROUND", (0, r), (-1, r), branding.color("surface_variant"))]
-    extra.append(("LINEABOVE", (0, len(data) - 3), (-1, len(data) - 3), 1.2, colors.black))
+    extra.append(("LINEABOVE", (0, len(data) - 3), (-1, len(data) - 3), 1.2, branding.pick("#000000", "on_surface")))
     rest = FRAME_W - 12
     widths = ([rest - 4.4 * inch, 1.2 * inch, 0.8 * inch, 1.2 * inch, 1.2 * inch] if comp
               else [rest - 2.0 * inch, 1.2 * inch, 0.8 * inch])

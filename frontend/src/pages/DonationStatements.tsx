@@ -55,7 +55,7 @@ export function StatementsTab() {
         items ticked Received. Cancelled donations, voided deposits and money awaiting a deposit are left out. Items are listed by description only.
         Each printed statement is kept and numbered; printing the same content again prints a duplicate, a change prints a corrected statement.</p>
       <ErrorBox error={err} />
-      {data?.setup_missing?.length ? <div className="alert warn">An Administrator must enter {data.setup_missing.join(" and ")} in System/About before statements can be printed.</div> : null}
+      {data?.setup_missing?.length ? <div className="alert warn">An Administrator must enter {data.setup_missing.join(" and ")} in System/About → Organization{data.setup_missing.some((m: string) => m.includes("EIN")) ? " (or turn off Include EIN on receipts in Donations Setup)" : ""} before statements can be printed.</div> : null}
       <form className="row filters" onSubmit={(e) => { e.preventDefault(); load(); }}>
         <Field label="Year"><select value={year} onChange={(e) => setYear(Number(e.target.value))} aria-label="Year">{YEARS.map((y) => <option key={y} value={y}>{y}</option>)}</select></Field>
         <Field label="Minimum total ($, optional)"><input inputMode="decimal" aria-label="Minimum total" value={min} onChange={(e) => setMin(e.target.value)} placeholder="e.g. 250" /></Field>

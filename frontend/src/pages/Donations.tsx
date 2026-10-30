@@ -4,13 +4,45 @@
  * - DonationReceiptDialog (from a deposit in the register): Register Users mark lines as donations and print one receipt
  *   per donor; Budget Managers, Budget Users and Auditors see the donation lines and receipts. */
 import { useEffect, useRef, useState } from "react";
-import { api } from "../api";
+import { api, ApiError } from "../api";
 import { ErrorBox, Field, Loading, Modal, useConfirmable } from "../components";
 import { useMe } from "../App";
 import { Link } from "../router";
-import { LivePreview, PatternInput, PdfViewer, Section, usePdf } from "./checkShared";
+import { LivePreview, PatternInput, PdfViewer, PinToggle, Section, SetupLayout, usePdf, usePin } from "./checkShared";
 import { DocFocus, DocumentEditor } from "./CheckDocuments";
 import { EnvelopeLibrary, ReceiptEnvelopePanel } from "./Envelopes";
+
+/** 2.3.0 (#393): details that include the EIN while it is turned off for donations - confirmed, with a reason. */
+export const usesEin = (text: string) => /\{ORG[._]EIN\}/.test(text || "");
+
+export function useEinOverride() {
+  const [ask, setAsk] = useState<null | { message: string; resolve: (reason: string | null) => void }>(null);
+  const [reason, setReason] = useState("");
+  const [ack, setAck] = useState(false);
+  /** Runs fn(override); when the server asks for the EIN override, asks the user and runs it again with the reason. */
+  async function run<T>(fn: (o: { confirm_ein_override: boolean; ein_override_reason: string | null }) => Promise<T>): Promise<T | undefined> {
+    try {
+      return await fn({ confirm_ein_override: false, ein_override_reason: null });
+    } catch (e) {
+      if (!(e instanceof ApiError && e.code === "EIN_OVERRIDE_REQUIRED")) throw e;
+      setReason(""); setAck(false);
+      const why = await new Promise<string | null>((resolve) => setAsk({ message: e.message, resolve }));
+      setAsk(null);
+      if (!why) return undefined;
+      return fn({ confirm_ein_override: true, ein_override_reason: why });
+    }
+  }
+  const dialog = ask ? (
+    <Modal title="The EIN is turned off for donations" onClose={() => ask.resolve(null)}>
+      <div className="alert warn" role="alert">{ask.message}</div>
+      <Field label="Reason (required)"><input maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} placeholder="e.g. Form 8283 for a non-cash gift over $500" /></Field>
+      <label className="check"><input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} /> Include the EIN on this donor's receipt</label>
+      <div className="actions"><button onClick={() => ask.resolve(null)}>Cancel</button>
+        <button className="primary" disabled={!ack || !reason.trim()} onClick={() => ask.resolve(reason.trim())}>Confirm and save</button></div>
+    </Modal>
+  ) : null;
+  return { run, dialog };
+}
 
 const FONTS: [string, string][] = [["CARLITO", "Carlito (Calibri-compatible)"], ["SANS", "Liberation Sans (Arial-compatible)"], ["SERIF", "Liberation Serif (Times-compatible)"]];
 const KIND_LABEL: Record<string, string> = { ORIGINAL: "Original", DUPLICATE: "Duplicate", CORRECTED: "Corrected" };
@@ -25,6 +57,7 @@ export default function DonationSetup() {
   const [viewing, setViewing] = useState(false);
   // 2.2.0 (#325): the envelopes used for Donations (the shared library) and their editor, in place of the page
   const [stmtPreview, setStmtPreview] = useState(false);
+  const [pin, setPin] = usePin("pw-donations-pin");   // 2.3.0 (#394): Keep at the top (narrow screens)
   const [lib, setLib] = useState<any>(null);
   const [editingEnv, setEditingEnv] = useState<any>(null);
   const [envFocus, setEnvFocus] = useState<DocFocus>(undefined);
@@ -67,15 +100,33 @@ export default function DonationSetup() {
       <ErrorBox error={err} />
       {s.missing.length ? <div className="alert warn" role="alert" data-testid="setup-missing">Receipts can't be printed until you enter {s.missing.join(" and ")} in{" "}
         <Link to="/about/general">System/About → Organization</Link>.</div> : null}
-      <div className="setup-grid">
-        <div>
+      {/* 2.3.0 (#394): the settings with the preview beside them (wide screens, locked) or at the top (narrow) */}
+      <SetupLayout preview={
+        <Section id="pv" scope="pw-donations" title="Preview (sample data)" className={`doc-preview letter ${pin ? "pinned" : ""}`} extra={
+          <div className="row form-row">
+            <label className="check"><input type="radio" name="dn-preview" checked={!stmtPreview} onChange={() => setStmtPreview(false)} /> Receipt</label>
+            <label className="check"><input type="radio" name="dn-preview" checked={stmtPreview} onChange={() => setStmtPreview(true)} /> Year-end statement</label>
+            <PinToggle pin={pin} setPin={setPin} />
+          </div>
+        }>
+          {stmtPreview ? <LivePreview key="st" imageUrl="/api/donations/setup/statement-preview-image" pdfUrl="/api/donations/setup/statement-preview" body={{ config: cfg }}
+                                      title="Year-end statement preview" aspect={8.5 / 11} deps={[JSON.stringify(cfg)]} />
+            : <LivePreview key="rc" imageUrl="/api/donations/setup/preview-image" pdfUrl="/api/donations/setup/preview" body={{ config: cfg }}
+                           title="Donation receipt preview" aspect={8.5 / 11} deps={[JSON.stringify(cfg)]} />}
+        </Section>
+      }>
           <Section id="org" scope="pw-donations" title="Organization">
             <dl className="dl" data-testid="donation-org">
               <dt>Name</dt><dd>{s.organization.name}</dd>
               <dt>Address</dt><dd>{s.organization.address.length ? s.organization.address.map((l: string, i: number) => <div key={i}>{l}</div>) : <span className="muted">Not entered</span>}</dd>
               <dt>EIN</dt><dd>{s.organization.ein || <span className="muted">Not entered</span>}</dd>
             </dl>
-            <p className="hint">These come from <Link to="/about/general">System/About → Organization</Link>, where you change them. Every receipt prints the organization's name and EIN, the donor, the amount,
+            {/* 2.3.0 (#393) */}
+            <label className="check"><input type="checkbox" checked={cfg.include_ein !== false} onChange={(e) => set("include_ein", e.target.checked)} /> Include EIN on receipts</label>
+            <p className="hint">On: receipts and year-end statements show the EIN. Off: only the organization's name identifies it, and <code>{"{ORG.EIN}"}</code> prints blank in this
+              letter text. A Register User can still include the EIN on one receipt through its <code>{"{DETAILS}"}</code>, with a reason (for example Form 8283).</p>
+            {(s.warnings || []).map((w: any, i: number) => <div key={`${w.code}-${i}`} className="alert warn" role="alert" data-testid={`ein-warning-${w.code}`}>{w.message}</div>)}
+            <p className="hint">These come from <Link to="/about/general">System/About → Organization</Link>, where you change them. Every receipt prints the organization's name{cfg.include_ein !== false ? " and EIN" : ""}, the donor, the amount,
               the date received, the receipt number and the goods or services statement – these can't be removed.</p>
           </Section>
           <Section id="tpl" scope="pw-donations" title="Receipt letter">
@@ -88,11 +139,19 @@ export default function DonationSetup() {
             <PatternInput id="rc-salutation" label="Salutation" value={cfg.salutation} variables={vars} hint={false} onChange={(v) => set("salutation", v)} />
             <PatternInput id="rc-body" label="Thank-you text" value={cfg.body} variables={vars} multiline maxLength={2000} onChange={(v) => set("body", v)} />
             <PatternInput id="rc-closing" label="Closing" value={cfg.closing} variables={vars} hint={false} onChange={(v) => set("closing", v)} />
+            {/* 2.3.0 (#395): a signer from the shared Signers page (tagged for donation letters) and how the signature shows */}
             <div className="row form-row">
-              <Field label="Signer's name"><input value={cfg.signer_name} maxLength={120} onChange={(e) => set("signer_name", e.target.value)} /></Field>
-              <Field label="Signer's title"><input value={cfg.signer_title} maxLength={120} onChange={(e) => set("signer_title", e.target.value)} /></Field>
+              <Field label="Signer"><select data-testid="rc-signer" value={cfg.signer_id ?? ""} onChange={(e) => set("signer_id", e.target.value ? Number(e.target.value) : null)}>
+                <option value="">(none)</option>
+                {s.signers.map((x: any) => <option key={x.id} value={x.id}>{x.name}{x.title ? ` (${x.title})` : ""}</option>)}
+              </select></Field>
+              <Field label="Signature"><select data-testid="rc-signature-mode" value={cfg.signature_mode} onChange={(e) => set("signature_mode", e.target.value)}>
+                {s.signature_modes.map((m: any) => <option key={m.id} value={m.id}>{m.label}</option>)}
+              </select></Field>
             </div>
-            <p className="hint">The signer's name and title print under the closing, with room to sign by hand. Put <code>{"{DETAILS}"}</code> where a write-up for each donation should go
+            {!s.signers.length ? <p className="hint">No signers are tagged for donation letters yet: add or tag one on the <Link to="/signers">Signers</Link> page.</p> : null}
+            <p className="hint">The signature prints under the closing. A signature image prints only on the copy you print or download – the copy
+              kept with the donation shows the printed name instead. Put <code>{"{DETAILS}"}</code> where a write-up for each donation should go
               (the Register User writes it when printing; a paragraph of only <code>{"{DETAILS}"}</code> is left out when there is none). Statement when no goods or services were given:
               <i> {s.no_goods_statement}</i> Confirm the receipt wording with your organization's own tax advisor.</p>
             {/* 2.2.0 (#325): the note printed whenever a receipt lists items (empty = the default wording) */}
@@ -126,12 +185,20 @@ export default function DonationSetup() {
             <PatternInput id="st-salutation" label="Salutation" value={cfg.statement_salutation} variables={s.statement_variables} hint={false} onChange={(v) => set("statement_salutation", v)} />
             <PatternInput id="st-body" label="Statement text" value={cfg.statement_body} variables={s.statement_variables} multiline maxLength={2000} onChange={(v) => set("statement_body", v)} />
             <PatternInput id="st-closing" label="Statement closing" value={cfg.statement_closing} variables={s.statement_variables} hint={false} onChange={(v) => set("statement_closing", v)} />
+            <div className="row form-row">
+              <Field label="Statement signer"><select data-testid="st-signer" value={cfg.statement_signer_id ?? ""} onChange={(e) => set("statement_signer_id", e.target.value ? Number(e.target.value) : null)}>
+                <option value="">Same as the receipt</option>
+                {s.signers.map((x: any) => <option key={x.id} value={x.id}>{x.name}{x.title ? ` (${x.title})` : ""}</option>)}
+              </select></Field>
+              <Field label="Statement signature"><select data-testid="st-signature-mode" value={cfg.statement_signature_mode ?? ""} onChange={(e) => set("statement_signature_mode", e.target.value || null)}>
+                <option value="">Same as the receipt</option>
+                {s.signature_modes.map((m: any) => <option key={m.id} value={m.id}>{m.label}</option>)}
+              </select></Field>
+            </div>
             <div className="row">
               <button type="button" onClick={statementTest}>Test print the statement (sample data)</button>
-              <button type="button" className="small" onClick={() => setStmtPreview((v) => !v)}>{stmtPreview ? "Hide the statement preview" : "Show the statement preview"}</button>
             </div>
-            {stmtPreview ? <LivePreview imageUrl="/api/donations/setup/statement-preview-image" pdfUrl="/api/donations/setup/statement-preview" body={{ config: cfg }}
-                                        title="Year-end statement preview" aspect={8.5 / 11} deps={[JSON.stringify(cfg)]} /> : null}
+            <p className="hint">The preview beside these settings (or at the top, on a narrow screen) can show the statement: choose <i>Year-end statement</i> there.</p>
           </Section>
           {/* 2.2.0 (#325): the cover letter's window-envelope options (#177) and fold marks (#247) */}
           <Section id="win" scope="pw-donations" title="Window envelope and fold marks">
@@ -159,15 +226,10 @@ export default function DonationSetup() {
           <div className="actions left">
             <button className="primary" onClick={save} disabled={!dirty}>Save</button>
             <button onClick={testPrint}>Test print (sample data)</button>
-            <button onClick={() => { setCfg({ ...s.defaults, signer_name: cfg.signer_name, signer_title: cfg.signer_title }); setSaved(false); }}>Default wording</button>
+            <button onClick={() => { setCfg({ ...s.defaults, signer_id: cfg.signer_id, signature_mode: cfg.signature_mode, statement_signer_id: cfg.statement_signer_id, statement_signature_mode: cfg.statement_signature_mode }); setSaved(false); }}>Default wording</button>
             {saved && !dirty ? <span className="hint" role="status">Saved.</span> : dirty ? <span className="hint">Unsaved changes</span> : null}
           </div>
-        </div>
-        <Section id="pv" scope="pw-donations" title="Preview (sample data)" className="doc-preview letter">
-          <LivePreview imageUrl="/api/donations/setup/preview-image" pdfUrl="/api/donations/setup/preview" body={{ config: cfg }}
-                       title="Donation receipt preview" aspect={8.5 / 11} deps={[JSON.stringify(cfg)]} />
-        </Section>
-      </div>
+      </SetupLayout>
       {lib ? <EnvelopeLibrary feature="DONATIONS" docs={lib.envelopes} onChanged={loadLib} onEdit={(d, f) => { setEditingEnv(d); setEnvFocus(f); }} /> : null}
       {pdf && viewing ? (
         <PdfViewer pdf={pdf} title="Donation receipt test print" onClose={() => setViewing(false)}>
@@ -200,6 +262,7 @@ export function DonationReceiptDialog({ txn, onClose, onChanged }: { txn: any; o
   const [viewing, setViewing] = useState<string | null>(null);
   const [envFor, setEnvFor] = useState<number | null>(null);   // 2.2.0 (#325): the donor whose envelope can be printed now
   const { run, dialog } = useConfirmable();
+  const ein = useEinOverride();   // 2.3.0 (#393)
   const take = (x: any) => {
     setD(x);
     setLines(x.lines.map((l: any) => ({ allocation_id: l.allocation_id, donor: l.donor, donor_entity_id: l.donor_entity_id, donor_is_organization: !!l.donor_is_organization, description: l.description, amount: l.amount, amount_cents: l.amount_cents,
@@ -263,7 +326,11 @@ export function DonationReceiptDialog({ txn, onClose, onChanged }: { txn: any; o
     if (!p) return false;
     const apply = latest(take);
     try {
-      apply(await api.put(`/api/donations/transactions/${txn.id}/lines`, p)); setSaved(true); onChanged(); return true;
+      // 2.3.0 (#393): details with the EIN while it's off ask for a confirmation and a reason, then save again
+      const r = await ein.run((o) => api.put(`/api/donations/transactions/${txn.id}/lines`,
+        { ...p, donors: p.donors.map((x: any) => (usesEin(x.details) && o.confirm_ein_override ? { ...x, ...o } : x)) }));
+      if (r === undefined) return false;
+      apply(r); setSaved(true); onChanged(); return true;
     } catch (x) { setErr(x); return false; }
   };
   /** 2.1.0 (Kyle, 2026-10-23): the receipt as it would print, from what's on screen, watermarked; nothing is saved */
@@ -295,7 +362,7 @@ export function DonationReceiptDialog({ txn, onClose, onChanged }: { txn: any; o
             their donation lines. The printed receipt is attached to the deposit.</p>
           {d.status !== "ACTIVE" ? <div className="alert warn" role="alert">This deposit is {d.status === "VOID" ? "void" : "deleted"}: its receipts are void and no receipt can be printed.</div>
             : d.closed ? <div className="alert info">This deposit belongs to a Closed Fiscal Year: its donations and receipts can be seen but not changed or printed.</div> : null}
-          {d.setup_missing.length && canPrint && d.printable ? <div className="alert warn" data-testid="donation-setup-missing">An Administrator must enter {d.setup_missing.join(" and ")} in Donations Setup before receipts can be printed.</div> : null}
+          {d.setup_missing.length && canPrint && d.printable ? <div className="alert warn" data-testid="donation-setup-missing">An Administrator must enter {d.setup_missing.join(" and ")} in System/About → Organization{d.setup_missing.some((m: string) => m.includes("EIN")) ? " (or turn off Include EIN on receipts in Donations Setup)" : ""} before receipts can be printed.</div> : null}
           {d.receipts.length ? (
             <details className="donation-printed">
               <summary>Printed receipts ({d.receipts.length})</summary>
@@ -402,6 +469,7 @@ export function DonationReceiptDialog({ txn, onClose, onChanged }: { txn: any; o
         </PdfViewer>
       ) : null}
       {dialog}
+      {ein.dialog}
     </Modal>
   );
 }

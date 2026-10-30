@@ -18,6 +18,7 @@ export default function FundraiserSeries() {
   const [list, setList] = useState<any[] | null>(null);
   const [err, setErr] = useState<unknown>(null);
   const [entering, setEntering] = useState<any>(null);
+  const [correcting, setCorrecting] = useState<{ s: any; r: any } | null>(null);   // 2.3.0 (#390)
   const [merging, setMerging] = useState<any>(null);
   const [renaming, setRenaming] = useState<any>(null);
   const [starting, setStarting] = useState(false);
@@ -74,9 +75,13 @@ export default function FundraiserSeries() {
                 <tr key={`f${r.id}`}><td>{r.year}</td><td><Link to={`/fundraisers/${r.id}`}>{r.name}</Link></td><td>Recorded</td><td className="num muted">on its page</td><td /><td /></tr>
               ) : (
                 <tr key={`r${r.id}`} className={r.retired ? "muted" : ""}>
-                  <td>{r.year}</td><td>{r.fiscal_year_label}</td><td>{r.retired ? <s>Entered</s> : "Entered"}{r.retired ? ` (retired: ${r.retire_reason})` : ""}</td>
+                  <td>{r.year}</td><td>{r.fiscal_year_label}{r.estimated ? <span title="Estimated" data-testid="estimated-mark">*</span> : null}</td><td>{r.retired ? <s>Entered</s> : "Entered"}{r.estimated ? " · estimated" : ""}{r.retired ? ` (retired: ${r.retire_reason})` : ""}</td>
                   <td className="num">{money(r.net)}</td><td>{r.note || ""}</td>
-                  <td>{r.retired ? null : <button className="small" onClick={() => { const reason = window.prompt("Reason for retiring this entered result"); if (reason) run(() => api.post(`/api/fundraiser-series/${s.id}/results/${r.id}/retire`, { reason })); }}>Retire…</button>}</td>
+                  <td>{r.retired ? null : <div className="row">
+                    {/* 2.3.0 (#390): Correct (reason required) - amounts, note, Estimated */}
+                    <button className="small" onClick={() => setCorrecting({ s, r })}>Correct…</button>
+                    <button className="small" onClick={() => { const reason = window.prompt("Reason for retiring this entered result"); if (reason) run(() => api.post(`/api/fundraiser-series/${s.id}/results/${r.id}/retire`, { reason })); }}>Retire…</button>
+                  </div>}</td>
                 </tr>
               ))}
             </tbody>
@@ -84,6 +89,7 @@ export default function FundraiserSeries() {
         </section>
       ))}
       {entering ? <EnterResult s={entering} onClose={() => setEntering(null)} onSaved={(x) => { setList(x); setEntering(null); }} /> : null}
+      {correcting ? <EnterResult s={correcting.s} result={correcting.r} onClose={() => setCorrecting(null)} onSaved={(x) => { setList(x); setCorrecting(null); }} /> : null}
       {renaming ? <Rename s={renaming} onClose={() => setRenaming(null)} onSaved={(x) => { setList(x); setRenaming(null); }} /> : null}
       {starting ? <StartSeries hasSeries={list.length > 0} onClose={() => setStarting(false)} onSaved={(r, added) => { setStarting(false); setList(r.series); const s = r.series.find((x: any) => x.id === r.series_id); if (s && !added) setEntering(s); }} /> : null}
       {merging ? <Merge s={merging} list={list} onClose={() => setMerging(null)} onSaved={(x) => { setList(x); setMerging(null); }} /> : null}
@@ -91,31 +97,40 @@ export default function FundraiserSeries() {
   );
 }
 
-function EnterResult({ s, onClose, onSaved }: { s: any; onClose: () => void; onSaved: (x: any) => void }) {
-  const [v, setV] = useState({ fiscal_year_label: "", net: "", income: "", expense: "", note: "" });
+/** Enter a prior year, or (2.3.0, #390) Correct an entered one: amounts, note and the Estimated box, reason required. */
+function EnterResult({ s, result, onClose, onSaved }: { s: any; result?: any; onClose: () => void; onSaved: (x: any) => void }) {
+  const [v, setV] = useState({ fiscal_year_label: result?.fiscal_year_label || "", net: result?.net || "", income: result?.income || "",
+    expense: result?.expense || "", note: result?.note || "", estimated: !!result?.estimated, reason: "" });
   const [err, setErr] = useState<unknown>(null);
   const save = async () => {
     setErr(null);
+    const body = { net: v.net, income: v.income || null, expense: v.expense || null, note: v.note || null, estimated: v.estimated };
     try {
-      onSaved(await api.post(`/api/fundraiser-series/${s.id}/results`, { fiscal_year_label: v.fiscal_year_label, net: v.net,
-        income: v.income || null, expense: v.expense || null, note: v.note || null }));
+      onSaved(result
+        ? await api.post(`/api/fundraiser-series/${s.id}/results/${result.id}/correct`, { ...body, reason: v.reason })
+        : await api.post(`/api/fundraiser-series/${s.id}/results`, { ...body, fiscal_year_label: v.fiscal_year_label }));
     } catch (x) { setErr(x); }
   };
   const set = (k: string) => (e: any) => setV({ ...v, [k]: e.target.value });
+  const noteMissing = v.estimated && !v.note.trim();
   return (
-    <Modal title={`Enter a prior year — ${s.name}`} onClose={onClose}>
+    <Modal title={result ? `Correct ${result.fiscal_year_label} — ${s.name}` : `Enter a prior year — ${s.name}`} onClose={onClose}>
       <ErrorBox error={err} />
-      <p className="hint">For a year before PennyWarden. A year in which this series already has a fundraiser in PennyWarden is refused, so nothing is counted twice.</p>
+      {result ? null : <p className="hint">For a year before PennyWarden. A year in which this series already has a fundraiser in PennyWarden is refused, so nothing is counted twice.</p>}
       <div className="row fields">
-        <Field label="Fiscal Year (include the year)"><input required maxLength={40} placeholder="FY2019" value={v.fiscal_year_label} onChange={set("fiscal_year_label")} /></Field>
+        {result ? null : <Field label="Fiscal Year (include the year)"><input required maxLength={40} placeholder="FY2019" value={v.fiscal_year_label} onChange={set("fiscal_year_label")} /></Field>}
         <Field label="Amount raised (net)"><input required inputMode="decimal" value={v.net} onChange={set("net")} /></Field>
       </div>
       <div className="row fields">
         <Field label="Income (optional)"><input inputMode="decimal" value={v.income} onChange={set("income")} /></Field>
         <Field label="Expenses (optional)"><input inputMode="decimal" value={v.expense} onChange={set("expense")} /></Field>
       </div>
-      <Field label="Note (optional)"><input maxLength={500} placeholder="e.g. estimated, bundled with another event" value={v.note} onChange={set("note")} /></Field>
-      <div className="actions"><button onClick={onClose}>Cancel</button><button className="primary" disabled={!v.fiscal_year_label || !v.net} onClick={save}>Save</button></div>
+      <label className="check"><input type="checkbox" checked={v.estimated} onChange={(e) => setV({ ...v, estimated: e.target.checked })} /> Estimated</label>
+      <Field label={v.estimated ? "Note (required: why it is estimated)" : "Note (optional)"} hint={v.estimated ? "Printed as the footnote wherever the year is marked *." : undefined}>
+        <input maxLength={500} placeholder="e.g. bundled with another event" value={v.note} onChange={set("note")} /></Field>
+      {result ? <Field label="Reason for the correction (required)"><input maxLength={500} value={v.reason} onChange={set("reason")} /></Field> : null}
+      <div className="actions"><button onClick={onClose}>Cancel</button>
+        <button className="primary" disabled={(!result && !v.fiscal_year_label) || !v.net || noteMissing || (!!result && !v.reason.trim())} onClick={save}>Save</button></div>
     </Modal>
   );
 }

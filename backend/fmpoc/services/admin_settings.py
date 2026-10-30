@@ -6,6 +6,11 @@ that the environment (FM_*) or the command line overrides is locked: an edit to 
 The file is rewritten line by line - comments, unknown keys and other sections are kept - then re-parsed and checked
 before it atomically replaces the old file, which is kept as config.toml.bak. The running process keeps its settings
 until it is restarted ("Restart required" while the file and the running values differ).
+
+2.3.0 (#379): the update channel is also editable, and on local installs it is the only editable setting. It takes
+effect at once - the running process switches to the new channel (`apply_live`) and the update check runs again within
+about a minute - so it never shows "Restart required". Switching a production build to test builds needs a
+confirmation.
 """
 from __future__ import annotations
 
@@ -48,7 +53,12 @@ LABELS = {
 EDITABLE = ("trusted_proxies", "secure_cookies", "hsts", "session_idle_minutes", "session_absolute_hours",
             "login_max_failures", "login_lockout_seconds", "lockout_1_failures", "lockout_1_minutes",
             "lockout_2_failures", "lockout_2_minutes", "lockout_3_failures", "lockout_3_minutes",
-            "lockout_disable_failures", "log_level")
+            "lockout_disable_failures", "log_level", "update_channel")
+# 2.3.0 (#379): editable on local installs too (the only one), and applied without a restart
+LOCAL_EDITABLE = ("update_channel",)
+LIVE = ("update_channel",)
+CHANNEL_TEXT = {"auto": "Follow this build", "stable": "Production releases only",
+                "test": "Test builds and production releases", "off": "Off"}
 # A wrong value here would lock everyone out: never editable from the application.
 READ_ONLY_REASON = {"data_dir": "Changed only by the server owner.", "mode": "Changed only by the server owner.",
                     "host": "Changed only by the server owner.", "port": "Changed only by the server owner.",
@@ -57,7 +67,8 @@ RANGES = {"session_idle_minutes": (5, 480), "session_absolute_hours": (1, 72), "
           "login_lockout_seconds": (60, 86400), "lockout_1_failures": (3, 50), "lockout_2_failures": (4, 75),
           "lockout_3_failures": (5, 100), "lockout_disable_failures": (6, 200), "lockout_1_minutes": (1, 10080),
           "lockout_2_minutes": (1, 10080), "lockout_3_minutes": (1, 10080)}
-CHOICES = {"secure_cookies": ("auto", "true", "false"), "log_level": ("DEBUG", "INFO", "WARNING", "ERROR")}
+CHOICES = {"secure_cookies": ("auto", "true", "false"), "log_level": ("DEBUG", "INFO", "WARNING", "ERROR"),
+           "update_channel": ("auto", "stable", "test", "off")}
 # Higher is weaker for these; lower is weaker for these (#126: a security-weakening change needs a confirmation)
 WEAKER_WHEN_HIGHER = ("session_idle_minutes", "session_absolute_hours", "login_max_failures", "lockout_1_failures",
                       "lockout_2_failures", "lockout_3_failures", "lockout_disable_failures")
@@ -92,6 +103,10 @@ def _file_settings(data_dir: Path) -> tuple[dict, dict]:
     return out, sources
 
 
+def _editable_here(name: str, server: bool) -> bool:
+    return name in EDITABLE and (server or name in LOCAL_EDITABLE)
+
+
 def effective(settings: Settings, can_edit: bool) -> dict:
     """Every setting with its running value and source; the editor's state on server installs. No secrets: the
     settings hold none (keys and passwords live in the data folder's secrets and the database)."""
@@ -104,20 +119,24 @@ def effective(settings: Settings, can_edit: bool) -> dict:
             continue
         src = sources.get(n, "default")
         locked = src in ("environment", "command line")
-        editable = server and can_edit and n in EDITABLE and not locked
+        here = _editable_here(n, server)
+        editable = can_edit and here and not locked
         rows.append({
             "name": n, "label": LABELS.get(n, n), "value": _display(n, getattr(settings, n)), "source": src,
-            "editable": editable, "locked": locked and n in EDITABLE,
-            "read_only_reason": READ_ONLY_REASON.get(n) if n not in EDITABLE else
+            "editable": editable, "locked": locked and here,
+            "read_only_reason": READ_ONLY_REASON.get(n) if not here else
             (f"Set by the {src}; change it there." if locked else None),
-            "restart_required": n in EDITABLE and pending.get(n) != getattr(settings, n),
-            "saved_value": _display(n, pending.get(n)) if n in EDITABLE else None,
+            "restart_required": here and n not in LIVE and pending.get(n) != getattr(settings, n),
+            "saved_value": _display(n, pending.get(n)) if here else None,
             "choices": list(CHOICES[n]) if n in CHOICES else None,
+            "choice_labels": dict(CHANNEL_TEXT) if n == "update_channel" else None,
+            "live": n in LIVE,
             "range": list(RANGES[n]) if n in RANGES else None,
             "type": "bool" if isinstance(getattr(settings, n), bool) else "int" if isinstance(getattr(settings, n), int)
             else "text",
         })
-    return {"mode": settings.mode, "editor": server and can_edit, "config_file": CONFIG_FILE,
+    return {"mode": settings.mode, "editor": can_edit and (server or any(r["editable"] for r in rows)),
+            "config_file": CONFIG_FILE,
             "settings": rows, "restart_required": any(r["restart_required"] for r in rows)}
 
 
@@ -164,6 +183,17 @@ def _check_combination(v: dict) -> None:
     if not v["lockout_1_failures"] < v["lockout_2_failures"] < v["lockout_3_failures"] < v["lockout_disable_failures"]:
         raise validation("The account lock counts must grow: lock 1 < lock 2 < lock 3 < disabled.",
                          "lockout_1_failures")
+
+
+def _pre_release_warning(name: str, old, new) -> Warning_ | None:
+    """#379: a production build switched to test builds (pre-release) needs a confirmation (BR-107)."""
+    from ..config import build_info
+    if name != "update_channel" or new != "test" or old == new:
+        return None
+    if (build_info() or {}).get("branch") != "main":
+        return None
+    return Warning_("PRE_RELEASE_CHANNEL", "Test builds are pre-release and not production ready. Only install them "
+                                           "on a system you use for testing.", setting=name)
 
 
 def _weakening(name: str, old, new, mode: str) -> str | None:
@@ -280,10 +310,12 @@ def save(db: Session, ctx, settings: Settings, changes: dict, confirmations: lis
          password_check) -> dict:
     """Validates every change (allow-list, ranges, combinations), asks for the password when trusted proxies change
     and for a confirmation when a change weakens security, writes config.toml and audits before and after."""
-    if settings.mode != "server":
-        raise conflict("SERVER_ONLY", "Settings are edited in config.toml on a local install.")
+    server = settings.mode == "server"
     if not changes:
         raise validation("Nothing to change.")
+    if not server and any(str(k) not in LOCAL_EDITABLE for k in changes):
+        raise conflict("SERVER_ONLY", "On a local install only the update channel is changed here; change other "
+                                      "settings in config.toml.")
     current, sources = _file_settings(settings.data_dir)
     clean = {}
     for name, value in changes.items():
@@ -300,14 +332,27 @@ def save(db: Session, ctx, settings: Settings, changes: dict, confirmations: lis
         password_check()
     warnings = [Warning_("SECURITY_WEAKENING", msg, setting=k)
                 for k, v in changed.items() if (msg := _weakening(k, current.get(k), v, settings.mode))]
+    needed = []
     if warnings:
         msgs = " ".join(w.message for w in warnings)
-        require_confirmations([Warning_("SECURITY_WEAKENING", f"These changes make the server less strict: {msgs}")],
-                              confirmations)
+        needed.append(Warning_("SECURITY_WEAKENING", f"These changes make the server less strict: {msgs}"))
+    needed += [w for k, v in changed.items() if (w := _pre_release_warning(k, current.get(k), v))]
+    if needed:
+        require_confirmations(needed, confirmations)
     write_config(settings.data_dir, changed)
     audit.record(db, ctx, "SERVER_SETTINGS_CHANGED", "workspace", ctx.workspace_id,
                  {k: current.get(k) for k in changed}, dict(changed), category="SECURITY")
-    return {"changed": sorted(changed)}
+    return {"changed": sorted(changed), "live": {k: v for k, v in changed.items() if k in LIVE}}
+
+
+def apply_live(app, live: dict) -> None:
+    """#379: settings that take effect at once. The running settings are replaced by a copy with the new values; the
+    update check reads `app.state.settings` on every tick and fetches again when the channel differs from the last
+    check's, so the next check follows within about a minute (the scheduler looks every 30 seconds)."""
+    if not live:
+        return
+    from dataclasses import replace
+    app.state.settings = replace(app.state.settings, **live)
 
 
 # ------------------------------------------------------------------ organization name

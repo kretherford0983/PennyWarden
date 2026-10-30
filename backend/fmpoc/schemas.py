@@ -313,6 +313,19 @@ class ManualBalanceIn(In):
     current_balance: Amount
     reason: OptStr(500) = None
     as_of_date: OptDate = None  # 1.7.3 (#88): defaults to today
+    confirmations: list[str] = Field(default_factory=list, max_length=5)   # 2.3.0 (#391): CLOSED_FISCAL_YEAR
+
+
+class BalanceCorrectIn(In):                 # 2.3.0 (#391)
+    balance: Amount | None = None
+    as_of_date: OptDate = None
+    reason: Str(500)
+    confirmations: list[str] = Field(default_factory=list, max_length=5)
+
+
+class BalanceRetireIn(In):                  # 2.3.0 (#391)
+    reason: Str(500)
+    confirmations: list[str] = Field(default_factory=list, max_length=5)
 
 
 class MoveAccountIn(In):
@@ -505,6 +518,7 @@ class FundraiserIn(In):
     filter_regex: bool = False
     continues_from_id: int | None = None       # 2.1.0 (#277): the previous fundraiser of the series
     copy_buckets_from_id: int | None = None    # 2.1.0 (#277): "Create next year's from this one" (create only)
+    goal_amount: Amount | None = None          # 2.3.0 (#372): optional goal; blank/None = no goal (left unchanged if omitted on edit)
 
 
 class FundraiserLinkIn(In):                    # 2.1.0 (#277)
@@ -522,6 +536,16 @@ class FundraiserSeriesResultIn(In):
     income: Amount | None = None
     expense: Amount | None = None
     note: OptStr(500) = None
+    estimated: bool = False                    # 2.3.0 (#390): the note is then required
+
+
+class FundraiserSeriesResultCorrectIn(In):     # 2.3.0 (#390)
+    net: Amount
+    income: Amount | None = None
+    expense: Amount | None = None
+    note: OptStr(500) = None
+    estimated: bool = False
+    reason: Str(500)
 
 
 class BudgetHistoryIn(In):
@@ -533,6 +557,7 @@ class BudgetHistoryIn(In):
     note: OptStr(500) = None
     code: OptStr(20) = None
     name: OptStr(120) = None
+    estimated: bool = False                    # 2.3.0 (#390): the note is then required
 
 
 class BudgetHistoryCorrectIn(In):
@@ -542,6 +567,7 @@ class BudgetHistoryCorrectIn(In):
     note: OptStr(500) = None
     code: OptStr(20) = None
     name: OptStr(120) = None
+    estimated: bool | None = None              # 2.3.0 (#390)
     reason: Str(500)
 
 
