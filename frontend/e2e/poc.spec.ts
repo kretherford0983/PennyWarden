@@ -35,6 +35,13 @@ async function passGates(page: Page) {
   await expect(nav).toBeVisible({ timeout: 20_000 });
 }
 
+/** 2.3.0 (#375): a report from the Reports catalog (each report has its own page). */
+async function openReport(page: Page, name: string) {
+  await page.getByRole("link", { name: "Reports", exact: true }).click();
+  await page.getByRole("link", { name, exact: true }).first().click();
+  await expect(page.getByRole("heading", { level: 1, name })).toBeVisible();
+}
+
 async function login(page: Page, user: string, pw = PW) {
   await page.goto("/");
   await page.getByLabel("Username").fill(user);
@@ -616,15 +623,15 @@ test("CR-005: per-allocation 'no attachment' flag on a split transaction", async
 
 test("CR-002 / CR-005: reports page, audit PDF and entity report; documentation review warnings", async ({ page }) => {
   await login(page, "bm1");
-  await page.getByRole("link", { name: "Reports" }).click();
-  const open = page.getByRole("link", { name: "Open printable PDF" });
+  await openReport(page, "End of Year Audit");
+  const open = page.getByRole("link", { name: "Open", exact: true });
   const href = await open.getAttribute("href");
   expect(href).toContain("/api/reports/audit?fiscal_year_id=");
   const pdf = await page.request.get(href!);
   expect(pdf.status()).toBe(200);
   expect(pdf.headers()["content-type"]).toBe("application/pdf");
   expect((await pdf.body()).subarray(0, 5).toString()).toBe("%PDF-");
-  await page.getByRole("tab", { name: "Entity activity" }).click();
+  await openReport(page, "Entity activity");
   await page.getByLabel("Entity report account").selectOption({ label: "Operating - ******9012" });
   await page.getByRole("button", { name: "Run report" }).click();
   await expect(page.getByRole("row", { name: /Gamma Bank Interest/ })).toContainText("$0.87");
@@ -640,16 +647,71 @@ test("CR-002 / CR-005: reports page, audit PDF and entity report; documentation 
   await expect(page.getByText(/transaction\(s\) have no supporting attachments/)).toBeVisible();
 });
 
+// ---------------------------------------------------------------- 2.3.0 build 11 (#375)
+test("#375: Reports - a catalog by purpose, search, a page and address per report, recently run, hidden reports refused", async ({ page }) => {
+  await login(page, "bm1");
+  await page.getByRole("link", { name: "Reports", exact: true }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "Reports" })).toBeVisible();
+  for (const g of ["Share with the board and members", "Audit and year-end close", "Analyze activity", "Plan budgets"]) {
+    await expect(page.getByRole("heading", { name: new RegExp(`^${g}`) })).toBeVisible();
+  }
+  // the entity report run in the CR-002 test is in Recently run, with its options
+  const recent = page.getByTestId("recently-run");
+  await expect(recent).toContainText("Entity activity");
+  await expect(recent.getByRole("link").first()).toHaveAttribute("href", /\/reports\/entity\?bank_account_id=/);
+  // search by name or description
+  await page.getByLabel("Find a report").fill("vendor");
+  await expect(page.getByRole("link", { name: "Entity activity", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "End of Year Audit", exact: true })).toHaveCount(0);
+  await page.getByLabel("Find a report").fill("");
+  await page.screenshot({ path: "e2e-screenshots/light-reports-catalog.png", fullPage: true });
+  // each report has its own page and address; the compact list switches reports; Back works
+  await page.getByRole("link", { name: "End of Year Audit", exact: true }).click();
+  await expect(page).toHaveURL(/\/reports\/audit$/);
+  const side = page.getByRole("complementary", { name: "Reports" });
+  await side.getByRole("link", { name: "Fiscal Year Close", exact: true }).click();
+  await expect(page).toHaveURL(/\/reports\/close$/);
+  await expect(page.getByRole("heading", { level: 1, name: "Fiscal Year Close" })).toBeVisible();
+  await page.goBack();
+  await expect(page.getByRole("heading", { level: 1, name: "End of Year Audit" })).toBeVisible();
+  await side.getByLabel("Find a report").fill("planning");
+  await expect(side.getByRole("link", { name: "Planning Sheet", exact: true })).toBeVisible();
+  await expect(side.getByRole("link", { name: "Financial Flow", exact: true })).toHaveCount(0);
+  await side.getByLabel("Find a report").fill("");
+  // opening a report records the run and remembers the options
+  await page.getByLabel("Include VOID transactions").uncheck();
+  const popup = page.context().waitForEvent("page");
+  await page.getByRole("link", { name: "Open", exact: true }).click();
+  await (await popup).close();
+  await page.getByRole("link", { name: "← All reports" }).click();
+  await expect(recent.getByRole("link").first()).toContainText("End of Year Audit");
+  await page.goto("/reports/audit");
+  await expect(page.getByLabel("Include VOID transactions")).not.toBeChecked();
+  await page.getByLabel("Include VOID transactions").check();
+  await page.screenshot({ path: "e2e-screenshots/light-report-page.png", fullPage: true });
+  const again = page.context().waitForEvent("page");          // remembered as before for the later tests
+  await page.getByRole("link", { name: "Open", exact: true }).click();
+  await (await again).close();
+  await logout(page);
+  // a report the user can't run is hidden, and its address is refused
+  await login(page, "ru1", "Brand-New-Pass-99");
+  await page.goto("/reports");
+  await expect(page.getByRole("link", { name: "Budget Review", exact: true })).toHaveCount(0);
+  await page.goto("/reports/budget-review");
+  await expect(page.getByRole("alert")).toContainText("not authorized");
+  await logout(page);
+});
+
 // ---------------------------------------------------------------- 2.3.0 build 9 (#373)
 test("#373: the Quarterly / Annual financial report - period choice, commentary, PDF and presentation", async ({ page }) => {
   await login(page, "bm1");
-  await page.getByRole("link", { name: "Reports" }).click();
-  await page.getByRole("tab", { name: "Quarterly / Annual" }).click();
+  await openReport(page, "Quarterly / Annual financial report");
   // periods that haven't started are listed but can't be chosen (whatever today is)
+  await expect(page.getByLabel("Period", { exact: true }).locator("option")).toHaveCount(5);
   const opts = await page.getByLabel("Period", { exact: true }).locator("option").evaluateAll((os) => os.map((o: any) => ({ v: o.value, d: o.disabled })));
   expect(opts.map((o) => o.v)).toEqual(["Q1", "Q2", "Q3", "Q4", "ANNUAL"]);
   await page.getByLabel("Commentary (optional)").fill("Giving was steady this quarter.");
-  const open = page.getByRole("link", { name: "Open report PDF" });
+  const open = page.getByRole("link", { name: "Open", exact: true });
   const href = (await open.getAttribute("href"))!;
   expect(href).toContain("/api/reports/period?");
   expect(href).toContain("commentary=Giving");
@@ -657,7 +719,7 @@ test("#373: the Quarterly / Annual financial report - period choice, commentary,
   expect(pdf.status()).toBe(200);
   expect((await pdf.body()).subarray(0, 5).toString()).toBe("%PDF-");
   await page.getByLabel("Period", { exact: true }).selectOption("ANNUAL");
-  const deck = await page.request.get((await page.getByRole("link", { name: "Download presentation (.pptx)" }).getAttribute("href"))!);
+  const deck = await page.request.get((await page.getByRole("link", { name: "Download PPTX" }).getAttribute("href"))!);
   expect(deck.status()).toBe(200);
   expect(deck.headers()["content-type"]).toContain("presentationml");
   await page.screenshot({ path: "e2e-screenshots/light-period-report.png", fullPage: true });
@@ -764,10 +826,9 @@ test("CR-007 / CR-008: Fiscal Year document types, approval rules and the Close 
   await page.locator(".fy-docs").evaluate((el) => el.scrollIntoView({ block: "start" }));
   await page.screenshot({ path: "e2e-screenshots/light-fy-documents.png" });
   // Close report on the Reports page
-  await page.getByRole("link", { name: "Reports" }).click();
-  await page.getByRole("tab", { name: "Fiscal Year Close" }).click();
+  await openReport(page, "Fiscal Year Close");
   await page.getByLabel("Close report Fiscal Year").selectOption({ label: "FY2031 — Approved" });
-  const href = await page.getByRole("link", { name: "Open Close report PDF" }).getAttribute("href");
+  const href = await page.getByRole("link", { name: "Open", exact: true }).getAttribute("href");
   expect(href).toContain(`/api/reports/fy-close?fiscal_year_id=${fy.id}`);
   const pdf = await page.request.get(href!);
   expect(pdf.status()).toBe(200);
@@ -935,12 +996,12 @@ test("2.1.0 (#257, #261, #283): Budget Review with projection choices; the Plann
   // Budget Managers only: a Register User has no Budget Review tab
   await login(page, "ru1", "Brand-New-Pass-99");
   await page.goto("/reports");
-  await expect(page.getByRole("tab", { name: "Financial Flow" })).toBeVisible();
-  await expect(page.getByRole("tab", { name: "Budget Review" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Financial Flow", exact: true })).toBeVisible();
+  await expect(page.getByRole("link", { name: "Budget Review", exact: true })).toHaveCount(0);
   await logout(page);
   await login(page, "bm1");
   await page.goto("/reports");
-  await page.getByRole("tab", { name: "Budget Review" }).click();
+  await page.getByRole("link", { name: "Budget Review", exact: true }).click();
   await page.getByLabel("Projected column").check();
   const choices = page.locator("fieldset.projection-choices");
   await expect(choices).toContainText("Projected budgets");
@@ -968,22 +1029,22 @@ test("2.1.0 (#257, #261, #283): Budget Review with projection choices; the Plann
   // #261: the Planning Sheet from the Fiscal Years page (build 3 feedback: no Fiscal Year needs to be opened)
   await page.getByRole("link", { name: "Fiscal Years" }).click();
   await page.getByRole("button", { name: "Planning sheet…" }).click();
-  const dlg = page.getByRole("dialog", { name: "Fiscal Year Planning Sheet" });
+  // 2.3.0 (#375): the button is a shortcut to the Planning Sheet's page in Reports
+  await expect(page).toHaveURL(/\/reports\/planning-sheet$/);
+  const dlg = page.locator(".report-body");
   await expect(dlg.getByTestId("planning-context")).toContainText("Planning");
   await expect(dlg).toContainText("isn't required for the Fiscal Year closure review");
-  const href = await dlg.getByRole("link", { name: "Open planning sheet PDF" }).getAttribute("href");
+  const href = await dlg.getByRole("link", { name: "Open", exact: true }).getAttribute("href");
   const sheet = await page.request.get(href!);
   expect(sheet.status()).toBe(200);
   expect(sheet.headers()["content-type"]).toBe("application/pdf");
   // #283: the Budget Review can follow the sheet in the same PDF
   await dlg.getByLabel(/Include the Budget Review/).check();
-  const withReview = await dlg.getByRole("link", { name: "Open planning sheet PDF" }).getAttribute("href");
+  const withReview = await dlg.getByRole("link", { name: "Open", exact: true }).getAttribute("href");
   expect(withReview).toContain("include_review=true");
   const both = await page.request.get(withReview!);
   expect(both.status()).toBe(200);
   expect((await both.body()).length).toBeGreaterThan((await sheet.body()).length);
-  await dlg.getByRole("button", { name: "Done" }).click();
-  await expect(dlg).toHaveCount(0);
   await logout(page);
 });
 
@@ -1068,7 +1129,7 @@ test("CR-016: audit report signature page — wording, saved wordings, signers",
   for (const n of ["Jane Trustee", "John Trustee"]) {
     expect((await post("/api/entities", { entity_type: "INDIVIDUAL", primary_contact: n, confirmations: ["DUPLICATE_ENTITY"] })).status()).toBe(201);
   }
-  await page.getByRole("link", { name: "Reports" }).click();
+  await openReport(page, "End of Year Audit");
   await page.getByLabel("Include audit review signature page").check();
   await expect(page.getByLabel("Selected wording")).toContainText("We, the undersigned");
   // new wording with an unknown variable is refused before opening the PDF
@@ -1086,7 +1147,7 @@ test("CR-016: audit report signature page — wording, saved wordings, signers",
   await page.getByRole("button", { name: "+ Add signer" }).click();
   await page.getByRole("combobox", { name: "Signer 2" }).fill("John");
   await page.getByRole("listbox").getByRole("option", { name: /John Trustee/ }).click();
-  const href = await page.getByRole("link", { name: "Open printable PDF" }).getAttribute("href");
+  const href = await page.getByRole("link", { name: "Open", exact: true }).getAttribute("href");
   expect(href).toContain("signature_page=true");
   expect(href).toContain("signature_template_id=");
   expect(href!.match(/signer_id=/g)!.length).toBe(2);
@@ -1487,7 +1548,7 @@ test("CR-028 / CR-030 / CR-029 / CR-032: account groups, chart columns, signatur
   await expect(page.getByTestId("accounts-CHECKING_SAVINGS")).toContainText("Total Checking & Savings");
   await page.screenshot({ path: "e2e-screenshots/light-bank-accounts-groups.png", fullPage: true });
   // CR-029: preview only the signature page
-  await page.getByRole("link", { name: "Reports" }).click();
+  await openReport(page, "End of Year Audit");
   await page.getByLabel("Include audit review signature page").check();
   const preview = page.getByRole("link", { name: "Preview signature page" });
   const href = await preview.getAttribute("href");
@@ -1874,7 +1935,7 @@ test("#382: the Budget Review lists a budget of the years shown that is not in t
   const e = await post(`/api/budgets/former/${darts.id}/entries`, { fiscal_year_label: `FY${y}`, budgeted: "120.00", actual: "95.00" });
   expect(e.status(), await e.text()).toBe(201);
   await page.goto("/reports");
-  await page.getByRole("tab", { name: "Budget Review" }).click();
+  await page.getByRole("link", { name: "Budget Review", exact: true }).click();
   await page.getByLabel("Budget Review Fiscal Year").selectOption(String(f41.id));
   await page.getByLabel("Prior years").selectOption("-1");
   await page.getByRole("button", { name: "Run report" }).click();
@@ -2180,18 +2241,19 @@ test("2.1.0 (#277): next year's fundraiser continues the series, prior years ent
   await page.getByRole("link", { name: "← Fundraisers" }).click();
   await expect(page.getByTestId("fundraiser-list")).toBeVisible();
   await page.getByRole("button", { name: "Fiscal Year report…" }).click();
-  dlg = page.getByRole("dialog", { name: "Fiscal Year fundraising report" });
+  // 2.3.0 (#375): a shortcut to the report's page in Reports, with this year and the ticked fundraisers
+  await expect(page).toHaveURL(/\/reports\/fundraising-fy\?fiscal_year_id=\d+&ids=/);
+  dlg = page.locator(".report-body");
   await dlg.getByLabel("Include targeted total").check();
   await dlg.getByLabel(/Notes \(printed/).fill("Matching gifts expected.");
   await dlg.getByRole("button", { name: "Save notes" }).click();
   await expect(dlg.getByRole("button", { name: "Save notes" })).toBeDisabled();
-  const pdf = await page.request.get((await dlg.getByRole("link", { name: "Report (PDF)" }).getAttribute("href"))!);
+  const pdf = await page.request.get((await dlg.getByRole("link", { name: "Open", exact: true }).getAttribute("href"))!);
   expect(pdf.status()).toBe(200);
   expect(pdf.headers()["content-type"]).toBe("application/pdf");
-  const deck = await page.request.get((await dlg.getByRole("link", { name: "Presentation" }).getAttribute("href"))!);
+  const deck = await page.request.get((await dlg.getByRole("link", { name: "Download PPTX" }).getAttribute("href"))!);
   expect(deck.status()).toBe(200);
   expect(deck.headers()["content-type"]).toContain("presentationml");
-  await dlg.getByRole("button", { name: "Done" }).click();
   await logout(page);
 });
 
@@ -2315,19 +2377,18 @@ test("CR-035: fundraiser report PDF; Audit and Close reports can include fundrai
   await card.getByRole("button", { name: "Undo final" }).click();
   await expect(page.getByTestId("fr-report-status")).not.toContainText("marked final");
   // the audit detail moved to Reports -> Fundraiser detail (audit)
-  await page.getByRole("link", { name: "Reports" }).click();
-  await page.getByRole("tab", { name: "Fundraiser detail (audit)" }).click();
-  const det = await page.getByRole("link", { name: "Open detail PDF" }).getAttribute("href");
+  await openReport(page, "Fundraiser detail (audit)");
+  const det = await page.getByRole("link", { name: "Open", exact: true }).getAttribute("href");
   expect(det).toMatch(/\/api\/fundraisers\/\d+\/report$/);
   expect((await page.request.get(det!)).status()).toBe(200);
-  await page.getByRole("tab", { name: "End of Year Audit" }).click();
+  await openReport(page, "End of Year Audit");
   await expect(page.getByLabel("Include fundraisers")).toBeChecked();
-  const audit = await page.getByRole("link", { name: "Open printable PDF" }).getAttribute("href");
+  const audit = await page.getByRole("link", { name: "Open", exact: true }).getAttribute("href");
   expect(audit).toContain("include_fundraisers=true");
   const withFr = await page.request.get(audit!);
   expect(withFr.status()).toBe(200);
   await page.getByLabel("Include fundraisers").uncheck();
-  const without = await page.getByRole("link", { name: "Open printable PDF" }).getAttribute("href");
+  const without = await page.getByRole("link", { name: "Open", exact: true }).getAttribute("href");
   expect(without).not.toContain("include_fundraisers");
   const plain = await page.request.get(without!);
   expect((await withFr.body()).length).toBeGreaterThan((await plain.body()).length);
@@ -2428,18 +2489,22 @@ test("CR-037 / CR-038: cash count sheet PDF; mark a fundraiser as cancelled and 
   await page.getByRole("link", { name: "Fundraisers" }).click();
   await page.getByRole("link", { name: "Harvest Dinner" }).click();
   await page.getByRole("button", { name: "Cash count sheet…" }).click();
-  let dlg = page.getByRole("dialog", { name: "Cash count sheet" });
+  // 2.3.0 (#375): a shortcut to the count sheet's page in Reports, with this fundraiser chosen
+  await expect(page).toHaveURL(/\/reports\/count-sheet\?fundraiser_id=\d+$/);
+  let dlg = page.locator(".report-body");
+  await expect(dlg.getByLabel("Count sheet fundraiser")).toHaveValue(/\d+/);
+  await expect(dlg.getByLabel("Count sheet fundraiser").locator("option:checked")).toHaveText("Harvest Dinner");
   // 1.6.7: two empty rows by default, "+ Add signature line" offered right away; never a fourth empty row
   await expect(dlg.locator(".sig-signer")).toHaveCount(2);
-  await expect(dlg.getByRole("link", { name: "Open sheet (PDF)" })).toHaveAttribute("href", /blank_lines=2$/);
+  await expect(dlg.getByRole("link", { name: "Open", exact: true })).toHaveAttribute("href", /blank_lines=2$/);
   await dlg.getByRole("button", { name: "+ Add signature line" }).click();
   await expect(dlg.locator(".sig-signer")).toHaveCount(3);
   await expect(dlg.getByRole("button", { name: "+ Add signature line" })).toHaveCount(0);
-  const href = await dlg.getByRole("link", { name: "Open sheet (PDF)" }).getAttribute("href");
+  const href = await dlg.getByRole("link", { name: "Open", exact: true }).getAttribute("href");
   expect(href).toMatch(/blank_lines=3$/);
   expect((await page.request.get(href!.replace("blank_lines=3", "blank_lines=4"))).status()).toBe(422);
   await dlg.getByLabel("Add page 2 for more checks").uncheck();   // page 2 (more check lines, for the back) is optional
-  await expect(dlg.getByRole("link", { name: "Open sheet (PDF)" })).toHaveAttribute("href", /extra_checks=false&blank_lines=3$/);
+  await expect(dlg.getByRole("link", { name: "Open", exact: true })).toHaveAttribute("href", /extra_checks=false&blank_lines=3$/);
   await dlg.getByLabel("Add page 2 for more checks").check();
   const pdf = await page.request.get(href!);
   expect(pdf.status()).toBe(200);
@@ -2449,9 +2514,8 @@ test("CR-037 / CR-038: cash count sheet PDF; mark a fundraiser as cancelled and 
   for (const [n, pos] of [["Petra Position", "Treasurer"], ["Quinn Plain", null]]) {
     expect((await post("/api/entities", { entity_type: "INDIVIDUAL", primary_contact: n, position: pos, confirmations: ["DUPLICATE_ENTITY"] })).status()).toBe(201);
   }
-  await dlg.getByRole("button", { name: "Close", exact: true }).last().click();
-  await page.getByRole("button", { name: "Cash count sheet…" }).click();
-  dlg = page.getByRole("dialog", { name: "Cash count sheet" });
+  await page.reload();     // the new people are listed
+  dlg = page.locator(".report-body");
   await dlg.getByRole("combobox", { name: "Signer 1" }).fill("Petra");
   await page.getByRole("listbox").getByRole("option", { name: /Petra Position/ }).click();
   await expect(dlg.getByLabel("Signer 1 title")).toHaveValue("Treasurer");
@@ -2459,9 +2523,9 @@ test("CR-037 / CR-038: cash count sheet PDF; mark a fundraiser as cancelled and 
   await dlg.getByRole("combobox", { name: "Signer 2" }).fill("Quinn");
   await page.getByRole("listbox").getByRole("option", { name: /Quinn Plain/ }).click();
   await expect(dlg.getByLabel("Signer 2 title")).toHaveValue("Counter");
-  await expect(dlg.getByRole("link", { name: "Open sheet (PDF)" })).toHaveAttribute("href", /signer_title=Treasurer.*signer_title=Counter&blank_lines=0$/);
+  await expect(dlg.getByRole("link", { name: "Open", exact: true })).toHaveAttribute("href", /signer_title=Treasurer.*signer_title=Counter&blank_lines=0$/);
   expect(pdf.headers()["content-type"]).toBe("application/pdf");
-  await dlg.getByRole("button", { name: "Close", exact: true }).last().click();
+  await page.goBack();
   await page.getByRole("button", { name: "Mark as cancelled…" }).click();
   dlg = page.getByRole("dialog", { name: "Mark fundraiser as cancelled" });
   await dlg.getByLabel("Reason").fill("Hall double-booked");
@@ -2611,8 +2675,7 @@ test("#106: Financial Flow Report - review, exclude a line with a reason, note a
   const inc0 = Math.round(Number(before.sections[0].income_total) * 100);
   const exp0 = Math.round(Number(before.sections[0].expense_total) * 100);
 
-  await page.getByRole("link", { name: "Reports" }).click();
-  await page.getByRole("tab", { name: "Financial Flow" }).click();
+  await openReport(page, "Financial Flow");
   await page.getByLabel("Title").fill("E2E flow");
   await page.getByLabel("From Date").fill(today);
   const picks = page.locator(".account-picks input[type=checkbox]");
@@ -2663,8 +2726,7 @@ test("#106: Financial Flow Report - review, exclude a line with a reason, note a
 test("#348: a Compare Date before any data uses the earliest data, marked on the review screen", async ({ page }) => {
   await login(page, "ru1", "Brand-New-Pass-99");
   const today = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
-  await page.getByRole("link", { name: "Reports" }).click();
-  await page.getByRole("tab", { name: "Financial Flow" }).click();
+  await openReport(page, "Financial Flow");
   await page.getByLabel("Title").fill("E2E compare");
   await page.getByLabel("From Date").fill(today);
   const notes = page.getByRole("checkbox", { name: "Show notes on substituted starting values" });

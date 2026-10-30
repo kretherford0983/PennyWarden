@@ -249,6 +249,7 @@ function Shell({ workspace, warning, mode, testing, demo, onLogout }: { workspac
   else if (path === "/register") page = guard("/register", <Register />);
   else if (path === "/entities") page = guard("/entities", <Entities />);
   else if (path === "/reports") page = guard("/reports", <Reports />);
+  else if ((m = match("/reports/:id", path))) page = guard("/reports", <Reports id={m.id} />);   // 2.3.0 (#375): a page per report
   else if (path === "/notifications") page = can("reminder.view") ? <Notifications /> : <NotAuthorized />;
   else if (path === "/fundraisers") page = guard("/fundraisers", <Fundraisers />);
   else if (path === "/fundraiser-series") page = can("fundraiser.manage") ? guard("/fundraisers", <FundraiserSeries />) : <NotAuthorized />; // 2.1.0 (#277)
@@ -327,6 +328,6 @@ function Bell({ path }: { path: string }) {
   );
 }
 
-function NotAuthorized() {
+export function NotAuthorized() {
   return <div className="alert error" role="alert">You are not authorized to view this module.</div>;
 }

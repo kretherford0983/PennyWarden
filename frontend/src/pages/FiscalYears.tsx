@@ -3,14 +3,14 @@ import { api, money, qs } from "../api";
 import { ErrorBox, Field, FyStatus, Loading, Modal, useConfirmable, GuardedForm } from "../components";
 import { useMe } from "../App";
 import { Link, useRouter } from "../router";
-import { PlanningSheetDialog } from "./BudgetReview";
+import { reportPath } from "./reports/registry";
 
 export default function FiscalYears() {
   const { can } = useMe();
   const [list, setList] = useState<any[] | null>(null);
   const [err, setErr] = useState<unknown>(null);
   const [creating, setCreating] = useState(false);
-  const [planning, setPlanning] = useState(false);   // #261 (build 3 feedback): one planning at a time, from this page
+  const { navigate } = useRouter();
   const load = () => api.get("/api/fiscal-years").then(setList, setErr);
   useEffect(() => {
     load();
@@ -21,11 +21,11 @@ export default function FiscalYears() {
       <div className="page-head">
         <h1>Fiscal Years</h1>
         <div className="row">
-          {can("budget.manage") ? <button onClick={() => setPlanning(true)}>Planning sheet…</button> : null}
+          {/* #261; 2.3.0 (#375): a shortcut to the Planning Sheet in Reports */}
+          {can("budget.manage") ? <button onClick={() => navigate(reportPath("planning-sheet"))}>Planning sheet…</button> : null}
           {can("fiscal_year.manage") ? <button className="primary" onClick={() => setCreating(true)}>New Fiscal Year</button> : null}
         </div>
       </div>
-      {planning ? <PlanningSheetDialog onClose={() => setPlanning(false)} /> : null}
       <table className="table">
         <thead><tr><th>Fiscal Year</th><th>Start date</th><th>End date</th><th>Status</th></tr></thead>
         <tbody>
