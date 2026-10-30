@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { Link } from "../router";
 import { ErrorBox, Field, RowMenu } from "../components";
-import { LivePreview, PatternInput, PdfViewer, Section, usePdf, viewState } from "./checkShared";
+import { LivePreview, PatternInput, PdfViewer, PinToggle, Section, SetupLayout, usePdf, usePin, viewState } from "./checkShared";
 import { EnvelopeLibrary, SharedNotice } from "./Envelopes";
 
 const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
@@ -136,7 +136,7 @@ function useEditor(doc: any, onSaved: (d: any) => void) {
   return { isDraft, cfg, change, name, setName: (v: string) => { setName(v); setDirty(true); }, err, dirty, saved, save, test, pdf, viewing, setViewing, reset: () => { setCfg(clone(doc.config)); setName(doc.name); setDirty(false); } };
 }
 
-function EditorFrame({ title, e, onClose, children, singleFeed, backLabel = "Back to Payments Setup" }: { title: string; e: ReturnType<typeof useEditor>; onClose: () => void; children: React.ReactNode; singleFeed?: boolean; backLabel?: string }) {
+function EditorFrame({ title, e, onClose, children, preview, singleFeed, backLabel = "Back to Payments Setup" }: { title: string; e: ReturnType<typeof useEditor>; onClose: () => void; children: React.ReactNode; preview: React.ReactNode; singleFeed?: boolean; backLabel?: string }) {
   return (
     <div className="check-setup">
       <div className="row space-between">
@@ -148,7 +148,7 @@ function EditorFrame({ title, e, onClose, children, singleFeed, backLabel = "Bac
       {e.isDraft ? <div className="alert info" role="note" data-testid="draft-note"><b>Not saved yet.</b> Nothing is kept until you click <b>Save</b>;
         going back without saving leaves no template behind.</div> : null}
       <ErrorBox error={e.err} />
-      {children}
+      <SetupLayout preview={preview}>{children}</SetupLayout>
       <div className="actions sticky-actions">
         {e.saved ? <span className="hint" role="status">Saved.</span> : null}
         <button onClick={e.test}>Test print (sample data)</button>
@@ -160,16 +160,14 @@ function EditorFrame({ title, e, onClose, children, singleFeed, backLabel = "Bac
   );
 }
 
-/** #186: the live preview at the top of a letter or envelope editor (sample data, unsaved settings). */
+/** #186: the live preview of a letter or envelope editor (2.3.0 #394: beside the settings on wide screens) (sample data, unsaved settings). */
 function PreviewSection({ doc, e, scope, version = "" }: { doc: any; e: ReturnType<typeof useEditor>; scope: string; version?: string }) {
-  const pinKey = `${scope}-pin`;
-  const [pin, setPin] = useState(() => viewState.get(pinKey) ?? false);
-  useEffect(() => { viewState.set(pinKey, pin); }, [pin, pinKey]);
+  const [pin, setPin] = usePin(`${scope}-pin`);
   const letter = doc.kind === "LETTER";
   const aspect = letter ? 8.5 / 11 : (Number(e.cfg.width) || 9.5) / (Number(e.cfg.height) || 4.125);
   return (
     <Section id="pv" scope={scope} title="Preview (drawn to scale, sample data)" className={`doc-preview ${letter ? "letter" : "envelope"} ${pin ? "pinned" : ""}`} extra={
-      <label className="check"><input type="checkbox" checked={pin} onChange={(ev) => setPin(ev.target.checked)} /> Keep at the top</label>
+      <PinToggle pin={pin} setPin={setPin} />
     }>
       <LivePreview imageUrl={e.isDraft ? "/api/checks/documents/draft/preview-image" : `/api/checks/documents/${doc.id}/preview-image`}
                    pdfUrl={e.isDraft ? "/api/checks/documents/draft/preview" : `/api/checks/documents/${doc.id}/preview`}
@@ -222,8 +220,7 @@ function LetterEditor({ setup, doc, focus, onClose, onSaved }: EditorProps) {
   const windowed = c.window !== "NONE";
   const off = (k: string) => (ev: any) => e.change((x) => { x[k] = Number(ev.target.value) || 0; });
   return (
-    <EditorFrame title={`Cover letter: ${doc.name}`} e={e} onClose={onClose}>
-      <PreviewSection doc={doc} e={e} scope="pw-letter" version={logo?.version || ""} />
+    <EditorFrame title={`Cover letter: ${doc.name}`} e={e} onClose={onClose} preview={<PreviewSection doc={doc} e={e} scope="pw-letter" version={logo?.version || ""} />}>
       <Section id="lgen" scope="pw-letter" title="General">
         <div className="row form-row">
           <NameField e={e} focus={focus} />
@@ -404,7 +401,7 @@ function EnvelopeEditor({ setup, doc, focus, onClose, onSaved, onOpen, feature =
   const openWindow = () => { if (!e.dirty || window.confirm("Leave without saving your changes?")) onOpen(winLetter, "window"); };
   const n = (k: string) => (ev: any) => e.change((x) => { x[k] = Number(ev.target.value) || 0; });
   return (
-    <EditorFrame title={`Envelope: ${doc.name}`} e={e} onClose={onClose} singleFeed backLabel={backLabel}>
+    <EditorFrame title={`Envelope: ${doc.name}`} e={e} onClose={onClose} singleFeed backLabel={backLabel} preview={<PreviewSection doc={doc} e={e} scope="pw-envelope" />}>
       <SharedNotice doc={doc} feature={feature} onOpen={(d) => { if (!e.dirty || window.confirm("Leave without saving your changes?")) onOpen(d); }} />
       {feature === "PAYMENTS" ? (
         <div className="alert info" data-testid="window-pointer">
@@ -416,7 +413,6 @@ function EnvelopeEditor({ setup, doc, focus, onClose, onSaved, onOpen, feature =
         <p className="hint">This is for plain envelopes printed with the donor's address. For #10 double-window envelopes, choose <i>Address for a window
           envelope</i> in Donations Setup's receipt letter instead: the receipt carries the addresses.</p>
       ) : null}
-      <PreviewSection doc={doc} e={e} scope="pw-envelope" />
       <Section id="egen" scope="pw-envelope" title="General">
         <div className="row form-row">
           <NameField e={e} focus={focus} />

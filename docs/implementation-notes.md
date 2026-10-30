@@ -128,6 +128,22 @@ could not otherwise be corrected. Scope and safeguards:
   with a link; the variable picker completes dotted names.
 - Tests: `backend/tests/test_v210_organization.py` (6, including the data migration) and the E2E #126 and #312 steps.
 
+**2.3.0 build 8 — One setup layout with a locked preview (#394, decided with Kyle 2026-10-29).**
+- `SetupLayout` (checkShared.tsx) with one CSS rule set (`.setup-layout`) replaces the Donations-only `.setup-grid`;
+  `usePin`/`PinToggle` replace the per-page *Keep at the top* code. Used by Donations Setup, the check style editor and
+  `EditorFrame` (cover letter and envelope editors, so the Envelopes page and Donations Setup's envelope editor too).
+- Settings come first in the DOM; on narrow screens the preview column is `display: contents` with `order: -1`, so the
+  preview shows at the top and the existing `.collapsible.pinned` sticky works against the whole layout. The pinned
+  rules now apply below 1200px only.
+- Wide (≥ 1200px, the breakpoint Donations Setup already used): the preview column is `position: sticky; top: 0`.
+  Of the issue's two options, the simpler one was taken: the column is capped at the scrolling pane's height
+  (`--pane-h`, measured with a ResizeObserver on `.content`, less padding and the sticky Save bar) and letter
+  pictures are scaled to fit it, so the preview never scrolls away; anything taller scrolls inside the column. A true
+  two-way sticky can follow if the cap feels cramped.
+- The preview's own controls stay with it (check: Sample / Long text sample; Donations Setup: Receipt / Year-end
+  statement). Test print stays in each page's Save bar.
+- Test: E2E "#394" (wide: beside and in view after scrolling; narrow: at the top, Keep at the top keeps it in view).
+
 **2.3.0 build 7 — Shared signers (#395, decided with Kyle 2026-10-29).**
 - The table `check_signer` is kept (not renamed: checks, print snapshots and audit events refer to it) and gets
   `areas` (comma list of CHECKS, COVER_LETTERS, DONATIONS), like the envelope library's `features`. New service

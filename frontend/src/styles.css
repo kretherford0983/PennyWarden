@@ -451,20 +451,22 @@ label.button { display: inline-block; padding: 3px 10px; border-radius: 6px; bor
 .collapse-btn { background: none; border: none; padding: 0; font: inherit; font-weight: 700; color: inherit; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
 .collapse-btn .chev { width: 1em; display: inline-block; }
 .collapsible.open > .collapsible-head { margin-bottom: 8px; }
+@media (max-width: 1199.98px) {   /* 2.3.0 (#394): Keep at the top is for narrow screens; wide ones lock the preview column */
 .collapsible.pinned { position: sticky; top: 0; z-index: 6; box-shadow: 0 4px 12px rgba(0,0,0,.18); }
 .collapsible.pinned { padding-top: 8px; padding-bottom: 8px; }
 .collapsible.pinned .check-preview { max-height: 30vh; width: auto !important; margin: 4px auto; }
 .collapsible.pinned .hint, .collapsible.pinned .alert { display: none; }
+.collapsible.pinned .live-preview-frame { height: 34vh; aspect-ratio: auto !important; margin: 4px auto; }
+.collapsible.pinned .live-preview-image { width: auto; max-width: 100%; height: 34vh; object-fit: contain; margin: 4px auto; }
+}
 /* #186: live preview of a cover letter or envelope template */
 .live-preview-frame { display: block; width: 100%; border: 1px solid var(--border); border-radius: 6px; background: #525659; margin: 8px 0; }
 .doc-preview.letter .live-preview-frame { max-width: 640px; margin-left: auto; margin-right: auto; }
 .doc-preview.envelope .live-preview-frame { max-width: 900px; }
-.collapsible.pinned .live-preview-frame { height: 34vh; aspect-ratio: auto !important; margin: 4px auto; }
 /* build 11 (#217): the preview is a picture of the printed page (Safari shows inline PDFs blank) */
 .live-preview-image { display: block; width: 100%; height: auto; border: 1px solid var(--border); border-radius: 6px; background: #dcdee2; margin: 8px 0; }
 .doc-preview.letter .live-preview-image { max-width: 640px; margin-left: auto; margin-right: auto; }
 .doc-preview.envelope .live-preview-image { max-width: 900px; }
-.collapsible.pinned .live-preview-image { width: auto; max-width: 100%; height: 34vh; object-fit: contain; margin: 4px auto; }
 .form-row { align-items: flex-start; }   /* the form-row rules are now general: see "#214 form rows" at the end */
 
 /* 2.0.0 (#165, #166): letters, envelopes, handwritten checks */
@@ -601,9 +603,21 @@ label.check.small { font-size: 12px; }
 .fr-bucket-row { flex-wrap: wrap; }
 .fr-bucket-row .fr-who { flex-basis: 100%; }
 
-/* 2.1.0 (#312): Donations Setup - the settings beside the live preview on wide screens */
-.donation-setup .setup-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; }
-@media (min-width: 1200px) { .donation-setup .setup-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; } }
+/* 2.3.0 (#394): every setup editor - settings left, a locked preview right on wide screens; the preview at the top
+   (with Keep at the top) on narrow ones. The settings stay first in the page order. */
+.setup-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 1rem; }
+.setup-layout > .setup-settings { min-width: 0; }
+.setup-layout > .setup-preview { display: contents; }          /* narrow: the sections take part in the page, so Keep at the top can stick */
+.setup-layout > .setup-preview > * { order: -1; }
+@media (min-width: 1200px) {
+  .setup-layout { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
+  .setup-layout > .setup-preview { display: block; position: sticky; top: 0; z-index: 5; max-height: var(--pane-h, calc(100dvh - 140px)); overflow-y: auto; }
+  .setup-layout > .setup-preview > * { order: 0; }
+  .setup-layout .pin-toggle { display: none; }
+  .setup-layout .setup-preview .live-preview-image { width: auto; max-width: 100%; max-height: calc(var(--pane-h, 80vh) - 130px); object-fit: contain; margin-left: auto; margin-right: auto; }
+  .setup-layout .setup-preview .live-preview-frame { max-height: calc(var(--pane-h, 80vh) - 130px); }
+  .setup-layout .setup-preview .check-preview { max-width: 100%; }
+}
 .donation-dialog input.narrow { width: 7em; }
 .donation-dialog td .row { gap: 0.4rem; flex-wrap: nowrap; }
 /* 2.1.0 (#314): the organization profile fields wrap two or three to a line */

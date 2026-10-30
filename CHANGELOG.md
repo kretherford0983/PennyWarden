@@ -53,6 +53,16 @@ PennyWarden 2.3.0 (in progress).
 - The receipt dialog's "setup missing" message now points to System/About → Organization, where the EIN and address
   are entered.
 
+### Setup pages (#394)
+- **One layout for every setup editor.** Donations Setup, check styles, the payment cover letter and the envelope
+  editors (Payments, Donations and the Envelopes page) now put the settings on the left and the live preview on the
+  right on wide screens. The preview is locked: it stays in the window while you scroll through the settings and
+  watch the result (a preview taller than the window scrolls inside its column).
+- On narrow screens the preview sits at the top of the page, with **Keep at the top** to lock it there (remembered
+  per page while the app is open).
+- Donations Setup's preview switches between the **Receipt** and the **Year-end statement** (replacing *Show the
+  statement preview*).
+
 ### Signers (#395)
 - **One shared Signers page** (Administrators, next to Envelopes, when Payments or Donations is on) replaces the
   Signers section of Payments Setup and the typed signer name and title of Donations Setup. Each signer has a name,

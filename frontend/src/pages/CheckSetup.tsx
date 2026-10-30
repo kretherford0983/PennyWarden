@@ -7,7 +7,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "../api";
 import { Link } from "../router";
 import { ErrorBox, Field, GuardedForm, Loading, Modal, RowMenu } from "../components";
-import { BrowserTips, CheckPreview, FIELD_LABELS, PatternInput, PdfViewer, Section, TEXT_FIELDS, useCheckFonts, usePdf, viewState, type FieldText, type StubDrawing } from "./checkShared";
+import { BrowserTips, CheckPreview, FIELD_LABELS, PatternInput, PdfViewer, PinToggle, Section, SetupLayout, TEXT_FIELDS, usePin, useCheckFonts, usePdf, type FieldText, type StubDrawing } from "./checkShared";
 
 const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
 
@@ -273,8 +273,7 @@ function StyleEditor({ setup, style, onClose, onSaved }: { setup: any; style: an
   const [texts, setTexts] = useState<Record<string, FieldText> | null>(null);
   const [fitErr, setFitErr] = useState<unknown>(null);
   const [hl, setHl] = useState<string | null>(null);
-  const [pin, setPin] = useState(() => viewState.get("pw-check-setup-pin") ?? false);
-  useEffect(() => { viewState.set("pw-check-setup-pin", pin); }, [pin]);
+  const [pin, setPin] = usePin("pw-check-setup-pin");
   const [testFeed, setTestFeed] = useState(style.config.feed_modes[0]?.key);
   const [testSigner, setTestSigner] = useState("");
   const [pdf, setPdf] = usePdf();
@@ -323,247 +322,254 @@ function StyleEditor({ setup, style, onClose, onSaved }: { setup: any; style: an
         <button onClick={() => { if (!dirty || window.confirm("Leave without saving your changes?")) onClose(); }}>Back to check styles</button>
       </div>
       <ErrorBox error={err} />
-      <Section id="pv" title="Preview (drawn to scale, sample data)" className={pin ? "pinned" : ""} extra={
-        <div className="row form-row">
-          <label className="check"><input type="radio" checked={sample === "NORMAL"} onChange={() => setSample("NORMAL")} /> Sample</label>
-          <label className="check"><input type="radio" checked={sample === "LONG"} onChange={() => setSample("LONG")} /> Long text sample</label>
-          <label className="check"><input type="checkbox" checked={pin} onChange={(e) => setPin(e.target.checked)} /> Keep at the top</label>
-        </div>
-      }>
-        <CheckPreview cfg={cfg} fonts={fonts} texts={texts} highlight={hl} stubs={hasStubs ? stubs : null} />
-        <ErrorBox error={fitErr} />
-        {problems.length ? (
-          <div className="alert warn" role="status">
-            <strong>Does not fit at the smallest size:</strong>{" "}
-            {problems.map(([n]) => FIELD_LABELS[n]).join(", ")}. When this happens with real data, the user sees the full text and a shortened
-            version (payee and memo) and must accept or edit it before printing; for the date and amounts printing is blocked.
+      {/* 2.3.0 (#394): the settings with the preview beside them (wide) or at the top (narrow) */}
+      <SetupLayout preview={
+        <Section id="pv" title="Preview (drawn to scale, sample data)" className={pin ? "pinned" : ""} extra={
+          <div className="row form-row">
+            <label className="check"><input type="radio" checked={sample === "NORMAL"} onChange={() => setSample("NORMAL")} /> Sample</label>
+            <label className="check"><input type="radio" checked={sample === "LONG"} onChange={() => setSample("LONG")} /> Long text sample</label>
+            <PinToggle pin={pin} setPin={setPin} />
           </div>
-        ) : null}
-        {texts && Object.values(texts).some((t) => t.shrunk) ? <p className="hint">Some text was printed smaller to fit (down to each field's smallest size).</p> : null}
-        <p className="hint">The grey outline is what is pre-printed on the stock (for orientation only – it never prints). The shaded strip at the bottom is
-          the bank number zone, which must stay clear.</p>
-      </Section>
+        }>
+          <CheckPreview cfg={cfg} fonts={fonts} texts={texts} highlight={hl} stubs={hasStubs ? stubs : null} />
+          <ErrorBox error={fitErr} />
+          {problems.length ? (
+            <div className="alert warn" role="status">
+              <strong>Does not fit at the smallest size:</strong>{" "}
+              {problems.map(([n]) => FIELD_LABELS[n]).join(", ")}. When this happens with real data, the user sees the full text and a shortened
+              version (payee and memo) and must accept or edit it before printing; for the date and amounts printing is blocked.
+            </div>
+          ) : null}
+          {texts && Object.values(texts).some((t) => t.shrunk) ? <p className="hint">Some text was printed smaller to fit (down to each field's smallest size).</p> : null}
+          <p className="hint">The grey outline is what is pre-printed on the stock (for orientation only – it never prints). The shaded strip at the bottom is
+            the bank number zone, which must stay clear.</p>
+        </Section>
+      }>
 
-      <Section id="gen" title="General">
-        <div className="row form-row">
-          <Field label="Name"><input maxLength={80} value={name} onChange={(e) => { setName(e.target.value); setDirty(true); }} /></Field>
-          <Field label="How the sheet is used">
-            <select value={cfg.stock.sheet_usage} onChange={(e) => change((c) => { c.stock.sheet_usage = e.target.value; })}>
-              <option value="TEAR_TOP">Print the top check and tear it off (last check fed on its own)</option>
-              <option value="POSITIONS">Print each position in turn on the same sheet (top, middle, bottom)</option>
-            </select>
-          </Field>
-          <Field label="Date format">
-            <select value={cfg.date_format} onChange={(e) => change((c) => { c.date_format = e.target.value; })}>
-              {setup.date_formats.map((d: string) => <option key={d} value={d}>{d}</option>)}
-            </select>
-          </Field>
-        </div>
-        <p className="hint">Stock: {cfg.stock.check_tops.length} check(s) of {cfg.stock.check_width}" × {cfg.stock.check_height}" on a Letter sheet.
-          {cfg.stock.stock_note ? ` ${cfg.stock.stock_note}` : ""}</p>
-        <div className="row form-row">
-          <Field label="Default font">
-            <select value={cfg.defaults.font} onChange={(e) => change((c) => { c.defaults.font = e.target.value; })}>
-              {fonts.map((f: any) => <option key={f.key} value={f.key}>{f.label}</option>)}
-            </select>
-          </Field>
-          <Field label="Default size (pt)"><NumIn label="Default size" unit="pt" step={0.5} min={setup.font_sizes.min} max={setup.font_sizes.max} value={cfg.defaults.size} onChange={(v) => change((c) => { c.defaults.size = v; })} /></Field>
-          <label className="check"><input type="checkbox" checked={cfg.defaults.upper} onChange={(e) => change((c) => { c.defaults.upper = e.target.checked; })} /> Print everything in capitals</label>
-        </div>
-      </Section>
+        <Section id="gen" title="General">
+          <div className="row form-row">
+            <Field label="Name"><input maxLength={80} value={name} onChange={(e) => { setName(e.target.value); setDirty(true); }} /></Field>
+            <Field label="How the sheet is used">
+              <select value={cfg.stock.sheet_usage} onChange={(e) => change((c) => { c.stock.sheet_usage = e.target.value; })}>
+                <option value="TEAR_TOP">Print the top check and tear it off (last check fed on its own)</option>
+                <option value="POSITIONS">Print each position in turn on the same sheet (top, middle, bottom)</option>
+              </select>
+            </Field>
+            <Field label="Date format">
+              <select value={cfg.date_format} onChange={(e) => change((c) => { c.date_format = e.target.value; })}>
+                {setup.date_formats.map((d: string) => <option key={d} value={d}>{d}</option>)}
+              </select>
+            </Field>
+          </div>
+          <p className="hint">Stock: {cfg.stock.check_tops.length} check(s) of {cfg.stock.check_width}" × {cfg.stock.check_height}" on a Letter sheet.
+            {cfg.stock.stock_note ? ` ${cfg.stock.stock_note}` : ""}</p>
+          <div className="row form-row">
+            <Field label="Default font">
+              <select value={cfg.defaults.font} onChange={(e) => change((c) => { c.defaults.font = e.target.value; })}>
+                {fonts.map((f: any) => <option key={f.key} value={f.key}>{f.label}</option>)}
+              </select>
+            </Field>
+            <Field label="Default size (pt)"><NumIn label="Default size" unit="pt" step={0.5} min={setup.font_sizes.min} max={setup.font_sizes.max} value={cfg.defaults.size} onChange={(v) => change((c) => { c.defaults.size = v; })} /></Field>
+            <label className="check"><input type="checkbox" checked={cfg.defaults.upper} onChange={(e) => change((c) => { c.defaults.upper = e.target.checked; })} /> Print everything in capitals</label>
+          </div>
+        </Section>
 
-      <Section id="fields" title="Field positions">
-        <p className="hint">Inches from the top-left corner of the check. Text sits on the bottom of its box, so a box placed on a pre-printed line puts
-          the writing on the line. Font and size left blank use the defaults above.</p>
-        <div className="table-wrap">
-          <table className="table compact field-table">
-            <thead><tr><th>Field</th><th>Left (x)</th><th>Top (y)</th><th>Width</th><th>Height</th><th>Font</th><th>Size</th><th>Bold</th><th>Capitals</th><th>Align</th><th>Shrink to fit (min pt)</th></tr></thead>
+        <Section id="fields" title="Field positions">
+          <p className="hint">Inches from the top-left corner of the check. Text sits on the bottom of its box, so a box placed on a pre-printed line puts
+            the writing on the line. Font and size left blank use the defaults above.</p>
+          <div className="table-wrap">
+            <table className="table compact field-table">
+              <thead><tr><th>Field</th><th>Left (x)</th><th>Top (y)</th><th>Width</th><th>Height</th><th>Font</th><th>Size</th><th>Bold</th><th>Capitals</th><th>Align</th><th>Shrink to fit (min pt)</th></tr></thead>
+              <tbody>
+                {[...TEXT_FIELDS, "signature", ...(cfg.stock.signature_lines === 2 ? ["signature2"] : [])].map((n) => {
+                  const f = cfg.fields[n];
+                  const isText = !n.startsWith("signature");
+                  return (
+                    <tr key={n} onFocus={() => setHl(n)} onMouseEnter={() => setHl(n)} onMouseLeave={() => setHl(null)}>
+                      <th scope="row">{FIELD_LABELS[n]}</th>
+                      {(["x", "y", "w", "h"] as const).map((k) => <td key={k}><NumIn label={`${FIELD_LABELS[n]} ${k}`} value={f[k]} onChange={(v) => setField(n, k, v)} /></td>)}
+                      {isText ? (
+                        <>
+                          <td><select aria-label={`${FIELD_LABELS[n]} font`} value={f.font || ""} onChange={(e) => setField(n, "font", e.target.value || null)}>
+                            <option value="">Default</option>{fonts.map((x: any) => <option key={x.key} value={x.key}>{x.label.split(" (")[0]}</option>)}
+                          </select></td>
+                          <td><input type="number" aria-label={`${FIELD_LABELS[n]} size`} step={0.5} min={setup.font_sizes.min} max={setup.font_sizes.max} value={f.size ?? ""} placeholder={String(cfg.defaults.size)}
+                                     onChange={(e) => setField(n, "size", e.target.value ? num(e.target.value) : null)} /></td>
+                          <td><input type="checkbox" aria-label={`${FIELD_LABELS[n]} bold`} checked={!!f.bold} onChange={(e) => setField(n, "bold", e.target.checked)} /></td>
+                          <td><select aria-label={`${FIELD_LABELS[n]} capitals`} value={f.upper == null ? "" : f.upper ? "1" : "0"} onChange={(e) => setField(n, "upper", e.target.value === "" ? null : e.target.value === "1")}>
+                            <option value="">Default</option><option value="1">Yes</option><option value="0">No</option></select></td>
+                          <td><select aria-label={`${FIELD_LABELS[n]} align`} value={f.align} onChange={(e) => setField(n, "align", e.target.value)}>
+                            <option value="LEFT">Left</option><option value="CENTER">Center</option><option value="RIGHT">Right</option></select></td>
+                          <td><label className="check"><input type="checkbox" aria-label={`${FIELD_LABELS[n]} shrink to fit`} checked={f.shrink} onChange={(e) => setField(n, "shrink", e.target.checked)} /></label>{" "}
+                            <input type="number" aria-label={`${FIELD_LABELS[n]} smallest size`} step={0.5} min={setup.font_sizes.min} max={setup.font_sizes.max} value={f.min_size} onChange={(e) => setField(n, "min_size", num(e.target.value))} style={{ width: 60 }} /></td>
+                        </>
+                      ) : <td colSpan={6} className="hint">The signature image is scaled to fit the box.</td>}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Section>
+
+        <Section id="amt" title="Amounts">
+          <p className="hint">Both amounts are always generated from the transaction total; nobody types them.</p>
+          <div className="row form-row">
+            <Field label="'AND' in the amount in words">
+              <select value={cfg.amount_words.and_mode} onChange={(e) => change((c) => { c.amount_words.and_mode = e.target.value; })}>
+                <option value="CENTS">Only before the cents (bank convention)</option><option value="HUNDREDS">Also after hundreds ("ONE HUNDRED AND EIGHT")</option>
+              </select>
+            </Field>
+            <label className="check"><input type="checkbox" checked={cfg.amount_words.hyphens} onChange={(e) => change((c) => { c.amount_words.hyphens = e.target.checked; })} /> Hyphens (NINETY-NINE)</label>
+            <Field label="Capitals">
+              <select value={cfg.amount_words.case} onChange={(e) => change((c) => { c.amount_words.case = e.target.value; })}>
+                <option value="UPPER">UPPER CASE</option><option value="TITLE">Title Case</option><option value="LOWER">lower case</option>
+              </select>
+            </Field>
+            <Field label="Whole dollars">
+              <select value={cfg.amount_words.cents} onChange={(e) => change((c) => { c.amount_words.cents = e.target.value; })}>
+                <option value="NN">00/100</option><option value="NO">NO/100</option>
+              </select>
+            </Field>
+          </div>
+          <div className="row form-row">
+            <Field label="Protective fill">
+              <select value={cfg.amount_words.fill} onChange={(e) => change((c) => { c.amount_words.fill = e.target.value; })}>
+                <option value="DOTS">Centered dots</option><option value="DASHES">Centered dashes</option><option value="LINE">Solid centered line</option><option value="STARS">Asterisks</option>
+              </select>
+            </Field>
+            <Field label="Fill placement">
+              <select value={cfg.amount_words.fill_placement} onChange={(e) => change((c) => { c.amount_words.fill_placement = e.target.value; })}>
+                <option value="BETWEEN">Between the words and the cents (cents at the right end)</option><option value="AFTER">After the cents</option>
+              </select>
+            </Field>
+            <Field label="Word after the amount" hint="Leave blank when the stock pre-prints DOLLARS."><input maxLength={20} value={cfg.amount_words.trailing_word} onChange={(e) => change((c) => { c.amount_words.trailing_word = e.target.value; })} /></Field>
+          </div>
+          <div className="row form-row">
+            <label className="check"><input type="checkbox" checked={cfg.amount_number.commas} onChange={(e) => change((c) => { c.amount_number.commas = e.target.checked; })} /> Thousands commas</label>
+            <label className="check"><input type="checkbox" checked={cfg.amount_number.dollar_sign} onChange={(e) => change((c) => { c.amount_number.dollar_sign = e.target.checked; })} /> Print a $ (off when the stock pre-prints it)</label>
+            <Field label="Leading fill">
+              <select value={cfg.amount_number.lead_fill} onChange={(e) => change((c) => { c.amount_number.lead_fill = e.target.value; })}>
+                <option value="">None</option><option value="*">*</option><option value="**">**</option><option value="***">***</option>
+              </select>
+            </Field>
+          </div>
+        </Section>
+
+        <Section id="memo" title="Memo and signature">
+          <PatternInput id="memo-default" label="Default memo" value={cfg.memo_default} variables={setup.variables} onChange={(v) => change((c) => { c.memo_default = v; })} placeholder="e.g. {BUDGET_CODE}, INVOICE {INVOICE}" />
+          {(fitErr as any)?.code === "PATTERN_INVALID" ? <p className="error-text" role="alert">{(fitErr as any).message}</p> : null}
+          <p className="hint">The preview and the test print show this memo filled in with the sample transaction.</p>
+          <div className="row form-row">
+            <Field label="Default signer">
+              <select value={cfg.default_signer_id ?? ""} onChange={(e) => change((c) => { c.default_signer_id = e.target.value ? Number(e.target.value) : null; })}>
+                <option value="">None</option>
+                {setup.signers.filter((x: any) => x.active).map((x: any) => <option key={x.id} value={x.id}>{x.name}{x.title ? ` (${x.title})` : ""}</option>)}
+              </select>
+            </Field>
+            <Field label="No signature above this amount ($, optional)" hint="Above it the signature does not print; the check is signed by hand.">
+              <MoneyIn value={cfg.signature_limit_cents} onChange={(v) => change((c) => { c.signature_limit_cents = v; })} />
+            </Field>
+          </div>
+          <div className="row form-row">
+            <Field label="Signature lines">
+              <select value={cfg.stock.signature_lines} onChange={(e) => change((c) => setLines(c, Number(e.target.value), setup.signature2_default))}>
+                <option value={1}>One signature line</option><option value={2}>Two signature lines (two signers)</option>
+              </select>
+            </Field>
+            {cfg.stock.signature_lines === 2 ? (
+              <>
+                <Field label="Second default signer">
+                  <select value={cfg.default_signer2_id ?? ""} onChange={(e) => change((c) => { c.default_signer2_id = e.target.value ? Number(e.target.value) : null; })}>
+                    <option value="">None (signed by hand)</option>
+                    {setup.signers.filter((x: any) => x.active).map((x: any) => <option key={x.id} value={x.id}>{x.name}{x.title ? ` (${x.title})` : ""}</option>)}
+                  </select>
+                </Field>
+                <Field label="Only one signature above this amount ($, optional)" hint="Above it the second line is left to be signed by hand. Must be below the no-signature amount.">
+                  <MoneyIn value={cfg.second_line_limit_cents} onChange={(v) => change((c) => { c.second_line_limit_cents = v; })} />
+                </Field>
+              </>
+            ) : null}
+          </div>
+          {cfg.stock.signature_lines === 2 ? <p className="hint">The two lines need two different signers. Place the second line under Field positions.</p> : null}
+        </Section>
+
+        <Section id="feed" title="Feed modes">
+          <p className="hint">How the paper goes into the printer. The user picks one when printing (the sheet counter suggests it). The offset moves everything on the
+            check (right / down positive) for this feed mode only; each user can also save a small adjustment for their own printer.</p>
+          <table className="table compact">
+            <thead><tr><th>Label</th><th>Kind</th><th>Details</th><th>Offset right</th><th>Offset down</th><th>Printer note</th><th /></tr></thead>
             <tbody>
-              {[...TEXT_FIELDS, "signature", ...(cfg.stock.signature_lines === 2 ? ["signature2"] : [])].map((n) => {
-                const f = cfg.fields[n];
-                const isText = !n.startsWith("signature");
-                return (
-                  <tr key={n} onFocus={() => setHl(n)} onMouseEnter={() => setHl(n)} onMouseLeave={() => setHl(null)}>
-                    <th scope="row">{FIELD_LABELS[n]}</th>
-                    {(["x", "y", "w", "h"] as const).map((k) => <td key={k}><NumIn label={`${FIELD_LABELS[n]} ${k}`} value={f[k]} onChange={(v) => setField(n, k, v)} /></td>)}
-                    {isText ? (
+              {cfg.feed_modes.map((m: any, i: number) => (
+                <tr key={m.key}>
+                  <td><input aria-label="Feed mode label" maxLength={60} value={m.label} onChange={(e) => change((c) => { c.feed_modes[i].label = e.target.value; })} /></td>
+                  <td>{m.kind === "SHEET" ? "Sheet" : "Single check"}</td>
+                  <td>
+                    {m.kind === "SHEET" ? (
+                      <select aria-label="Position on the sheet" value={m.position} onChange={(e) => change((c) => { c.feed_modes[i].position = Number(e.target.value); })}>
+                        {cfg.stock.check_tops.map((_: number, p: number) => <option key={p} value={p}>{["Top", "Middle", "Bottom"][p] || `#${p + 1}`} check</option>)}
+                      </select>
+                    ) : (
                       <>
-                        <td><select aria-label={`${FIELD_LABELS[n]} font`} value={f.font || ""} onChange={(e) => setField(n, "font", e.target.value || null)}>
-                          <option value="">Default</option>{fonts.map((x: any) => <option key={x.key} value={x.key}>{x.label.split(" (")[0]}</option>)}
-                        </select></td>
-                        <td><input type="number" aria-label={`${FIELD_LABELS[n]} size`} step={0.5} min={setup.font_sizes.min} max={setup.font_sizes.max} value={f.size ?? ""} placeholder={String(cfg.defaults.size)}
-                                   onChange={(e) => setField(n, "size", e.target.value ? num(e.target.value) : null)} /></td>
-                        <td><input type="checkbox" aria-label={`${FIELD_LABELS[n]} bold`} checked={!!f.bold} onChange={(e) => setField(n, "bold", e.target.checked)} /></td>
-                        <td><select aria-label={`${FIELD_LABELS[n]} capitals`} value={f.upper == null ? "" : f.upper ? "1" : "0"} onChange={(e) => setField(n, "upper", e.target.value === "" ? null : e.target.value === "1")}>
-                          <option value="">Default</option><option value="1">Yes</option><option value="0">No</option></select></td>
-                        <td><select aria-label={`${FIELD_LABELS[n]} align`} value={f.align} onChange={(e) => setField(n, "align", e.target.value)}>
-                          <option value="LEFT">Left</option><option value="CENTER">Center</option><option value="RIGHT">Right</option></select></td>
-                        <td><label className="check"><input type="checkbox" aria-label={`${FIELD_LABELS[n]} shrink to fit`} checked={f.shrink} onChange={(e) => setField(n, "shrink", e.target.checked)} /></label>{" "}
-                          <input type="number" aria-label={`${FIELD_LABELS[n]} smallest size`} step={0.5} min={setup.font_sizes.min} max={setup.font_sizes.max} value={f.min_size} onChange={(e) => setField(n, "min_size", num(e.target.value))} style={{ width: 60 }} /></td>
+                        <select aria-label="Which end feeds first" value={m.lead} onChange={(e) => change((c) => { c.feed_modes[i].lead = e.target.value; })}>
+                          <option value="DATE_END">Date end first</option><option value="PAYTO_END">Pay-to end first</option>
+                        </select>{" "}
+                        <select aria-label="Page size" value={m.page} onChange={(e) => change((c) => { c.feed_modes[i].page = e.target.value; })}>
+                          <option value="LETTER">Letter page (no printer setup needed)</option><option value="CHECK">Check-sized page</option>
+                        </select>{" "}
+                        {m.page === "LETTER" ? (
+                          <select aria-label="Manual-feed guides" value={m.guide} onChange={(e) => change((c) => { c.feed_modes[i].guide = e.target.value; })}>
+                            <option value="CENTER">Guides center the paper</option><option value="LEFT">Against the left guide</option><option value="RIGHT">Against the right guide</option>
+                          </select>
+                        ) : null}
                       </>
-                    ) : <td colSpan={6} className="hint">The signature image is scaled to fit the box.</td>}
-                  </tr>
-                );
-              })}
+                    )}
+                  </td>
+                  <td><NumIn label="Offset right" value={m.dx} step={0.0625} min={-setup.limits.feed_offset_max} max={setup.limits.feed_offset_max} onChange={(v) => change((c) => { c.feed_modes[i].dx = v; })} /></td>
+                  <td><NumIn label="Offset down" value={m.dy} step={0.0625} min={-setup.limits.feed_offset_max} max={setup.limits.feed_offset_max} onChange={(v) => change((c) => { c.feed_modes[i].dy = v; })} /></td>
+                  <td><input aria-label="Printer note" maxLength={200} value={m.note || ""} onChange={(e) => change((c) => { c.feed_modes[i].note = e.target.value || null; })} /></td>
+                  <td>{cfg.feed_modes.length > 1 ? <button className="small" onClick={() => change((c) => { c.feed_modes.splice(i, 1); })}>Remove</button> : null}</td>
+                </tr>
+              ))}
             </tbody>
           </table>
-        </div>
-      </Section>
+          <div className="actions left">
+            <button className="small" onClick={() => change((c) => { c.feed_modes.push({ key: `sheet_${Date.now() % 100000}`, label: "Sheet – middle check", kind: "SHEET", position: Math.min(1, c.stock.check_tops.length - 1), lead: "DATE_END", page: "LETTER", guide: "CENTER", dx: 0, dy: 0, note: null }); })}
+                    disabled={cfg.feed_modes.length >= 6}>Add sheet feed mode</button>
+            <button className="small" onClick={() => change((c) => { c.feed_modes.push({ key: `single_${Date.now() % 100000}`, label: "Single check – envelope feed", kind: "SINGLE", position: 0, lead: "DATE_END", page: "LETTER", guide: "CENTER", dx: 0, dy: 0, note: null }); })}
+                    disabled={cfg.feed_modes.length >= 6}>Add single-check feed mode</button>
+          </div>
+        </Section>
 
-      <Section id="amt" title="Amounts">
-        <p className="hint">Both amounts are always generated from the transaction total; nobody types them.</p>
-        <div className="row form-row">
-          <Field label="'AND' in the amount in words">
-            <select value={cfg.amount_words.and_mode} onChange={(e) => change((c) => { c.amount_words.and_mode = e.target.value; })}>
-              <option value="CENTS">Only before the cents (bank convention)</option><option value="HUNDREDS">Also after hundreds ("ONE HUNDRED AND EIGHT")</option>
-            </select>
-          </Field>
-          <label className="check"><input type="checkbox" checked={cfg.amount_words.hyphens} onChange={(e) => change((c) => { c.amount_words.hyphens = e.target.checked; })} /> Hyphens (NINETY-NINE)</label>
-          <Field label="Capitals">
-            <select value={cfg.amount_words.case} onChange={(e) => change((c) => { c.amount_words.case = e.target.value; })}>
-              <option value="UPPER">UPPER CASE</option><option value="TITLE">Title Case</option><option value="LOWER">lower case</option>
-            </select>
-          </Field>
-          <Field label="Whole dollars">
-            <select value={cfg.amount_words.cents} onChange={(e) => change((c) => { c.amount_words.cents = e.target.value; })}>
-              <option value="NN">00/100</option><option value="NO">NO/100</option>
-            </select>
-          </Field>
-        </div>
-        <div className="row form-row">
-          <Field label="Protective fill">
-            <select value={cfg.amount_words.fill} onChange={(e) => change((c) => { c.amount_words.fill = e.target.value; })}>
-              <option value="DOTS">Centered dots</option><option value="DASHES">Centered dashes</option><option value="LINE">Solid centered line</option><option value="STARS">Asterisks</option>
-            </select>
-          </Field>
-          <Field label="Fill placement">
-            <select value={cfg.amount_words.fill_placement} onChange={(e) => change((c) => { c.amount_words.fill_placement = e.target.value; })}>
-              <option value="BETWEEN">Between the words and the cents (cents at the right end)</option><option value="AFTER">After the cents</option>
-            </select>
-          </Field>
-          <Field label="Word after the amount" hint="Leave blank when the stock pre-prints DOLLARS."><input maxLength={20} value={cfg.amount_words.trailing_word} onChange={(e) => change((c) => { c.amount_words.trailing_word = e.target.value; })} /></Field>
-        </div>
-        <div className="row form-row">
-          <label className="check"><input type="checkbox" checked={cfg.amount_number.commas} onChange={(e) => change((c) => { c.amount_number.commas = e.target.checked; })} /> Thousands commas</label>
-          <label className="check"><input type="checkbox" checked={cfg.amount_number.dollar_sign} onChange={(e) => change((c) => { c.amount_number.dollar_sign = e.target.checked; })} /> Print a $ (off when the stock pre-prints it)</label>
-          <Field label="Leading fill">
-            <select value={cfg.amount_number.lead_fill} onChange={(e) => change((c) => { c.amount_number.lead_fill = e.target.value; })}>
-              <option value="">None</option><option value="*">*</option><option value="**">**</option><option value="***">***</option>
-            </select>
-          </Field>
-        </div>
-      </Section>
+        {cfg.stubs?.length ? <StubsSection cfg={cfg} setup={setup} change={change} /> : null}
 
-      <Section id="memo" title="Memo and signature">
-        <PatternInput id="memo-default" label="Default memo" value={cfg.memo_default} variables={setup.variables} onChange={(v) => change((c) => { c.memo_default = v; })} placeholder="e.g. {BUDGET_CODE}, INVOICE {INVOICE}" />
-        {(fitErr as any)?.code === "PATTERN_INVALID" ? <p className="error-text" role="alert">{(fitErr as any).message}</p> : null}
-        <p className="hint">The preview and the test print show this memo filled in with the sample transaction.</p>
-        <div className="row form-row">
-          <Field label="Default signer">
-            <select value={cfg.default_signer_id ?? ""} onChange={(e) => change((c) => { c.default_signer_id = e.target.value ? Number(e.target.value) : null; })}>
-              <option value="">None</option>
-              {setup.signers.filter((x: any) => x.active).map((x: any) => <option key={x.id} value={x.id}>{x.name}{x.title ? ` (${x.title})` : ""}</option>)}
-            </select>
-          </Field>
-          <Field label="No signature above this amount ($, optional)" hint="Above it the signature does not print; the check is signed by hand.">
-            <MoneyIn value={cfg.signature_limit_cents} onChange={(v) => change((c) => { c.signature_limit_cents = v; })} />
-          </Field>
-        </div>
-        <div className="row form-row">
-          <Field label="Signature lines">
-            <select value={cfg.stock.signature_lines} onChange={(e) => change((c) => setLines(c, Number(e.target.value), setup.signature2_default))}>
-              <option value={1}>One signature line</option><option value={2}>Two signature lines (two signers)</option>
-            </select>
-          </Field>
-          {cfg.stock.signature_lines === 2 ? (
-            <>
-              <Field label="Second default signer">
-                <select value={cfg.default_signer2_id ?? ""} onChange={(e) => change((c) => { c.default_signer2_id = e.target.value ? Number(e.target.value) : null; })}>
-                  <option value="">None (signed by hand)</option>
-                  {setup.signers.filter((x: any) => x.active).map((x: any) => <option key={x.id} value={x.id}>{x.name}{x.title ? ` (${x.title})` : ""}</option>)}
-                </select>
-              </Field>
-              <Field label="Only one signature above this amount ($, optional)" hint="Above it the second line is left to be signed by hand. Must be below the no-signature amount.">
-                <MoneyIn value={cfg.second_line_limit_cents} onChange={(v) => change((c) => { c.second_line_limit_cents = v; })} />
-              </Field>
-            </>
-          ) : null}
-        </div>
-        {cfg.stock.signature_lines === 2 ? <p className="hint">The two lines need two different signers. Place the second line under Field positions.</p> : null}
-      </Section>
-
-      <Section id="feed" title="Feed modes">
-        <p className="hint">How the paper goes into the printer. The user picks one when printing (the sheet counter suggests it). The offset moves everything on the
-          check (right / down positive) for this feed mode only; each user can also save a small adjustment for their own printer.</p>
-        <table className="table compact">
-          <thead><tr><th>Label</th><th>Kind</th><th>Details</th><th>Offset right</th><th>Offset down</th><th>Printer note</th><th /></tr></thead>
-          <tbody>
-            {cfg.feed_modes.map((m: any, i: number) => (
-              <tr key={m.key}>
-                <td><input aria-label="Feed mode label" maxLength={60} value={m.label} onChange={(e) => change((c) => { c.feed_modes[i].label = e.target.value; })} /></td>
-                <td>{m.kind === "SHEET" ? "Sheet" : "Single check"}</td>
-                <td>
-                  {m.kind === "SHEET" ? (
-                    <select aria-label="Position on the sheet" value={m.position} onChange={(e) => change((c) => { c.feed_modes[i].position = Number(e.target.value); })}>
-                      {cfg.stock.check_tops.map((_: number, p: number) => <option key={p} value={p}>{["Top", "Middle", "Bottom"][p] || `#${p + 1}`} check</option>)}
-                    </select>
-                  ) : (
-                    <>
-                      <select aria-label="Which end feeds first" value={m.lead} onChange={(e) => change((c) => { c.feed_modes[i].lead = e.target.value; })}>
-                        <option value="DATE_END">Date end first</option><option value="PAYTO_END">Pay-to end first</option>
-                      </select>{" "}
-                      <select aria-label="Page size" value={m.page} onChange={(e) => change((c) => { c.feed_modes[i].page = e.target.value; })}>
-                        <option value="LETTER">Letter page (no printer setup needed)</option><option value="CHECK">Check-sized page</option>
-                      </select>{" "}
-                      {m.page === "LETTER" ? (
-                        <select aria-label="Manual-feed guides" value={m.guide} onChange={(e) => change((c) => { c.feed_modes[i].guide = e.target.value; })}>
-                          <option value="CENTER">Guides center the paper</option><option value="LEFT">Against the left guide</option><option value="RIGHT">Against the right guide</option>
-                        </select>
-                      ) : null}
-                    </>
-                  )}
-                </td>
-                <td><NumIn label="Offset right" value={m.dx} step={0.0625} min={-setup.limits.feed_offset_max} max={setup.limits.feed_offset_max} onChange={(v) => change((c) => { c.feed_modes[i].dx = v; })} /></td>
-                <td><NumIn label="Offset down" value={m.dy} step={0.0625} min={-setup.limits.feed_offset_max} max={setup.limits.feed_offset_max} onChange={(v) => change((c) => { c.feed_modes[i].dy = v; })} /></td>
-                <td><input aria-label="Printer note" maxLength={200} value={m.note || ""} onChange={(e) => change((c) => { c.feed_modes[i].note = e.target.value || null; })} /></td>
-                <td>{cfg.feed_modes.length > 1 ? <button className="small" onClick={() => change((c) => { c.feed_modes.splice(i, 1); })}>Remove</button> : null}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-        <div className="actions left">
-          <button className="small" onClick={() => change((c) => { c.feed_modes.push({ key: `sheet_${Date.now() % 100000}`, label: "Sheet – middle check", kind: "SHEET", position: Math.min(1, c.stock.check_tops.length - 1), lead: "DATE_END", page: "LETTER", guide: "CENTER", dx: 0, dy: 0, note: null }); })}
-                  disabled={cfg.feed_modes.length >= 6}>Add sheet feed mode</button>
-          <button className="small" onClick={() => change((c) => { c.feed_modes.push({ key: `single_${Date.now() % 100000}`, label: "Single check – envelope feed", kind: "SINGLE", position: 0, lead: "DATE_END", page: "LETTER", guide: "CENTER", dx: 0, dy: 0, note: null }); })}
-                  disabled={cfg.feed_modes.length >= 6}>Add single-check feed mode</button>
-        </div>
-      </Section>
-
-      {cfg.stubs?.length ? <StubsSection cfg={cfg} setup={setup} change={change} /> : null}
-
-      <Section id="tp" title="Test print and calibration">
-        <p className="hint">Print on plain paper first and hold it over a blank check against a light. The calibration page shows rulers and where each field
-          starts; the test print shows the sample check. Both use your unsaved changes.</p>
-        <div className="row form-row">
-          <Field label="Feed mode">
-            <select value={testFeed} onChange={(e) => setTestFeed(e.target.value)}>
-              {cfg.feed_modes.map((m: any) => <option key={m.key} value={m.key}>{m.label}</option>)}
-            </select>
-          </Field>
-          <Field label="Signature on the test print">
-            <select value={testSigner} onChange={(e) => setTestSigner(e.target.value)}>
-              <option value="">Outlined box only</option>
-              {setup.signers.filter((x: any) => x.active && x.has_image).map((x: any) => <option key={x.id} value={x.id}>{x.name}</option>)}
-            </select>
-          </Field>
-          <button disabled={busy} onClick={() => pdfReq("calibration")}>Calibration page</button>
-          <button disabled={busy} onClick={() => pdfReq("test-print")}>Test print</button>
-          {pdf && !viewing ? <button className="link" onClick={() => setViewing("Last test page")}>Show the last page again</button> : null}
-        </div>
-        {fm?.note ? <p className="hint">Printer note: {fm.note}</p> : null}
-        <BrowserTips singleFeed={fm?.kind === "SINGLE"} />
-        {pdf && viewing ? <PdfViewer pdf={pdf} title={viewing} singleFeed={fm?.kind === "SINGLE"} onClose={() => setViewing(null)} /> : null}
-      </Section>
+        <Section id="tp" title="Test print and calibration">
+          <p className="hint">Print on plain paper first and hold it over a blank check against a light. The calibration page shows rulers and where each field
+            starts; the test print shows the sample check. Both use your unsaved changes.</p>
+          <div className="row form-row">
+            <Field label="Feed mode">
+              <select value={testFeed} onChange={(e) => setTestFeed(e.target.value)}>
+                {cfg.feed_modes.map((m: any) => <option key={m.key} value={m.key}>{m.label}</option>)}
+              </select>
+            </Field>
+            <Field label="Signature on the test print">
+              <select value={testSigner} onChange={(e) => setTestSigner(e.target.value)}>
+                <option value="">Outlined box only</option>
+                {setup.signers.filter((x: any) => x.active && x.has_image).map((x: any) => <option key={x.id} value={x.id}>{x.name}</option>)}
+              </select>
+            </Field>
+          </div>
+          {/* 2.3.0 (#394): the buttons on a line of their own - in the narrower settings column the row wraps */}
+          <div className="actions left">
+            <button disabled={busy} onClick={() => pdfReq("calibration")}>Calibration page</button>
+            <button disabled={busy} onClick={() => pdfReq("test-print")}>Test print</button>
+            {pdf && !viewing ? <button className="link" onClick={() => setViewing("Last test page")}>Show the last page again</button> : null}
+          </div>
+          {fm?.note ? <p className="hint">Printer note: {fm.note}</p> : null}
+          <BrowserTips singleFeed={fm?.kind === "SINGLE"} />
+          {pdf && viewing ? <PdfViewer pdf={pdf} title={viewing} singleFeed={fm?.kind === "SINGLE"} onClose={() => setViewing(null)} /> : null}
+        </Section>
+      </SetupLayout>
       <div className="actions sticky-actions">
         {saved ? <span className="hint" role="status">Saved.</span> : null}
         <button onClick={() => { setCfg(clone(style.config)); setName(style.name); setDirty(false); }} disabled={!dirty}>Undo changes</button>

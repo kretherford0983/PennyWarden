@@ -57,6 +57,12 @@ With the EIN turned off, a Register User can still include it on **one** receipt
 donor's *Details for the receipt* — for example for a non-cash gift over $500, where the donor needs the EIN for
 Form 8283. Saving asks you to confirm and give a reason, and printing asks once more; both are recorded.
 
+### The receipt preview stays in view
+On a wide screen the preview of the receipt now sits beside the settings and stays in view while you scroll, so you
+can watch each change. Choose **Receipt** or **Year-end statement** above the preview to see either letter. On a
+narrow screen the preview is at the top of the page; tick **Keep at the top** to keep it there while you scroll. The
+check style, cover letter and envelope editors work the same way.
+
 ### Signers for receipts and statements
 Signers are now kept on one **Signers** page (Administrators, next to Envelopes), shared by checks, payment cover
 letters and donation letters. Add a signer there, upload a signature image if you want one, and tick what the signer
