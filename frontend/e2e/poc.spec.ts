@@ -852,11 +852,18 @@ test("2.1.0 (#262, #260, #259): register sort, electronic payment, reorder attac
   // #262: sort by Cleared (the balance column becomes the cleared balance), remembered after a reload, then reset
   const cleared = page.getByRole("columnheader", { name: "Cleared", exact: true });
   await expect(cleared).toHaveAttribute("aria-sort", "none");
+  const savedAsc = page.waitForResponse((r) => r.url().includes("/api/me/preferences") && r.request().method() === "PUT"
+    && (r.request().postData() || "").includes("clear_date:asc"));
   await cleared.getByRole("button").click();
   await expect(cleared).toHaveAttribute("aria-sort", "ascending");
+  await savedAsc;
   await expect(page.getByRole("columnheader", { name: "Cleared balance" })).toBeVisible();
+  // the sort is saved by a request the page doesn't wait for: wait for the "descending" save before reloading
+  const savedDesc = page.waitForResponse((r) => r.url().includes("/api/me/preferences") && r.request().method() === "PUT"
+    && (r.request().postData() || "").includes("clear_date:desc"));
   await cleared.getByRole("button").click();
   await expect(cleared).toHaveAttribute("aria-sort", "descending");
+  expect((await savedDesc).ok()).toBeTruthy();
   await page.reload();
   await expect(page.getByRole("columnheader", { name: "Cleared", exact: true })).toHaveAttribute("aria-sort", "descending");
   await page.getByRole("button", { name: "Reset to default" }).click();
