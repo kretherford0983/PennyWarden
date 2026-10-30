@@ -23,7 +23,12 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # 2.3.0 (#420): code reaches develop/test/main only through a pull request whose CI ran the full suite on the
+  # up-to-date branch (ruleset: required checks + "require branches to be up to date"), so a push build does not run
+  # it again. A hand-run build (Actions -> build -> Run workflow, e.g. on a feature branch) still tests first.
+  # Every later job uses !failure() && !cancelled() so a skipped tests job doesn't skip packaging.
   tests:
+    if: github.event_name == 'workflow_dispatch'
     uses: ./.github/workflows/tests.yml
     with:
       # 1.8.0 (#98): develop may carry a merged Dependabot update until the notices are regenerated there;
@@ -32,6 +37,7 @@ jobs:
 
   package:
     needs: tests
+    if: ${{ !failure() && !cancelled() }}
     runs-on: ubuntu-26.04
     timeout-minutes: 30
     outputs:
@@ -103,6 +109,7 @@ jobs:
   windows-exe:
     # v1.5.0 CR-026: one-file .exe (PyInstaller --onefile) + smoke test of the .exe and of the portable zip.
     needs: package
+    if: ${{ !failure() && !cancelled() }}
     runs-on: windows-latest
     timeout-minutes: 40
     defaults:
@@ -188,6 +195,7 @@ jobs:
   macos-app:
     # 1.6.7: PennyWarden.app (PyInstaller app bundle, arm64, ad hoc signed) in a .dmg + smoke tests.
     needs: package
+    if: ${{ !failure() && !cancelled() }}
     runs-on: macos-15          # Apple Silicon (arm64) runner
     timeout-minutes: 40
     steps:
@@ -231,6 +239,7 @@ jobs:
   assemble:
     # All release files + SHA256SUMS.txt (install.sh verifies against it). Publishing waits for all smoke tests.
     needs: [package, windows-exe, macos-app]
+    if: ${{ !failure() && !cancelled() }}
     runs-on: ubuntu-26.04
     steps:
       - uses: actions/download-artifact@v8
@@ -257,7 +266,7 @@ jobs:
 
   publish:
     needs: [package, assemble]
-    if: github.ref_name == 'test' || github.ref_name == 'main'
+    if: ${{ !failure() && !cancelled() && (github.ref_name == 'test' || github.ref_name == 'main') }}
     runs-on: ubuntu-26.04
     permissions:
       contents: write
@@ -320,7 +329,7 @@ jobs:
   # build (test channel). Started on main, so the live page is always the released one.
   site:
     needs: publish
-    if: github.ref_name == 'test' || github.ref_name == 'main'
+    if: ${{ !failure() && !cancelled() && (github.ref_name == 'test' || github.ref_name == 'main') }}
     runs-on: ubuntu-26.04
     permissions:
       actions: write
