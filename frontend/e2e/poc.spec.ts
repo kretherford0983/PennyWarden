@@ -2244,6 +2244,7 @@ test("2.1.0 (#277): next year's fundraiser continues the series, prior years ent
   // 2.3.0 (#375): a shortcut to the report's page in Reports, with this year and the ticked fundraisers
   await expect(page).toHaveURL(/\/reports\/fundraising-fy\?fiscal_year_id=\d+&ids=/);
   dlg = page.locator(".report-body");
+  await expect(dlg.getByTestId("fy-report-fundraisers")).toBeVisible();     // the year's saved notes are loaded
   await dlg.getByLabel("Include targeted total").check();
   await dlg.getByLabel(/Notes \(printed/).fill("Matching gifts expected.");
   await dlg.getByRole("button", { name: "Save notes" }).click();
