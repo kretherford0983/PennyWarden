@@ -1838,6 +1838,27 @@ test("#381: a budget from before PennyWarden is created, given a year and contin
   await page.screenshot({ path: "e2e-screenshots/light-before-pennywarden.png" });
   await d.locator(".actions").getByRole("button", { name: "Close" }).last().click();
   await expect(list.getByRole("table", { name: "Budgets from before PennyWarden" })).toContainText("FY2041 8970 Bowling");
+  // #411: search, Type/Continued filters, sortable headings and Clear (back to Code, ascending)
+  const ftable = list.getByRole("table", { name: "Budgets from before PennyWarden" });
+  const clear = list.getByRole("button", { name: "Clear", exact: true });
+  await expect(clear).toBeDisabled();
+  await list.getByLabel("Search").fill("bowling tour");
+  await expect(ftable).toContainText("450");
+  await list.getByLabel("Type").selectOption("INCOME");
+  await expect(list.getByTestId("former-none-match")).toBeVisible();
+  await list.getByLabel("Type").selectOption("EXPENSE");
+  await list.getByLabel("Continued").selectOption("no");
+  await expect(list.getByTestId("former-none-match")).toBeVisible();
+  await list.getByLabel("Continued").selectOption("yes");
+  await expect(ftable).toContainText("FY2041 8970 Bowling");
+  await ftable.getByRole("button", { name: "Name", exact: true }).click();
+  await expect(ftable.locator("th").nth(1)).toHaveAttribute("aria-sort", "ascending");
+  await expect(clear).toBeEnabled();
+  await clear.click();
+  await expect(list.getByLabel("Search")).toHaveValue("");
+  await expect(ftable.locator("th").nth(0)).toHaveAttribute("aria-sort", "ascending");
+  await expect(ftable.locator("th").nth(1)).toHaveAttribute("aria-sort", "none");
+  await expect(clear).toBeDisabled();
   await list.locator(".actions").getByRole("button", { name: "Close" }).last().click();
   // the budget's History shows the years and the link; Unlink removes them from its History
   await page.getByRole("button", { name: "History of 8970" }).click();
