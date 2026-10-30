@@ -2,7 +2,240 @@
 
 Versions are `Breaking.Major.Minor` from 1.6.0 (docs/branching.md).
 
-## 2.1.2 — unreleased
+## 2.2.0 — unreleased
+PennyWarden 2.2.0 (in progress).
+
+### Security
+- **Sign-in: a refused password is cleared (#343).** After a wrong username or password (or too many attempts) the
+  password field is emptied and the cursor put back in it; the username is kept. The message still doesn't say which
+  of the two was wrong.
+- **Password requirements, ticked off as you type (#343).** *My account → Change password* shows the requirements
+  beside the fields (stacked on a phone): at least 12 characters (at most 128), a letter and a digit, not the
+  username, different from the current password, and the confirmation matches. Each is red until met, then green with
+  a check mark; screen readers hear "met" / "not met". A refused change keeps what was typed. The same list appears
+  wherever a new password is chosen (after a temporary password, *Forgot password?*, the Initialization Wizard, and
+  an Administrator creating a user or resetting a password). The requirements come from the server
+  (`GET /api/auth/password-policy`); the password rules themselves are unchanged.
+- **Two-step verification: use your own authenticator key (#327).** Setting up two-step verification offers *Use my
+  own key instead* under the generated key: the key from an authenticator entry you already have (at least 16
+  Base32 characters; a note under 32) or an `otpauth://totp/` link (6 digits, 30 seconds, SHA-1 only). After a reset
+  your existing authenticator entry keeps working. A current code made with the key is still required, a new set of
+  recovery codes is issued, and the key never appears in logs, the audit log or error messages.
+- **Reset two-step verification: *Possible compromise* (#327).** An Administrator's reset (and
+  `pennywarden reset-mfa --compromised`) can be marked as a possible compromise: the user's next setup then accepts
+  only a newly generated key. The audit log records the marking and whether a setup used an own key (`compromised`,
+  `own_key`), never the key.
+- **FastAPI 0.162.0, Starlette 1.10.0, pydantic 2.14.1 (#339).** Framework updates (Starlette's request-URL
+  hardening, pydantic's validation fixes). No change in how PennyWarden behaves.
+- **Other dependency updates** (from Dependabot #352 and #353): SQLAlchemy 2.1.6, Alembic 1.20.1, ReportLab 5.1.0,
+  XlsxWriter 3.3.0, and the build tool Vite 6.4.5 (a security fix for its development server, which PennyWarden
+  doesn't ship). Bug-fix releases; no change in how PennyWarden behaves.
+
+### Backup and restore
+- **Choose what to restore (#319).** After the backup is checked, **What to restore** lists its parts — **Data**
+  (always as one unit), **Settings** (General, Backups, Payments Setup, Donations Setup, Branding, each on its own),
+  **Reminders** and **Users** — all ticked. Untick what should stay as it is now, choose **Review** to see what will be
+  replaced and kept, then restore. Everything ticked is the full restore as before.
+  - A partial restore **keeps the current audit log** and records what was restored.
+  - Users created after the backup are kept but inactivated when Users are restored without Data.
+  - If the restored records refer to users who aren't here, they are listed first: add just those users from the
+    backup, or restore Users too.
+  - The backup's encryption key is always used; what is kept is re-encrypted with it when the backup comes from another
+    installation (moving to a new host).
+  - On the command line: `pennywarden restore FILE --only data,reminders` or `--skip settings,users`, and
+    `pennywarden restore FILE --list` shows the parts a backup holds. See docs/backup-restore.md.
+
+### Try the demo
+- **A ready-made demo (#243).** Each release now includes `pennywarden-demo-<version>.fmbak`: a made-up band boosters
+  club with this year's approved budget, a register with receipts, a fundraiser, reminders, printed checks with a
+  ready-made payment cover letter, last year closed, and two years before PennyWarden entered from its "old
+  spreadsheets" (one budget renamed, one renumbered, one that stopped). Restore it on the first screen of a new install (passphrase `pennywarden demo`) and sign in as
+  `demo-admin`, `demo-budget`, `demo-register` or `demo-auditor` (password `Demo-PennyWarden-2026`).
+  - A **DEMO** banner on every page. Nothing is kept: the demo is put back on every start and by **Reset demo data**
+    (on the banner, and on the sign-in page for anyone locked out).
+  - The demo runs only on the computer it's installed on (its passwords and key are published): no server mode, no
+    network address.
+  - **Remove the demo and start fresh** (the demo Administrator, or `pennywarden remove-demo`) removes everything of
+    it — data, users, audit log and its key — and the Initialization Wizard comes next.
+  - pennywarden.org has a *Try the demo* section. See docs/demo.md.
+
+### Testing mode (server installs)
+- **A test server that doesn't make you wait (#231).** `testing_mode = true` in `config.toml` (only there — never from
+  the web) turns a server install into a test server: a striped **TESTING MODE** banner on every page, including the
+  sign-in page, and **System/About → Testing** for Administrators, which moves timers and schedules instead of waiting:
+  - the next scheduled backup (or *Run as if due now*), and *Retry the failed backup now*;
+  - backup runs moved back in time, to see what retention keeps and removes;
+  - the time of the last successful backup, to bring up (or clear) the backup reminder;
+  - clearing the reinitialize cooldown;
+  - moving an organization reminder's due date;
+  - *Check for updates now*.
+  The real clock is never moved, nothing financial changes, and every action is in the audit log as a testing action.
+  Backups made in testing mode are marked: the app won't restore one onto a server that isn't in testing mode (the
+  server owner can, with `pennywarden restore FILE --accept-testing-backup`). Local installs ignore the setting for now.
+
+### Budgets
+- **Budget history before PennyWarden (#284, #381).** Budget Managers can enter the budgeted and actual figures of
+  years before the first Fiscal Year in PennyWarden, from the old spreadsheets, so a budget's history is complete:
+  - **Budgets from before PennyWarden** (*Budgets → Before PennyWarden…*): each budget as it was in the old
+    spreadsheets (code, name, Income or Expense) with its years, with search, Type and Continued filters, sortable
+    columns and **Clear** (#411). Every financial role and Auditors can read them.
+  - **Linked, never matched by code.** A budget in PennyWarden shows those years once it *continues* one of them:
+    choose it under **Continues** (a *Before PennyWarden* group) or link it from either side. So a budget that ran
+    in 2022 and 2023, skipped some years and comes back can show its old years again; and a code that was reused
+    for a different budget stays separate (unlink it, rename it, link it to the right budget — nothing is
+    re-entered).
+  - **Any level.** A former budget can be continued by a budget or a sub-budget (an old flat 101 by today's 100-01),
+    and by a parent's **Other** (-00), where the old spreadsheets kept the uncategorized amounts on the parent row.
+    A parent without its own figure for a year shows the sum of its sub-budgets' and Other's; if both are entered
+    and differ, a note says so.
+  - **Each year keeps the code and name it had**, and the budget is shown under its most recent ones (2024 *104
+    Raffle Fundraiser*, 2025 *104 Raffle* → *104 Raffle*). The Budget Review says *as …* where a year was called
+    differently.
+  - **On a budget's History** each entered year shows the code and name the budget had that year. *Add an earlier year* (creates the budget from before PennyWarden and the link the
+    first time), *Link… / Change… / Unlink*. Entries can be corrected or retired (with a reason), never deleted;
+    a budget from before PennyWarden can be retired too. Every change is in the audit log.
+  - **From a CSV file:** *Budgets → Import earlier years…* takes *budget code, type, former code, former name, year,
+    budgeted, actual, note, line*. The budget code is the budget of the chosen Fiscal Year that continues it (empty
+    for one nothing continues; then the type is needed). Rows with the same budget code are one budget; without
+    one, rows with the same former code are; the *line* column keeps a renumbered budget together. The template
+    lists the year's budgets (with -00 for Other) and template rows left empty are skipped. A preview shows each
+    budget from before PennyWarden (new or existing), the link it gets and each row (saved, duplicate or refused with
+    the reason) before anything is saved.
+  - **Where they show:** the budget's History and the **Budget Review** (screen, PDF and CSV — and so the review
+    appended to the Planning Sheet), after the Fiscal Years in PennyWarden, labelled *Entered*. Not in the dashboard
+    charts. They never change actuals, registers or Fiscal Year closure.
+  - Years a Fiscal Year in PennyWarden covers are refused, so nothing is counted twice.
+
+### Reports
+- **Comparisons to a date before any data (#348).** A Financial Flow Report compared with a date before an account's
+  first data now uses its **earliest available data** — the first dated balance, or the register's opening balance —
+  instead of $0, so the Change column no longer shows the whole balance as growth. The review screen marks each such
+  account (ⓘ, with how to give it a real balance on that date). The new report option **Show notes on substituted
+  starting values** (off by default) prints a note for each one, for example "Savings: starting balance is the first
+  recorded balance, 2026-07-01 (no data on 2026-01-01)."
+- **Bank accounts: *Account opened* (optional, #348).** For an account opened after PennyWarden was set up: dates
+  before it count as $0, the report doesn't list it before then, and dashboard balance charts start there. Blank
+  means the account existed before PennyWarden. Changes are audited.
+- **Budget Review: "history on parent" only where it can be true.** A sub-budget with no figures of its own in a
+  year now shows *history on parent* only when the parent held one amount that year (no sub-budgets besides Other).
+  Where the parent's figure is its sub-budgets' (recorded with sub-budgets, or entered as their sum), the new
+  sub-budget shows "—": it had no history then. Same on screen, in the PDF and the CSV.
+
+### Donations part 2 (#325)
+- **A Donations page** (navigation, when the module is on): Register Users record donations and print receipts there;
+  the other financial roles and Auditors see them.
+- **A receipt before the money.** A donation can be recorded and its receipt printed before anything is deposited;
+  without a received date the receipt prints *Date received* blank, to fill in by hand. **Create transaction** then
+  records the deposit from the chosen donations (one allocation per donation, split further if needed), links them
+  and attaches their printed receipts. Money not yet deposited shows *Awaiting deposit*.
+- **Items (not money).** Listed on the receipt by description only, with a note (editable in Donations Setup, at least
+  8 words; empty = the default); the receipt total covers money only. An optional estimated value for the
+  organization's records (never printed), *Value not entered* until there is one or *No value will be provided* with a
+  reason, and **Received** with its date. The Audit and Close reports list **Non-cash donations received** in the year.
+- **One donation model** for both flows: donations marked on a deposit (2.1) are migrated into it. The register wins
+  after linking; voiding a deposit created from donations unlinks them (receipts stay valid), while donations marked
+  on a deposit keep void receipts as before. Cancel (with a reason) only while nothing is received. Received lines in
+  a Closed Fiscal Year are locked. Audited: `DONATION_CREATED`, `DONATION_UPDATED`, `DONATION_LINKED`,
+  `DONATION_UNLINKED`, `DONATION_CANCELLED`.
+- **Envelopes for receipts, from one shared envelope library.** Envelope templates are now one library used by
+  Payments and Donations: each template has *Used for* tags and each feature its own default. A global **Envelopes**
+  page (Administrators) lists them all; Payments Setup and Donations Setup each list their own, create templates for
+  themselves and add other templates to themselves. Removing a feature's tag from its default asks for another
+  default; removing it from the last one hides envelope printing there. A template no feature uses stays as *Not
+  used* (never deleted). Editing a shared template says *Also used for …*; **Duplicate for … only** makes a separate
+  copy. Your envelope printer adjustments belong to the template, so they apply wherever it is used. Upgrading tags
+  every existing envelope Payments; nothing else changes for Payments.
+- **Print the donor's envelope** after a receipt (Donations page and the deposit's dialog), with the Donations
+  default first, the return address on or off, *Test on plain paper* and *My envelope printer settings*. The printed
+  envelope is kept with the donation and on its deposit (Create transaction carries it over). Audited:
+  `DONATION_ENVELOPE_PRINTED`, `DONATION_ENVELOPE_TEST`, `ENVELOPE_TAGS_UPDATED`.
+- **Window envelopes and fold marks for receipts** (Donations Setup), as on cover letters: the address on the receipt
+  or on a separate address page, the organization's address in the upper window, fold marks on the front or back. A
+  window receipt hides the envelope step (*Print an envelope anyway*).
+
+### Year-end giving statements, donor report, fundraiser donations (#256)
+- **Year-end giving statements** (Donations page → *Year-end statements*). One letter per donor and calendar year
+  listing the donations received that year: money deposited in the register and items ticked Received (items by
+  description only, no value), with the money total and the receipt's required statements. Cancelled donations,
+  voided deposits and money awaiting a deposit are left out. Register Users print one donor, or **all donors** for a
+  year as one PDF with an optional minimum total; the other financial roles and Auditors see them. Each statement is
+  kept and numbered per year (S-2026-0001); the same content again prints a *Duplicate*, a change a *Corrected*
+  statement. Envelopes as for receipts. The letter's wording is in Donations Setup (*Year-end statement letter*,
+  with `{YEAR}`, `{TOTAL}`, `{STATEMENT_NO}` and `{DONATION_TABLE}`), with a preview and a test print (sample data).
+  Audited: `DONATION_STATEMENT_PRINTED`, `DONATION_STATEMENTS_PRINTED_ALL`.
+- **Donor report** (Donations page → *Donor report*, all financial roles and Auditors). Each donor's money by
+  calendar year (up to 5 years side by side) and the total, the number of gifts, the last gift, and items with their
+  internal estimated value; each donor expands to their donations. Filters: years, donor, minimum total. PDF (in the
+  organization's branding) and CSV, optionally with each donation.
+- **Fundraiser donation buckets.** A bucket can be marked **Donations**: in a deposit's *Donation receipt…* dialog its
+  lines start ticked as a suggestion (saved only when you Save). The fundraiser lists **Donations without a receipt**
+  with a link to each deposit.
+
+### Entities: names, display name, mailing address and template variables (#315, #316, #317)
+- **First and last name** replace the Primary Contact (the person of an Individual, an Organization's contact
+  person). An Individual needs a first name. The upgrade splits each Primary Contact at the first space; Budget
+  Managers see the split names under **Names to review** on the Entities page until each is edited or confirmed.
+- **Name order per user** (My account → *Show people's names as*): *First Last* or *Last, First*, for how Individuals
+  show and sort in the Entities list and the entity pickers.
+- **Display name** (optional, *Display name same as Name* unticked): shown in the register, pickers, lists and
+  reports; checks, envelopes, letters, receipts and statements print the **name**. **Mailing address** (optional,
+  *Mailing address same as Address* unticked): letters, envelopes, receipts and statements use it — the organization
+  profile has one too. "Same as" falls back when reading, so nothing is copied. Search and the duplicate warning use
+  both names. **EIN** on organizations (12-3456789).
+- **Entity variables by role**: `{PAYEE.*}` on checks, stubs, letters and envelopes and `{DONOR.*}` on receipts and
+  statements — NAME, DISPLAY_NAME, FIRST_NAME, LAST_NAME, ADDRESS, MAILING_ADDRESS, ADDRESS1, ADDRESS2, CITY, STATE,
+  ZIP, COUNTRY, PHONE, EMAIL, EIN, ENTITY_NUMBER (case doesn't matter; the older names still work). The variable list
+  groups them by role.
+- **Addressee block**: cover letters (Payments Setup) and receipts and statements (Donations Setup) have up to six
+  addressee lines built from these variables. The default — name and mailing address — prints as before.
+
+### System/About for everyone (#349)
+- **Financial users** (Budget Managers, Budget Users, Register Users) now have **System/About**, read-only, with two
+  tabs. **About**: the version — the same an Administrator sees, so it is easy to tell over the phone — and the update
+  check: whether it is on, when it last ran and its result, with *What's new* (no *Check now*, no switch).
+  **General**: the organization details and every optional module, enabled or disabled, which roles use it and
+  whether yours does (e.g. *Payments — Register Users*).
+- **Auditors** get the read-only **General** tab too.
+- Only Administrators change anything there. Settings, Backups, Security, System health and Advanced stay hidden,
+  and the "create backups" notice is not shown to financial users — backups are the Administrator's duty.
+
+### Fundraiser series (#302, #351)
+- **Events held more than once a year.** *Start a series…* (on *Fundraiser series*) can now **Add to an existing
+  series**, and a fundraiser in no series has **Add to a series…** on its page — for example a spring and a fall
+  breakfast in their first year in PennyWarden, when there is nothing earlier to continue from. Both count in the
+  same year. Refused when the series already has an entered result for that year, so a year is never counted twice.
+  Audited like a link change. A hint on *Fundraiser series* explains it.
+- **Years in order, newest first.** Each series is one list by year — fundraisers recorded in PennyWarden and
+  entered prior years mixed — with the current year on top. Click **Year** to show oldest first; the choice applies
+  to every series and is remembered for you. Within a year: fundraisers (newest first), then entered results, then
+  retired ones. The year over year in reports and presentations still reads oldest first.
+
+### Organization branding (#280)
+- **Your colors and logo on reports and presentations.** *System/About → Branding* (Administrators): choose a
+  ready-made palette (PennyWarden — the default —, Forest, Ocean, Plum, Ember) or a custom one generated from your
+  primary and secondary colors following Material 3, then adjust any color. Applies to every PDF report, the
+  fundraiser report (PDF and Word) and presentation, and the Fiscal Year fundraising report and presentation: headings,
+  title bands, tiles, table headers and chart colors. Checks, cover letters, receipts and envelopes are unchanged.
+- **Guardrails:** text colors must meet WCAG AA contrast (the save is refused with the reason); chart colors that are
+  too similar need a confirmation; charts keep their labels and legends. A live preview and *Reset to the PennyWarden
+  palette*.
+- **Logos:** a full logo (report headers, title slides) and an optional small mark (footers): PNG or JPEG up to 2 MB,
+  re-encoded without metadata. An optional one-line footer text (up to 120 characters).
+- In backups as its own restore section (`settings.branding`); kept through a reinitialize. Changes are audited
+  (`BRANDING_UPDATED`, `BRANDING_LOGO_SET`, `BRANDING_LOGO_REMOVED`; logos by fingerprint only).
+- The palette generator uses Google's material-color-utilities (Apache-2.0) in the browser.
+
+### Upgrade
+- Migration `0049` adds the table `budget_history_entry` (empty); `0050` the table `testing_state` (empty); `0051`
+  the column `workspace.demo_mode` (off).
+- Migration `0058` adds `app_user.fundraiser_series_sort` (empty = Fundraiser series newest year first).
+- Migration `0059` adds the table `former_budget`, `budget_history_entry.former_budget_id`/`code`/`name` and
+  `budget.continues_former_budget_id`: the years entered so far become one budget from before PennyWarden per budget
+  line, continued by the earliest budget of that line, so nothing shows differently (#381).
+- Migration `0048` adds two columns to `user_mfa` (`new_key_required`, `pending_own_key`; both off). No existing value
+  changes. Going back to 2.1.2 needs the pre-upgrade data backup (2.1.2 does not know revisions 0048 and later).
+
+## 2.1.2 — 2026-10-23
 Hotfix for 2.1.1. No database migration; going back to 2.1.1 is just reinstalling it.
 - **Register: changing a deposit's Entity now saves (#344).** Editing a deposit to pick a different Entity (for
   example moving transactions to the organization entity added in 2.1.0) saved without an error but kept the old

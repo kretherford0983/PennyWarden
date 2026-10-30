@@ -23,7 +23,7 @@ Windows PC, Mac or Linux server; your data stays in one folder you control. No s
 > receipt letters. 2.0 added
 > the optional
 > [Payments module](#payments-and-check-printing-optional-payments-module-200).
-> [What's new in 2.1](docs/user-guide-v2.1.md) · [What's new in 2.0](docs/user-guide-v2.0.md) · [Changelog](CHANGELOG.md)
+> [Try the demo](docs/demo.md) · [What's new in 2.2](docs/user-guide-v2.2.md) (in progress) · [What's new in 2.1](docs/user-guide-v2.1.md) · [What's new in 2.0](docs/user-guide-v2.0.md) · [Changelog](CHANGELOG.md)
 
 ## Why PennyWarden
 
@@ -59,6 +59,9 @@ is one printable PDF: the budgets, then every transaction followed directly by i
 signature page, and — when it covers several bank accounts — a start and an end page per account with page counts,
 so a reviewer can see that nothing is missing. A documentation review shows what still lacks a document before
 anyone asks.
+
+Since 2.2.0 reports and presentations can carry your organization's **branding**: its logo, a footer line and a
+Material 3 color palette (ready-made or generated from your own two colors, checked for readable contrast).
 
 <p align="center">
   <img src="docs/screenshots/readme/audit-report-cover.png" alt="Audit report: title page" width="270">

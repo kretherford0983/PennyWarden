@@ -34,6 +34,7 @@ from ...money import fmt
 from ...security import crypto
 from .. import attachments as att_svc
 from .. import organization as org_svc
+from .. import entity_vars as _entity_vars
 from .. import checks as checknum
 from .. import register as reg
 from ..common import budget_display_code, get_scoped
@@ -491,7 +492,7 @@ def variable_values(db: Session, t: RegisterTransaction, cfg: cfgmod.StyleConfig
     ws = db.get(Workspace, t.workspace_id)
     acct = db.get(BankAccount, t.bank_account_id)
     return {
-        "PAYEE": t.parent_entity.display_name if t.parent_entity else "",
+        "PAYEE": t.parent_entity.legal_name if t.parent_entity else "",
         "DATE": format_date(t.transaction_date, cfg.date_format),
         "AMOUNT": f"{t.total_cents // 100:,}.{t.total_cents % 100:02d}",
         "BUDGET": patterns.first_and_others([n for _c, n in budgets]),
@@ -509,19 +510,22 @@ def variable_values(db: Session, t: RegisterTransaction, cfg: cfgmod.StyleConfig
         "PAYEE_ADDRESS": "\n".join(address_lines(t.parent_entity)),
         "SIGNER": "", "SIGNER_TITLE": "",
         **{k: v for k, v in org_svc.values_for(db, t.workspace_id).items() if k.startswith("ORG.")},   # #314
+        **_entity_vars.values("PAYEE", t.parent_entity),        # 2.2.0 (#317)
     }
 
 
-def address_lines(e) -> list[str]:
-    """The entity's postal address as lines (street, street 2, "City, ST 12345", country unless the US)."""
+def address_lines(e, mailing: bool = True) -> list[str]:
+    """The entity's postal address as lines (street, street 2, "City, ST 12345", country unless the US). 2.2.0 (#315):
+    letters, envelopes and receipts use the mailing address (which falls back to the address when "same as")."""
     if e is None:
         return []
-    lines = [x.strip() for x in (e.address_line1, e.address_line2) if x and x.strip()]
-    city = ", ".join(x.strip() for x in (e.city, e.state_region) if x and x.strip())
-    last = " ".join(x for x in (city, (e.postal_code or "").strip()) if x)
+    get = e.mailing if (mailing and hasattr(e, "mailing")) else (lambda f: getattr(e, f))
+    lines = [x.strip() for x in (get("address_line1"), get("address_line2")) if x and x.strip()]
+    city = ", ".join(x.strip() for x in (get("city"), get("state_region")) if x and x.strip())
+    last = " ".join(x for x in (city, (get("postal_code") or "").strip()) if x)
     if last:
         lines.append(last)
-    country = (e.country or "").strip()
+    country = (get("country") or "").strip()
     if country and country.upper() not in ("US", "USA", "UNITED STATES", "UNITED STATES OF AMERICA"):
         lines.append(country)
     return lines
@@ -913,6 +917,8 @@ SAMPLE_VALUES = {
 }
 for _v in SAMPLE_VALUES.values():                  # 2.1.0 (#314): a sample organization profile
     _v.update({k: v for k, v in org_svc.SAMPLE.items() if k.startswith("ORG.")})
+    # 2.2.0 (#317): a sample payee for {PAYEE.*}
+    _v.update(_entity_vars.sample("PAYEE", _v["PAYEE"], ["123 Main Street", "P.O. Box 123", "Sample Town, US 55555"]))
 SAMPLE_CENTS = {"NORMAL": 319930, "LONG": 98765432}
 # kept for tests that draw the long sample directly
 SAMPLES = {k: render.Content(SAMPLE_CENTS[k], "", SAMPLE_VALUES[k]["PAYEE"],
@@ -1006,7 +1012,10 @@ def doc_config(d: CheckDocument):
 
 
 def doc_out(d: CheckDocument, full: bool = True) -> dict:
-    out = {"id": d.id, "kind": d.kind, "name": d.name, "active": d.active, "is_default": d.is_default}
+    out = {"id": d.id, "kind": d.kind, "name": d.name, "active": d.active, "is_default": d.is_default,
+           # 2.2.0 (#325): the shared envelope library - the features a template is used for and is the default for
+           "features": [f for f in (d.features or "").split(",") if f],
+           "default_for": [f for f in (d.default_for or "").split(",") if f]}
     if full:
         out["config"] = doc_config(d).model_dump()
         if d.kind == "LETTER":
@@ -1057,13 +1066,13 @@ MAX_LOGO_BYTES = 1024 * 1024
 LOGO_MAX_PIXELS = (1500, 600)      # re-encoded no larger than this (2.5" x 1" at 600 dpi)
 
 
-def normalize_logo(data: bytes) -> tuple[bytes, int, int]:
+def normalize_logo(data: bytes, max_bytes: int = MAX_LOGO_BYTES) -> tuple[bytes, int, int]:
     """Validates an uploaded logo server-side (PNG or JPEG by content, not by name or browser type; at most 1 MB) and
     re-encodes it as PNG without metadata, scaled down to at most 1500 x 600 pixels (BR-073, BR-074, BR-101)."""
     if not data:
         raise validation("The file is empty.", "file")
-    if len(data) > MAX_LOGO_BYTES:
-        raise AppError(413, "FILE_TOO_LARGE", "A logo may not exceed 1 MB.")
+    if len(data) > max_bytes:
+        raise AppError(413, "FILE_TOO_LARGE", f"A logo may not exceed {max_bytes // (1024 * 1024)} MB.")
     if not (data.startswith(b"\x89PNG\r\n\x1a\n") or data.startswith(b"\xff\xd8\xff")):
         raise AppError(415, "UNSUPPORTED_TYPE", "The logo must be a PNG or JPEG image.")
     try:
@@ -1173,7 +1182,7 @@ def _check_kind(kind: str, preset: str | None) -> None:
 
 
 def draft_document(db: Session, ctx, kind: str, preset: str | None = None,
-                   source: CheckDocument | None = None) -> dict:
+                   source: CheckDocument | None = None, feature: str | None = "PAYMENTS") -> dict:
     """Build 13: what *New cover letter* / *New #10 envelope* / *Duplicate* open in the editor - nothing is stored
     until the first Save (backing out keeps nothing, so BR-001 is not involved). A free name (#217), the starting
     settings (or the source's, for a duplicate) and the source's logo, which is copied when the draft is saved."""
@@ -1186,8 +1195,12 @@ def draft_document(db: Session, ctx, kind: str, preset: str | None = None,
         name = free_document_name(db, ctx, kind, DOC_PRESETS[preset][1] if preset else DOC_DEFAULT_NAMES[kind])
     _check_room(db, ctx)
     existing = list_documents(db, ctx, kind)
+    is_default = not any(x.active and x.is_default for x in existing)
+    if kind == "ENVELOPE":           # 2.2.0 (#325): the default of the feature it is created for (if it has none)
+        from .. import envelopes as env_lib
+        is_default = feature is not None and env_lib.default_of(db, ctx, feature) is None
     out = {"id": None, "draft": True, "kind": kind, "name": name, "active": True,
-           "is_default": not any(x.active and x.is_default for x in existing), "config": config,
+           "is_default": is_default, "config": config, "feature": feature if kind == "ENVELOPE" else "PAYMENTS",
            "duplicate_of": source.id if source is not None else None}
     if kind == "LETTER":
         out["logo"] = ({"width": source.logo_width, "height": source.logo_height,
@@ -1197,7 +1210,8 @@ def draft_document(db: Session, ctx, kind: str, preset: str | None = None,
 
 
 def create_document(db: Session, ctx, kind: str, name: str | None, preset: str | None = None,
-                    config: dict | None = None, source: CheckDocument | None = None) -> CheckDocument:
+                    config: dict | None = None, source: CheckDocument | None = None,
+                    feature: str | None = "PAYMENTS") -> CheckDocument:
     """A new template. Without a name it gets the kind's (or preset's) default name, numbered when taken (#217);
     a name the user typed must be unique as before. Build 13: the editor saves a draft this way, with its settings
     (`config`, validated) and, for a duplicate, the template it copies (`source`: its logo is copied too)."""
@@ -1217,16 +1231,25 @@ def create_document(db: Session, ctx, kind: str, name: str | None, preset: str |
         cfg = doc_config(source).model_dump()
     else:
         cfg = _starting_config(db, ctx, kind, preset)
-    return _new_document(db, ctx, kind, name, cfg, logo=source, source=source)
+    return _tagged(db, ctx, _new_document(db, ctx, kind, name, cfg, logo=source, source=source), feature)
 
 
-def duplicate_document(db: Session, ctx, d: CheckDocument) -> CheckDocument:
+def _tagged(db: Session, ctx, d: CheckDocument, feature: str | None) -> CheckDocument:
+    """2.2.0 (#325): a template created on a feature's setup page is tagged for that feature (and is its default when
+    it has none); created on the global Envelopes page (feature None) it is *Not used*. Letters stay Payments'."""
+    from .. import envelopes as env_lib
+    env_lib.tag_new(d, feature, db, ctx)
+    db.flush()
+    return d
+
+
+def duplicate_document(db: Session, ctx, d: CheckDocument, feature: str | None = "PAYMENTS") -> CheckDocument:
     """Build 11 (#217): a copy of a template with all its settings, the letter's logo included, stored at once (the
     editor uses a draft instead since build 13; this stays for the API). The copy is active and becomes the default
     only when its kind has no active default."""
     _check_room(db, ctx)
     name = free_document_name(db, ctx, d.kind, f"{d.name[:71].rstrip()} copy")   # room for " copy 999"
-    return _new_document(db, ctx, d.kind, name, doc_config(d).model_dump(), logo=d, source=d)
+    return _tagged(db, ctx, _new_document(db, ctx, d.kind, name, doc_config(d).model_dump(), logo=d, source=d), feature)
 
 
 def update_document(db: Session, ctx, d: CheckDocument, name: str, config: dict) -> CheckDocument:
@@ -1243,7 +1266,23 @@ def update_document(db: Session, ctx, d: CheckDocument, name: str, config: dict)
     return d
 
 
-def set_document_flags(db: Session, ctx, d: CheckDocument, active: bool | None, is_default: bool | None) -> CheckDocument:
+def set_document_flags(db: Session, ctx, d: CheckDocument, active: bool | None, is_default: bool | None,
+                       feature: str = "PAYMENTS") -> CheckDocument:
+    if d.kind == "ENVELOPE":             # 2.2.0 (#325): each feature has its own default in the shared library
+        from .. import envelopes as env_lib
+        before = _doc_snapshot(d)
+        if active is not None:
+            d.active = active
+            if not active:
+                env_lib.clear_defaults(d)
+        db.flush()
+        if _doc_snapshot(d) != before:
+            audit.record(db, ctx, "CHECK_DOCUMENT_UPDATED", "check_document", d.id,
+                         {"active": before["active"], "is_default": before["is_default"]},
+                         {"active": d.active, "is_default": d.is_default})
+        if is_default:
+            env_lib.set_default(db, ctx, d, feature)
+        return d
     before = _doc_snapshot(d)
     if active is not None:
         d.active = active
@@ -1266,8 +1305,15 @@ def _money(cents: int) -> str:
     return f"${cents // 100:,}.{cents % 100:02d}"
 
 
-def letter_data(db: Session, ctx, t: RegisterTransaction, date_format: str, signer: CheckSigner | None
-                ) -> documents.LetterData:
+def _payee_block(vals: dict, entity, lines: list[str] | None) -> list[str]:
+    """2.2.0 (#317): the letter's addressee block - the template's lines (default: name and mailing address)."""
+    if entity is None:
+        return []
+    return _entity_vars.addressee(lines or documents.DEFAULT_ADDRESSEE, vals, patterns.LETTER) or [entity.legal_name]
+
+
+def letter_data(db: Session, ctx, t: RegisterTransaction, date_format: str, signer: CheckSigner | None,
+                addressee: list[str] | None = None) -> documents.LetterData:
     vals = variable_values(db, t, SimpleNamespace(date_format=date_format))
     rows = []
     for a in t.live_allocations:
@@ -1276,7 +1322,7 @@ def letter_data(db: Session, ctx, t: RegisterTransaction, date_format: str, sign
                      "INVOICE_DATE": format_date(a.invoice_date, date_format) if a.invoice_date else "",
                      "DESCRIPTION": a.description or "", "BUDGET": f"{code} {bname}", "NOTES": a.notes or "",
                      "AMOUNT": _money(a.amount_cents)})
-    payee = [t.parent_entity.display_name] + address_lines(t.parent_entity) if t.parent_entity else []
+    payee = _payee_block(vals, t.parent_entity, addressee)
     return documents.LetterData(values=vals, rows=rows, total=_money(t.total_cents), payee_lines=payee,
                                 signer_name=signer.name if signer else "", signer_title=(signer.title or "") if signer
                                 else "")
@@ -1360,7 +1406,7 @@ def print_letter(db: Session, ctx, settings, t: RegisterTransaction, d: CheckDoc
         raise conflict("TEMPLATE_INACTIVE", "Choose an active letter template.")
     cfg = doc_config(d)
     signer = _letter_signer(db, ctx, signer_id)
-    data = letter_data(db, ctx, t, _date_format_for(db, ctx, t), signer)
+    data = letter_data(db, ctx, t, _date_format_for(db, ctx, t), signer, cfg.addressee)
     _texts, empty = documents.letter_texts(cfg, data)
     warnings = []
     if empty:
@@ -1420,7 +1466,7 @@ def save_envelope_printer(db: Session, ctx, d: CheckDocument, page: str | None, 
 
 def _envelope_content(db: Session, ctx, t: RegisterTransaction, cfg, return_address: bool):
     vals = variable_values(db, t, SimpleNamespace(date_format=_date_format_for(db, ctx, t)))
-    payee = [t.parent_entity.display_name] + address_lines(t.parent_entity) if t.parent_entity else []
+    payee = [t.parent_entity.legal_name] + address_lines(t.parent_entity) if t.parent_entity else []
     return documents.envelope_lines(cfg, vals, payee, return_address), payee
 
 
@@ -1487,9 +1533,11 @@ def handwritten_check(db: Session, ctx, t: RegisterTransaction, number: str) -> 
 def sample_letter_pdf(cfg, logo: bytes | None = None) -> bytes:
     values = {**SAMPLE_VALUES["NORMAL"], "PAYEE": documents.SAMPLE_PAYEE[0],
               "TODAY": format_date(dt.date.today(), "MM/DD/YYYY"), "INVOICE_DATE": "08/29/2026 and others",
-              "PAYEE_ADDRESS": "\n".join(documents.SAMPLE_PAYEE[1:]), "DATE": format_date(dt.date.today(), "MM/DD/YYYY")}
+              "PAYEE_ADDRESS": "\n".join(documents.SAMPLE_PAYEE[1:]), "DATE": format_date(dt.date.today(), "MM/DD/YYYY"),
+              **_entity_vars.sample("PAYEE", documents.SAMPLE_PAYEE[0], documents.SAMPLE_PAYEE[1:])}
+    payee = _entity_vars.addressee(cfg.addressee, values, patterns.LETTER) or documents.SAMPLE_PAYEE[:1]
     data = documents.LetterData(values=values, rows=documents.SAMPLE_ROWS, total="$200.00",
-                                payee_lines=documents.SAMPLE_PAYEE, signer_name="SAMPLE SIGNER",
+                                payee_lines=payee, signer_name="SAMPLE SIGNER",
                                 signer_title="Treasurer")
     return documents.letter_pdf(cfg, data, title="Letter test print", logo=logo, test=True)
 

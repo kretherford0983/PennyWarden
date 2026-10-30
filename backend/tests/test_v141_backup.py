@@ -39,7 +39,10 @@ def _backup(env) -> bytes:
     return d.content
 
 
-def _restore(client: Api, data: bytes, passphrase=PASS, password=None, confirm=None, part=7000) -> dict:
+def _restore(client: Api, data: bytes, passphrase=PASS, password=None, confirm=None, part=7000,
+             domains=("all",), missing_users="add") -> dict:
+    """2.2.0 (#319): after the backup is checked, System/About asks what to restore (choose); `domains` answers it
+    (default everything, as before). domains=None stops at the choice and returns the waiting job."""
     r = client.post("/api/system/restore/uploads", {"size": len(data), "filename": "b.fmbak"})
     assert r.status_code == 201, r.text
     uid = r.json()["upload_id"]
@@ -55,7 +58,23 @@ def _restore(client: Api, data: bytes, passphrase=PASS, password=None, confirm=N
         body.update(password=password, confirm=confirm)
     r = client.post(f"/api/system/restore/uploads/{uid}/start", body)
     assert r.status_code == 202, r.text
-    return _wait(client, f"/api/system/restore/jobs/{r.json()['id']}")
+    jid = r.json()["id"]
+    j = _wait_choice(client, f"/api/system/restore/jobs/{jid}")
+    if j["state"] != "choose" or domains is None:
+        return j
+    r = client.post(f"/api/system/restore/jobs/{jid}/choose", {"domains": list(domains), "missing_users": missing_users})
+    assert r.status_code == 200, r.text
+    return _wait(client, f"/api/system/restore/jobs/{jid}")
+
+
+def _wait_choice(client: Api, url: str, timeout: float = 60) -> dict:
+    end = time.time() + timeout
+    while time.time() < end:
+        j = client.get(url).json()
+        if j.get("state") != "running":
+            return j
+        time.sleep(0.05)
+    raise AssertionError("job did not reach the choice")
 
 
 @pytest.fixture

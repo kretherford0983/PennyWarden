@@ -252,6 +252,12 @@ sample payee and invoices as you type (tick **Keep at the top** to keep it in vi
 the page exactly as it prints, so it shows in every browser, Safari included. Each section can be collapsed. **Test
 print (sample data)** prints it — an envelope test print is laid out on the page the way the printer is fed.
 
+> **Envelopes are shared with Donations (2.2.0).** The Envelopes section lists the envelopes used for Payments.
+> Envelope templates are one library: an envelope can also be used for Donations (receipt envelopes), and **Other
+> envelope templates** below the list can be added to Payments. Each feature has its own default; editing an envelope
+> another feature uses says so, and **Duplicate for Payments only** makes a separate copy. The global **Envelopes**
+> page lists all of them (see the 2.2 user guide).
+
 > **Window envelopes are set up on the cover letter.** A #10 double-window envelope needs no envelope printing: the
 > letter carries the return and payee addresses, which show through the windows. Use **New window-envelope letter**
 > (or the *Window envelope* section of any cover letter, below); the Envelopes section and the envelope editor link

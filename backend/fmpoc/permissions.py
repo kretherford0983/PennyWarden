@@ -41,6 +41,7 @@ PERMISSIONS: dict[str, set[str]] = {
     "entity.manage": {BUDGET_MANAGER, REGISTER_USER},
     "entity.create_financial_institution": {BUDGET_MANAGER, REGISTER_USER},
     "entity.manage_financial_institution": {BUDGET_MANAGER},
+    "entity.review_names": {BUDGET_MANAGER},          # 2.2.0 (#316): Names to review after the first/last split
     "review.resolve": {BUDGET_MANAGER, REGISTER_USER},
     # v1.6.0 CR-033: optional modules (switched on by an Administrator) and the Fundraiser module
     "modules.manage": {ADMINISTRATOR},
@@ -73,6 +74,9 @@ PERMISSIONS: dict[str, set[str]] = {
     # (read-only, BR-004); everything else is the Administrator's.
     "system.view": {ADMINISTRATOR, AUDITOR},
     "system.manage": {ADMINISTRATOR},
+    # 2.2.0 (#349): the read-only System/About (version, update-check result, organization details, module status) -
+    # every signed-in role. Editing stays system.manage / modules.manage (Administrators).
+    "system.about": {ADMINISTRATOR, AUDITOR, BUDGET_MANAGER, BUDGET_USER, REGISTER_USER},
 }
 
 

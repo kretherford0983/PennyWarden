@@ -50,8 +50,9 @@ def settings_save(body: SettingsIn, request: Request, db: Session = Depends(get_
 
 
 @router.get("/organization")
-def organization_view(db: Session = Depends(get_db), ctx: Ctx = Depends(require("system.view"))):
-    """2.1.0 (#314): the organization profile (its own entity): name, address, phone, email, EIN."""
+def organization_view(db: Session = Depends(get_db), ctx: Ctx = Depends(require("system.about"))):
+    """2.1.0 (#314): the organization profile (its own entity): name, address, phone, email, EIN. 2.2.0 (#349): read
+    by the financial roles and Auditors too (System/About → General, read-only); only Administrators change it."""
     out = org.profile_out(db, ctx.workspace_id)
     db.commit()                      # ensure() may have created the entity
     return out

@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState, type FormEvent, type FormHTMLAttributes, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { api, ApiError, type ApiWarning, money, qs } from "./api";
+import { entityName } from "./names";
 
 /** v1.3 CR-011: a form that ignores further submits while one is being saved. All controls in the form are
  *  disabled until the save (including any confirmation dialog it opens) finishes; the submit button reads "Saving…". */
@@ -457,16 +458,19 @@ export function EntityPicker({ label, entities, value, onChange, placeholder = "
 }) {
   const all = extraOption && !entities.some((e) => String(e.id) === extraOption.id)
     ? [...entities, { id: extraOption.id, display_name: extraOption.label, entity_number: "" }] : entities;
+  // 2.2.0 (#316): Individuals follow the user's name order; searching also finds the other names
+  const nm = (e: any) => entityName(e);
   const selected = all.find((e) => String(e.id) === value);
   const counts: Record<string, number> = {};
-  all.forEach((e) => (counts[e.display_name] = (counts[e.display_name] || 0) + 1));
-  const text = (e: any) => (counts[e.display_name] > 1 && e.entity_number ? `${e.display_name} (${e.entity_number})` : e.display_name);
+  all.forEach((e) => (counts[nm(e)] = (counts[nm(e)] || 0) + 1));
+  const text = (e: any) => (counts[nm(e)] > 1 && e.entity_number ? `${nm(e)} (${e.entity_number})` : nm(e));
   const [query, setQuery] = useState<string | null>(null);
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const id = useRef(`ep-${Math.random().toString(36).slice(2)}`).current;
   const q = (query ?? "").trim().toLowerCase();
-  const matches = all.filter((e) => !q || e.display_name.toLowerCase().includes(q) || (e.entity_number || "").toLowerCase().includes(q)).slice(0, 50);
+  const matches = all.filter((e) => !q || nm(e).toLowerCase().includes(q) || (e.display_name || "").toLowerCase().includes(q)
+    || (e.name || "").toLowerCase().includes(q) || (e.entity_number || "").toLowerCase().includes(q)).slice(0, 50);
   const choose = (e: any | null) => {
     onChange(e ? String(e.id) : "");
     setQuery(null);
@@ -497,7 +501,7 @@ export function EntityPicker({ label, entities, value, onChange, placeholder = "
           {matches.map((e, i) => (
             <li key={e.id} role="option" aria-selected={active === i + 1} className={active === i + 1 ? "active" : ""}
                 onMouseDown={(ev) => { ev.preventDefault(); choose(e); }}>
-              {e.display_name} <span className="muted">{e.entity_number}</span>
+              {nm(e)} <span className="muted">{e.entity_number}</span>
             </li>
           ))}
           {matches.length === 0 ? <li className="muted" aria-disabled="true">No matching entities</li> : null}

@@ -3,6 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api, preAuthCsrf, setCsrf } from "../api";
 import { ErrorBox, Field, GuardedForm, Loading } from "../components";
+import { PasswordChecklist } from "../PasswordChecklist";
 
 type Q = { code: string; text: string };
 type Choice = { question: string; answer: string };
@@ -71,7 +72,7 @@ export function QuestionsStep({ onDone }: { onDone: () => void }) {
 }
 
 /** Sign-in step after the host `reset-password`: the temporary password is replaced first. */
-export function NewPasswordStep({ onDone }: { onDone: () => void }) {
+export function NewPasswordStep({ onDone, username }: { onDone: () => void; username?: string }) {
   const [f, setF] = useState({ new_password: "", new_password_confirmation: "" });
   const [err, setErr] = useState<unknown>(null);
   const submit = async (e: FormEvent) => {
@@ -88,8 +89,11 @@ export function NewPasswordStep({ onDone }: { onDone: () => void }) {
       <h1>Choose a new password</h1>
       <p>You signed in with a temporary password. Choose your own password to continue.</p>
       <ErrorBox error={err} />
-      <Field label="New password" hint="At least 12 characters including a letter and a digit."><input type="password" required autoComplete="new-password" value={f.new_password} onChange={(e) => setF({ ...f, new_password: e.target.value })} /></Field>
+      <Field label="New password"><input type="password" required autoComplete="new-password" aria-describedby="pw-req-temp" value={f.new_password} onChange={(e) => setF({ ...f, new_password: e.target.value })} /></Field>
       <Field label="Confirm new password"><input type="password" required autoComplete="new-password" value={f.new_password_confirmation} onChange={(e) => setF({ ...f, new_password_confirmation: e.target.value })} /></Field>
+      {/* 2.2.0 (#343): "different from the temporary password" can only be checked by the server, on save */}
+      <PasswordChecklist id="pw-req-temp" password={f.new_password}
+        context={{ username, confirm: f.new_password_confirmation, temporary: true }} />
       <button className="primary" type="submit">Save and continue</button>
     </GuardedForm>
   );
@@ -154,8 +158,10 @@ export function ForgotPassword({ onBack }: { onBack: () => void }) {
               <input required autoComplete="one-time-code" maxLength={20} value={f.code} onChange={(e) => setF({ ...f, code: e.target.value })} />
             </Field>
           ) : null}
-          <Field label="New password" hint="At least 12 characters including a letter and a digit."><input type="password" required autoComplete="new-password" value={f.new_password} onChange={(e) => setF({ ...f, new_password: e.target.value })} /></Field>
+          <Field label="New password"><input type="password" required autoComplete="new-password" aria-describedby="pw-req-forgot" value={f.new_password} onChange={(e) => setF({ ...f, new_password: e.target.value })} /></Field>
           <Field label="Confirm new password"><input type="password" required autoComplete="new-password" value={f.new_password_confirmation} onChange={(e) => setF({ ...f, new_password_confirmation: e.target.value })} /></Field>
+          <PasswordChecklist id="pw-req-forgot" password={f.new_password}
+            context={{ username, confirm: f.new_password_confirmation }} />
           <button className="primary" type="submit">Set new password</button>
         </GuardedForm>
       )}

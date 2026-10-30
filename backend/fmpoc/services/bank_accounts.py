@@ -27,6 +27,7 @@ def snapshot(a: BankAccount) -> dict:
             "account_type": a.account_type, "account_subtype": a.account_subtype, "account_number_masked": masked(a),
             "register_enabled": a.register_enabled, "is_primary": a.is_primary, "interest_rate": a.interest_rate,
             "opening_balance": fmt(a.opening_balance_cents), "opening_balance_date": a.opening_balance_date,
+            "account_opened_date": a.account_opened_date,
             "manual_current_balance": fmt(a.manual_current_balance_cents), "status": a.status,
             "closed_date": a.closed_date, "close_reason": a.close_reason, "notes": a.notes}
 
@@ -40,6 +41,43 @@ def _register_sum(db: Session, a: BankAccount, *conds) -> int:
          .where(RegisterTransaction.bank_account_id == a.id, RegisterTransaction.status == "ACTIVE",
                 TransactionAllocation.removed_at.is_(None), *conds))
     return (a.opening_balance_cents or 0) + int(db.scalar(q) or 0)
+
+
+def _opened(d: dt.date | None) -> dt.date | None:
+    if d is not None and d > dt.date.today():
+        raise validation("Account opened can't be in the future.", "account_opened_date")
+    return d
+
+
+def balance_on(db: Session, a: BankAccount, d: dt.date) -> tuple[int, dict | None]:
+    """2.2.0 (#348): the (bank) balance on a date for a point-in-time comparison, with one rule everywhere:
+    - before *Account opened*: $0 - the account really was opened later;
+    - before any data (a register account before its Opening Balance Date, a non-register account before its first
+      balance entry) and no *Account opened*: the account existed before PennyWarden, so the **earliest available
+      data** is used - the balance on the Opening Balance Date / the first entry - instead of $0;
+    - otherwise the balance on that date.
+    Returns (cents, substitution): substitution is None, or {"date": the date of the data used} when the earliest data
+    stood in for a date before it (shown as a marker or a note)."""
+    if a.account_opened_date is not None and d < a.account_opened_date:
+        return 0, None
+    if not a.register_enabled:
+        v = manual_as_of(db, a, d)
+        if v is not None:
+            return v, None
+        first = db.scalar(select(BankAccountBalance).where(BankAccountBalance.bank_account_id == a.id)
+                          .order_by(BankAccountBalance.as_of_date, BankAccountBalance.id).limit(1))
+        if first is None:
+            return a.manual_current_balance_cents or 0, None
+        return first.balance_cents, {"date": first.as_of_date}
+    start = register_start(a)
+    if start is not None and d < start:       # the register's opening balance stands in for the earlier date
+        return current_cents(db, a, d), {"date": start}
+    return current_cents(db, a, d), None
+
+
+def register_start(a: BankAccount) -> dt.date | None:
+    """Where a register account's data starts: its Opening Balance Date, else the day it was added."""
+    return a.opening_balance_date or (a.created_at.date() if a.created_at else None)
 
 
 def manual_as_of(db: Session, a: BankAccount, as_of: dt.date) -> int | None:
@@ -158,6 +196,7 @@ def move(db: Session, ctx, a: BankAccount, direction: str) -> dict:
 def out(db: Session, a: BankAccount) -> dict:
     bal = current_cents(db, a)  # 1.7.2 (#56): the bank balance (cleared only) everywhere outside the Register
     return {**snapshot(a), "opening_balance_date": a.opening_balance_date.isoformat() if a.opening_balance_date else None,
+            "account_opened_date": a.account_opened_date.isoformat() if a.account_opened_date else None,
             "closed_date": a.closed_date.isoformat() if a.closed_date else None,
             "financial_institution": entity_brief(a.institution), "current_balance": fmt(bal),
             "label": f"{a.account_name} - {masked(a)}", "uncleared_count": uncleared_count(db, a),
@@ -221,6 +260,7 @@ def create(db: Session, ctx, km, data) -> BankAccount:
                     created_by_user_id=ctx.user.id, updated_by_user_id=ctx.user.id,
                     sort_order=_end_of_group(db, ctx.workspace_id, data.account_type))
     _set_number(db, a, km, data.account_number, None)
+    a.account_opened_date = _opened(data.account_opened_date)
     try:
         if reg:
             if data.current_balance is not None:
@@ -304,6 +344,8 @@ def update(db: Session, ctx, km, a: BankAccount, data) -> BankAccount:
         a.interest_rate = _rate(data.interest_rate)
     if "notes" in f:
         a.notes = data.notes
+    if "account_opened_date" in f:     # 2.2.0 (#348)
+        a.account_opened_date = _opened(data.account_opened_date)
     if "register_enabled" in f and data.register_enabled is not None and data.register_enabled != a.register_enabled:
         if txns:
             raise conflict("HAS_TRANSACTIONS", "Register Enabled cannot change once Register transactions exist.")

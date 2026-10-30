@@ -279,7 +279,7 @@ function TxnDetail({ t, manage, canPrintChecks, paymentDocuments, onPrintCheck, 
   );
 }
 
-type Alloc = { id?: number; fiscal_year_id: string; budget_id: string; entity_id: string; invoice_number: string; invoice_date: string; description: string; amount: string; notes: string; no_attachment: boolean; no_attachment_reason: string; files: File[] };
+type Alloc = { id?: number; donation_line_id?: number; donation?: string; fiscal_year_id: string; budget_id: string; entity_id: string; invoice_number: string; invoice_date: string; description: string; amount: string; notes: string; no_attachment: boolean; no_attachment_reason: string; files: File[] };
 const blankAlloc = (fy = ""): Alloc => ({ fiscal_year_id: fy, budget_id: "", entity_id: "", invoice_number: "", invoice_date: "", description: "", amount: "", notes: "", no_attachment: false, no_attachment_reason: "", files: [] });
 
 function useBudgetOptions(fyIds: string[], type: string) {
@@ -298,12 +298,17 @@ function useBudgetOptions(fyIds: string[], type: string) {
 /** The register's transaction form. 2.0.0 (#164): `payment` turns it into the payment form of the Payments module -
  * a new withdrawal with one line per invoice, the check amount previewed live in words and numbers, saved straight
  * into printing (onSaved receives the created transaction). Everything is stored by the normal register API. */
-export function TxnForm({ account, txn, initial, fys, onClose, onSaved, payment }: { account: any; txn: any; initial?: { check_number?: string }; fys: any[]; onClose: () => void; onSaved: (saved?: any) => void; payment?: boolean }) {
+export function TxnForm({ account, txn, initial, fys, onClose, onSaved, payment, fromDonations }: { account: any; txn: any; initial?: { check_number?: string }; fys: any[]; onClose: () => void; onSaved: (saved?: any) => void; payment?: boolean;
+  /** 2.2.0 (#325): Create transaction from donations - a deposit, one allocation per donation line (split further per line). */
+  fromDonations?: { lines: any[] } }) {
   const isNew = !txn;
-  const [type, setType] = useState<string>(txn?.transaction_type || "WITHDRAWAL");
+  const donLines = fromDonations?.lines || [];
+  const [type, setType] = useState<string>(fromDonations ? "DEPOSIT" : txn?.transaction_type || "WITHDRAWAL");
+  const [dateReceived, setDateReceived] = useState("");
   const [h, setH] = useState({
     transaction_date: txn?.transaction_date || todayIso(), clear_date: txn?.clear_date || "",
-    entity_id: txn?.entity && !txn.entity.is_system ? String(txn.entity.id) : "", check_number: txn?.check_number || initial?.check_number || "", notes: txn?.notes || "",
+    entity_id: fromDonations ? (new Set(donLines.map((l) => l.donor_entity_id)).size === 1 ? String(donLines[0].donor_entity_id) : "")
+      : txn?.entity && !txn.entity.is_system ? String(txn.entity.id) : "", check_number: txn?.check_number || initial?.check_number || "", notes: txn?.notes || "",
     no_attachment: !!txn?.no_attachment, no_attachment_reason: txn?.no_attachment_reason || "",
     // 2.1.0 (#260): paid electronically; the optional number is from our check sequence or a payment reference
     electronic_payment: !!txn?.electronic_payment, payment_method: txn?.payment_method || "",
@@ -318,11 +323,13 @@ export function TxnForm({ account, txn, initial, fys, onClose, onSaved, payment 
     entity_id: a.entity && !(txn.transaction_type === "DEPOSIT" && txn.entity && a.entity.id === txn.entity.id) ? String(a.entity.id) : "",
     invoice_number: a.invoice_number || "", invoice_date: a.invoice_date || "", description: a.description || "", amount: a.amount, notes: a.notes || "",
     no_attachment: !!a.no_attachment, no_attachment_reason: a.no_attachment_reason || "", files: [],
-  })) : [blankAlloc()]);
+  })) : fromDonations ? donLines.map((l) => ({ ...blankAlloc(), donation_line_id: l.id, donation: `Donation #${l.donation_id} – ${l.donor}`,
+    entity_id: String(l.donor_entity_id), amount: (l.amount_cents / 100).toFixed(2), description: l.description || "Donation" }))
+    : [blankAlloc()]);
   const [parentFiles, setParentFiles] = useState<File[]>([]);
   const [uploadIssues, setUploadIssues] = useState<null | { id: number; failed: string[] }>(null);
   const [savedTxn, setSavedTxn] = useState<any>(null);
-  const [split, setSplit] = useState(txn ? txn.allocations.length > 1 : false);
+  const [split, setSplit] = useState(txn ? txn.allocations.length > 1 : donLines.length > 1);
   const [nat, setNat] = useState<any>(null);
   const [entities, setEntities] = useState<any[]>([]);
   const [err, setErr] = useState<unknown>(null);
@@ -389,7 +396,11 @@ export function TxnForm({ account, txn, initial, fys, onClose, onSaved, payment 
       }),
     };
     try {
-      const r = await run((confirmations) => isNew
+      const r = await run((confirmations) => fromDonations
+        ? api.post("/api/donations/create-transaction", {
+            transaction: { bank_account_id: account.id, transaction_type: "DEPOSIT", ...header, allocations, confirmations, request_key: requestKey },
+            links: allocs.map((a) => a.donation_line_id ?? null), date_received: dateReceived || null })
+        : isNew
         ? api.post("/api/transactions", { bank_account_id: account.id, transaction_type: type, ...header, allocations, confirmations, request_key: requestKey })
         : api.patch(`/api/transactions/${txn.id}`, { ...(type !== txn.transaction_type ? { transaction_type: type } : {}), ...header, allocations, confirmations }));
       if (!r) return;
@@ -426,13 +437,13 @@ export function TxnForm({ account, txn, initial, fys, onClose, onSaved, payment 
     );
   }
   return (
-    <Modal title={payment ? `New payment – ${account.label}` : isNew ? `New transaction – ${account.label}` : `Edit transaction #${txn.id}`} onClose={onClose} wide>
+    <Modal title={payment ? `New payment – ${account.label}` : fromDonations ? `New deposit from donations – ${account.label}` : isNew ? `New transaction – ${account.label}` : `Edit transaction #${txn.id}`} onClose={onClose} wide>
       <GuardedForm onSubmit={submit}>
         <ErrorBox error={err} />
         {txn?.cleared ? <div className="alert warn">This transaction has cleared. Saving changes requires confirmation and is fully audited.</div> : null}
         <p className="muted">Bank account: <b>{account.label}</b> (cannot be changed after creation; wrong-account entries must be voided and re-entered).</p>
         <div className="row">
-          {payment ? null : (
+          {payment || fromDonations ? null : (
             <Field label="Type">
               <select aria-label="Transaction type" value={type} onChange={(e) => changeType(e.target.value)}>
                 <option value="WITHDRAWAL">Withdrawal</option><option value="DEPOSIT">Deposit</option>
@@ -456,13 +467,21 @@ export function TxnForm({ account, txn, initial, fys, onClose, onSaved, payment 
             extraOption={txn?.entity && !txn.entity.is_system ? { id: String(txn.entity.id), label: `${txn.entity.display_name}${txn.entity.active ? "" : " (inactive)"}` } : null} />
           <button type="button" className="small" onClick={() => setNewEnt(true)}>+ New entity</button>
         </div>
+        {fromDonations && donLines.some((l) => !l.date_received) ? (
+          <Field label="Date received (for donations without one)" hint="Empty: the deposit's date. Donations with an estimated date keep it unless it is after the deposit.">
+            <input type="date" value={dateReceived} onChange={(e) => setDateReceived(e.target.value)} />
+          </Field>
+        ) : null}
         <h3>{payment ? (split ? "Invoices" : "Invoice") : `Allocations ${split ? "(split)" : ""}`}</h3>
+        {fromDonations ? <p className="hint">One allocation per donation, with its donor, amount and description. Choose the budget for each; <b>Split this donation</b> spreads one
+          donation over several budgets (its allocations must add up to its amount).</p> : null}
         {payment ? <p className="hint">One line per invoice: its budget, invoice number, description and amount. The check is for the total.</p> : null}
         {allocs.map((a, i) => {
           const opts = options(a.fiscal_year_id, type);
           const cross = a.fiscal_year_id && nat && !nat.no_fiscal_year && !nat.covering.some((c: any) => String(c.id) === a.fiscal_year_id);
           return (
             <div key={i} className="alloc">
+              {a.donation ? <p className="muted">{a.donation}</p> : null}
               <div className="row">
                 <Field label="Fiscal Year">
                   <select required aria-label={`Allocation ${i + 1} Fiscal Year`} value={a.fiscal_year_id} onChange={(e) => upd(i, "fiscal_year_id", e.target.value)}>
@@ -478,7 +497,12 @@ export function TxnForm({ account, txn, initial, fys, onClose, onSaved, payment 
                   </select>
                 </Field>
                 <Field label="Amount"><input required aria-label={`Allocation ${i + 1} Amount`} inputMode="decimal" pattern="\d+(\.\d{1,2})?" value={a.amount} onChange={(e) => upd(i, "amount", e.target.value)} /></Field>
-                {split && allocs.length > 1 ? <button type="button" className="small danger" onClick={() => setAllocs(allocs.filter((_, j) => j !== i))}>Remove</button> : null}
+                {fromDonations ? (
+                  <>
+                    <button type="button" className="small" onClick={() => { const c = [...allocs]; c.splice(i + 1, 0, { ...a, id: undefined, amount: "", files: [] }); setAllocs(c); setSplit(true); }}>Split this donation</button>
+                    {allocs.filter((x) => x.donation_line_id === a.donation_line_id).length > 1 ? <button type="button" className="small danger" onClick={() => setAllocs(allocs.filter((_, j) => j !== i))}>Remove</button> : null}
+                  </>
+                ) : split && allocs.length > 1 ? <button type="button" className="small danger" onClick={() => setAllocs(allocs.filter((_, j) => j !== i))}>Remove</button> : null}
               </div>
               {cross ? <p className="warn-text">Budget Fiscal Year differs from the Fiscal Year covering the Transaction Date – confirmation will be required and the allocation will be flagged for review.</p> : null}
               <div className="row">
@@ -506,8 +530,8 @@ export function TxnForm({ account, txn, initial, fys, onClose, onSaved, payment 
           );
         })}
         <div className="row">
-          <button type="button" onClick={toggleSplit}>{payment ? (split ? "Only one invoice" : "More than one invoice") : split ? "Convert to single allocation" : "Split transaction"}</button>
-          {split ? <button type="button" onClick={() => setAllocs([...allocs, blankAlloc(allocs[0].fiscal_year_id)])}>{payment ? "+ Add invoice" : "+ Add allocation"}</button> : null}
+          {fromDonations ? null : <button type="button" onClick={toggleSplit}>{payment ? (split ? "Only one invoice" : "More than one invoice") : split ? "Convert to single allocation" : "Split transaction"}</button>}
+          {split && !fromDonations ? <button type="button" onClick={() => setAllocs([...allocs, blankAlloc(allocs[0].fiscal_year_id)])}>{payment ? "+ Add invoice" : "+ Add allocation"}</button> : null}
           <span className="total">{payment ? "Check amount (total of the invoices)" : "Total (derived from allocations)"}: <b>{money(total.toFixed(2))}</b></span>
         </div>
         {payment ? <AmountPreview accountId={account.id} total={total.toFixed(2)} /> : null}

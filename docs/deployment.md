@@ -140,7 +140,8 @@ Host commands for a locked-out user, run on the server — on the Linux server i
 the `pennywarden` command since 2.0.0, and files the commands write are handed back to the service's account); on a
 Windows server as Administrator with `C:\PennyWarden\current\PennyWarden.cmd`; see also `restore` and `reinitialize` in
 [backup-restore.md](backup-restore.md):
-`sudo pennywarden reset-mfa --user NAME --data-dir /var/lib/pennywarden` (two-step verification set up again) and,
+`sudo pennywarden reset-mfa --user NAME --data-dir /var/lib/pennywarden` (two-step verification set up again; add
+`--compromised` after a possible compromise so the user must use a newly generated key, 2.2.0) and,
 from 1.8.0, `sudo pennywarden reset-password --user NAME --data-dir /var/lib/pennywarden` (prints a temporary password
 that must be changed at the next sign-in). On a server always add `--data-dir`
 ([why](backup-restore.md#the-data-folder---data-dir)).

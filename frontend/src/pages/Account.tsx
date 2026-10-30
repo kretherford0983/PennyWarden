@@ -5,6 +5,8 @@ import { ROLE_NAMES, useMe } from "../App";
 import { SecuritySection } from "./Mfa";
 import { SecurityQuestionsSection } from "./Recovery";
 import { UpdateBanner, type UpdateStatus } from "./Updates";
+import { PasswordChecklist, PasswordFieldsWithChecklist } from "../PasswordChecklist";
+import { setNameOrder } from "../names";
 
 export default function Account({ updates = null }: { updates?: UpdateStatus | null }) {
   const { me, setTheme } = useMe();
@@ -26,6 +28,11 @@ export default function Account({ updates = null }: { updates?: UpdateStatus | n
     } catch (x) {
       setErr(x);
     }
+  };
+  const [nameOrderValue, setNameOrderValue] = useState<string>(me.name_order || "FIRST_LAST");
+  const changeNameOrder = async (v: string) => {
+    await api.put("/api/me/preferences", { name_order: v });
+    setNameOrder(v); setNameOrderValue(v);
   };
   const theme = async (t: "light" | "dark") => {
     await api.put("/api/me/preferences", { theme: t });
@@ -50,14 +57,25 @@ export default function Account({ updates = null }: { updates?: UpdateStatus | n
           <label className="check"><input type="radio" name="theme" checked={me.theme === "dark"} onChange={() => theme("dark")} /> Dark</label>
         </div>
         <p className="hint">Your preference is saved to your account and applies on every sign-in.</p>
+        {/* 2.2.0 (#316): how Individuals show and sort in the Entities list and pickers */}
+        <Field label="Show people's names as">
+          <select aria-label="Show people's names as" value={nameOrderValue} onChange={(e) => changeNameOrder(e.target.value)}>
+            <option value="FIRST_LAST">First Last (sorted by first name)</option>
+            <option value="LAST_FIRST">Last, First (sorted by last name)</option>
+          </select>
+        </Field>
       </section>
       <GuardedForm className="card" onSubmit={submit}>
         <h2>Change password</h2>
         <ErrorBox error={err} />
         {ok ? <div className="alert ok" role="status">Password changed. Your other sessions were signed out.</div> : null}
-        <Field label="Current password"><input type="password" required autoComplete="current-password" value={f.current_password} onChange={(e) => setF({ ...f, current_password: e.target.value })} /></Field>
-        <Field label="New password" hint="At least 12 characters including a letter and a digit."><input type="password" required autoComplete="new-password" value={f.new_password} onChange={(e) => setF({ ...f, new_password: e.target.value })} /></Field>
-        <Field label="Confirm new password"><input type="password" required autoComplete="new-password" value={f.new_password_confirmation} onChange={(e) => setF({ ...f, new_password_confirmation: e.target.value })} /></Field>
+        {/* 2.2.0 (#343): the requirements beside the fields, ticked off while typing; a refused change keeps the fields */}
+        <PasswordFieldsWithChecklist checklist={<PasswordChecklist id="pw-req-account" password={f.new_password}
+          context={{ username: me.username, current: f.current_password, confirm: f.new_password_confirmation }} />}>
+          <Field label="Current password"><input type="password" required autoComplete="current-password" value={f.current_password} onChange={(e) => setF({ ...f, current_password: e.target.value })} /></Field>
+          <Field label="New password"><input type="password" required autoComplete="new-password" aria-describedby="pw-req-account" value={f.new_password} onChange={(e) => setF({ ...f, new_password: e.target.value })} /></Field>
+          <Field label="Confirm new password"><input type="password" required autoComplete="new-password" value={f.new_password_confirmation} onChange={(e) => setF({ ...f, new_password_confirmation: e.target.value })} /></Field>
+        </PasswordFieldsWithChecklist>
         <button className="primary" type="submit">Change password</button>
       </GuardedForm>
       <SecuritySection />

@@ -15,9 +15,10 @@ from .. import audit
 from ..deps import Ctx, get_db, require
 from ..errors import validation
 from ..schemas import (ReasonIn, FundraiserBucketIn, FundraiserCategoryIn, FundraiserFinalIn, FundraiserFyNotesIn, FundraiserIn,
-                       FundraiserLineIn, FundraiserLinkIn, FundraiserSeriesIn, FundraiserSeriesMergeIn, FundraiserSeriesResultIn,
+                       FundraiserLineIn, FundraiserLinkIn, FundraiserSeriesAddIn, FundraiserSeriesIn, FundraiserSeriesMergeIn, FundraiserSeriesResultIn,
                        FundraiserNotesIn, FundraiserOrderIn,
                        FundraiserPreviewIn, ModulesIn)
+from ..services import branding  # 2.2.0 (#280)
 from ..services import fundraiser_deck as deck  # 2.1.0 (#276); imports python-pptx at start-up
 from ..services import fundraiser_summary as fs  # 2.1.0 (#275); imports python-docx at start-up
 from ..services import fundraiser_fy_report as fyrep
@@ -27,6 +28,7 @@ from ..services.checkprint import service as checks_svc
 from ..services import donations as donations_svc
 from ..services.common import get_scoped
 from ..models import FiscalYear
+from ..permissions import PERMISSIONS
 
 router = APIRouter(prefix="/api", tags=["fundraisers"])
 
@@ -39,6 +41,28 @@ def _modules(db: Session, ws_id: int) -> dict:
 @router.get("/system/modules")
 def modules(db: Session = Depends(get_db), ctx: Ctx = Depends(require("modules.manage"))):
     return _modules(db, ctx.workspace_id)
+
+
+# 2.2.0 (#349): every module, on or off, and who uses it - read-only for every role on System/About → General
+MODULES = (("fundraisers", "Fundraisers", ("fundraiser.view",), None),
+           ("checks", "Payments", ("checks.print",), "checks.setup"),
+           ("donations", "Donations", ("donation.view", "donation.print"), "donation.setup"))
+ROLE_PLURALS = (("BUDGET_MANAGER", "Budget Managers"), ("BUDGET_USER", "Budget Users"),
+                ("REGISTER_USER", "Register Users"), ("AUDITOR", "Auditors"))
+
+
+@router.get("/system/modules/status")
+def modules_status(db: Session = Depends(get_db), ctx: Ctx = Depends(require("system.about"))):
+    on = _modules(db, ctx.workspace_id)
+    out = []
+    for key, name, use, setup in MODULES:
+        roles = set().union(*(PERMISSIONS[p] for p in use))
+        used_by = [label for code, label in ROLE_PLURALS if code in roles]
+        if setup:
+            used_by.append("Administrators (setup)")
+        out.append({"key": key, "name": name, "enabled": bool(on[key]), "used_by": used_by,
+                    "you": any(ctx.has(p) for p in use + ((setup,) if setup else ()))})
+    return out
 
 
 @router.put("/system/modules")
@@ -128,13 +152,15 @@ def fy_report(fiscal_year_id: int = Query(...), ids: list[int] = Query(...), yea
         db.rollback()
         return rep
     if format == "pptx":
-        data = fyrep.build_pptx(org, rep)
+        with branding.use(db):        # 2.2.0 (#280)
+            data = fyrep.build_pptx(org, rep)
         audit.record(db, ctx, "REPORT_GENERATED", "fiscal_year", fy.id, None, summary)
         db.commit()
         return Response(data, media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
                         headers={"Content-Disposition": f'attachment; filename="{fyrep.file_stem(org, rep)}-presentation.pptx"',
                                  "Cache-Control": "private, no-store"})
-    path, fname, pages = fyrep.pdf_file(org, rep)
+    with branding.use(db):
+        path, fname, pages = fyrep.pdf_file(org, rep)
     audit.record(db, ctx, "REPORT_GENERATED", "fiscal_year", fy.id, None, {**summary, "pages": pages})
     db.commit()
     headers = {"Content-Disposition": f'{"attachment" if download else "inline"}; filename="{fname}"',
@@ -145,8 +171,10 @@ def fy_report(fiscal_year_id: int = Query(...), ids: list[int] = Query(...), yea
 
 
 @router.get("/fundraiser-series")
-def series_list(db: Session = Depends(get_db), ctx: Ctx = Depends(manager)):
-    return series.series_list(db, ctx)
+def series_list(direction: Literal["asc", "desc"] | None = None, db: Session = Depends(get_db),
+                ctx: Ctx = Depends(manager)):
+    """2.2.0 (#351): years newest first, or as the user last chose; ?direction= overrides."""
+    return series.series_list(db, ctx, direction)
 
 
 @router.get("/fundraiser-series/start-options")
@@ -159,6 +187,20 @@ def series_start_options(db: Session = Depends(get_db), ctx: Ctx = Depends(manag
 def start_series(fid: int, db: Session = Depends(get_db), ctx: Ctx = Depends(manager)):
     """2.1.0 (#292): the fundraiser's series, created when it has none, so prior years can be entered."""
     s = series.start_series(db, ctx, svc.get(db, ctx, fid))
+    db.commit()
+    return {"series_id": s.id, "series": series.series_list(db, ctx)}
+
+
+@router.get("/fundraisers/{fid}/series-add-options")
+def series_add_options(fid: int, db: Session = Depends(get_db), ctx: Ctx = Depends(manager)):
+    """2.2.0 (#302): the series this fundraiser can be added to (allowed = no entered result for its year)."""
+    return series.add_options(db, ctx, svc.get(db, ctx, fid))
+
+
+@router.put("/fundraisers/{fid}/series")
+def add_to_series(fid: int, body: FundraiserSeriesAddIn, db: Session = Depends(get_db), ctx: Ctx = Depends(manager)):
+    """2.2.0 (#302): Add to an existing series - for an event held more than once a year."""
+    s = series.add_to_series(db, ctx, svc.get(db, ctx, fid), body.series_id)
     db.commit()
     return {"series_id": s.id, "series": series.series_list(db, ctx)}
 
@@ -374,7 +416,8 @@ def summary_report(fid: int, format: Literal["pdf", "docx"] = "pdf", itemized: b
     s = fs.summary(db, ctx, f, itemized=itemized, names=names, plain_lines=plain_lines, history=history)
     opts = {"itemized": itemized, "names": names, "plain_lines": plain_lines, "history": history}
     if format == "docx":
-        data = fs.build_docx(s)
+        with branding.use(db):
+            data = fs.build_docx(s)
         audit.record(db, ctx, "REPORT_GENERATED", "fundraiser", f.id, None,
                      {"report": "FUNDRAISER_SUMMARY", "format": "DOCX", "options": opts})
         db.commit()
@@ -399,7 +442,8 @@ def presentation(fid: int, itemized: bool = True, names: bool = True, history: b
     history=false (#300) leaves out the year-over-year slide."""
     f = svc.get(db, ctx, fid)
     s = fs.summary(db, ctx, f, itemized=itemized, names=names, history=history)
-    data = deck.build(s)
+    with branding.use(db):
+        data = deck.build(s)
     audit.record(db, ctx, "REPORT_GENERATED", "fundraiser", f.id, None,
                  {"report": "FUNDRAISER_PRESENTATION", "format": "PPTX",
                   "options": {"itemized": itemized, "names": names, "history": history}})

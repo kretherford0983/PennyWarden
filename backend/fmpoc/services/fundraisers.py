@@ -685,7 +685,7 @@ def _bucket_summary(db: Session, f: Fundraiser, rows: list[dict]) -> dict:
                 "expense": fmt(g["EXPENSE"]), "net": fmt(g["INCOME"] - g["EXPENSE"]), "lines": g["lines"],
                 "credits_income": fmt(g["less_INCOME"]), "credits_expense": fmt(g["less_EXPENSE"]),
                 "category_id": b.category_id if b.category_id in cat_ids else None,
-                "display_order": b.display_order}
+                "display_order": b.display_order, "is_donation": bool(b.is_donation)}
 
     items = [item(b) for b in buckets]
     categories = []
@@ -704,7 +704,7 @@ def _bucket_summary(db: Session, f: Fundraiser, rows: list[dict]) -> dict:
 
 def _bucket_snapshot(b: FundraiserBucket) -> dict:
     return {"id": b.id, "fundraiser_id": b.fundraiser_id, "name": b.name, "description": b.description,
-            "category_id": b.category_id, "display_order": b.display_order}
+            "category_id": b.category_id, "display_order": b.display_order, "is_donation": bool(b.is_donation)}
 
 
 def _check_category(db: Session, f: Fundraiser, category_id: int | None) -> None:
@@ -737,7 +737,7 @@ def create_bucket(db: Session, ctx, f: Fundraiser, body) -> FundraiserBucket:
     _check_category(db, f, body.category_id)
     b = FundraiserBucket(fundraiser_id=f.id, name=body.name, description=body.description or None,
                          category_id=body.category_id, display_order=_next_bucket_order(db, f),
-                         created_by_user_id=ctx.user.id)
+                         is_donation=bool(body.is_donation), created_by_user_id=ctx.user.id)
     db.add(b)
     db.flush()
     audit.record(db, ctx, "FUNDRAISER_BUCKET_CREATED", "fundraiser_bucket", b.id, None, _bucket_snapshot(b))
@@ -759,6 +759,8 @@ def update_bucket(db: Session, ctx, f: Fundraiser, b: FundraiserBucket, body) ->
     _check_category(db, f, body.category_id)
     before = _bucket_snapshot(b)
     b.name, b.description, b.category_id = body.name, body.description or None, body.category_id
+    if body.is_donation is not None:        # 2.2.0 (#256): only a suggestion for receipts, so allowed in a closed year
+        b.is_donation = body.is_donation
     db.flush()
     if _bucket_snapshot(b) != before:
         audit.record(db, ctx, "FUNDRAISER_BUCKET_UPDATED", "fundraiser_bucket", b.id, before, _bucket_snapshot(b))

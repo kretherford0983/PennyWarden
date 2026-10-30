@@ -1,5 +1,5 @@
 // E2E UI verification (AC-INIT-*, AC-UI-THEME-*, AC-FY-VIS-*, AC-SEC-005/011, AC-AUTH-SELF-001, AC-REG-001).
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { createHmac } from "node:crypto";
 import { existsSync, mkdtempSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -353,6 +353,67 @@ test("AC-AUTH-SELF-001/004: self-service password change", async ({ page }) => {
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page.getByText("Invalid username or password.")).toBeVisible();
   await login(page, "ru1", "Brand-New-Pass-99");
+});
+
+test("#343: a failed sign-in clears and focuses the password; Change password shows the requirements and keeps the fields", async ({ page }) => {
+  await page.goto("/");
+  await page.getByLabel("Username").fill("ru1");
+  await page.getByLabel("Password").fill("Not-The-Password-1");
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page.getByText("Invalid username or password.")).toBeVisible();
+  await expect(page.getByLabel("Password")).toHaveValue("");
+  await expect(page.getByLabel("Password")).toBeFocused();
+  await expect(page.getByLabel("Username")).toHaveValue("ru1");
+  await page.getByLabel("Password").fill("Brand-New-Pass-99");
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await passGates(page);
+  await page.getByRole("link", { name: "My account" }).click();
+  const list = page.getByTestId("password-checklist");
+  const req = (id: string) => list.locator(`li[data-req="${id}"]`);
+  // shown before typing, from the server's policy, nothing met yet
+  await expect(req("length")).toContainText("At least 12 characters (at most 128)");
+  for (const id of ["length", "letter_digit", "not_username", "differs_current", "confirm_matches"])
+    await expect(req(id)).toHaveAttribute("data-state", "unmet");
+  await expect(req("differs_temporary")).toHaveCount(0);
+  await expect(list).toHaveAttribute("aria-live", "polite");
+  await page.getByLabel("Current password").fill("Wrong-Current-11");
+  const np = page.getByLabel("New password", { exact: true });
+  await np.fill("short1");
+  await expect(req("letter_digit")).toHaveAttribute("data-state", "met");
+  await expect(req("length")).toHaveAttribute("data-state", "unmet");
+  await expect(req("length")).toContainText("(not met)");
+  await np.fill("Another-Pass-77");
+  await expect(req("length")).toHaveAttribute("data-state", "met");
+  await expect(req("length")).toContainText("(met)");
+  await expect(req("confirm_matches")).toHaveAttribute("data-state", "unmet");
+  await page.getByLabel("Confirm new password").fill("Another-Pass-77");
+  for (const id of ["length", "letter_digit", "not_username", "differs_current", "confirm_matches"])
+    await expect(req(id)).toHaveAttribute("data-state", "met");
+  // met is green and unmet red (theme tokens)
+  const green = await req("length").evaluate((el) => getComputedStyle(el).color);
+  expect(green).not.toBe(await page.getByText("Password requirements").evaluate((el) => getComputedStyle(el).color));
+  // a refused change keeps everything that was typed
+  await page.getByRole("button", { name: "Change password" }).click();
+  await expect(page.getByText("The current password is incorrect.")).toBeVisible();
+  await expect(page.getByLabel("Current password")).toHaveValue("Wrong-Current-11");
+  await expect(np).toHaveValue("Another-Pass-77");
+  await expect(page.getByLabel("Confirm new password")).toHaveValue("Another-Pass-77");
+  const card = page.locator("form.card", { has: page.getByRole("heading", { name: "Change password" }) });
+  await card.screenshot({ path: "e2e-screenshots/light-change-password-checklist.png" });
+  await page.getByRole("button", { name: /Switch to dark mode/ }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "dark");
+  await card.screenshot({ path: "e2e-screenshots/dark-change-password-checklist.png" });
+  await page.getByRole("button", { name: /Switch to light mode/ }).click();
+  await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
+  await page.setViewportSize({ width: 390, height: 844 });
+  await card.scrollIntoViewIfNeeded();
+  await card.screenshot({ path: "e2e-screenshots/phone-change-password-checklist.png" });
+  // on a phone the list goes under the fields
+  const fieldsBox = (await card.locator(".pw-fields").boundingBox())!;
+  const listBox = (await card.locator(".pw-checklist").boundingBox())!;
+  expect(listBox.y).toBeGreaterThanOrEqual(fieldsBox.y + fieldsBox.height - 1);
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await logout(page);
 });
 
 test("AC-FY-004 / AC-REG-015: UI confirmation flows (gap warning, void)", async ({ page }) => {
@@ -791,11 +852,18 @@ test("2.1.0 (#262, #260, #259): register sort, electronic payment, reorder attac
   // #262: sort by Cleared (the balance column becomes the cleared balance), remembered after a reload, then reset
   const cleared = page.getByRole("columnheader", { name: "Cleared", exact: true });
   await expect(cleared).toHaveAttribute("aria-sort", "none");
+  const savedAsc = page.waitForResponse((r) => r.url().includes("/api/me/preferences") && r.request().method() === "PUT"
+    && (r.request().postData() || "").includes("clear_date:asc"));
   await cleared.getByRole("button").click();
   await expect(cleared).toHaveAttribute("aria-sort", "ascending");
+  await savedAsc;
   await expect(page.getByRole("columnheader", { name: "Cleared balance" })).toBeVisible();
+  // the sort is saved by a request the page doesn't wait for: wait for the "descending" save before reloading
+  const savedDesc = page.waitForResponse((r) => r.url().includes("/api/me/preferences") && r.request().method() === "PUT"
+    && (r.request().postData() || "").includes("clear_date:desc"));
   await cleared.getByRole("button").click();
   await expect(cleared).toHaveAttribute("aria-sort", "descending");
+  expect((await savedDesc).ok()).toBeTruthy();
   await page.reload();
   await expect(page.getByRole("columnheader", { name: "Cleared", exact: true })).toHaveAttribute("aria-sort", "descending");
   await page.getByRole("button", { name: "Reset to default" }).click();
@@ -1133,6 +1201,46 @@ test("CR-018: two-step verification — setup, recovery codes, sign-in, trusted 
   await expect(page.getByRole("row", { name: /bm1/ })).toContainText("Not set up");
   await logout(page);
   await login(page, "bm1"); // local mode: optional again, no code asked (trusted browser was removed too)
+
+  // 2.2.0 (#327): set up again with the key already in the authenticator app - no new QR code to scan
+  await page.getByRole("link", { name: "My account" }).click();
+  await sec.getByRole("button", { name: "Set up two-step verification" }).click();
+  await expect(sec.getByTestId("mfa-secret")).toBeVisible();
+  await sec.getByText("Use my own key instead").click();
+  await sec.getByLabel("Your authenticator key or otpauth link").fill("not a key 0189");
+  await sec.getByRole("button", { name: "Use this key" }).click();
+  await expect(sec.getByRole("alert")).toContainText("letters A-Z and the digits 2-7");
+  await expect(sec.getByRole("alert")).not.toContainText("0189");
+  await sec.getByLabel("Your authenticator key or otpauth link").fill(secret.toLowerCase().replace(/(.{4})/g, "$1 "));
+  await sec.getByRole("button", { name: "Use this key" }).click();
+  await expect(sec).toContainText("Using your own key.");
+  await expect(sec.getByTestId("mfa-secret")).toHaveCount(0);
+  await expect(sec.getByTestId("own-key-short")).toHaveCount(0);   // 32 characters, like PennyWarden's own
+  await sec.getByLabel("Code from the app").fill(totp(secret, 1));
+  await sec.getByRole("button", { name: "Turn on two-step verification" }).click();
+  await expect(sec.getByRole("list", { name: "Recovery codes" }).locator("code")).toHaveCount(10);
+  await sec.getByLabel("I have saved my recovery codes").check();
+  await sec.getByRole("button", { name: "Continue" }).click();
+  await expect(sec).toContainText("10 of 10 recovery codes unused");
+  await logout(page);
+
+  // a reset marked as a possible compromise: only a newly generated key
+  await login(page, "admin");
+  await page.getByRole("link", { name: "Users", exact: true }).click();
+  await rowAction(page.getByRole("row", { name: /bm1/ }), "bm1", "Reset two-step");
+  const dlg2 = page.getByRole("dialog");
+  await dlg2.getByLabel("Reason (required)").fill("Phone stolen");
+  await dlg2.getByLabel("Possible compromise").check();
+  await dlg2.getByRole("button", { name: "Reset two-step verification" }).click();
+  await expect(dlg2.getByRole("status")).toContainText("was reset");
+  await dlg2.getByRole("button", { name: "Done" }).click();
+  await logout(page);
+  await login(page, "bm1");
+  await page.getByRole("link", { name: "My account" }).click();
+  await sec.getByRole("button", { name: "Set up two-step verification" }).click();
+  await expect(sec.getByTestId("own-key-blocked")).toContainText("possible security problem");
+  await expect(sec.getByLabel("Your authenticator key or otpauth link")).toHaveCount(0);
+  await sec.getByRole("button", { name: "Cancel" }).click();
 });
 
 // ---------------------------------------------------------------- CR-023 / CR-024 / CR-025 backup and restore
@@ -1164,7 +1272,20 @@ test("CR-023 / CR-025: Administrator creates an encrypted backup and restores it
   await expect(page.getByRole("button", { name: "Restore" })).toBeDisabled();
   await page.getByLabel("Type RESTORE to confirm").fill("RESTORE");
   await page.getByRole("button", { name: "Restore" }).click();
+  // 2.2.0 (#319): What to restore - everything ticked, collapsed to All; here everything but Users
+  const wtr = page.getByRole("group", { name: "What to restore" });
+  await expect(wtr).toBeVisible({ timeout: 30_000 });
+  await expect(wtr.getByLabel("Restore all")).toBeChecked();
+  await wtr.getByText("— show the parts").click();
+  await wtr.getByLabel("Restore Users").uncheck();
+  await expect(wtr.getByLabel("Restore all")).not.toBeChecked();
+  await wtr.getByRole("button", { name: "Review" }).click();
+  await expect(wtr.getByTestId("restore-summary")).toContainText("Kept as it is now: Users");
+  await expect(wtr.getByTestId("restore-summary")).toContainText("and the current audit log");
+  await page.screenshot({ path: "e2e-screenshots/light-restore-what-to-restore.png", fullPage: true });
+  await wtr.getByRole("button", { name: "Restore the chosen parts" }).click();
   await expect(page.getByRole("status")).toContainText("Restore complete", { timeout: 30_000 });
+  await expect(page.getByTestId("restore-restored")).toContainText("Restored: data, settings.general");
   await page.screenshot({ path: "e2e-screenshots/light-restore-done.png", fullPage: true });
   await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible({ timeout: 15_000 });
   await login(page, "admin");
@@ -1203,6 +1324,113 @@ test("CR-024: a new installation is set up from the backup in the initialization
     await page.getByLabel("Password").fill(PW);
     await page.getByRole("button", { name: "Sign in" }).click();
     await passGates(page);
+  } finally {
+    child.kill();
+  }
+});
+
+test("#231: a server in testing mode shows the banner everywhere and the Testing tab to Administrators", async ({ page }) => {
+  const port = 8801;
+  const bundle = process.env.FM_BUNDLE;
+  const dataDir = mkdtempSync(join(tmpdir(), "fm-test-srv-"));
+  const args = ["--mode", "server", "--host", "127.0.0.1", "--no-browser", "--port", String(port), "--data-dir", dataDir];
+  const child = spawn(bundle || process.env.FM_PYTHON || "python", bundle ? args : ["-m", "fmpoc", ...args],
+    { cwd: existsSync(join(process.cwd(), "..", "backend")) ? join(process.cwd(), "..", "backend") : join(process.cwd(), "backend"),
+      stdio: "ignore", env: { ...process.env, FM_TESTING_MODE: "true" } });
+  try {
+    const base = `http://127.0.0.1:${port}`;
+    for (let i = 0; i < 120; i++) {
+      try { if ((await fetch(`${base}/api/health`)).ok) break; } catch { /* starting */ }
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    await page.goto(base + "/");
+    await page.getByLabel("Organization / Workspace Name").fill("Test Server Org");
+    await page.getByLabel("Administrator First Name").fill("Pat");
+    await page.getByLabel("Administrator Last Name").fill("Example");
+    await page.getByLabel("Administrator Username").fill("admin");
+    await page.getByLabel("Administrator Email Address").fill("admin@example.org");
+    await page.getByLabel("Password", { exact: true }).fill(PW);
+    await page.getByLabel("Password Confirmation").fill(PW);
+    await page.getByRole("button", { name: "Initialize" }).click();
+    const secret = (await page.getByTestId("mfa-secret").textContent())!.replace(/\s/g, "");
+    await page.getByLabel("Code from the app").fill(totp(secret));
+    await page.getByRole("button", { name: "Turn on two-step verification" }).click();
+    await page.getByLabel("I have saved my recovery codes").check();
+    await page.getByRole("button", { name: "Continue" }).click();
+    await setupQuestions(page);
+    await expect(page.getByTestId("testing-banner")).toContainText("TESTING MODE");
+    await page.goto(base + "/about/testing");
+    const panel = page.getByRole("region", { name: "Testing" });
+    await expect(panel).toBeVisible();
+    await expect(panel).toContainText("scheduled backups are off");
+    await panel.getByRole("button", { name: "Check for updates now" }).click();
+    await expect(panel.getByRole("status")).toContainText("Update check done.");
+    await page.screenshot({ path: "e2e-screenshots/light-testing-mode.png", fullPage: true });
+    // the setting is shown read-only
+    await page.goto(base + "/about/settings");
+    await expect(page.getByText("Testing mode (test server)")).toBeVisible();
+    // and the sign-in page carries the banner too
+    await page.getByRole("button", { name: "Sign out" }).click();
+    await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
+    await expect(page.getByTestId("testing-banner")).toBeVisible();
+  } finally {
+    child.kill();
+  }
+});
+
+test("#243: the published demo - built by the script, restored on a new install, banner, reset from the sign-in page", async ({ page }) => {
+  test.setTimeout(240_000);
+  test.skip(!!process.env.FM_BUNDLE && !process.env.FM_PYTHON, "builds the demo with Python from this checkout");
+  const py = process.env.FM_PYTHON || "python";
+  const root = existsSync(join(process.cwd(), "..", "scripts")) ? join(process.cwd(), "..") : process.cwd();
+  const demoFile = join(mkdtempSync(join(tmpdir(), "fm-demo-")), "pennywarden-demo.fmbak");
+  const built = spawnSync(py, [join(root, "scripts", "build_demo.py"), "--out", demoFile, "--python", py], { encoding: "utf-8", timeout: 200_000 });
+  expect(built.status, built.stderr + built.stdout).toBe(0);
+  const port = 8802;
+  const bundle = process.env.FM_BUNDLE;
+  const dataDir = mkdtempSync(join(tmpdir(), "fm-demo-install-"));
+  const args = ["--no-browser", "--port", String(port), "--data-dir", dataDir];
+  const child = spawn(bundle || py, bundle ? args : ["-m", "fmpoc", ...args], { cwd: join(root, "backend"), stdio: "ignore" });
+  try {
+    const base = `http://127.0.0.1:${port}`;
+    for (let i = 0; i < 120; i++) {
+      try { if ((await fetch(`${base}/api/health`)).ok) break; } catch { /* starting */ }
+      await new Promise((r) => setTimeout(r, 250));
+    }
+    await page.goto(base + "/");
+    await page.getByRole("button", { name: "Restore from a backup instead" }).click();
+    await page.getByLabel("Backup file (.fmbak)").setInputFiles(demoFile);
+    await page.getByLabel("Backup passphrase").fill("pennywarden demo");
+    await page.getByRole("button", { name: "Restore" }).click();
+    await expect(page.getByRole("status")).toContainText("Restore complete", { timeout: 60_000 });
+    await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId("demo-banner")).toContainText("DEMO");
+    // the published sign-in, then a change the next reset undoes
+    await page.getByLabel("Username").fill("demo-register");
+    await page.getByLabel("Password").fill("Demo-PennyWarden-2026");
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(page.getByRole("navigation", { name: "Main navigation" })).toBeVisible({ timeout: 20_000 });
+    await expect(page.getByTestId("demo-banner")).toBeVisible();
+    await expect(page.getByTestId("demo-banner").getByRole("button", { name: "Remove the demo and start fresh" })).toHaveCount(0);
+    await page.screenshot({ path: "e2e-screenshots/light-demo.png", fullPage: true });
+    await page.getByRole("link", { name: "My account" }).click();
+    await page.getByLabel("Current password").fill("Demo-PennyWarden-2026");
+    await page.getByLabel("New password", { exact: true }).fill("Evaluator-Pass-77");
+    await page.getByLabel("Confirm new password").fill("Evaluator-Pass-77");
+    await page.getByRole("button", { name: "Change password" }).click();
+    await expect(page.getByText("Password changed.")).toBeVisible();
+    await page.getByRole("button", { name: "Sign out" }).click();
+    // Reset demo data from the sign-in page: the published password works again
+    const banner = page.getByTestId("demo-banner");
+    await banner.getByRole("button", { name: "Reset demo data" }).click();
+    // "Resetting…" until the reset is done, then the page reloads with the button as before
+    await expect(banner.getByRole("button", { name: "Resetting…" })).toBeVisible();
+    await expect(banner.getByRole("button", { name: "Reset demo data" })).toBeVisible({ timeout: 30_000 });
+    await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible({ timeout: 30_000 });
+    await page.getByLabel("Username").fill("demo-register");
+    await page.getByLabel("Password").fill("Demo-PennyWarden-2026");
+    await page.getByRole("button", { name: "Sign in" }).click();
+    await expect(page.getByRole("navigation", { name: "Main navigation" })).toBeVisible({ timeout: 20_000 });
   } finally {
     child.kill();
   }
@@ -1525,6 +1753,134 @@ test("#89: a copied budget continues its source; Continues can be set; History s
   await expect(page.getByRole("dialog", { name: "History of 8960 New name" })).toContainText("Old name");
 });
 
+test("#284: a Budget Manager enters years before PennyWarden on History and imports more from a CSV", async ({ page }) => {
+  await login(page, "bm1");
+  const fys = await (await page.request.get("/api/fiscal-years")).json();
+  const f41 = fys.find((f: any) => f.display_name === "FY2041");
+  await page.goto(`/budgets?fiscal_year_id=${f41.id}`);
+  await page.getByRole("button", { name: "History of 8900" }).click();
+  const h = page.getByRole("dialog", { name: "History of 8900 Lineage" });
+  const firstYear = Number((await h.locator(".hint").innerText()).match(/before FY(\d{4})/)![1]);
+  const y1 = `FY${firstYear - 2}`, y2 = `FY${firstYear - 1}`;
+  await h.getByRole("button", { name: "Add an earlier year" }).click();
+  let add = page.getByRole("dialog", { name: "Add an earlier year to 8900 Lineage" });
+  await add.getByLabel("Fiscal Year").fill(`FY${firstYear}`);
+  await add.getByLabel("Budgeted").fill("80.00");
+  await add.getByLabel("Actual").fill("75.50");
+  await add.getByRole("button", { name: "Add" }).click();
+  await expect(add.getByRole("alert")).toContainText("only years before the first Fiscal Year in PennyWarden");
+  await add.getByLabel("Fiscal Year").fill(y2);
+  await add.getByLabel("Note (optional)").fill("from the old treasurer's spreadsheet");
+  await add.getByRole("button", { name: "Add" }).click();
+  await expect(add).toHaveCount(0);
+  const rows = h.getByRole("table", { name: "Budget history" }).locator("tbody tr");
+  await expect(rows).toHaveCount(3);
+  await expect(rows.first()).toContainText(y2);
+  await expect(rows.first()).toContainText("Entered");
+  await expect(rows.first()).toContainText("$75.50");
+  // correct it (a reason is required), then the History shows the new figure
+  await h.getByRole("button", { name: `Correct ${y2}` }).click();
+  const cor = page.getByRole("dialog", { name: `Correct ${y2}` });
+  await cor.getByLabel("Actual").fill("76.00");
+  await cor.getByLabel("Reason (required)").fill("Typo");
+  await cor.getByRole("button", { name: "Save correction" }).click();
+  await expect(rows.first()).toContainText("$76.00");
+  await page.screenshot({ path: "e2e-screenshots/light-budget-history-entered.png" });
+  await h.locator(".actions").getByRole("button", { name: "Close" }).click();
+
+  // CSV import: preview first, then import the matched rows
+  await page.getByRole("button", { name: "Import earlier years…" }).click();
+  const imp = page.getByRole("dialog", { name: "Import earlier years (before PennyWarden)" });
+  await expect(imp.getByRole("link", { name: "Download the template" })).toHaveAttribute("href", new RegExp(`fiscal_year_id=${f41.id}`));
+  await imp.getByLabel("Or paste the CSV").fill(`year,budget code,budgeted,actual,note\n${y1},8900,70,65,\n${y2},8900,1,1,\n${y1},9999,1,1,\n`);
+  await imp.getByRole("button", { name: "Preview" }).click();
+  const prev = imp.getByRole("table", { name: "Import preview" });
+  await expect(prev.locator("tbody tr")).toHaveCount(3);
+  await expect(prev.locator("tbody tr").nth(1)).toContainText("Duplicate");
+  await expect(prev.locator("tbody tr").nth(2)).toContainText("No budget 9999");
+  await imp.getByRole("button", { name: "Import 1 year" }).click();
+  await expect(imp.getByRole("status")).toContainText("1 year was entered.");
+  await imp.getByRole("button", { name: "Done" }).click();
+  // the Budget Review shows the entered years after the PennyWarden ones, labelled entered
+  const rep = await (await page.request.get(`/api/reports/budget-review?fiscal_year_id=${f41.id}&years=-1`)).json();
+  const entered = rep.years.filter((y: any) => y.entered).map((y: any) => y.display_name);
+  expect(entered).toEqual(expect.arrayContaining([y1, y2]));
+  const row = rep.expense.find((r: any) => r.code === "8900");
+  const i = rep.years.findIndex((y: any) => y.display_name === y1);
+  expect(row.history[i]).toMatchObject({ source: "ENTERED", budgeted: "70.00", actual: "65.00" });
+});
+
+test("#381: a budget from before PennyWarden is created, given a year and continued by a budget", async ({ page }) => {
+  await login(page, "bm1");
+  const post = await apiAs(page);
+  const fys = await (await page.request.get("/api/fiscal-years")).json();
+  const f41 = fys.find((f: any) => f.display_name === "FY2041");
+  const bowl = await (await post("/api/budgets", { fiscal_year_id: f41.id, code: "8970", name: "Bowling", budget_type: "EXPENSE", amount: "50.00" })).json();
+  const firstYear = (await (await page.request.get(`/api/budgets/${bowl.id}/history/entered`)).json()).first_year;
+  const y = `FY${firstYear - 3}`;
+  await page.goto(`/budgets?fiscal_year_id=${f41.id}`);
+  await page.getByRole("button", { name: "Before PennyWarden…" }).click();
+  const list = page.getByRole("dialog", { name: "Budgets from before PennyWarden" });
+  await list.getByRole("button", { name: "New budget from before PennyWarden" }).click();
+  const nf = page.getByRole("dialog", { name: "New budget from before PennyWarden" });
+  await nf.getByLabel("Code").fill("450");
+  await nf.getByLabel("Name").fill("Bowling Tournament");
+  await nf.getByLabel("Type").selectOption("EXPENSE");
+  await nf.getByRole("button", { name: "Create" }).click();
+  const d = page.getByRole("dialog", { name: "450 Bowling Tournament (before PennyWarden)" });
+  await expect(d.getByTestId("former-continued-by")).toContainText("No budget in PennyWarden continues it.");
+  await d.getByRole("button", { name: "Add a year" }).click();
+  const add = page.getByRole("dialog", { name: "Add a year to 450 Bowling Tournament" });
+  await add.getByLabel("Fiscal Year").fill(y);
+  await add.getByLabel("Budgeted").fill("800.00");
+  await add.getByLabel("Actual").fill("760.00");
+  await add.getByRole("button", { name: "Add" }).click();
+  await expect(d.getByRole("table", { name: "Years before PennyWarden" })).toContainText("$760.00");
+  await d.getByRole("button", { name: "Link to a budget…" }).click();
+  const lk = page.getByRole("dialog", { name: "Link 450 Bowling Tournament to a budget" });
+  await lk.getByLabel("Link Fiscal Year").selectOption(String(f41.id));
+  await lk.getByLabel("Link budget").selectOption(String(bowl.id));
+  await lk.getByRole("button", { name: "Link" }).click();
+  await expect(d.getByTestId("former-continued-by")).toContainText("Continued by FY2041 8970 Bowling");
+  await page.screenshot({ path: "e2e-screenshots/light-before-pennywarden.png" });
+  await d.locator(".actions").getByRole("button", { name: "Close" }).last().click();
+  await expect(list.getByRole("table", { name: "Budgets from before PennyWarden" })).toContainText("FY2041 8970 Bowling");
+  // #411: search, Type/Continued filters, sortable headings and Clear (back to Code, ascending)
+  const ftable = list.getByRole("table", { name: "Budgets from before PennyWarden" });
+  const clear = list.getByRole("button", { name: "Clear", exact: true });
+  await expect(clear).toBeDisabled();
+  await list.getByLabel("Search").fill("bowling tour");
+  await expect(ftable).toContainText("450");
+  await list.getByLabel("Type").selectOption("INCOME");
+  await expect(list.getByTestId("former-none-match")).toBeVisible();
+  await list.getByLabel("Type").selectOption("EXPENSE");
+  await list.getByLabel("Continued").selectOption("no");
+  await expect(list.getByTestId("former-none-match")).toBeVisible();
+  await list.getByLabel("Continued").selectOption("yes");
+  await expect(ftable).toContainText("FY2041 8970 Bowling");
+  await ftable.getByRole("button", { name: "Name", exact: true }).click();
+  await expect(ftable.locator("th").nth(1)).toHaveAttribute("aria-sort", "ascending");
+  await expect(clear).toBeEnabled();
+  await clear.click();
+  await expect(list.getByLabel("Search")).toHaveValue("");
+  await expect(ftable.locator("th").nth(0)).toHaveAttribute("aria-sort", "ascending");
+  await expect(ftable.locator("th").nth(1)).toHaveAttribute("aria-sort", "none");
+  await expect(clear).toBeDisabled();
+  await list.locator(".actions").getByRole("button", { name: "Close" }).last().click();
+  // the budget's History shows the years and the link; Unlink removes them from its History
+  await page.getByRole("button", { name: "History of 8970" }).click();
+  const h = page.getByRole("dialog", { name: "History of 8970 Bowling" });
+  await expect(h.getByTestId("former-link")).toContainText("continues 450 Bowling Tournament");
+  await expect(h.getByRole("table", { name: "Budget history" })).toContainText(y);
+  // the entered year shows the code and name it had then (ID and Name columns)
+  const er = h.locator("tr.entered-row").filter({ hasText: y });
+  await expect(er.locator("td").nth(1)).toHaveText("450");
+  await expect(er.locator("td").nth(2)).toContainText("Bowling Tournament");
+  await h.getByTestId("former-link").getByRole("button", { name: "Unlink" }).click();
+  await expect(h.getByTestId("former-link")).toContainText("Not linked to a budget from before PennyWarden.");
+  await expect(h.getByRole("table", { name: "Budget history" })).not.toContainText(y);
+});
+
 // ---------------------------------------------------------------- v1.5.0 CR-031: dashboard layout
 test("CR-031: dashboard sections can be hidden, reordered and reset; saved per user", async ({ page }) => {
   await login(page, "ru1", "Brand-New-Pass-99");
@@ -1804,6 +2160,49 @@ test("2.1.0 (#292): prior years for an event with nothing earlier in PennyWarden
   await expect(card).toContainText("Spring Fair 2028");
   await expect(card).toContainText("FY2025");
   await expect(card).toContainText("$410.00");
+  await logout(page);
+});
+
+test("2.2.0 (#302, #351): add a second same-year fundraiser to a series; years newest first, flipped and remembered", async ({ page }) => {
+  await login(page, "bm1");
+  // a second Spring Fair in the same year: nothing earlier to continue from, so Add to a series…
+  await page.getByRole("link", { name: "Fundraisers" }).click();
+  await page.getByRole("button", { name: "New fundraiser" }).click();
+  let dlg = page.getByRole("dialog", { name: "New fundraiser" });
+  await dlg.getByLabel("Name").fill("Spring Fair Encore 2028");
+  await dlg.getByLabel("Event start date").fill("2028-05-06");
+  await dlg.getByRole("button", { name: "Create fundraiser" }).click();
+  await expect(page.getByTestId("fr-series")).toContainText("Not linked to an earlier year");
+  await page.getByRole("button", { name: "Add to a series…" }).click();
+  dlg = page.getByRole("dialog", { name: "Add to an existing series" });
+  await dlg.getByLabel("Series").selectOption((await dlg.locator("option", { hasText: /^Spring Fair$/ }).getAttribute("value"))!);
+  await dlg.getByRole("button", { name: "Add to series" }).click();
+  await expect(page.getByTestId("fr-series")).toContainText("Spring Fair");
+  // the series page: one list, newest year first (same year: newest start first), with the hint
+  await page.getByRole("link", { name: "← Fundraisers" }).click();
+  await page.getByRole("link", { name: "Fundraiser series" }).click();
+  await expect(page.getByTestId("series-twice-hint")).toContainText("more than once a year");
+  const card = page.locator("section.card").filter({ has: page.getByRole("heading", { name: "Spring Fair", exact: true }) });
+  const rows = card.locator("tbody tr");
+  await expect(rows).toHaveCount(3);
+  await expect(rows.nth(0)).toContainText("Spring Fair Encore 2028");
+  await expect(rows.nth(1)).toContainText("Spring Fair 2028");
+  await expect(rows.nth(2)).toContainText("FY2025");
+  await expect(page.locator(".sort-note")).toHaveCount(0);
+  // Year flips every table, and the choice is remembered
+  await card.getByRole("button", { name: "Year", exact: true }).click();
+  await expect(page.locator(".sort-note")).toContainText("Sorted by year, oldest first");
+  await expect(rows.nth(0)).toContainText("FY2025");
+  await expect(rows.nth(1)).toContainText("Spring Fair Encore 2028");   // within a year: unchanged
+  for (const th of await page.locator("section.card thead th").filter({ hasText: "Year" }).all()) await expect(th).toHaveAttribute("aria-sort", "ascending");
+  await logout(page);
+  await login(page, "bm1");
+  await page.getByRole("link", { name: "Fundraisers" }).click();
+  await page.getByRole("link", { name: "Fundraiser series" }).click();
+  await expect(rows.nth(0)).toContainText("FY2025");
+  await page.getByRole("button", { name: "Reset to default" }).click();
+  await expect(page.locator(".sort-note")).toHaveCount(0);
+  await expect(rows.nth(0)).toContainText("Spring Fair Encore 2028");
   await logout(page);
 });
 
@@ -2188,6 +2587,27 @@ test("#106: Financial Flow Report - review, exclude a line with a reason, note a
   // checking the line again discards its reason
   await gift.check();
   await expect(incTotal).toHaveText(`$${(inc0 / 100).toLocaleString("en-US", { minimumFractionDigits: 2 })}`);
+});
+
+// ---------------------------------------------------------------- 2.2.0 #348: comparisons before any data
+test("#348: a Compare Date before any data uses the earliest data, marked on the review screen", async ({ page }) => {
+  await login(page, "ru1", "Brand-New-Pass-99");
+  const today = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+  await page.getByRole("link", { name: "Reports" }).click();
+  await page.getByRole("tab", { name: "Financial Flow" }).click();
+  await page.getByLabel("Title").fill("E2E compare");
+  await page.getByLabel("From Date").fill(today);
+  const notes = page.getByRole("checkbox", { name: "Show notes on substituted starting values" });
+  await expect(notes).toBeDisabled();
+  await page.getByRole("checkbox", { name: "Include Bank Balances" }).check();
+  await page.getByLabel("Compare Date").fill("2001-01-01");
+  await expect(notes).toBeEnabled();
+  await expect(notes).not.toBeChecked();                     // off by default
+  await page.getByRole("button", { name: "Review transactions" }).click();
+  const subs = page.getByTestId("flow-substitutions");
+  await expect(subs).toContainText("starting balance is the first recorded balance");
+  await expect(subs).toContainText("(no data on 2001-01-01)");
+  await expect(subs.locator(".subst-marker").first()).toHaveAttribute("title", /Opening Balance Date|Update balance/);
 });
 
 // ---------------------------------------------------------------- 1.8.0 #113: Forgot password
@@ -3035,7 +3455,7 @@ test("#216: System/About tabs have their own addresses; Auditors see three; bann
   await login(page, "admin");
   await page.getByRole("link", { name: "System/About" }).click();
   const tabs = page.getByRole("tablist", { name: "System/About sections" });
-  await expect(tabs.getByRole("tab")).toHaveText(["About", "General", "Settings", "Backups", "Security", "System health", "Advanced"]);
+  await expect(tabs.getByRole("tab")).toHaveText(["About", "General", "Branding", "Settings", "Backups", "Security", "System health", "Advanced"]);
   await expect(page).toHaveURL(/\/about$/);
   await expect(tabs.getByRole("tab", { name: "About" })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("tabpanel")).toContainText("Data protection");
@@ -3078,16 +3498,44 @@ test("#216: System/About tabs have their own addresses; Auditors see three; bann
   await expect(page.getByRole("region", { name: "Health" })).toBeVisible();
   await page.unroute("**/api/system/backup-schedule/alert");
   await page.screenshot({ path: "e2e-screenshots/light-about-tabs.png" });
-  // an Auditor sees About, Settings and Security only; an Administrator-only address shows About
+  // an Auditor sees About, General (2.2.0, #349), Settings and Security only; an Administrator-only address shows About
   await createUser(page, "auditor1", "Auditor");
   await logout(page);
   await login(page, "auditor1");
   await page.getByRole("link", { name: "System/About" }).click();
-  await expect(page.getByRole("tablist", { name: "System/About sections" }).getByRole("tab")).toHaveText(["About", "Settings", "Security"]);
+  await expect(page.getByRole("tablist", { name: "System/About sections" }).getByRole("tab")).toHaveText(["About", "General", "Settings", "Security"]);
   await page.goto("/about/backups");
   await expect(page).toHaveURL(/\/about$/);
   await page.goto("/about/security");
   await expect(page.getByRole("region", { name: "Security overview" })).toBeVisible();
+  await logout(page);
+});
+
+test("2.2.0 (#349): a financial user sees System/About read-only - About and General only", async ({ page }) => {
+  await login(page, "ru1", "Brand-New-Pass-99");
+  await page.getByRole("link", { name: "System/About" }).click();
+  await expect(page.getByRole("tablist", { name: "System/About sections" }).getByRole("tab")).toHaveText(["About", "General"]);
+  const panel = page.getByRole("tabpanel");
+  await expect(panel).toContainText("Version");
+  await expect(panel).not.toContainText("Data protection");
+  await expect(panel).not.toContainText("Bind address");
+  await expect(page.getByTestId("update-check-status")).toBeVisible();
+  await expect(panel.getByRole("button", { name: "Check now" })).toHaveCount(0);
+  await expect(panel.getByRole("checkbox")).toHaveCount(0);
+  await page.getByRole("tab", { name: "General" }).click();
+  await expect(page).toHaveURL(/\/about\/general$/);
+  await expect(page.getByTestId("org-view")).toContainText("Organization name");
+  await expect(page.getByRole("tabpanel").getByRole("textbox")).toHaveCount(0);
+  await expect(page.getByRole("tabpanel").getByRole("button", { name: "Save" })).toHaveCount(0);
+  const mods = page.getByTestId("modules-status");
+  await expect(mods.getByRole("row", { name: /Payments/ })).toContainText("Register Users");
+  await expect(mods.getByRole("row", { name: /Fundraisers/ })).toContainText(/Enabled|Disabled/);
+  await page.screenshot({ path: "e2e-screenshots/light-about-financial.png" });
+  // Administrator-only tab addresses fall back to /about
+  for (const t of ["settings", "backups", "security", "health", "advanced", "branding"]) {
+    await page.goto(`/about/${t}`);
+    await expect(page).toHaveURL(/\/about$/);
+  }
   await logout(page);
 });
 
@@ -3463,6 +3911,140 @@ test("#312: Donations module - Administrator sets up the receipt; a Register Use
   await logout(page);
 });
 
+// ---------------------------------------------------------------- 2.2.0 #325: the shared envelope library
+test("#325: envelopes are one library tagged by feature; Donations Setup adds one and sets the receipt's window options", async ({ page }) => {
+  await login(page, "admin");
+  await page.getByRole("link", { name: "Envelopes", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Envelopes", exact: true })).toBeVisible();
+  const lib = page.getByTestId("envelope-library");
+  const first = lib.getByRole("row", { name: /^#10 envelope Payments/ });
+  await expect(first).toContainText("Payments");              // upgraded and Payments-created templates: Payments
+  await expect(page.getByTestId("no-default-donations")).toBeVisible();
+  await rowAction(lib, "#10 envelope", "Use for Donations");
+  await expect(lib.getByRole("row", { name: /^#10 envelope Payments, Donations/ })).toContainText("Payments, Donations");
+  await expect(page.getByTestId("no-default-donations")).toHaveCount(0);
+  await page.screenshot({ path: "e2e-screenshots/light-envelope-library.png" });
+  // Donations Setup lists it as the Donations default; its editor says it is shared with Payments
+  await page.getByRole("link", { name: "Donations Setup" }).click();
+  const envs = page.getByTestId("envelopes-donations");
+  const mine = envs.getByRole("row", { name: /^#10 envelope Default/ });
+  await expect(mine).toContainText("Payments");                    // also used for Payments
+  await mine.getByRole("button", { name: "Edit" }).click();
+  await expect(page.getByTestId("envelope-shared")).toContainText("Also used for Payments");
+  await expect(page.getByRole("button", { name: "Duplicate for Donations only" })).toBeVisible();
+  await page.getByRole("button", { name: "Back to Donations Setup" }).click();
+  // the receipt's window options are there; a window receipt hides the envelope step (left off here)
+  await expect(page.getByLabel("Address for a window envelope")).toHaveValue("NONE");
+  await page.getByLabel("Fold marks", { exact: true }).selectOption("FRONT");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Saved." })).toBeVisible();
+  await logout(page);
+});
+
+// ---------------------------------------------------------------- 2.2.0 #325: Donations page
+test("#325: a receipt before the money and an item on the Donations page, then Create transaction", async ({ page }) => {
+  test.setTimeout(150_000);
+  await login(page, "ru1", "Brand-New-Pass-99");
+  await page.getByRole("link", { name: "Donations", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Donations", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "New donation" }).click();
+  const dlg = page.getByRole("dialog", { name: "New donation" });
+  await dlg.getByRole("combobox", { name: "Donor (entity)" }).fill("Sample Donor Alpha");
+  await page.getByRole("option", { name: /Sample Donor Alpha/ }).first().click();
+  await dlg.getByLabel("Line 1 amount").fill("250.00");
+  await dlg.getByLabel("Purpose (optional)").first().fill("New flags");
+  await dlg.getByRole("button", { name: "+ Add line" }).click();
+  await dlg.getByRole("checkbox", { name: "Item (not money)" }).nth(1).check();
+  await expect(dlg.getByText("Estimated value for our records (not printed)")).toBeVisible();
+  await dlg.getByLabel("Line 2 description").fill("Television, 55 inch");
+  await expect(dlg.getByText(/Value not entered/)).toBeVisible();
+  // Details offers the {VARIABLE} list after "{", as on the register's receipt form
+  const det = dlg.getByLabel("Details for the receipt (optional)");
+  await det.fill("{A");
+  await expect(dlg.getByRole("option", { name: /\{AMOUNT\}/ })).toBeVisible();
+  await det.fill("");
+  await dlg.getByRole("button", { name: "Save donation" }).click();
+  const ed = page.getByRole("dialog", { name: /Donation #\d+ – Sample Donor Alpha/ });
+  await expect(ed.getByText("Awaiting deposit")).toBeVisible();
+  // not received: the receipt prints the date blank, after a confirmation
+  await ed.getByRole("button", { name: "Print receipt" }).click();
+  const conf = page.getByRole("dialog", { name: "Confirmation required" });
+  await expect(conf).toContainText("not received yet");
+  await conf.getByLabel("I have reviewed these warnings and explicitly confirm.").check();
+  await conf.getByRole("button", { name: "Confirm and continue" }).click();
+  const pv = page.getByRole("dialog", { name: "Donation receipt" });
+  await expect(pv.getByRole("button", { name: "Print…" })).toBeVisible();
+  await pv.getByRole("button", { name: "Close" }).first().click();
+  await expect(ed.getByRole("region", { name: "Receipts" })).toContainText("date received left blank");
+  // the donor's envelope, from the envelope tagged for Donations (its default first); the test is not kept
+  const envPanel = ed.getByTestId("receipt-envelope");
+  await expect(envPanel.getByLabel("Envelope", { exact: true })).toContainText("#10 envelope (default)");
+  await envPanel.getByRole("button", { name: "Test on plain paper" }).click();
+  const et = page.getByRole("dialog", { name: "Envelope test (plain paper)" });
+  await expect(et.getByRole("button", { name: "Print…" })).toBeVisible();
+  await et.getByRole("button", { name: "Close" }).first().click();
+  await page.screenshot({ path: "e2e-screenshots/light-donation-page.png" });
+  await ed.getByRole("button", { name: "Close" }).first().click();
+  await expect(page.getByRole("radio", { name: /Awaiting deposit \(\d+\)/ })).toBeVisible();
+  // the money arrives: Create transaction
+  await page.getByRole("button", { name: "Create transaction" }).click();
+  const ct = page.getByRole("dialog", { name: "Create transaction from donations" });
+  await ct.getByRole("checkbox", { name: /Sample Donor Alpha \$250\.00/ }).check();
+  await ct.getByRole("button", { name: "Continue" }).click();
+  const tf = page.getByRole("dialog", { name: /New deposit from donations/ });
+  await expect(tf.getByText(/Donation #\d+ – Sample Donor Alpha/)).toBeVisible();
+  await expect(tf.getByLabel("Allocation 1 Amount")).toHaveValue("250.00");
+  const budget = tf.getByLabel("Allocation 1 Budget");
+  await budget.selectOption({ index: 1 });
+  await tf.getByRole("button", { name: "Save" }).click();
+  const c2 = page.getByRole("dialog", { name: "Confirmation required" });
+  // the save may ask for a confirmation first (e.g. a cross-Fiscal-Year date): wait for that dialog or the form closing
+  await expect.poll(async () => (await c2.isVisible()) || (await tf.count()) === 0).toBe(true);
+  if (await c2.isVisible()) {
+    await c2.getByLabel("I have reviewed these warnings and explicitly confirm.").check();
+    await c2.getByRole("button", { name: "Confirm and continue" }).click();
+  }
+  await expect(tf).toHaveCount(0);
+  await expect(page.getByRole("row", { name: /Sample Donor Alpha/ }).first()).toContainText("Not received");   // the TV isn't here yet
+  await logout(page);
+});
+
+// ---------------------------------------------------------------- 2.2.0 #256: year-end statements, donor report
+test("#256: a Register User prints a year-end giving statement; the donor report totals by year", async ({ page }) => {
+  test.setTimeout(120_000);
+  const year = String(new Date().getFullYear());
+  await login(page, "ru1", "Brand-New-Pass-99");
+  await page.getByRole("link", { name: "Donations", exact: true }).click();
+  await page.getByRole("tab", { name: "Year-end statements" }).click();
+  await page.getByLabel("Year", { exact: true }).selectOption(year);
+  const list = page.getByRole("table", { name: `Year-end statements ${year}` });
+  const alpha = list.getByRole("row", { name: /Sample Donor Alpha/ });
+  await expect(alpha).toContainText("Not printed");
+  await alpha.getByRole("button", { name: /Open statement/ }).click();
+  const dlg = page.getByRole("dialog", { name: `Year-end statement ${year} – Sample Donor Alpha` });
+  await expect(dlg.getByRole("table", { name: "Donations in the year" })).toContainText("$250.00");
+  await dlg.getByRole("button", { name: "Print statement" }).click();
+  const conf = page.getByRole("dialog", { name: "Confirmation required" });
+  const pv = page.getByRole("dialog", { name: "Year-end statement", exact: true });
+  await expect.poll(async () => (await conf.isVisible()) || (await pv.isVisible())).toBe(true);
+  if (await conf.isVisible()) {
+    await conf.getByLabel("I have reviewed these warnings and explicitly confirm.").check();
+    await conf.getByRole("button", { name: "Confirm and continue" }).click();
+  }
+  await expect(pv.getByRole("button", { name: "Print…" })).toBeVisible();
+  await pv.getByRole("button", { name: "Close" }).first().click();
+  await expect(dlg.getByTestId("statement-history")).toContainText(`S-${year}-0001`);
+  await expect(dlg.getByRole("button", { name: "Print duplicate" })).toBeVisible();
+  await page.screenshot({ path: "e2e-screenshots/light-year-end-statement.png" });
+  await dlg.getByRole("button", { name: "Close" }).first().click();
+  // the donor report: a column per year and the total
+  await page.getByRole("tab", { name: "Donor report" }).click();
+  const rep = page.getByRole("table", { name: "Donor report" });
+  await expect(rep.getByRole("row", { name: /Sample Donor Alpha/ })).toBeVisible();
+  await expect(rep.getByRole("columnheader", { name: year })).toBeVisible();
+  await logout(page);
+});
+
 test("#125: an Administrator reinitializes (keeping the users); everyone sees the notice until it is acknowledged", async ({ page }) => {
   await login(page, "admin");
   await page.getByRole("link", { name: "System/About" }).click();
@@ -3483,4 +4065,78 @@ test("#125: an Administrator reinitializes (keeping the users); everyone sees th
   await login(page, "admin");
   await page.getByTestId("reinitialized-banner").getByRole("button", { name: "Acknowledge for everyone" }).click();
   await expect(page.getByTestId("reinitialized-banner")).toHaveCount(0);
+});
+// ---------------------------------------------------------------- 2.2.0 #280: organization branding
+const BRAND_LOGO = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAKAAAAAwCAIAAAAZy+Y5AAAAlUlEQVR42u3cMQ5AQBBA0VlxC0qOtw7jeloH0ck2thEi671WIfEzilmRhjwF7eo8AoERGIERGIERmFJ/dWFft6fvPS6zACYYgRFYYARGYARGYAQmbm6yvuCFbVobKjtBE+wVjcAIjMAIjMAILDACIzACE38+bPBdrQlGYIERGIERGIERGIE5JT9CM8EIjMAIjMAITOkAyvUIbD4P5UMAAAAASUVORK5CYII=", "base64");
+test("#280: an Administrator brands reports - a palette, a custom palette checked for contrast, a logo", async ({ page }) => {
+  await login(page, "admin");
+  await page.getByRole("link", { name: "System/About" }).click();
+  await aboutTab(page, "Branding");
+  await expect(page).toHaveURL(/\/about\/branding$/);
+  const card = page.getByRole("region", { name: "Organization branding" });
+  await expect(card.getByRole("radio", { name: /PennyWarden/ })).toBeChecked();
+  await card.getByRole("radio", { name: /Forest/ }).check();
+  await card.getByLabel("Footer text (optional)").fill("Serving the community since 1952");
+  await card.getByRole("button", { name: "Save branding" }).click();
+  await expect(card.getByRole("status")).toHaveText("Saved.");
+  // custom: generated from two colors, then a text color too light is caught before saving
+  await card.getByRole("radio", { name: "Custom" }).check();
+  await card.getByLabel("Primary color", { exact: true }).fill("#00658f");
+  await card.getByLabel("Secondary color", { exact: true }).fill("#e0a100");
+  await card.getByRole("button", { name: "Generate recommended palette" }).click();
+  await card.getByText("Color roles", { exact: true }).click();
+  await card.getByLabel("Text on Primary", { exact: true }).fill("#5d8fb0");
+  await expect(card.getByTestId("branding-contrast")).toContainText("WCAG AA");
+  await expect(card.getByRole("button", { name: "Save branding" })).toBeDisabled();
+  await card.getByLabel("Text on Primary", { exact: true }).fill("#ffffff");
+  await expect(card.getByRole("button", { name: "Save branding" })).toBeEnabled();
+  await card.getByRole("button", { name: "Save branding" }).click();
+  await expect(card.getByRole("status")).toHaveText("Saved.");
+  // the logo shows in the live preview at once
+  await card.getByLabel("Full logo image").setInputFiles({ name: "logo.png", mimeType: "image/png", buffer: BRAND_LOGO });
+  await expect(page.getByTestId("branding-preview").getByRole("img", { name: "Full logo" })).toBeVisible();
+  await card.screenshot({ path: "e2e-screenshots/light-branding.png" });
+  await card.getByRole("button", { name: "Reset to the PennyWarden palette" }).click();
+  await expect(card.getByRole("radio", { name: /PennyWarden/ })).toBeChecked();
+});
+
+// ---------------------------------------------------------------- 2.2.0 #315 / #316: entity names
+test("#315 / #316: first and last name, a display name and mailing address; each user's name order", async ({ page }) => {
+  await login(page, "ru1", "Brand-New-Pass-99");
+  await page.getByRole("link", { name: "Entities" }).click();
+  await page.getByRole("button", { name: "New entity" }).click();
+  const dlg = page.getByRole("dialog", { name: "New entity" });
+  await dlg.getByLabel("Type").selectOption("INDIVIDUAL");
+  await dlg.getByLabel("First name (required)").fill("Robin");
+  await dlg.getByLabel("Last name").fill("Zephyr");
+  await dlg.getByLabel("Display name same as Name").uncheck();
+  await dlg.getByLabel("Display name", { exact: true }).fill("Robin Z. (volunteer)");
+  await dlg.getByLabel("Mailing address same as Address").uncheck();
+  await dlg.getByLabel("Mailing address line 1").fill("P.O. Box 15");
+  await page.screenshot({ path: "e2e-screenshots/light-entity-names.png" });
+  await dlg.getByRole("button", { name: "Save" }).click();
+  const conf = page.getByRole("dialog", { name: "Confirmation required" });
+  await expect.poll(async () => (await conf.isVisible()) || (await dlg.count()) === 0).toBe(true);
+  if (await conf.isVisible()) {
+    await conf.getByLabel("I have reviewed these warnings and explicitly confirm.").check();
+    await conf.getByRole("button", { name: "Confirm and continue" }).click();
+  }
+  await expect(dlg).toHaveCount(0);
+  // the list shows the display name with the name beside it
+  await expect(page.getByRole("row", { name: /Robin Z\. \(volunteer\)/ })).toContainText("Robin Zephyr");
+  // a second person, with no display name of their own (the earlier entities were reinitialized away by #125)
+  const post = await apiAs(page);
+  expect((await post("/api/entities", { entity_type: "INDIVIDUAL", first_name: "Jordan", last_name: "Quill",
+                                           confirmations: ["DUPLICATE_ENTITY"] })).status()).toBe(201);
+  // My account: Last, First - Individuals without a display name of their own show and sort by last name
+  await page.goto("/account");
+  // the choice is saved to the account: wait for that before leaving the page
+  await Promise.all([page.waitForResponse((r) => r.url().includes("/api/me/preferences") && r.ok()),
+                     page.getByLabel("Show people's names as").selectOption("LAST_FIRST")]);
+  await page.goto("/entities");
+  await expect(page.getByRole("cell", { name: /^Quill, Jordan/ })).toBeVisible();
+  await page.goto("/account");
+  await Promise.all([page.waitForResponse((r) => r.url().includes("/api/me/preferences") && r.ok()),
+                     page.getByLabel("Show people's names as").selectOption("FIRST_LAST")]);
+  await logout(page);
 });

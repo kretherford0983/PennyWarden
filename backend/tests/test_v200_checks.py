@@ -365,7 +365,10 @@ def test_signers_upload_protection_and_limit(env, setup):
     from fmpoc.models import CheckSigner
     with env.app.state.session_factory() as db:
         row = db.get(CheckSigner, s["id"])
-        assert row.image_ciphertext and b"PNG" not in row.image_ciphertext.encode()
+        # the image is not stored as PNG: neither the raw signature nor its base64 form ("iVBORw0KGgo") is there
+        # (a plain "PNG" can turn up by chance in the base64 ciphertext, so it is not what's checked)
+        stored = row.image_ciphertext.encode()
+        assert row.image_ciphertext and b"\x89PNG\r\n\x1a\n" not in stored and b"iVBORw0KGgo" not in stored
     # disguised / wrong files refused
     h = {"X-CSRF-Token": env.admin.csrf}
     for name, data in (("x.png", b"%PDF-1.4 not png"), ("x.png", b"\x89PNG\r\n\x1a\nbroken"), ("x.png", b"")):

@@ -17,7 +17,7 @@ APP_NAME = "PennyWarden"
 PREVIOUS_APP_NAMES = (("Fundwarden", "fundwarden"),                            # 1.6.6 - 1.6.8
                       ("FinancialManagementPOC", "financial-management-poc"))  # before 1.6.6
 LEGACY_APP_NAME = PREVIOUS_APP_NAMES[-1][0]
-VERSION = "2.1.2"
+VERSION = "2.2.0"
 
 
 BUILD_INFO_FILE = Path(__file__).with_name("build_info.json")
@@ -140,6 +140,9 @@ class Settings:
     update_channel: str = "auto"
     log_level: str = "INFO"
     debug: bool = False  # never enabled in packaged builds
+    # 2.2.0 (#231): a test server. Only in config.toml / FM_TESTING_MODE (never from the web), and only in server mode:
+    # a banner on every page and an Administrator's Testing tab that moves timers and schedules (services/testing.py)
+    testing_mode: bool = False
     frontend_dir: Path | None = None
 
     @property

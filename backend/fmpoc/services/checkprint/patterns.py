@@ -70,7 +70,23 @@ for _k in ("TODAY", "AMOUNT", "SIGNER", "SIGNER_TITLE"):        # shared with th
 RECEIPT_DESCRIPTIONS = {"AMOUNT": "Amount of this donor's donation, e.g. 100.00",
                         "SIGNER": "Name of the person signing the receipt",
                         "SIGNER_TITLE": "Title of the person signing the receipt"}
-MULTILINE = (LETTER, ENVELOPE, RECEIPT)     # contexts whose text may contain line breaks
+# 2.2.0 (#256): the year-end giving statement - the receipt's donor and organization variables plus the year's
+STATEMENT = "STATEMENT"
+for _k in ("DONOR_NAME", "DONOR_ADDRESS", "ORG_NAME", "ORG_ADDRESS", "ORG_EIN", "ORG", "TODAY", "SIGNER", "SIGNER_TITLE",
+           "ORG.ADDRESS") + tuple(k for k in VARIABLES if k.startswith("ORG.")):
+    if STATEMENT not in VARIABLES[_k][1]:
+        VARIABLES[_k] = (VARIABLES[_k][0], VARIABLES[_k][1] + (STATEMENT,))
+VARIABLES["YEAR"] = ("Calendar year of the statement, e.g. 2026", (STATEMENT,))
+VARIABLES["TOTAL"] = ("Total money given in the year, e.g. 1,250.00 (items have no value)", (STATEMENT,))
+VARIABLES["STATEMENT_NO"] = ("Statement number, e.g. S-2026-0001", (STATEMENT,))
+VARIABLES["DONATION_TABLE"] = ("The table of the year's donations (a paragraph of its own; printed after the text "
+                               "when the letter doesn't have it)", (STATEMENT,))
+# 2.2.0 (#317): dotted entity variables by role ({ORG.*} is above); several-line fields only where line breaks are allowed
+from ..entity_vars import FIELDS as _EF, MULTILINE_FIELDS as _EM   # noqa: E402
+for _k, _d in _EF.items():
+    VARIABLES[f"PAYEE.{_k}"] = (f"Payee's {_d}", (LETTER, ENVELOPE) if _k in _EM else ALL)
+    VARIABLES[f"DONOR.{_k}"] = (f"Donor's {_d}", (RECEIPT, STATEMENT))
+MULTILINE = (LETTER, ENVELOPE, RECEIPT, STATEMENT)     # contexts whose text may contain line breaks
 _NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?")    # 2.1.0 (#314): ORG.NAME
 
 
@@ -87,7 +103,7 @@ class Token:
 
 
 def variable_options(context: str = CHECK) -> list[dict]:
-    return [{"name": k, "description": RECEIPT_DESCRIPTIONS.get(k, d) if context == RECEIPT else d}
+    return [{"name": k, "description": RECEIPT_DESCRIPTIONS.get(k, d) if context in (RECEIPT, STATEMENT) else d}
             for k, (d, ctxs) in VARIABLES.items() if context in ctxs]
 
 
@@ -100,7 +116,7 @@ def _suggest(name: str, context: str) -> str | None:
 def parse(pattern: str, context: str = CHECK) -> list[Token]:
     if pattern is None:
         return []
-    limit = MAX_TEXT if context in (LETTER, RECEIPT) else MAX_PATTERN
+    limit = MAX_TEXT if context in (LETTER, RECEIPT, STATEMENT) else MAX_PATTERN
     if len(pattern) > limit:
         raise PatternError(f"The text is longer than {limit} characters.")
     allowed = {"\n"} if context in MULTILINE else set()

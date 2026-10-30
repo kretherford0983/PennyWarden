@@ -647,6 +647,10 @@ def update(db: Session, ctx, t: RegisterTransaction, data) -> RegisterTransactio
             db.flush()
             db.expire(a, ["entity", "budget"])  # 2.1.2 (#344): the response showed the line's previous Entity
             _apply_reviews(db, ctx, a, p, natural_id)
+        removed = [aid for aid in existing if aid not in kept]
+        if removed:                      # 2.2.0 (#325): Donations page lines on removed lines await a deposit again
+            from . import donations
+            donations.unlink_for_deposit(db, ctx, t, removed)
         for aid, a in existing.items():
             if aid not in kept:
                 a.removed_at = utcnow()  # retained for history, never hard deleted
@@ -699,6 +703,9 @@ def void(db: Session, ctx, t: RegisterTransaction, reason: str, confirm: bool) -
         db.flush()
         audit.record(db, ctx, "TRANSACTION_VOIDED", "register_transaction", leg.id, before,
                      {**snapshot(leg), "voided_with_transfer_leg": [x.id for x in group if x.id != leg.id] or None})
+        if leg.transaction_type == "DEPOSIT":       # 2.2.0 (#325): Donations page lines await a deposit again
+            from . import donations
+            donations.unlink_for_deposit(db, ctx, leg)
     return t
 
 
@@ -744,6 +751,9 @@ def delete(db: Session, ctx, t: RegisterTransaction, reason: str) -> RegisterTra
         db.flush()
         audit.record(db, ctx, "TRANSACTION_DELETED", "register_transaction", leg.id, before,
                      {**snapshot(leg), "deleted_with_transfer_leg": [x.id for x in group if x.id != leg.id] or None})
+        if leg.transaction_type == "DEPOSIT":       # 2.2.0 (#325)
+            from . import donations
+            donations.unlink_for_deposit(db, ctx, leg)
     return t
 
 

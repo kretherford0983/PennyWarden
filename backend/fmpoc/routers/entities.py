@@ -32,7 +32,11 @@ def list_entities(
         q = q.where(Entity.is_financial_institution.is_(financial_institution))
     if search:
         like = "%" + search.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
-        q = q.where(or_(Entity.organization_name.ilike(like, escape="\\"), Entity.primary_contact.ilike(like, escape="\\"),
+        # 2.2.0 (#315, #316): the name, the display name and the person's names
+        full = func.coalesce(Entity.first_name, "") + " " + func.coalesce(Entity.last_name, "")
+        q = q.where(or_(Entity.organization_name.ilike(like, escape="\\"), Entity.first_name.ilike(like, escape="\\"),
+                        Entity.last_name.ilike(like, escape="\\"), full.ilike(like, escape="\\"),
+                        Entity.display_name_custom.ilike(like, escape="\\"),
                         Entity.entity_number.ilike(like, escape="\\"), Entity.email.ilike(like, escape="\\")))
     col = SORTS[sort]
     q = q.order_by(col.desc() if direction == "desc" else col.asc(), Entity.id).limit(limit)
@@ -43,6 +47,20 @@ def list_entities(
 def check_duplicates(name: str = Query(..., max_length=200), email: str | None = Query(None, max_length=254),
                      db: Session = Depends(get_db), ctx: Ctx = Depends(require("entity.manage"))):
     return [svc.out(e) for e in svc.duplicates(db, ctx.workspace_id, name, email)]
+
+
+@router.get("/names-to-review")
+def names_to_review(db: Session = Depends(get_db), ctx: Ctx = Depends(require("entity.review_names"))):
+    """2.2.0 (#316): the names the upgrade split into first and last name, for a Budget Manager to check."""
+    return [svc.out(e) for e in svc.names_to_review(db, ctx)]
+
+
+@router.post("/{entity_id}/confirm-name")
+def confirm_name(entity_id: int, db: Session = Depends(get_db),
+                 ctx: Ctx = Depends(require("entity.review_names"))):
+    e = svc.confirm_name(db, ctx, svc.get_visible(db, ctx, entity_id))
+    db.commit()
+    return svc.out(e)
 
 
 @router.get("/{entity_id}")

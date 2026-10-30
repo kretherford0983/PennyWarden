@@ -44,6 +44,7 @@ from ..money import fmt
 from . import budgets as bsvc
 from . import fundraisers as fsvc
 from .common import active_allocation_totals, add_months, budget_display_code, fy_brief
+from . import branding
 from .reports import _FONT, BODY_H, MARGIN, PM, P, S, _AuditDoc, _csv_safe, _Mark, _stamp_and_write, money
 
 COMPLETE_FUNDRAISER = {"ENDED", "CANCELLED", "ARCHIVED"}
@@ -331,7 +332,18 @@ def budget_review(db: Session, ctx, fy: FiscalYear, *, years: int = 3, projected
     if years < 0:
         years = MAX_YEARS
     prior, next_fy = adjacent_years(db, ctx.workspace_id, fy)
-    shown_years = list(reversed(prior[:min(years, MAX_YEARS)]))          # oldest first
+    # 2.2.0 (#284): after the Fiscal Years in PennyWarden come the years before it with entered figures (newest first)
+    from . import budget_history as hist
+    first = hist.first_year(db, ctx.workspace_id)
+    entered_labels = hist.year_labels(db, ctx.workspace_id, first)
+    columns = [("fy", y) for y in prior] + [("entered", y) for y in sorted(entered_labels, reverse=True)]
+    shown = list(reversed(columns[:min(years, MAX_YEARS)]))             # oldest first
+    fig_cache: dict[int, dict] = {}
+
+    def entered_of(b: Budget) -> dict:
+        if b.id not in fig_cache:
+            fig_cache[b.id] = hist.figures(db, b, first)
+        return fig_cache[b.id]
     struct = structure(db, fy)
     ch = choices(db, ctx, fy, struct) if projected else {}
     bas = basis(fy, as_of)
@@ -342,15 +354,44 @@ def budget_review(db: Session, ctx, fy: FiscalYear, *, years: int = 3, projected
     def history(b: Budget, code: str) -> tuple[list, str | None]:
         line, note = _line(db, b)
         cells = []
-        for y in shown_years:
+        for kind, y in shown:
+            if kind == "entered":
+                f = entered_of(b).get(y)
+                if f is None:
+                    cells.append(None)
+                    continue
+                note = None      # an entered figure of its own: the row has history even without a link
+                # 2.2.0 (#381): what the budget was called that year, when it differs from this row
+                as_ = f"{f['code']} {f['name']}" if f.get("code") and (f["code"], f["name"]) != (code, b.name) else None
+                cells.append({"source": "ENTERED", "fiscal_year_id": None, "budget_id": None, "code": code,
+                              "name": b.name, "status": None, "renumbered": False, "entered_as": as_,
+                              "from_sub_budgets": f["source"] == "subs", "mismatch": f["mismatch"],
+                              **compare(f["budgeted"], f["actual"])})
+                continue
             x = line.get(y.id)
             if x is None:
                 cells.append(None)
                 continue
             xc = _code(db, x)
-            cells.append({"fiscal_year_id": y.id, "budget_id": x.id, "code": xc, "name": x.name, "status": x.status,
-                          "renumbered": xc != code, **compare(x.amount_cents, _actual_all(db, x, cache))})
+            cells.append({"source": "RECORDED", "fiscal_year_id": y.id, "budget_id": x.id, "code": xc, "name": x.name,
+                          "status": x.status, "renumbered": xc != code,
+                          **compare(x.amount_cents, _actual_all(db, x, cache))})
+        if note and any(c is not None for c in cells):
+            note = None
         return cells, note
+
+    def parent_notes(h: list, note: str | None, parent_h: list) -> list:
+        """2.2.0: "history on parent" only in the years the parent held one amount of its own (no sub-budgets that
+        year besides Other); where the parent's figure is its sub-budgets' (entered as their sum, or a recorded parent
+        with explicit sub-budgets), a sub-budget without figures simply had none that year: "—"."""
+        out = []
+        for c, pc in zip(h, parent_h):
+            own = pc is not None and (
+                (pc.get("source") == "ENTERED" and not pc.get("from_sub_budgets"))
+                or (pc.get("source") == "RECORDED"
+                    and not any(not x.is_other for x in _kids(db, pc["budget_id"]))))   # Other always exists (BR-016)
+            out.append("history on parent" if note and c is None and own else None)
+        return out
 
     def nxt(b: Budget) -> dict | None:
         if not include_next:
@@ -400,13 +441,16 @@ def budget_review(db: Session, ctx, fy: FiscalYear, *, years: int = 3, projected
             p_ytd = sum(ytd.get(i, 0) for i in fam)
             code = p.parent_code
             child_rows, roll, too_early = [], 0, False
+            ph, pnote = history(p, code)
             for k in kids:
                 kcode = budget_display_code(k, p)
                 k_ytd = ytd.get(k.id, 0)
                 h, note = history(k, kcode)
+                notes = parent_notes(h, note, ph)
                 row = {"id": k.id, "level": "sub", "parent_id": p.id, "code": kcode, "name": k.name,
                        "budget_type": k.budget_type, "status": k.status, "state": bsvc.state(k), "is_other": k.is_other,
-                       "history": h, "history_note": note, "average": average(h),
+                       "history": h, "history_notes": notes, "history_note": "history on parent" if any(notes) else None,
+                       "average": average(h),
                        "current": compare(k.amount_cents, k_ytd),
                        "projection": None, "next": nxt(k), "choosable": True}
                 if projected:
@@ -415,10 +459,10 @@ def budget_review(db: Session, ctx, fy: FiscalYear, *, years: int = 3, projected
                     roll += v
                     row["projection"] = with_diff(pr, k.amount_cents)
                 child_rows.append(row)
-            h, note = history(p, code)
+            h, note = ph, pnote
             prow = {"id": p.id, "level": "parent", "parent_id": None, "code": code, "name": p.name,
                     "budget_type": p.budget_type, "status": p.status, "state": bsvc.state(p), "is_other": False, "history": h,
-                    "history_note": note, "average": average(h), "current": compare(p.amount_cents, p_ytd), "projection": None,
+                    "history_notes": [None] * len(h), "history_note": note, "average": average(h), "current": compare(p.amount_cents, p_ytd), "projection": None,
                     "next": nxt(p), "choosable": not kids}
             if projected:
                 if kids:
@@ -439,8 +483,11 @@ def budget_review(db: Session, ctx, fy: FiscalYear, *, years: int = 3, projected
     if parent_budget_id is not None and not (sections["income"] or sections["expense"]):
         raise validation("Choose a parent budget of this Fiscal Year (not Budget 0).", "parent_budget_id")
     return {
-        "fiscal_year": fy_brief(fy), "as_of": as_of.isoformat(), "years": [fy_brief(y) for y in shown_years],
-        "available_years": len(prior), "projected": projected, "include_next": include_next,
+        "fiscal_year": fy_brief(fy), "as_of": as_of.isoformat(),
+        "years": [{**fy_brief(y), "entered": False} if kind == "fy" else
+                  {"id": None, "display_name": entered_labels[y], "label": entered_labels[y], "status": None,
+                   "start_date": None, "end_date": None, "entered": True, "year": y} for kind, y in shown],
+        "available_years": len(columns), "entered_years": len(entered_labels), "projected": projected, "include_next": include_next,
         "next_fiscal_year": fy_brief(next_fy) if include_next else None,
         "projection_basis": ({"state": bas["state"], "elapsed_months": f"{float(bas['elapsed']):.2f}",
                               "months": f"{float(bas['months']):.2f}"} if projected else None),
@@ -463,7 +510,7 @@ def budget_review_csv(rep: dict) -> str:
     w = csv.writer(buf)
     head = ["Section", "Level", "Code", "Budget", "Status"]
     for y in rep["years"]:
-        n = y["display_name"]
+        n = y["display_name"] + (" (entered)" if y.get("entered") else "")   # 2.2.0 (#284)
         head += [f"{n} code", f"{n} budgeted", f"{n} actual", f"{n} difference", f"{n} difference %", f"{n} status"]
     head += ["Avg budgeted", "Avg actual", "Avg difference", "Avg years"]          # #283
     cur = rep["fiscal_year"]["display_name"]
@@ -474,15 +521,15 @@ def budget_review_csv(rep: dict) -> str:
     if rep["include_next"]:
         nn = rep["next_fiscal_year"]["display_name"] if rep["next_fiscal_year"] else "Next year"
         head += [f"{nn} code", f"{nn} amount", f"{nn} status", "Change", "Change %"]
-    w.writerow(head)
+    w.writerow([_csv_safe(h) for h in head])   # 2.2.0 (#284): entered year labels are typed by users
     for sec in ("income", "expense"):
         for r in rep[sec]:
             line = [sec.title(), "Sub-budget" if r["level"] == "sub" else "Budget", r["code"], r["name"],
                     STATUS_TEXT.get(r["status"], r["status"])]
-            for c in r["history"]:
-                line += (["", "—", "—", "", "", ""] if c is None else
+            for i, c in enumerate(r["history"]):
+                line += (["", "—", "—", "", "", (r.get("history_notes") or [None] * len(r["history"]))[i] or ""] if c is None else
                          [c["code"], c["budgeted"], c["actual"], c["difference"], c["difference_pct"] or "n/a",
-                          STATUS_TEXT.get(c["status"], c["status"])])
+                          _entered_text(c) if c.get("source") == "ENTERED" else STATUS_TEXT.get(c["status"], c["status"])])
             av = r.get("average")
             line += (["", "", "", 0] if av is None else [av["budgeted"], av["actual"], av["difference"], av["years"]])
             cu = r["current"]
@@ -500,6 +547,17 @@ def budget_review_csv(rep: dict) -> str:
                           n["change_pct"] or "n/a"])
             w.writerow([_csv_safe(v) for v in line])
     return buf.getvalue()
+
+
+def _entered_text(c: dict) -> str:
+    """2.2.0 (#284): how an entered figure is labelled (the status column of a year before PennyWarden)."""
+    t = "Entered (sum of sub-budgets)" if c.get("from_sub_budgets") else "Entered"
+    if c.get("mismatch"):
+        m = c["mismatch"]
+        t += f"; sub-budgets add up to {m['budgeted']} budgeted, {m['actual']} actual"
+    if c.get("entered_as"):                     # 2.2.0 (#381): called differently that year
+        t += f"; as {c['entered_as']}"
+    return t
 
 
 _IND = ParagraphStyle("bp_ind", parent=S["cell"], leftIndent=10)
@@ -524,8 +582,8 @@ def _chart(rep: dict, row: dict) -> Drawing:
     ch.valueAxis.labels.fontSize = 7
     ch.valueAxis.labels.fontName = _FONT
     ch.valueAxis.valueMin = min(0, *bud, *act)
-    ch.bars[0].fillColor = colors.HexColor("#9aa3ad")
-    ch.bars[1].fillColor = colors.HexColor("#2f5d8a")
+    ch.bars[0].fillColor = branding.color("outline")
+    ch.bars[1].fillColor = branding.color("series:0")
     ch.barLabelFormat = "%.0f"
     ch.barLabels.fontSize = 6
     ch.barLabels.fontName = _FONT
@@ -537,7 +595,7 @@ def _chart(rep: dict, row: dict) -> Drawing:
     lg.fontName = _FONT
     lg.columnMaximum = 1
     lg.alignment = "right"
-    lg.colorNamePairs = [(colors.HexColor("#9aa3ad"), "Budgeted (left bar)"), (colors.HexColor("#2f5d8a"), "Actual (right bar)")]
+    lg.colorNamePairs = [(branding.color("outline"), "Budgeted (left bar)"), (branding.color("series:0"), "Actual (right bar)")]
     d.add(lg)
     d.add(String(0, 0, f"{row['code']} {row['name']}: budgeted and actual per Fiscal Year", fontSize=7, fontName=_FONT))
     return d
@@ -545,10 +603,7 @@ def _chart(rep: dict, row: dict) -> Drawing:
 
 _RIGHT = ParagraphStyle("br_right", parent=S["cell"], alignment=2)
 _LABEL = ParagraphStyle("br_label", parent=S["cell"], textColor=colors.HexColor("#4a5560"))
-_HEAD = ParagraphStyle("br_head", parent=S["cell"], alignment=2, textColor=colors.white)
-_BAND_C = colors.HexColor("#1f3a5f")
-_PARENT_C = colors.HexColor("#e8ecf1")
-_SUB_C = colors.HexColor("#f6f8fa")
+S["br_head"] = ParagraphStyle("br_head", parent=S["cell"], alignment=2, textColor=colors.white)   # on_primary (#280)
 
 
 def _r(text: str) -> object:
@@ -567,16 +622,22 @@ def _review_columns(rep: dict) -> list[tuple[str, callable]]:
         def cell(r, i=i):
             c = r["history"][i]
             if c is None:
-                note = "<i>history on parent</i>" if r["history_note"] else "—"
+                note = "<i>history on parent</i>" if (r.get("history_notes") or [None] * len(r["history"]))[i] else "—"
                 return (note, "", "")
             extra = []
+            if c.get("source") == "ENTERED":          # 2.2.0 (#284)
+                extra.append("<i>entered" + (", sum of sub-budgets" if c.get("from_sub_budgets") else "")
+                             + ("; sub-budgets differ" if c.get("mismatch") else "") + "</i>")
+                if c.get("entered_as"):               # 2.2.0 (#381): called differently that year
+                    extra.append(escape(c["entered_as"]))
             if c.get("renumbered"):
                 extra.append(escape(c["code"]))
             if c.get("status") and c["status"] != "APPROVED":
                 extra.append(STATUS_TEXT.get(c["status"], c["status"]))
             tail = f"<br/><font size=6>{' · '.join(extra)}</font>" if extra else ""
             return (money(c["budgeted"]) + tail, money(c["actual"]), _diff_short(c))
-        cols.append((escape(y["display_name"]), cell))
+        cols.append((escape(y["display_name"]) + ("<br/><font size=6>entered</font>" if y.get("entered") else ""),
+                     cell))
     if rep["years"]:
         cols.append(("Avg", lambda r: ("—", "", "") if not r.get("average") else
                      (money(r["average"]["budgeted"]), money(r["average"]["actual"]), _diff_short(r["average"]))))
@@ -620,11 +681,11 @@ def _review_flowables(db: Session, ctx, rep: dict, doc) -> list:
     cols = _review_columns(rep)
     per_band = max(1, int((frame_w - label_w) // min_col))
     bands = [cols[i:i + per_band] for i in range(0, len(cols), per_band)]
-    band = Table([[Paragraph(f"<b>{escape(ws.name)}</b>", ParagraphStyle("brb", parent=S["body"], textColor=colors.white)),
+    band = Table([[Paragraph(f"<b>{escape(ws.name)}</b>", ParagraphStyle("brb", parent=S["body"], textColor=branding.color("on_primary"))),
                    Paragraph(f"<b>Budget Review — {escape(fyn)}</b>", ParagraphStyle("brt", parent=S["body"], alignment=2,
-                                                                                    textColor=colors.white))]],
+                                                                                    textColor=branding.color("on_primary")))]],
                  colWidths=[frame_w / 2, frame_w / 2])
-    band.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), _BAND_C), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+    band.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), branding.color("primary")), ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
                               ("TOPPADDING", (0, 0), (-1, -1), 6), ("BOTTOMPADDING", (0, 0), (-1, -1), 6),
                               ("LEFTPADDING", (0, 0), (-1, -1), 8), ("RIGHTPADDING", (0, 0), (-1, -1), 8)]))
     f: list = [_Mark(doc, "Budget Review"), band, Spacer(1, 6),
@@ -636,6 +697,10 @@ def _review_flowables(db: Session, ctx, rep: dict, doc) -> list:
              "transactions only, as on the Budgets page; a budget's actual includes its sub-budgets.",
              "History follows the budget continuation links, so a renumbered budget stays on one line (its earlier code "
              "is printed under that year's amount). — means no linked budget that year."]
+    if any(y.get("entered") for y in rep["years"]):
+        notes.append("Years marked “entered” are before the first Fiscal Year in PennyWarden: their figures were entered "
+                     "by a Budget Manager from earlier records (a parent without its own figures shows the sum of its "
+                     "sub-budgets'). They are not PennyWarden transactions.")
     if rep["projected"]:
         pb = rep["projection_basis"]
         notes.append("Projected = YTD ÷ elapsed months × months in the Fiscal Year "
@@ -653,8 +718,8 @@ def _review_flowables(db: Session, ctx, rep: dict, doc) -> list:
                 f.append(P(f"Columns {bi + 1} of {len(bands)}", "small"))
             cw = min(1.35 * inch, (frame_w - label_w) / len(bcols))
             n = len(bcols) + 1
-            head = [Paragraph("", _HEAD)] + [Paragraph(f"<b>{h}</b>", _HEAD) for h, _fn in bcols]
-            data, style = [head], [("BACKGROUND", (0, 0), (-1, 0), _BAND_C), ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            head = [Paragraph("", S["br_head"])] + [Paragraph(f"<b>{h}</b>", S["br_head"]) for h, _fn in bcols]
+            data, style = [head], [("BACKGROUND", (0, 0), (-1, 0), branding.color("primary")), ("VALIGN", (0, 0), (-1, -1), "TOP"),
                                    ("LEFTPADDING", (0, 0), (-1, -1), 3), ("RIGHTPADDING", (0, 0), (-1, -1), 4),
                                    ("TOPPADDING", (0, 0), (-1, -1), 1.5), ("BOTTOMPADDING", (0, 0), (-1, -1), 1.5)]
             for r in rows:
@@ -663,7 +728,7 @@ def _review_flowables(db: Session, ctx, rep: dict, doc) -> list:
                 i = len(data)
                 data.append([Paragraph(f"<b>{label}</b>" if r["level"] == "parent" else "&nbsp;&nbsp;&nbsp;" + label,
                                        S["cell"])] + [""] * (n - 1))
-                style += [("SPAN", (0, i), (-1, i)), ("BACKGROUND", (0, i), (-1, i), _PARENT_C if r["level"] == "parent" else _SUB_C),
+                style += [("SPAN", (0, i), (-1, i)), ("BACKGROUND", (0, i), (-1, i), branding.color("surface_variant" if r["level"] == "parent" else "surface")),
                           ("LINEABOVE", (0, i), (-1, i), 0.4, colors.HexColor("#9aa3ad"))]
                 vals = [fn(r) for _h, fn in bcols]
                 for k, word in enumerate(("Budgeted", "Actual", "Difference")):
@@ -680,6 +745,7 @@ def _review_flowables(db: Session, ctx, rep: dict, doc) -> list:
     return f
 
 
+@branding.themed
 def budget_review_pdf(db: Session, ctx, rep: dict) -> tuple[str, str, int]:
     ws = db.get(Workspace, ctx.workspace_id)
     fyn = rep["fiscal_year"]["display_name"]
@@ -872,13 +938,14 @@ def _plan_table(rows: list[dict], heads: list[str], widths: list[float], blank: 
     heights = [None] + [0.27 * inch] * (len(data) - 1)
     t = Table(data, colWidths=widths, repeatRows=1, rowHeights=heights)
     t.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#6b7480")),
-                           ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e8ecf1")),
+                           ("BACKGROUND", (0, 0), (-1, 0), branding.color("surface_variant")),
                            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"), ("VALIGN", (0, 0), (-1, 0), "BOTTOM"),
                            ("LEFTPADDING", (0, 0), (-1, -1), 3), ("RIGHTPADDING", (0, 0), (-1, -1), 3),
                            ("TOPPADDING", (0, 0), (-1, -1), 1), ("BOTTOMPADDING", (0, 0), (-1, -1), 1)]))
     return t
 
 
+@branding.themed
 def planning_sheet(db: Session, ctx, fy: FiscalYear | None, as_of: dt.date | None = None) -> tuple[str, str, dict]:
     """fy None: the year being planned is worked out (planning_context)."""
     auto_draft, auto = None, fy is None
@@ -941,7 +1008,7 @@ def planning_sheet(db: Session, ctx, fy: FiscalYear | None, as_of: dt.date | Non
         t = Table([[PM(f"<b>{h}</b>", "cell") for h in blank_heads]] + [[""] * len(blank_heads)] * PLAN_PAGE2_ROWS,
                   colWidths=bw, rowHeights=[None] + [0.3 * inch] * PLAN_PAGE2_ROWS)
         t.setStyle(TableStyle([("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#6b7480")),
-                               ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e8ecf1"))]))
+                               ("BACKGROUND", (0, 0), (-1, 0), branding.color("surface_variant"))]))
         f += [PM(key, "h2"), t, Spacer(1, 10)]
     doc.build(f)
     fd, path = tempfile.mkstemp(prefix="fmpoc-planning-", suffix=".pdf")
@@ -957,6 +1024,7 @@ def planning_sheet(db: Session, ctx, fy: FiscalYear | None, as_of: dt.date | Non
     return path, f"planning-sheet-{_safe(fy.display_name)}.pdf", summary
 
 
+@branding.themed
 def append_review(db: Session, ctx, sheet_path: str, summary: dict, as_of: dt.date | None) -> tuple[str, dict]:
     """2.1.0 (#283): the Planning Sheet with the Budget Review of the same year appended (last 3 years, projected with
     the person's projection choices, and the Draft year's budgets when there is one). Each part keeps its own page

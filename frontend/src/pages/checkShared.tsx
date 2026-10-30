@@ -1,6 +1,6 @@
 /** 2.0.0 (#157, #160, #162): pieces shared by the check setup screen and the print screen - the check preview drawn
  * to scale with the built-in fonts, the pattern input with variable autocomplete, and browser print instructions. */
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { api, ApiError, type PdfBlob } from "../api";
 import { ErrorBox, Modal } from "../components";
 
@@ -159,6 +159,8 @@ export function CheckPreview({ cfg, fonts, texts, highlight, showBoxes = true, s
 }
 
 /** Text with {VARIABLES}: autocomplete after "{" (case-insensitive), descriptions shown, Enter/Tab/click inserts. */
+const ROLE_GROUPS: Record<string, string> = { ORG: "Organization", PAYEE: "Payee", DONOR: "Donor" };
+
 export function PatternInput({ value, onChange, variables, label, id, placeholder, maxLength = 200, multiline = false, hint = true }: {
   value: string; onChange: (v: string) => void; variables: Variable[]; label: string; id: string; placeholder?: string; maxLength?: number;
   multiline?: boolean; hint?: boolean;
@@ -173,7 +175,11 @@ export function PatternInput({ value, onChange, variables, label, id, placeholde
     if (i < 0 || before.slice(i).includes("}") || (i > 0 && before[i - 1] === "{")) return null; // "{{" is a literal brace
     const typed = before.slice(i + 1);
     if (!/^([A-Za-z_][A-Za-z0-9_]*\.?)?[A-Za-z0-9_]*$/.test(typed)) return null;   // 2.1.0 (#314): ORG.NAME
-    const list = variables.filter((v) => v.name.startsWith(typed.toUpperCase()));
+    // 2.2.0 (#317): plain names first, then the dotted ones grouped by role ({ORG.*}, {PAYEE.*}, {DONOR.*})
+    const group = (n: string) => (n.includes(".") ? n.split(".")[0] : "");
+    const list = variables.filter((v) => v.name.startsWith(typed.toUpperCase()))
+      .map((v, k) => ({ v, k })).sort((a, b) => (group(a.v.name) === group(b.v.name) ? a.k - b.k
+        : group(a.v.name) === "" ? -1 : group(b.v.name) === "" ? 1 : group(a.v.name).localeCompare(group(b.v.name)))).map((x) => x.v);
     return list.length ? { start: i, typed, list } : null;
   }, [value, caret, variables]);
   // The cursor goes right after an inserted variable in the same render that shows the new text (a layout effect),
@@ -222,12 +228,19 @@ export function PatternInput({ value, onChange, variables, label, id, placeholde
       )}
       {open && focus ? (
         <ul className="autocomplete" id={`${id}-list`} role="listbox">
-          {open.list.map((v, i) => (
-            <li key={v.name} role="option" aria-selected={i === active} className={i === active ? "active" : ""}
-                onMouseDown={(e) => { e.preventDefault(); insert(v.name); }}>
-              <code>{`{${v.name}}`}</code> <span className="hint">{v.description}</span>
-            </li>
-          ))}
+          {open.list.map((v, i) => {
+            const g = v.name.includes(".") ? v.name.split(".")[0] : "";
+            const prev = i > 0 && open.list[i - 1].name.includes(".") ? open.list[i - 1].name.split(".")[0] : "";
+            return (
+              <Fragment key={v.name}>
+                {g && g !== prev ? <li role="presentation" className="ac-group muted">{ROLE_GROUPS[g] || g}</li> : null}
+                <li role="option" aria-selected={i === active} className={i === active ? "active" : ""}
+                    onMouseDown={(e) => { e.preventDefault(); insert(v.name); }}>
+                  <code>{`{${v.name}}`}</code> <span className="hint">{v.description}</span>
+                </li>
+              </Fragment>
+            );
+          })}
         </ul>
       ) : null}
       </div>

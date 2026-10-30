@@ -22,12 +22,17 @@ import Fundraisers, { FundraiserDetail } from "./pages/Fundraisers";
 import FundraiserSeries from "./pages/FundraiserSeries";
 import CheckSetup from "./pages/CheckSetup";
 import DonationSetup from "./pages/Donations";
+import EnvelopesPage from "./pages/Envelopes";
+import { setNameOrder } from "./names";
 import Payments from "./pages/Payments";
+import DonationsPage from "./pages/DonationsPage";
 import Notifications, { REMINDERS_CHANGED } from "./pages/Notifications";
 import { AdminSecurityNotices, SignInNotices } from "./pages/Recovery";
 import { BackupFailedBanner } from "./pages/ScheduledBackups";
 import { UpdateBanner, UpdateIndicator, useUpdates } from "./pages/Updates";
 import { MaintenanceBanner } from "./pages/Maintenance";
+import { TestingBanner } from "./pages/Testing";
+import { DemoBanner } from "./pages/Demo";
 import { ReinitializedBanner } from "./pages/Reinitialize";
 import NamesGate from "./pages/NamesGate";
 
@@ -51,7 +56,9 @@ export interface Me {
   dashboard_layout?: { key: string; visible: boolean }[]; // v1.5.0 CR-031
   dashboard_layout_customized?: boolean;
   register_sort?: string; // 2.1.0 (#262): "transaction_date:asc" | "transaction_date:desc" | "clear_date:asc" | "clear_date:desc"
-  modules?: { fundraisers?: boolean; checks?: boolean; donations?: boolean }; // v1.6.0 CR-033; 2.0.0 (#156) Check Printing; 2.1.0 (#312) Donations
+  modules?: { fundraisers?: boolean; checks?: boolean; donations?: boolean };
+  fundraiser_series_sort?: "asc" | "desc"; // 2.2.0 (#351): Fundraiser series years (default newest first)
+  name_order?: string;   // 2.2.0 (#316) // v1.6.0 CR-033; 2.0.0 (#156) Check Printing; 2.1.0 (#312) Donations
   mfa_pending?: "VERIFY" | "ENROLL" | "PASSWORD" | "QUESTIONS" | null; // v1.4.1 CR-018; 1.8.0 (#113) setup steps
   sign_in_notices?: { kind: string; message: string }[]; // 1.8.0 (#113)
   csrf_token: string;
@@ -92,6 +99,7 @@ export default function App() {
       const m = await api.get<Me>("/api/auth/me");
       setCsrf(m.csrf_token);
       applyTheme(m.theme);
+      setNameOrder(m.name_order);       // 2.2.0 (#316)
       setMe(m);
     } catch {
       setCsrf(null);
@@ -156,7 +164,7 @@ export default function App() {
   };
   return (
     <MeCtx.Provider value={ctx}>
-      <Shell workspace={status.workspace_name} warning={status.insecure_transport_warning} mode={status.mode} onLogout={() => { setCsrf(null); setMe(null); }} />
+      <Shell workspace={status.workspace_name} warning={status.insecure_transport_warning} mode={status.mode} testing={!!status.testing_mode} demo={!!status.demo} onLogout={() => { setCsrf(null); setMe(null); }} />
     </MeCtx.Provider>
   );
 }
@@ -174,22 +182,30 @@ function navFor(me: Me) {
   if (me.modules?.fundraisers) fin.splice(6, 0, ["/fundraisers", "Fundraisers"]); // v1.6.0 CR-033 (optional module)
   // 2.0.0 (#164): Payments (Payments module) for Register Users, after Register
   if (me.modules?.checks && me.permissions.includes("checks.print")) fin.splice(fin.findIndex((n) => n[0] === "/register") + 1, 0, ["/payments", "Payments"]);
+  // 2.2.0 (#325): Donations for the financial roles and Auditors when the Donations module is on, after Register/Payments
+  if (me.modules?.donations && me.permissions.includes("donation.view")) {
+    const after = Math.max(fin.findIndex((n) => n[0] === "/payments"), fin.findIndex((n) => n[0] === "/register"));
+    fin.splice(after + 1, 0, ["/donations", "Donations"]);
+  }
   // 2.0.0 (#156): Payments Setup (check printing) for Administrators when the Payments module is on
   const checkSetup = me.modules?.checks && me.permissions.includes("checks.setup") ? [["/check-setup", "Payments Setup"]] : [];
   // 2.1.0 (#312): Donations Setup (receipt letters) for Administrators when the Donations module is on
   if (me.modules?.donations && me.permissions.includes("donation.setup")) checkSetup.push(["/donation-setup", "Donations Setup"]);
+  // 2.2.0 (#325): the shared envelope library, when a feature that uses envelopes is on
+  if (checkSetup.length) checkSetup.push(["/envelopes", "Envelopes"]);
   if (me.security_domain === "ADMINISTRATOR") return [["/", "Dashboard"], ["/users", "Users"], ["/audit-log", "Audit Log"], ...checkSetup, ["/about", "System/About"]];
   // 2.0.0 (#126, #127): Auditors see System/About read-only (effective settings, sessions)
   if (me.security_domain === "AUDITOR") return [...fin, ["/users", "Users"], ["/audit-log", "Audit Log"], ...(me.permissions.includes("system.view") ? [["/about", "System/About"]] : [])];
   if (me.security_domain === "COMBINED") { // 1.9.0 (#54): one person, roles of several domains (local installs)
     const has = (p: string) => me.permissions.includes(p);
     return [...(has("financial.view") ? fin : [["/", "Dashboard"]]), ...(has("users.view") ? [["/users", "Users"]] : []),
-      ...(has("audit.view") ? [["/audit-log", "Audit Log"]] : []), ...checkSetup, ...(has("users.manage") || has("system.view") ? [["/about", "System/About"]] : [])];
+      ...(has("audit.view") ? [["/audit-log", "Audit Log"]] : []), ...checkSetup, ...(has("users.manage") || has("system.view") || has("system.about") ? [["/about", "System/About"]] : [])];
   }
-  return fin;
+  // 2.2.0 (#349): financial users see System/About read-only (About and General)
+  return me.permissions.includes("system.about") ? [...fin, ["/about", "System/About"]] : fin;
 }
 
-function Shell({ workspace, warning, mode, onLogout }: { workspace: string; warning: boolean; mode: string; onLogout: () => void }) {
+function Shell({ workspace, warning, mode, testing, demo, onLogout }: { workspace: string; warning: boolean; mode: string; testing?: boolean; demo?: boolean; onLogout: () => void }) {
   const { me, can, setTheme, patchMe } = useMe();
   const updates = useUpdates(); // 1.10.0 (#58)
   // CR-014: collapsible left navigation, remembered per user (like the theme)
@@ -235,7 +251,9 @@ function Shell({ workspace, warning, mode, onLogout }: { workspace: string; warn
   else if (path === "/fundraiser-series") page = can("fundraiser.manage") ? guard("/fundraisers", <FundraiserSeries />) : <NotAuthorized />; // 2.1.0 (#277)
   else if (path === "/check-setup") page = guard("/check-setup", <CheckSetup />);
   else if (path === "/donation-setup") page = guard("/donation-setup", <DonationSetup />);
+  else if (path === "/envelopes") page = guard("/envelopes", <EnvelopesPage />);
   else if (path === "/payments") page = guard("/payments", <Payments />);
+  else if (path === "/donations") page = guard("/donations", <DonationsPage />);
   else if ((m = match("/fundraisers/:id", path))) page = guard("/fundraisers", <FundraiserDetail id={Number(m.id)} />);
   else page = <p>Page not found.</p>;
 
@@ -257,6 +275,8 @@ function Shell({ workspace, warning, mode, onLogout }: { workspace: string; warn
           <button className="small" onClick={logout}>Sign out</button>
         </div>
       </header>
+      {testing ? <TestingBanner /> : null /* 2.2.0 (#231) */}
+      {demo ? <DemoBanner canRemove={can("users.manage")} /> : null /* 2.2.0 (#243) */}
       {warning ? <div className="alert warn banner" role="alert">Security warning: this server is exposed on a network without HTTPS configuration. Deploy behind an HTTPS reverse proxy.</div> : null}
       <MaintenanceBanner path={path} />
       <ReinitializedBanner path={path} />

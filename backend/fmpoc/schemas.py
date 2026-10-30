@@ -96,6 +96,10 @@ class PreferencesIn(In):
     # 2.1.0 (#262): the register's sort, remembered per user; reset_register_sort -> Date, oldest first
     register_sort: Literal["transaction_date:asc", "transaction_date:desc", "clear_date:asc", "clear_date:desc"] | None = None
     reset_register_sort: bool | None = None
+    # 2.2.0 (#316): how Individuals show and sort for this user
+    name_order: Literal["FIRST_LAST", "LAST_FIRST"] | None = None
+    # 2.2.0 (#351): Fundraiser series years, newest first ("desc", the default) or oldest first
+    fundraiser_series_sort: Literal["desc", "asc"] | None = None
 
 
 Domain = Literal["ADMINISTRATOR", "FINANCIAL", "AUDITOR", "COMBINED"]  # 1.9.0 (#54): COMBINED on local installs
@@ -213,6 +217,7 @@ class BudgetCreateIn(In):
     amount: Amount
     notes: OptStr(4000) = None
     continues_budget_id: int | None = None  # 1.8.0 (#89)
+    continues_former_budget_id: int | None = None  # 2.2.0 (#381)
 
 
 class BudgetUpdateIn(In):
@@ -220,6 +225,7 @@ class BudgetUpdateIn(In):
     amount: Amount | None = None
     notes: OptStr(4000) = None
     continues_budget_id: int | None = None  # 1.8.0 (#89): send null to remove the link
+    continues_former_budget_id: int | None = None  # 2.2.0 (#381): a budget from before PennyWarden instead
 
 
 class ReasonIn(In):
@@ -234,8 +240,19 @@ class OptionalReasonIn(In):
 class EntityFields(In):
     entity_type: Literal["INDIVIDUAL", "ORGANIZATION"] | None = None
     organization_name: OptStr(200) = None
-    primary_contact: OptStr(200) = None
+    first_name: OptStr(100) = None      # 2.2.0 (#316): the person (Individual) or contact person (Organization)
+    last_name: OptStr(100) = None
+    primary_contact: OptStr(200) = None  # legacy input: split into first and last name at the first space
     position: OptStr(60) = None  # 1.6.7: individuals only; same limit as a signer title
+    # 2.2.0 (#315): empty = "same as" (the name / the address)
+    display_name_custom: OptStr(200) = None
+    mailing_address_line1: OptStr(200) = None
+    mailing_address_line2: OptStr(200) = None
+    mailing_city: OptStr(100) = None
+    mailing_state_region: OptStr(100) = None
+    mailing_postal_code: OptStr(20) = None
+    mailing_country: OptStr(100) = None
+    ein: OptStr(12) = None                # organizations only, 12-3456789
     address_line1: OptStr(200) = None
     address_line2: OptStr(200) = None
     city: OptStr(100) = None
@@ -273,6 +290,7 @@ class BankAccountCreateIn(In):
     interest_rate: Annotated[str | None, StringConstraints(strip_whitespace=True, max_length=12)] = None
     opening_balance: Amount | None = None
     opening_balance_date: OptDate = None
+    account_opened_date: OptDate = None     # 2.2.0 (#348)
     current_balance: Amount | None = None
     notes: OptStr(4000) = None
 
@@ -287,6 +305,7 @@ class BankAccountUpdateIn(In):
     interest_rate: Annotated[str | None, StringConstraints(strip_whitespace=True, max_length=12)] = None
     opening_balance: Amount | None = None
     opening_balance_date: OptDate = None
+    account_opened_date: OptDate = None     # 2.2.0 (#348): send null to clear it
     notes: OptStr(4000) = None
 
 
@@ -440,8 +459,18 @@ class MfaEnrollStartIn(In):
     current_code: str | None = Field(None, max_length=40)  # required when changing an existing authenticator
 
 
+class MfaOwnKeyIn(In):
+    """2.2.0 (#327): the key for the setup in progress - the user's own (Base32 or otpauth://totp link), or null for
+    a newly generated key again."""
+    own_key: str | None = Field(None, max_length=2000)
+
+
 class MfaResetIn(In):
     reason: str = Field(min_length=1, max_length=500)
+
+
+class MfaResetUserIn(MfaResetIn):
+    compromised: bool = False   # 2.2.0 (#327): possible compromise - the next setup needs a newly generated key
 
 
 class BackupCreateIn(In):
@@ -495,8 +524,60 @@ class FundraiserSeriesResultIn(In):
     note: OptStr(500) = None
 
 
+class BudgetHistoryIn(In):
+    """2.2.0 (#284): a year before PennyWarden, entered on a budget's History (#381: or on a former budget, with the
+    code and name it had that year, optional)."""
+    fiscal_year_label: Str(40)
+    budgeted: Amount
+    actual: Amount
+    note: OptStr(500) = None
+    code: OptStr(20) = None
+    name: OptStr(120) = None
+
+
+class BudgetHistoryCorrectIn(In):
+    fiscal_year_label: Str(40) | None = None
+    budgeted: Amount | None = None
+    actual: Amount | None = None
+    note: OptStr(500) = None
+    code: OptStr(20) = None
+    name: OptStr(120) = None
+    reason: Str(500)
+
+
+class BudgetHistoryCsvIn(In):
+    fiscal_year_id: int
+    csv: str = Field(min_length=1, max_length=600_000)
+
+
+class FormerBudgetIn(In):
+    """2.2.0 (#381): a budget from before PennyWarden."""
+    code: Str(20)
+    name: Str(120)
+    budget_type: Literal["INCOME", "EXPENSE"]
+    note: OptStr(500) = None
+
+
+class FormerBudgetUpdateIn(In):
+    code: Str(20) | None = None
+    name: Str(120) | None = None
+    budget_type: Literal["INCOME", "EXPENSE"] | None = None
+    note: OptStr(500) = None
+    reason: OptStr(500) = None
+
+
+class FormerLinkIn(In):
+    """2.2.0 (#381): the former budget a budget continues; null removes the link."""
+    former_budget_id: int | None = None
+
+
 class FundraiserSeriesMergeIn(In):
     into_series_id: int
+
+
+class FundraiserSeriesAddIn(In):
+    """2.2.0 (#302): put a fundraiser in no series into an existing series."""
+    series_id: int
 
 
 class FundraiserFyNotesIn(In):
@@ -521,6 +602,7 @@ class FundraiserBucketIn(In):
     name: Str(80)
     description: OptStr(500) = None
     category_id: int | None = None      # 2.1.0 (#278): one category or none
+    is_donation: bool | None = None     # 2.2.0 (#256): the bucket holds donations (None: unchanged)
 
 
 class FundraiserNotesIn(In):           # 2.1.0 (#275): the stakeholder report's summary notes
@@ -595,6 +677,7 @@ class FlowReportIn(In):
     include_balances: bool = False
     compare_date: OptDate = None                # only with include_balances; earlier than the Through Date
     notes: OptStr(4000) = None
+    show_substitution_notes: bool = False       # 2.2.0 (#348): notes on substituted starting values in the PDF
 
 
 class FlowExclusionIn(In):

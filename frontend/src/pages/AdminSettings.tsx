@@ -1,6 +1,6 @@
 /** 2.0.0 (#126): System/About - the organization name, the effective settings (with the server settings editor on
  * server installs) and the backup age warning. The server validates everything; this is convenience only. */
-import { useEffect, useState } from "react";
+import { Fragment, useEffect, useState } from "react";
 import { api } from "../api";
 import { ErrorBox, Field, Loading, Modal, RowMenu, useConfirmable } from "../components";
 import { formatPhone } from "./Entities";
@@ -9,7 +9,11 @@ import { formatPhone } from "./Entities";
  * Used by letters, envelopes and receipts ({ORG.*}); the entity can be chosen in the register like any other. */
 const ORG_FIELDS: [string, string, number][] = [["address_line1", "Street address", 200], ["address_line2", "Address line 2", 200],
   ["city", "City", 100], ["state_region", "State", 100], ["postal_code", "ZIP code", 20], ["country", "Country (outside the US)", 100],
-  ["phone", "Phone", 40], ["email", "Email", 254], ["ein", "EIN (Employer Identification Number)", 10]];
+  ["phone", "Phone", 40], ["email", "Email", 254], ["ein", "EIN (Employer Identification Number)", 10],
+  // 2.2.0 (#315): a mailing address only when it differs (empty = the address); letters, envelopes and receipts use it
+  ["mailing_address_line1", "Mailing street address (e.g. a P.O. Box)", 200], ["mailing_address_line2", "Mailing address line 2", 200],
+  ["mailing_city", "Mailing city", 100], ["mailing_state_region", "Mailing state", 100], ["mailing_postal_code", "Mailing ZIP code", 20],
+  ["mailing_country", "Mailing country (outside the US)", 100]];
 
 /** 2.1.0 (#314): 9 digits, typed with or without the dash, shown as 12-3456789 when the field is left. */
 export function formatEin(typed: string): string {
@@ -17,19 +21,46 @@ export function formatEin(typed: string): string {
   return /^\d{9}$/.test(d) ? `${d.slice(0, 2)}-${d.slice(2)}` : typed;
 }
 
+/** 2.2.0 (#349): the organization details, read-only (financial roles and Auditors; Administrators edit them). */
+export function OrganizationView() {
+  const [p, setP] = useState<any>(null);
+  const [err, setErr] = useState<unknown>(null);
+  useEffect(() => { api.get("/api/system/organization").then(setP, setErr); }, []);
+  const rows: [string, any][] = p ? [["Organization name", p.name], ...ORG_FIELDS
+    .filter(([k]) => !k.startsWith("mailing_") || p.mailing_same === false)
+    .map(([k, label]) => [label, k === "phone" ? p.phone_display || p.phone : p[k]] as [string, any])] : [];
+  return (
+    <section className="card" aria-labelledby="org-h">
+      <h2 id="org-h">Organization</h2>
+      <ErrorBox error={err} />
+      {!p ? (err ? null : <Loading />) : <>
+        <dl className="dl" data-testid="org-view">
+          {rows.map(([label, v]) => <Fragment key={label}><dt>{label}</dt><dd>{v || <span className="muted">—</span>}</dd></Fragment>)}
+          {p.mailing_same !== false ? <><dt>Mailing address</dt><dd>Same as Address</dd></> : null}
+        </dl>
+        <p className="hint">Set by an Administrator. Used in reports, letters, envelopes and receipts as <code>{"{ORG.NAME}"}</code>, <code>{"{ORG.ADDRESS}"}</code> and so on.
+          {" "}The organization is also an entity ({p.entity_number}).</p>
+      </>}
+    </section>
+  );
+}
+
 export function OrganizationPanel({ name, onRenamed }: { name: string; onRenamed: (n: string) => void }) {
   const [p, setP] = useState<any>(null);
   const [f, setF] = useState<Record<string, string>>({ name });
   const [err, setErr] = useState<unknown>(null);
   const [saved, setSaved] = useState(false);
+  const [mailSame, setMailSame] = useState(true);    // 2.2.0 (#315): the mailing address only when it differs
   // the phone is shown and typed like an entity's: (nnn) nnn-nnnn, formatted when the field is left (1.6.7)
   const shown = (d: any) => ({ ...d, phone: d.phone_display || d.phone || "" });
-  const take = (d: any) => { const v = shown(d); setP(v); setF(Object.fromEntries([["name", v.name], ...ORG_FIELDS.map(([k]) => [k, v[k] || ""])])); };
+  const take = (d: any) => { const v = shown(d); setP(v); setMailSame(v.mailing_same !== false); setF(Object.fromEntries([["name", v.name], ...ORG_FIELDS.map(([k]) => [k, v[k] || ""])])); };
   useEffect(() => { api.get("/api/system/organization").then(take, setErr); }, []);
-  const dirty = !!p && (f.name !== p.name || ORG_FIELDS.some(([k]) => (f[k] || "") !== (p[k] || "")));
+  const dirty = !!p && (f.name !== p.name || ORG_FIELDS.some(([k]) => (f[k] || "") !== (p[k] || ""))
+    || (mailSame && p.mailing_same === false));
   const save = async () => {
     setErr(null); setSaved(false);
     const sent = { ...f };
+    if (mailSame) ORG_FIELDS.forEach(([k]) => { if (k.startsWith("mailing_")) sent[k] = ""; });
     try {
       const r = shown(await api.put("/api/system/organization", sent));
       setP(r);
@@ -51,7 +82,7 @@ export function OrganizationPanel({ name, onRenamed }: { name: string; onRenamed
         <Field label="Organization name"><input maxLength={120} value={f.name || ""} onChange={set("name")} /></Field>
       </div>
       <div className="row form-row org-fields">
-        {ORG_FIELDS.map(([k, label, max]) => (
+        {ORG_FIELDS.filter(([k]) => !k.startsWith("mailing_") || !mailSame).map(([k, label, max]) => (
           <Field key={k} label={label} hint={k === "ein" ? "9 digits; the dash is added for you (12-3456789)" : undefined}>
             <input type={k === "phone" ? "tel" : k === "email" ? "email" : "text"} maxLength={max} value={f[k] || ""}
                    inputMode={k === "ein" ? "numeric" : undefined}
@@ -61,6 +92,7 @@ export function OrganizationPanel({ name, onRenamed }: { name: string; onRenamed
           </Field>
         ))}
       </div>
+      <label className="check"><input type="checkbox" checked={mailSame} onChange={(e) => { setMailSame(e.target.checked); setSaved(false); }} /> Mailing address same as Address</label>
       <div className="row">
         <button className="primary" onClick={save} disabled={!dirty || !(f.name || "").trim()}>Save</button>
         {saved && !dirty ? <span className="hint" role="status">Saved.</span> : null}
