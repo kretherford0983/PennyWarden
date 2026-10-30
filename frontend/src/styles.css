@@ -749,3 +749,9 @@ details.year-name summary { cursor: pointer; color: var(--muted); }
 .rs-reports { list-style: none; padding: 0; margin: 6px 0 0; display: flex; flex-direction: column; gap: 4px; }
 .rs-reports li { align-items: center; gap: 6px; }
 .rs-reports select { max-width: 220px; }
+/* 2.3.0: Users - the roles filter (pick any number) */
+.user-filter-row { align-items: center; gap: 12px; margin: 4px 0 10px; }
+.multi-filter { position: relative; }
+.multi-filter > summary { cursor: pointer; display: inline-flex; align-items: center; height: var(--control-h); padding: 0 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); list-style: none; }
+.multi-filter > summary::after { content: "▾"; margin-left: 8px; color: var(--muted); }
+.multi-filter[open] > fieldset { position: absolute; z-index: 8; top: calc(100% + 4px); left: 0; min-width: 220px; margin: 0; padding: 8px 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 4px 14px rgba(0,0,0,.15); display: flex; flex-direction: column; gap: 4px; }
