@@ -8,7 +8,7 @@ import { api, money } from "../api";
 import { useMe } from "../App";
 import { EntityPicker, ErrorBox, Field, GuardedForm, Loading, Modal, useConfirmable } from "../components";
 import { Link } from "../router";
-import { PdfViewer, usePdf } from "./checkShared";
+import { PatternInput, PdfViewer, usePdf, type Variable } from "./checkShared";
 import { ReceiptEnvelopePanel } from "./Envelopes";
 import { useEinOverride } from "./Donations";
 import { DonorReportTab, StatementsTab } from "./DonationStatements";
@@ -93,14 +93,14 @@ export default function DonationsPage() {
         </table>
       )}
       </>}
-      {open != null ? <DonationEditor id={open === "new" ? null : open} canPrint={printer} onClose={() => setOpen(null)} onChanged={load} onOpen={(id) => setOpen(id)} /> : null}
+      {open != null ? <DonationEditor id={open === "new" ? null : open} canPrint={printer} variables={data?.variables || []} onClose={() => setOpen(null)} onChanged={load} onOpen={(id) => setOpen(id)} /> : null}
       {creating ? <CreateTransaction onClose={() => setCreating(false)} onSaved={() => { setCreating(false); load(); }} /> : null}
     </div>
   );
 }
 
 // ------------------------------------------------------------------ one donation
-function DonationEditor({ id, canPrint, onClose, onChanged, onOpen }: { id: number | null; canPrint: boolean; onClose: () => void; onChanged: () => void; onOpen: (id: number) => void }) {
+function DonationEditor({ id, canPrint, variables, onClose, onChanged, onOpen }: { id: number | null; canPrint: boolean; variables: Variable[]; onClose: () => void; onChanged: () => void; onOpen: (id: number) => void }) {
   const [d, setD] = useState<any>(null);
   const [entities, setEntities] = useState<any[]>([]);
   const [donor, setDonor] = useState("");
@@ -216,9 +216,18 @@ function DonationEditor({ id, canPrint, onClose, onChanged, onOpen }: { id: numb
             </fieldset>
           ))}
           {editable ? <button type="button" className="small" onClick={() => setLines([...lines, blank()])}>+ Add line</button> : null}
-          <Field label="Details for the receipt (optional)" hint="Printed where the receipt template has {DETAILS}.">
-            <textarea maxLength={2000} value={details} onChange={(e) => { setDetails(e.target.value); setSaved(false); }} />
-          </Field>
+          {/* 2.2.0: the same {VARIABLE} autocomplete as the register's receipt form */}
+          {editable ? (
+            <>
+              <PatternInput id="donation-details" label="Details for the receipt (optional)" value={details} variables={variables}
+                            multiline maxLength={2000} hint={false} onChange={(v) => { setDetails(v); setSaved(false); }} />
+              <span className="hint">Printed where the receipt template has <code>{"{DETAILS}"}</code>; type <code>{"{"}</code> for variables such as <code>{"{AMOUNT}"}</code>.</span>
+            </>
+          ) : (
+            <Field label="Details for the receipt (optional)" hint="Printed where the receipt template has {DETAILS}.">
+              <textarea maxLength={2000} value={details} readOnly />
+            </Field>
+          )}
         </fieldset>
         <div className="actions left">
           {editable ? <button type="submit" className="primary">{id == null ? "Save donation" : "Save changes"}</button> : null}

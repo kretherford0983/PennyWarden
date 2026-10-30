@@ -178,7 +178,7 @@ PennyWarden 2.3.0 (in progress).
   letters keep signing with the check's signer by printed name; a typed fallback name (without variables) becomes a
   signer tagged for cover letters. Nothing prints differently.
 
-## 2.2.0 — unreleased
+## 2.2.0 — 2026-10-30
 PennyWarden 2.2.0 (in progress).
 
 ### Security
@@ -223,8 +223,9 @@ PennyWarden 2.2.0 (in progress).
 
 ### Try the demo
 - **A ready-made demo (#243).** Each release now includes `pennywarden-demo-<version>.fmbak`: a made-up band boosters
-  club with this year's approved budget, a register with receipts, a fundraiser, reminders, printed checks and last
-  year closed. Restore it on the first screen of a new install (passphrase `pennywarden demo`) and sign in as
+  club with this year's approved budget, a register with receipts, a fundraiser, reminders, printed checks with a
+  ready-made payment cover letter, last year closed, and two years before PennyWarden entered from its "old
+  spreadsheets" (one budget renamed, one renumbered, one that stopped). Restore it on the first screen of a new install (passphrase `pennywarden demo`) and sign in as
   `demo-admin`, `demo-budget`, `demo-register` or `demo-auditor` (password `Demo-PennyWarden-2026`).
   - A **DEMO** banner on every page. Nothing is kept: the demo is put back on every start and by **Reset demo data**
     (on the banner, and on the sign-in page for anyone locked out).
@@ -252,7 +253,8 @@ PennyWarden 2.2.0 (in progress).
 - **Budget history before PennyWarden (#284, #381).** Budget Managers can enter the budgeted and actual figures of
   years before the first Fiscal Year in PennyWarden, from the old spreadsheets, so a budget's history is complete:
   - **Budgets from before PennyWarden** (*Budgets → Before PennyWarden…*): each budget as it was in the old
-    spreadsheets (code, name, Income or Expense) with its years. Every financial role and Auditors can read them.
+    spreadsheets (code, name, Income or Expense) with its years, with search, Type and Continued filters, sortable
+    columns and **Clear** (#411). Every financial role and Auditors can read them.
   - **Linked, never matched by code.** A budget in PennyWarden shows those years once it *continues* one of them:
     choose it under **Continues** (a *Before PennyWarden* group) or link it from either side. So a budget that ran
     in 2022 and 2023, skipped some years and comes back can show its old years again; and a code that was reused
@@ -290,6 +292,10 @@ PennyWarden 2.2.0 (in progress).
 - **Bank accounts: *Account opened* (optional, #348).** For an account opened after PennyWarden was set up: dates
   before it count as $0, the report doesn't list it before then, and dashboard balance charts start there. Blank
   means the account existed before PennyWarden. Changes are audited.
+- **Budget Review: "history on parent" only where it can be true.** A sub-budget with no figures of its own in a
+  year now shows *history on parent* only when the parent held one amount that year (no sub-budgets besides Other).
+  Where the parent's figure is its sub-budgets' (recorded with sub-budgets, or entered as their sum), the new
+  sub-budget shows "—": it had no history then. Same on screen, in the PDF and the CSV.
 
 ### Donations part 2 (#325)
 - **A Donations page** (navigation, when the module is on): Register Users record donations and print receipts there;
