@@ -106,6 +106,11 @@ the review you can add to the Planning Sheet), after your PennyWarden years, wit
 registers or the Fiscal Year closure, and they are not in the dashboard charts. A budget from before PennyWarden that
 nothing continues isn't in a year's Budget Review yet.
 
+**A sub-budget that is new.** A year where a sub-budget has no figures of its own shows *history on parent* only when
+the parent held one amount that year (no sub-budgets besides Other), since that amount may include it. Where the
+parent's figure is its sub-budgets' (entered as their sum, or recorded with sub-budgets), the new sub-budget shows
+"—". (Marking the years its money was included in another budget is planned for a later release.)
+
 ## Reports: comparisons to a date before any data
 
 When a Financial Flow Report compares balances with a date before an account has any data in PennyWarden, the report
