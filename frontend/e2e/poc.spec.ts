@@ -852,11 +852,18 @@ test("2.1.0 (#262, #260, #259): register sort, electronic payment, reorder attac
   // #262: sort by Cleared (the balance column becomes the cleared balance), remembered after a reload, then reset
   const cleared = page.getByRole("columnheader", { name: "Cleared", exact: true });
   await expect(cleared).toHaveAttribute("aria-sort", "none");
+  const savedAsc = page.waitForResponse((r) => r.url().includes("/api/me/preferences") && r.request().method() === "PUT"
+    && (r.request().postData() || "").includes("clear_date:asc"));
   await cleared.getByRole("button").click();
   await expect(cleared).toHaveAttribute("aria-sort", "ascending");
+  await savedAsc;
   await expect(page.getByRole("columnheader", { name: "Cleared balance" })).toBeVisible();
+  // the sort is saved by a request the page doesn't wait for: wait for the "descending" save before reloading
+  const savedDesc = page.waitForResponse((r) => r.url().includes("/api/me/preferences") && r.request().method() === "PUT"
+    && (r.request().postData() || "").includes("clear_date:desc"));
   await cleared.getByRole("button").click();
   await expect(cleared).toHaveAttribute("aria-sort", "descending");
+  expect((await savedDesc).ok()).toBeTruthy();
   await page.reload();
   await expect(page.getByRole("columnheader", { name: "Cleared", exact: true })).toHaveAttribute("aria-sort", "descending");
   await page.getByRole("button", { name: "Reset to default" }).click();
@@ -1838,6 +1845,27 @@ test("#381: a budget from before PennyWarden is created, given a year and contin
   await page.screenshot({ path: "e2e-screenshots/light-before-pennywarden.png" });
   await d.locator(".actions").getByRole("button", { name: "Close" }).last().click();
   await expect(list.getByRole("table", { name: "Budgets from before PennyWarden" })).toContainText("FY2041 8970 Bowling");
+  // #411: search, Type/Continued filters, sortable headings and Clear (back to Code, ascending)
+  const ftable = list.getByRole("table", { name: "Budgets from before PennyWarden" });
+  const clear = list.getByRole("button", { name: "Clear", exact: true });
+  await expect(clear).toBeDisabled();
+  await list.getByLabel("Search").fill("bowling tour");
+  await expect(ftable).toContainText("450");
+  await list.getByLabel("Type").selectOption("INCOME");
+  await expect(list.getByTestId("former-none-match")).toBeVisible();
+  await list.getByLabel("Type").selectOption("EXPENSE");
+  await list.getByLabel("Continued").selectOption("no");
+  await expect(list.getByTestId("former-none-match")).toBeVisible();
+  await list.getByLabel("Continued").selectOption("yes");
+  await expect(ftable).toContainText("FY2041 8970 Bowling");
+  await ftable.getByRole("button", { name: "Name", exact: true }).click();
+  await expect(ftable.locator("th").nth(1)).toHaveAttribute("aria-sort", "ascending");
+  await expect(clear).toBeEnabled();
+  await clear.click();
+  await expect(list.getByLabel("Search")).toHaveValue("");
+  await expect(ftable.locator("th").nth(0)).toHaveAttribute("aria-sort", "ascending");
+  await expect(ftable.locator("th").nth(1)).toHaveAttribute("aria-sort", "none");
+  await expect(clear).toBeDisabled();
   await list.locator(".actions").getByRole("button", { name: "Close" }).last().click();
   // the budget's History shows the years and the link; Unlink removes them from its History
   await page.getByRole("button", { name: "History of 8970" }).click();

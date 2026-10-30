@@ -380,6 +380,19 @@ def budget_review(db: Session, ctx, fy: FiscalYear, *, years: int = 3, projected
             note = None
         return cells, note
 
+    def parent_notes(h: list, note: str | None, parent_h: list) -> list:
+        """2.2.0: "history on parent" only in the years the parent held one amount of its own (no sub-budgets that
+        year besides Other); where the parent's figure is its sub-budgets' (entered as their sum, or a recorded parent
+        with explicit sub-budgets), a sub-budget without figures simply had none that year: "—"."""
+        out = []
+        for c, pc in zip(h, parent_h):
+            own = pc is not None and (
+                (pc.get("source") == "ENTERED" and not pc.get("from_sub_budgets"))
+                or (pc.get("source") == "RECORDED"
+                    and not any(not x.is_other for x in _kids(db, pc["budget_id"]))))   # Other always exists (BR-016)
+            out.append("history on parent" if note and c is None and own else None)
+        return out
+
     def nxt(b: Budget) -> dict | None:
         if not include_next:
             return None
@@ -428,13 +441,16 @@ def budget_review(db: Session, ctx, fy: FiscalYear, *, years: int = 3, projected
             p_ytd = sum(ytd.get(i, 0) for i in fam)
             code = p.parent_code
             child_rows, roll, too_early = [], 0, False
+            ph, pnote = history(p, code)
             for k in kids:
                 kcode = budget_display_code(k, p)
                 k_ytd = ytd.get(k.id, 0)
                 h, note = history(k, kcode)
+                notes = parent_notes(h, note, ph)
                 row = {"id": k.id, "level": "sub", "parent_id": p.id, "code": kcode, "name": k.name,
                        "budget_type": k.budget_type, "status": k.status, "state": bsvc.state(k), "is_other": k.is_other,
-                       "history": h, "history_note": note, "average": average(h),
+                       "history": h, "history_notes": notes, "history_note": "history on parent" if any(notes) else None,
+                       "average": average(h),
                        "current": compare(k.amount_cents, k_ytd),
                        "projection": None, "next": nxt(k), "choosable": True}
                 if projected:
@@ -443,10 +459,10 @@ def budget_review(db: Session, ctx, fy: FiscalYear, *, years: int = 3, projected
                     roll += v
                     row["projection"] = with_diff(pr, k.amount_cents)
                 child_rows.append(row)
-            h, note = history(p, code)
+            h, note = ph, pnote
             prow = {"id": p.id, "level": "parent", "parent_id": None, "code": code, "name": p.name,
                     "budget_type": p.budget_type, "status": p.status, "state": bsvc.state(p), "is_other": False, "history": h,
-                    "history_note": note, "average": average(h), "current": compare(p.amount_cents, p_ytd), "projection": None,
+                    "history_notes": [None] * len(h), "history_note": note, "average": average(h), "current": compare(p.amount_cents, p_ytd), "projection": None,
                     "next": nxt(p), "choosable": not kids}
             if projected:
                 if kids:
@@ -510,8 +526,8 @@ def budget_review_csv(rep: dict) -> str:
         for r in rep[sec]:
             line = [sec.title(), "Sub-budget" if r["level"] == "sub" else "Budget", r["code"], r["name"],
                     STATUS_TEXT.get(r["status"], r["status"])]
-            for c in r["history"]:
-                line += (["", "—", "—", "", "", ""] if c is None else
+            for i, c in enumerate(r["history"]):
+                line += (["", "—", "—", "", "", (r.get("history_notes") or [None] * len(r["history"]))[i] or ""] if c is None else
                          [c["code"], c["budgeted"], c["actual"], c["difference"], c["difference_pct"] or "n/a",
                           _entered_text(c) if c.get("source") == "ENTERED" else STATUS_TEXT.get(c["status"], c["status"])])
             av = r.get("average")
@@ -606,7 +622,7 @@ def _review_columns(rep: dict) -> list[tuple[str, callable]]:
         def cell(r, i=i):
             c = r["history"][i]
             if c is None:
-                note = "<i>history on parent</i>" if r["history_note"] else "—"
+                note = "<i>history on parent</i>" if (r.get("history_notes") or [None] * len(r["history"]))[i] else "—"
                 return (note, "", "")
             extra = []
             if c.get("source") == "ENTERED":          # 2.2.0 (#284)
