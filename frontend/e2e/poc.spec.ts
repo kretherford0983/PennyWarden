@@ -2040,7 +2040,7 @@ test("#414: a year whose money was included in another budget is marked on Histo
   await h.getByRole("button", { name: "Add an earlier year" }).click();
   await page.getByRole("dialog", { name: "Add an earlier year to 8980-05 Kiwanis" }).getByLabel("Its money was included in another budget that year").check();
   const inc = page.getByRole("dialog", { name: "Add an earlier year to 8980-05 Kiwanis" });
-  await inc.getByLabel("Year", { exact: true }).selectOption("before");
+  await inc.getByRole("combobox", { name: "Year", exact: true }).selectOption("before");
   await inc.getByLabel("Fiscal Year").fill(y);
   await inc.getByLabel("Included in").selectOption(String(old.id));
   await inc.getByRole("button", { name: "Add" }).click();
