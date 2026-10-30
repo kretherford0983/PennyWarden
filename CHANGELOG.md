@@ -5,6 +5,24 @@ Versions are `Breaking.Major.Minor` from 1.6.0 (docs/branching.md).
 ## 2.3.0 — unreleased
 PennyWarden 2.3.0 (in progress).
 
+### Reports
+- **Quarterly and Annual financial report (#373).** Reports → **Quarterly / Annual**: choose the Fiscal Year and Q1–Q4
+  or Annual, add optional commentary, and open the PDF report or download a presentation (.pptx) for the board. Both
+  show highlights (total cash, net cash change, budgets over budget, fundraiser net), every account's start and end
+  balance, cash flow by month (money in, money out and net; the deck charts it), the budgets with their sub-budgets
+  (the quarter and the year to date, or Q1–Q4 and the year) and the fundraisers, with last year's figures beside
+  them when there is an earlier Fiscal Year.
+- Everything is as of the end of the period: transactions dated later are left out. A quarter or year still under
+  way can be reported, marked **Preliminary — as of** today (an Annual report for a year that isn't closed is
+  Preliminary too); a period that hasn't started can't be chosen. Earlier quarters count only in the year-to-date
+  figures.
+- A fundraiser belongs to the quarter its event ends in. An earlier quarter's fundraiser with transactions dated in
+  the chosen quarter is listed as **Revised**; activity after the cutoff is noted, not counted. Fundraisers of the
+  quarter get their own page: income and expenses by budget line, seed cash, last year's result in the same series
+  and the goal, when there is one.
+- Generating either file is recorded in the audit log (Fiscal Year, period, cutoff, Preliminary, whether there was
+  commentary). Requires the financial view permission, like the other reports.
+
 ### Budgets
 - **Budget amounts are gross, and PennyWarden says so (#371).** When an expense is reimbursed, the reimbursement is
   recorded in an income budget, so the expense budget's actual is not reduced. Wherever budget amounts appear,

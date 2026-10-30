@@ -640,6 +640,29 @@ test("CR-002 / CR-005: reports page, audit PDF and entity report; documentation 
   await expect(page.getByText(/transaction\(s\) have no supporting attachments/)).toBeVisible();
 });
 
+// ---------------------------------------------------------------- 2.3.0 build 9 (#373)
+test("#373: the Quarterly / Annual financial report - period choice, commentary, PDF and presentation", async ({ page }) => {
+  await login(page, "bm1");
+  await page.getByRole("link", { name: "Reports" }).click();
+  await page.getByRole("tab", { name: "Quarterly / Annual" }).click();
+  // periods that haven't started are listed but can't be chosen (whatever today is)
+  const opts = await page.getByLabel("Period", { exact: true }).locator("option").evaluateAll((os) => os.map((o: any) => ({ v: o.value, d: o.disabled })));
+  expect(opts.map((o) => o.v)).toEqual(["Q1", "Q2", "Q3", "Q4", "ANNUAL"]);
+  await page.getByLabel("Commentary (optional)").fill("Giving was steady this quarter.");
+  const open = page.getByRole("link", { name: "Open report PDF" });
+  const href = (await open.getAttribute("href"))!;
+  expect(href).toContain("/api/reports/period?");
+  expect(href).toContain("commentary=Giving");
+  const pdf = await page.request.get(href);
+  expect(pdf.status()).toBe(200);
+  expect((await pdf.body()).subarray(0, 5).toString()).toBe("%PDF-");
+  await page.getByLabel("Period", { exact: true }).selectOption("ANNUAL");
+  const deck = await page.request.get((await page.getByRole("link", { name: "Download presentation (.pptx)" }).getAttribute("href"))!);
+  expect(deck.status()).toBe(200);
+  expect(deck.headers()["content-type"]).toContain("presentationml");
+  await page.screenshot({ path: "e2e-screenshots/light-period-report.png", fullPage: true });
+});
+
 // ---------------------------------------------------------------- v1.3 enhancements
 const PDF = Buffer.from("%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[]/Count 0>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n");
 

@@ -128,6 +128,39 @@ could not otherwise be corrected. Scope and safeguards:
   with a link; the variable picker completes dotted names.
 - Tests: `backend/tests/test_v210_organization.py` (6, including the data migration) and the E2E #126 and #312 steps.
 
+**2.3.0 build 9 — Quarterly / Annual Fiscal Year financial report and presentation (#373, issue decisions of
+2026-10-28/29).** Spec docs are not changed in the repo, so the issue's new rules are recorded here:
+- **BR-110 Period Report Cutoff:** cutoff = the end of the period, or the run date while the period is under way
+  (*Preliminary — as of <date>* in the title band, the PDF footer and on the deck's first slide); an Annual report
+  for a Fiscal Year that isn't Closed is Preliminary too (as of its end date once it has ended). A period that hasn't
+  started → 422. "Today" is `routers.reports._today()`, called per request (tests patch it).
+- **BR-111 Quarterly Isolation:** a quarterly report has one *Quarter* column plus year-to-date figures; earlier
+  quarters are never shown on their own. Annual: Q1–Q4 + the year.
+- **BR-112 Fundraiser Period Attribution:** by event end date (one quarter); only lines dated ≤ cutoff count
+  (`fundraisers._lines` filtered, `_money_totals` → gross = counted income, net = income − expenses, seed cash
+  (classified cash float) netted out and shown separately); *activity after <date> not included*; *Revised* = a
+  fundraiser that ended in an earlier quarter of the same year with counted lines dated in the selected quarter
+  (its quarter change and updated cumulative figures). Fundraisers ending after the cutoff are not listed yet.
+- Choices where the issue left room: **cash flow** = money in (deposits) and money out (withdrawals) of register
+  accounts by Transaction Date, Budget 0 (transfers) left out. **Account balances** by Transaction Date
+  (`available_cents`; BR-043/BR-047), non-register accounts from their balance history, $0 before *Account opened*,
+  "—" before any data; closed accounts listed while they were open in the period. **Budgets:** the FY's budgets with
+  their sub-budgets (the parent rolls up every sub-budget, a hidden Other included, AC-REG-011); Draft budgets show
+  while the year isn't approved, Rejected/Inactive only with activity, Budget 0 as a note. Over / under = budgeted −
+  actual (negative = over, BR-022), with the #371 gross note under each table. **Prior year** = the Fiscal Year
+  starting before this one; budgets matched by type + Budget ID (display code); columns left out without one.
+  *Budgets over budget* on the highlights counts parent budgets with negative over/under year to date.
+- Acceptance mapping (issue AC-RPT-001…010) → `backend/tests/test_v230_period_report.py`:
+  001/002/003/005/006 `test_periods_cutoff_preliminary_and_future_blocked`; 004 the same test's account figures;
+  007 `test_fundraiser_attribution_revised_and_cutoff`; 008 `test_prior_year_comparison`; 009/010
+  `test_pdf_pptx_audit_and_permissions` (commentary on page 1 and in the notes; the deck's monthly bars with the net
+  line). E2E "#373" covers the selection screen and both downloads.
+- Code: `services/period_report.py` (the data), `services/period_report_output.py` (PDF with the shared report
+  toolkit; deck with the `fundraiser_deck` helpers — python-pptx has no combo chart, so the net line is added as a
+  `c:lineChart` sharing the bar chart's axes), routes `GET /api/reports/period/options` and `GET /api/reports/period`
+  (`format=pdf|pptx|json`; audited `REPORT_GENERATED` with report `FY_PERIOD_REPORT`/`FY_PERIOD_PRESENTATION`).
+  Out of scope per the issue: signature block, CSV.
+
 **2.3.0 build 8 — One setup layout with a locked preview (#394, decided with Kyle 2026-10-29).**
 - `SetupLayout` (checkShared.tsx) with one CSS rule set (`.setup-layout`) replaces the Donations-only `.setup-grid`;
   `usePin`/`PinToggle` replace the per-page *Keep at the top* code. Used by Donations Setup, the check style editor and
