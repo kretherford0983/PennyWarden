@@ -111,6 +111,18 @@ why.
 
 ## System/About
 
+### Light and dark branding
+**System/About → Branding** now keeps two looks: a **Light theme** and a **Dark theme**. At the top, choose which one
+each kind of output uses — **PDF reports (printed)** and **Presentations (.pptx)**. Printed reports suit the light
+theme; a presentation on a screen or projector can use the dark one. Word documents always print in the light theme.
+
+On each theme's tab, pick a ready-made palette, or **Generate** one from your primary and secondary colors, and change
+any color you like under *Color roles* and *Chart series colors* — the palette then shows as *Custom*. PennyWarden
+won't save a theme whose text would be hard to read on its background, and warns when two chart colors look alike.
+
+If your logo doesn't show well on a dark background, tick **Use a separate logo on dark backgrounds** and add a
+version for dark slides. If you upgraded from 2.2, everything stays light until you choose otherwise.
+
 ### Choose which releases the update check looks at
 Under **System/About → Settings**, an Administrator can change **Update channel**:
 

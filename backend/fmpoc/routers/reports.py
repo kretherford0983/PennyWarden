@@ -278,7 +278,7 @@ def period_report(fiscal_year_id: int = Query(...), period: Literal["Q1", "Q2", 
                "fiscal_year_id": fy.id, "period": period, "cutoff": rep["cutoff"], "preliminary": rep["preliminary"],
                "commentary": bool(rep["commentary"]), "format": format.upper()}
     if format == "pptx":
-        with branding.use(db):
+        with branding.use(db, output="presentations"):
             data = out.build_pptx(org, rep)
         audit.record(db, ctx, "REPORT_GENERATED", "fiscal_year", fy.id, None, summary)
         db.commit()

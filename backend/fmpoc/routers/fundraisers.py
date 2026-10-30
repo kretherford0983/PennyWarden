@@ -152,7 +152,7 @@ def fy_report(fiscal_year_id: int = Query(...), ids: list[int] = Query(...), yea
         db.rollback()
         return rep
     if format == "pptx":
-        with branding.use(db):        # 2.2.0 (#280)
+        with branding.use(db, output="presentations"):        # 2.2.0 (#280)
             data = fyrep.build_pptx(org, rep)
         audit.record(db, ctx, "REPORT_GENERATED", "fiscal_year", fy.id, None, summary)
         db.commit()
@@ -425,7 +425,7 @@ def summary_report(fid: int, format: Literal["pdf", "docx"] = "pdf", itemized: b
     s = fs.summary(db, ctx, f, itemized=itemized, names=names, plain_lines=plain_lines, history=history)
     opts = {"itemized": itemized, "names": names, "plain_lines": plain_lines, "history": history}
     if format == "docx":
-        with branding.use(db):
+        with branding.use(db, output="word"):
             data = fs.build_docx(s)
         audit.record(db, ctx, "REPORT_GENERATED", "fundraiser", f.id, None,
                      {"report": "FUNDRAISER_SUMMARY", "format": "DOCX", "options": opts})
@@ -451,7 +451,7 @@ def presentation(fid: int, itemized: bool = True, names: bool = True, history: b
     history=false (#300) leaves out the year-over-year slide."""
     f = svc.get(db, ctx, fid)
     s = fs.summary(db, ctx, f, itemized=itemized, names=names, history=history)
-    with branding.use(db):
+    with branding.use(db, output="presentations"):
         data = deck.build(s)
     audit.record(db, ctx, "REPORT_GENERATED", "fundraiser", f.id, None,
                  {"report": "FUNDRAISER_PRESENTATION", "format": "PPTX",

@@ -78,7 +78,9 @@ class _Styles(dict):
         base = dict.__getitem__(self, k)
         role = self.THEMED.get(k)
         if role is None:
-            return base
+            if not branding.current().dark:
+                return base
+            role = "on_surface"          # 2.3.0 (#386): a dark theme's text is its light on-surface color
         hx = branding.hex_of(role)
         st = self._cache.get((k, hx))
         if st is None:
@@ -237,10 +239,10 @@ class _SignLine(Flowable):
 
     def draw(self):
         c = self.canv
-        c.setStrokeColor(colors.black)
+        c.setStrokeColor(branding.pick("#000000", "on_surface"))     # 2.3.0 (#386)
         c.setLineWidth(0.8)
         c.line(0, 0.2 * inch, self.lw, 0.2 * inch)
-        c.setFillColor(colors.black)
+        c.setFillColor(branding.pick("#000000", "on_surface"))
         c.setFont(_FONT, 10.5)
         c.drawString(0, 0.02 * inch, self.caption[:90])
 
@@ -332,12 +334,20 @@ def _stamp_and_write(reader_bytes: bytes, doc: _AuditDoc, path: str, title: str)
     theme = branding.current()
     for i, page in enumerate(writer.pages):
         w, h = float(page.mediabox.width), float(page.mediabox.height)
+        if theme.dark:     # 2.3.0 (#386): a dark theme's pages are filled with its dark surface, under the content
+            bg = io.BytesIO()
+            bc = rl_canvas.Canvas(bg, pagesize=(w, h))
+            bc.setFillColor(colors.HexColor(theme.page))
+            bc.rect(0, 0, w, h, stroke=0, fill=1)
+            bc.save()
+            bg.seek(0)
+            page.merge_page(PdfReader(bg).pages[0], over=False)
         buf = io.BytesIO()
         c = rl_canvas.Canvas(buf, pagesize=(w, h))
         _brand_page(c, theme, w, h, first=i == 0)
         left = 18 + (_MARK_H * 1.1 * _aspect(theme.logo_mark_size) + 6 if theme.logo_mark else 0)
         c.setFont(_FONT, 7)
-        c.setFillColor(colors.HexColor("#444444"))
+        c.setFillColor(branding.pick("#444444", "on_surface_variant"))
         c.drawString(left, 10, f"{title}  ·  {doc.page_labels.get(i + 1, '')}"[:160])
         c.drawRightString(w - 18, 10, f"Page {i + 1} of {total}")
         if theme.footer_text:
@@ -346,7 +356,7 @@ def _stamp_and_write(reader_bytes: bytes, doc: _AuditDoc, path: str, title: str)
             c.drawRightString(w - 18, 20, in_section[i + 1][:120])
         for x, y, lines in notes.get(i + 1, []):
             c.setFont(_FONT, 10)
-            c.setFillColor(colors.black)
+            c.setFillColor(branding.pick("#000000", "on_surface"))
             for k, line in enumerate(lines):
                 c.drawString(x, y + _SectionNote.HEIGHT - 12 - 14 * k, line)
         c.save()
@@ -472,9 +482,9 @@ def _meta_table(rows: list[tuple[str, object]]) -> Table:
     data = [[PM(f"<b>{escape(k)}</b>", "metak"), P(v, "metav")] for k, v in rows]
     t = Table(data, colWidths=[w1, FRAME_W - 12 - w1])
     t.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"),
-                           ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#6b7682")),
-                           ("LINEBELOW", (0, 0), (-1, -2), 0.25, colors.HexColor("#c3c9d0")),
-                           ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#eef1f5")),
+                           ("BOX", (0, 0), (-1, -1), 0.6, branding.pick("#6b7682", "outline")),
+                           ("LINEBELOW", (0, 0), (-1, -2), 0.25, branding.pick("#c3c9d0", "outline_variant")),
+                           ("BACKGROUND", (0, 0), (0, -1), branding.pick("#eef1f5", "surface_variant")),
                            ("LEFTPADDING", (0, 0), (-1, -1), 5), ("RIGHTPADDING", (0, 0), (-1, -1), 5),
                            ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3)]))
     return t

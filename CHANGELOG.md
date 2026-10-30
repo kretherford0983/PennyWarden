@@ -119,6 +119,21 @@ PennyWarden 2.3.0 (in progress).
   command line, it is shown locked. Every change is in the audit log with before and after values. PennyWarden still
   never installs updates itself.
 - A test build set to *Production releases only* is now told when the production release of its own version is out.
+- **Dual branding: a light and a dark theme (#386).** *System/About → Branding* now has a **Light theme** and a
+  **Dark theme**, and the Administrator chooses which one each type of output uses: **PDF reports (printed)** and
+  **Presentations (.pptx)** — the fundraiser deck, the Fiscal Year fundraising deck and the Quarterly / Annual deck.
+  A dark presentation has dark slides in the dark palette; a dark PDF report has dark pages. Word documents always
+  use the light theme.
+- The dark palette is one of the ready-made palettes (each has a dark version) or generated from the same primary
+  and secondary colors (Material 3 dark scheme). For **both** themes any color role or chart color can now be
+  changed directly, without choosing *Custom* first; the palette then shows as *Custom*. The same guardrails apply to
+  each theme: text must meet WCAG AA contrast against that theme's background (saving is refused with the reason),
+  chart colors that are too similar ask for a confirmation, and charts keep their labels. *Reset to the PennyWarden
+  palette* resets both palettes.
+- **Logos for dark backgrounds:** tick *Use a separate logo on dark backgrounds* to add a dark-theme full logo and
+  small mark (off by default: the light logos are used on dark slides too). Same rules as the other logos.
+- **New installations** present in the dark theme and print in the light one. **Upgraded installations keep the light
+  theme for everything** until an Administrator turns dark on.
 
 ### Upgrade
 - Migration `0060` adds `fundraiser.goal_amount_cents` (empty = no goal).
@@ -128,6 +143,9 @@ PennyWarden 2.3.0 (in progress).
   settings and defaults to on, so no data changes.
 - Migration `0062` adds `estimated` to `fundraiser_series_result` and `budget_history_entry` (off for every existing
   entry).
+- Migration `0065` adds the dark theme, the theme per output type and the dark-background logos to
+  `branding_settings`. Every existing organization stays light for every output type (a branding row is added for an
+  organization that had none, so nothing looks different).
 - Migration `0064` adds `check_signer.areas`: every existing signer is tagged for Checks. The Donations Setup signer
   name and title become a signer tagged for donation letters, signed with space to sign by hand as before. Cover
   letters keep signing with the check's signer by printed name; a typed fallback name (without variables) becomes a
