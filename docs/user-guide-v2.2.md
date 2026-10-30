@@ -64,6 +64,12 @@ spreadsheets — code, name, Income or Expense — with their years. A budget in
   right one. If old figures ended up on the wrong budget, **Unlink** them, rename the old budget, and link it where
   it belongs — nothing has to be entered again.
 
+**Finding one in the list.** Search by code, name or the budget that continues it, filter by **Type** (Income or
+Expense) and **Continued** (continued or not), and click a column heading to sort by it (again to reverse; *Years*
+sorts by the latest year entered). **Clear** puts the search, filters and sort back to how the list opens (by Code).
+Every financial role and Auditors can open the list; only Budget Managers add or change budgets from before
+PennyWarden.
+
 Budget Managers add, link, correct and retire them; everyone else with access to Budgets (and Auditors) can look.
 
 **One year at a time.** Open a budget's **History** (every budget has one for Budget Managers, Other too) and choose
