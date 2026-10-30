@@ -122,6 +122,13 @@ one there: you give a reason and confirm that you are changing a closed year (it
 The Fiscal Year page and its reports then show **Balance changed after close** with what changed, who changed it and
 why.
 
+## Users
+
+### Finding users
+On **Users**, narrow the list with **Roles** (tick any number — anyone with one of them is listed), **Security domain**
+and **Status** (Active, Disabled, Locked), together with the search. Click **Clear filters** to see everyone again.
+Click the Last name, First name, Username, Display name or Email heading to sort by it; click again to reverse.
+
 ## System/About
 
 ### Light and dark branding

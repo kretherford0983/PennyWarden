@@ -128,6 +128,12 @@ PennyWarden 2.3.0 (in progress).
   is recorded as its own audit event, and the Fiscal Year page and its End of Year Audit / Close reports show
   **Balance changed after close** (when, who, the account, before and after, and the reason).
 
+### Users
+- **Filters and sortable columns on the Users screen (#409).** Beside the search, filter by **Roles** (pick any
+  number: a user with any of them is shown), **Security domain** and **Status** (Active, Disabled, Locked). The list
+  shows *n of m users* and **Clear filters** while a filter is on. The Last name, First name, Username, Display name
+  and Email headings sort the list (click again to reverse), replacing the *Sort by last name* checkbox.
+
 ### System/About
 - **Choose which releases the update check looks at (#379).** *System/About → Settings* now lets an Administrator
   change **Update channel**: *Follow this build* (the default, as before), *Production releases only*, *Test builds

@@ -3469,7 +3469,42 @@ test("#134: real names - search the Users list, sort by last name, names in the 
   await expect(page.getByRole("row", { name: /bm1/ })).toBeVisible();
   await expect(page.getByRole("row", { name: /ru1/ })).toHaveCount(0);
   await page.getByLabel("Search users").fill("");
-  await page.getByLabel("Sort by last name").check();
+  // 2.3.0: filters - roles (any of the ticked ones), security domain and status
+  const roles = page.getByTestId("role-filter");
+  await roles.getByLabel("Roles filter").click();
+  await roles.getByLabel("Register User").check();
+  await expect(page.getByRole("row", { name: /ru1/ })).toBeVisible();
+  await expect(page.getByRole("row", { name: /bm1/ })).toHaveCount(0);
+  await roles.getByLabel("Budget Manager").check();                     // either role
+  await expect(page.getByRole("row", { name: /bm1/ })).toBeVisible();
+  await expect(page.getByRole("row", { name: /ru1/ })).toBeVisible();
+  await roles.getByLabel("Roles filter").click();
+  await page.getByLabel("Security domain").selectOption("AUDITOR");
+  await expect(page.getByText("No users match these filters.")).toBeVisible();   // neither role is an Auditor's
+  await roles.getByLabel("Roles filter").click();
+  await roles.getByLabel("Register User").uncheck();
+  await roles.getByLabel("Budget Manager").uncheck();
+  await roles.getByLabel("Roles filter").click();
+  await expect(page.getByRole("row", { name: /auditor1/ })).toBeVisible();
+  await expect(page.getByRole("row", { name: /bm1/ })).toHaveCount(0);
+  await page.getByRole("button", { name: "Clear filters" }).click();
+  await page.getByLabel("Status").selectOption("ACTIVE");
+  await expect(page.getByRole("row", { name: /admin/ }).first()).toBeVisible();
+  await page.getByLabel("Status").selectOption("DISABLED");
+  await expect(page.getByRole("row", { name: /bm1/ })).toHaveCount(0);
+  await page.getByRole("button", { name: "Clear filters" }).click();
+  // sortable columns (Last name A-Z by default); a second click reverses
+  const usernames = () => page.locator("table.table tbody tr td:nth-child(3)").allInnerTexts();
+  const lastHead = page.getByRole("columnheader", { name: /Last name/ });
+  await expect(lastHead).toHaveAttribute("aria-sort", "ascending");
+  await page.getByRole("button", { name: /^Username/ }).click();
+  await expect(page.getByRole("columnheader", { name: /Username/ })).toHaveAttribute("aria-sort", "ascending");
+  const asc = await usernames();
+  expect(asc).toEqual([...asc].sort((x, y) => x.localeCompare(y, undefined, { sensitivity: "base" })));
+  await page.getByRole("button", { name: /^Username/ }).click();
+  await expect(page.getByRole("columnheader", { name: /Username/ })).toHaveAttribute("aria-sort", "descending");
+  expect(await usernames()).toEqual([...asc].reverse());
+  await expect(lastHead).toHaveAttribute("aria-sort", "none");
   await nav.getByRole("link", { name: "Audit Log", exact: true }).click();
   await expect(page.getByRole("cell", { name: "Pat Example - admin" }).first()).toBeVisible();
 });

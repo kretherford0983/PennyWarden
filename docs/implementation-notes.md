@@ -128,6 +128,13 @@ could not otherwise be corrected. Scope and safeguards:
   with a link; the variable picker completes dotted names.
 - Tests: `backend/tests/test_v210_organization.py` (6, including the data migration) and the E2E #126 and #312 steps.
 
+**2.3.0 build 13 — Users: filters and sortable columns (#409, Kyle 2026-10-29).**
+- Client-side on the already-loaded list (`pages/Users.tsx`): Roles (multi-select, OR), Security domain, Status
+  (`ACTIVE` / `DISABLED` / `LOCKED` = active with `locked_until` in the future), combined with the search (AND).
+  Sortable headings as in the register (`aria-sort`, a button per heading); default Last name ascending; empty values
+  last either way; ties by last name, first name, username. Not remembered between visits. No API or data change.
+- Test: E2E "#134" extended (roles OR, domain, status, clear, sort and reverse).
+
 **2.3.0 build 12 — Report settings: configurable report grouping (#376).**
 - New business rule (recorded here; spec docs aren't changed in the repo): **report grouping is workspace
   configuration; every report belongs to exactly one category of the active scheme; grouping is display-only and
