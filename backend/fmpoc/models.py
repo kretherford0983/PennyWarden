@@ -797,6 +797,18 @@ class BrandingSettings(Base):
     updated_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("app_user.id"), nullable=True)
 
 
+class ReportGrouping(Base):
+    """2.3.0 (#376): how the Reports catalog is grouped - the active scheme and each customized scheme's categories
+    (services/report_grouping.py). Workspace configuration, display only: it never grants access. No row = Purpose."""
+    __tablename__ = "report_grouping"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), unique=True)
+    scheme: Mapped[str] = mapped_column(String(10), default="PURPOSE", server_default="PURPOSE")
+    config_json: Mapped[str | None] = mapped_column(Text, nullable=True)
+    updated_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    updated_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("app_user.id"), nullable=True)
+
+
 class FundraiserFyReportNote(Base):
     """2.1.0 (#277): the Fiscal Year fundraising report's notes, remembered per Fiscal Year."""
     __tablename__ = "fundraiser_fy_report_note"
