@@ -23,6 +23,15 @@ vendors, account numbers and documents.
 The current Fiscal Year is the year the demo was built (January to December) with an approved budget; the year before
 is closed. A new demo is built with every release.
 
+Also in it:
+- **Payments:** a voucher check style with a signer, and a **Payment cover letter** (the default letter offered when a
+  check is printed). Vendors have addresses, so the letter prints one. As `demo-admin`, edit it or add more on
+  *Payments Setup*.
+- **Years before PennyWarden:** the two years before the closed one, entered from the "old spreadsheets". See them on
+  a budget's **History** and in the **Budget Review**, and all of them under **Budgets → Before PennyWarden…**:
+  *Donations* was renamed *Donations and sponsors*, old *410 Spring Concert* is today's sub-budget
+  *4200-4210*, and *420 Car Wash* stopped (nothing continues it).
+
 ## What happens to your changes
 
 Nothing you do is kept. PennyWarden puts the demo back as it was:

@@ -64,6 +64,12 @@ spreadsheets — code, name, Income or Expense — with their years. A budget in
   right one. If old figures ended up on the wrong budget, **Unlink** them, rename the old budget, and link it where
   it belongs — nothing has to be entered again.
 
+**Finding one in the list.** Search by code, name or the budget that continues it, filter by **Type** (Income or
+Expense) and **Continued** (continued or not), and click a column heading to sort by it (again to reverse; *Years*
+sorts by the latest year entered). **Clear** puts the search, filters and sort back to how the list opens (by Code).
+Every financial role and Auditors can open the list; only Budget Managers add or change budgets from before
+PennyWarden.
+
 Budget Managers add, link, correct and retire them; everyone else with access to Budgets (and Auditors) can look.
 
 **One year at a time.** Open a budget's **History** (every budget has one for Budget Managers, Other too) and choose
@@ -99,6 +105,11 @@ the review you can add to the Planning Sheet), after your PennyWarden years, wit
 *as 104 Raffle Fundraiser* where the budget was called differently that year). They never change actuals, the
 registers or the Fiscal Year closure, and they are not in the dashboard charts. A budget from before PennyWarden that
 nothing continues isn't in a year's Budget Review yet.
+
+**A sub-budget that is new.** A year where a sub-budget has no figures of its own shows *history on parent* only when
+the parent held one amount that year (no sub-budgets besides Other), since that amount may include it. Where the
+parent's figure is its sub-budgets' (entered as their sum, or recorded with sub-budgets), the new sub-budget shows
+"—". (Marking the years its money was included in another budget is planned for a later release.)
 
 ## Reports: comparisons to a date before any data
 

@@ -8,17 +8,72 @@ import { ErrorBox, Field, GuardedForm, Loading, Modal } from "../components";
 
 const TYPE: Record<string, string> = { INCOME: "Income", EXPENSE: "Expense" };
 
+// 2.2.0 (#411): filter, sort and search on the list (client side - the list is loaded whole). The sort resets to Code
+// each time the dialog opens; retired budgets (Show retired) stay after the others whatever the sort.
+type SortCol = "code" | "name" | "type" | "years" | "budgeted" | "actual" | "continued";
+const COLLATE = new Intl.Collator(undefined, { numeric: true, sensitivity: "base" });
+const yearOf = (label: string | null) => (label ? Number(String(label).replace(/\D/g, "")) || 0 : null);
+function compareFormers(a: any, b: any, col: SortCol): number {
+  // blanks (no years, not continued) go last in either direction - see sortFormers
+  switch (col) {
+    case "code": return COLLATE.compare(a.code || "", b.code || "") || COLLATE.compare(a.name || "", b.name || "");
+    case "name": return COLLATE.compare(a.name || "", b.name || "") || COLLATE.compare(a.code || "", b.code || "");
+    case "type": return COLLATE.compare(TYPE[a.budget_type] || "", TYPE[b.budget_type] || "") || COLLATE.compare(a.code || "", b.code || "");
+    case "years": return (yearOf(a.last_year_entered) ?? 0) - (yearOf(b.last_year_entered) ?? 0) || COLLATE.compare(a.code || "", b.code || "");
+    case "budgeted": return Number(a.budgeted_total) - Number(b.budgeted_total) || COLLATE.compare(a.code || "", b.code || "");
+    case "actual": return Number(a.actual_total) - Number(b.actual_total) || COLLATE.compare(a.code || "", b.code || "");
+    case "continued": return COLLATE.compare(a.continued_by?.label || "", b.continued_by?.label || "") || COLLATE.compare(a.code || "", b.code || "");
+  }
+}
+function isBlank(f: any, col: SortCol) {
+  return (col === "years" && !f.years) || (col === "continued" && !f.continued_by);
+}
+export function sortFormers(rows: any[], col: SortCol, dir: "asc" | "desc"): any[] {
+  return [...rows].sort((a, b) =>
+    (Number(!!a.retired) - Number(!!b.retired))
+    || (Number(isBlank(a, col)) - Number(isBlank(b, col)))
+    || (dir === "asc" ? 1 : -1) * compareFormers(a, b, col));
+}
+export function matchesFormer(f: any, q: string) {
+  const k = q.trim().toLowerCase();
+  if (!k) return true;
+  return [f.code, f.name, f.continued_by?.label].some((v) => (v || "").toLowerCase().includes(k));
+}
+
+function FormerSortTh({ col, label, sort, onSort, num }: { col: SortCol; label: string; sort: [SortCol, "asc" | "desc"];
+  onSort: (c: SortCol) => void; num?: boolean }) {
+  const active = sort[0] === col;
+  const nextDir = active && sort[1] === "asc" ? "descending" : "ascending";
+  return (
+    <th className={num ? "num" : undefined} aria-sort={active ? (sort[1] === "asc" ? "ascending" : "descending") : "none"}>
+      <button type="button" className="sort-head" onClick={() => onSort(col)} title={`Sort by ${label}, ${nextDir}`}>
+        {label}<span aria-hidden="true" className={active ? "sort-arrow" : "sort-arrow idle"}>{active ? (sort[1] === "asc" ? " ▲" : " ▼") : " ↕"}</span>
+      </button>
+    </th>
+  );
+}
+
 export function FormerBudgetsDialog({ fys, manage, onClose, onChanged }: { fys: any[]; manage: boolean; onClose: () => void; onChanged: () => void }) {
   const [list, setList] = useState<any[] | null>(null);
   const [err, setErr] = useState<unknown>(null);
   const [open, setOpen] = useState<number | null>(null);
   const [creating, setCreating] = useState(false);
   const [showRetired, setShowRetired] = useState(false);
+  const [type, setType] = useState<"" | "INCOME" | "EXPENSE">("");
+  const [cont, setCont] = useState<"" | "yes" | "no">("");
+  const [search, setSearch] = useState("");
+  const [sort, setSort] = useState<[SortCol, "asc" | "desc"]>(["code", "asc"]);
   const load = () => api.get("/api/budgets/former").then(setList, setErr);
   useEffect(() => { load(); }, []);
   const changed = () => { load(); onChanged(); };
-  const shown = (list || []).filter((f) => showRetired || !f.retired);
-  const retiredCount = (list || []).filter((f) => f.retired).length;
+  const all = list || [];
+  const shown = sortFormers(all.filter((f) => (showRetired || !f.retired) && (!type || f.budget_type === type)
+    && (!cont || (cont === "yes") === !!f.continued_by) && matchesFormer(f, search)), sort[0], sort[1]);
+  const retiredCount = all.filter((f) => f.retired).length;
+  const filtered = !!(type || cont || search.trim());
+  const clickSort = (c: SortCol) => setSort(([col, dir]) => [c, col === c && dir === "asc" ? "desc" : "asc"]);
+  const changedView = filtered || showRetired || sort[0] !== "code" || sort[1] !== "asc";
+  const clearAll = () => { setSearch(""); setType(""); setCont(""); setShowRetired(false); setSort(["code", "asc"]); };
   return (
     <Modal title="Budgets from before PennyWarden" onClose={onClose} wide>
       <p>
@@ -28,12 +83,37 @@ export function FormerBudgetsDialog({ fys, manage, onClose, onChanged }: { fys: 
       </p>
       <ErrorBox error={err} />
       {manage ? <div className="actions left"><button type="button" className="primary" onClick={() => setCreating(true)}>New budget from before PennyWarden</button></div> : null}
-      {!list ? (err ? null : <Loading />) : !shown.length ? (
-        <p className="muted">None yet. Add one here, use <i>Add an earlier year</i> on a budget's History, or import a CSV file (<i>Import earlier years…</i>).</p>
+      {list && all.length ? (
+        <div className="filters">
+          <Field label="Search"><input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Code, name or continued by" /></Field>
+          <Field label="Type"><select value={type} onChange={(e) => setType(e.target.value as any)}><option value="">All</option><option value="INCOME">Income</option><option value="EXPENSE">Expense</option></select></Field>
+          <Field label="Continued"><select value={cont} onChange={(e) => setCont(e.target.value as any)}><option value="">All</option><option value="yes">Continued</option><option value="no">Not continued</option></select></Field>
+          <button type="button" className="filters-clear" disabled={!changedView} onClick={clearAll}
+                  title="Reset the search, filters and sort to how the list opens (Code, retired hidden)">Clear</button>
+        </div>
+      ) : null}
+      {!list ? (err ? null : <Loading />) : !all.length ? (
+        manage
+          ? <p className="muted">None yet. Add one here, use <i>Add an earlier year</i> on a budget's History, or import a CSV file (<i>Import earlier years…</i>).</p>
+          : <p className="muted">None entered yet. A Budget Manager can add them.</p>
+      ) : !shown.length ? (
+        <p className="muted" data-testid="former-none-match">
+          No budgets from before PennyWarden match{filtered ? " the search and filters" : ""}.{filtered ? <> Use <i>Clear</i> to reset them.</> : null}{!showRetired && retiredCount ? <> Retired ones are hidden: tick <i>Show retired</i> to include them.</> : null}
+        </p>
       ) : (
         <div className="table-wrap">
+          {filtered ? <p className="muted small" data-testid="former-count">Showing {shown.length} of {all.filter((f) => showRetired || !f.retired).length}.</p> : null}
           <table className="table" aria-label="Budgets from before PennyWarden">
-            <thead><tr><th>Code</th><th>Name</th><th>Type</th><th>Years</th><th className="num">Budgeted</th><th className="num">Actual</th><th>Continued by</th><th /></tr></thead>
+            <thead><tr>
+              <FormerSortTh col="code" label="Code" sort={sort} onSort={clickSort} />
+              <FormerSortTh col="name" label="Name" sort={sort} onSort={clickSort} />
+              <FormerSortTh col="type" label="Type" sort={sort} onSort={clickSort} />
+              <FormerSortTh col="years" label="Years" sort={sort} onSort={clickSort} />
+              <FormerSortTh col="budgeted" label="Budgeted" sort={sort} onSort={clickSort} num />
+              <FormerSortTh col="actual" label="Actual" sort={sort} onSort={clickSort} num />
+              <FormerSortTh col="continued" label="Continued by" sort={sort} onSort={clickSort} />
+              <th />
+            </tr></thead>
             <tbody>
               {shown.map((f) => (
                 <tr key={f.id} className={f.retired ? "muted" : ""}>
