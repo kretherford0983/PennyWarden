@@ -148,7 +148,9 @@ could not otherwise be corrected. Scope and safeguards:
 - Never deleted (BR-001): retired with a reason. Audit `BUDGET_HISTORY_INCLUSION_MARKED` / `_RETIRED` on the line's
   holder budget (AC-AUD-001–005). Budget Managers mark (`budget.manage`); every financial role and Auditors see the
   marks in the History (`financial.view`), BR-003. Reporting only (BR-048).
-- Tests: `backend/tests/test_v230_history_included.py` (4) and the E2E step "#414".
+- Reinitialize (#125) wipes the marks before budgets, budgets from before PennyWarden and Fiscal Years; selective
+  restore (#319) restores them with the data (`partial_restore.DATA_TABLES`).
+- Tests: `backend/tests/test_v230_history_included.py` (5) and the E2E step "#414".
 
 **2.3.0 build 14 — Push builds skip the repeated test suite (#420, Kyle 2026-10-30).**
 - `build.yml`: the `tests` job runs only on `workflow_dispatch`; `package`, `windows-exe`, `macos-app`, `assemble`,

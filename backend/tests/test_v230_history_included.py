@@ -165,3 +165,14 @@ def test_refusals(env, base):
     # Budget 0 has no history to mark
     zero = next(o for o in env.selectable(base["fy"]["id"], "WITHDRAWAL") if o["label"].startswith("0 "))
     _mark(env, zero["id"], 422, fiscal_year_label="FY2025", included_former_budget_id=fr["id"])
+
+
+def test_reinitialize_and_selective_restore_include_the_marks():
+    """The marks point at budgets, budgets from before PennyWarden and Fiscal Years: wiped before them (reinitialize,
+    #125) and restored with the data (selective restore, #319)."""
+    from fmpoc.models import Budget, BudgetInclusion, FiscalYear, FormerBudget
+    from fmpoc.services.partial_restore import DATA_TABLES
+    from fmpoc.services.reinitialize import WIPE
+    assert BudgetInclusion in WIPE
+    assert WIPE.index(BudgetInclusion) < min(WIPE.index(FormerBudget), WIPE.index(Budget), WIPE.index(FiscalYear))
+    assert "budget_inclusion" in DATA_TABLES
