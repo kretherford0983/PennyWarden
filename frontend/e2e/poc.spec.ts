@@ -3485,8 +3485,9 @@ test("#134: real names - search the Users list, sort by last name, names in the 
   await roles.getByLabel("Register User").uncheck();
   await roles.getByLabel("Budget Manager").uncheck();
   await roles.getByLabel("Roles filter").click();
-  await expect(page.getByRole("row", { name: /auditor1/ })).toBeVisible();
-  await expect(page.getByRole("row", { name: /bm1/ })).toHaveCount(0);
+  await page.getByLabel("Security domain").selectOption("FINANCIAL");               // (no Auditor account exists yet)
+  await expect(page.getByRole("row", { name: /bm1/ })).toBeVisible();
+  await expect(page.getByRole("row", { name: /Pat Example/ })).toHaveCount(0);       // the Administrator
   await page.getByRole("button", { name: "Clear filters" }).click();
   await page.getByLabel("Status").selectOption("ACTIVE");
   await expect(page.getByRole("row", { name: /admin/ }).first()).toBeVisible();
