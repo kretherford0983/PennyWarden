@@ -160,6 +160,12 @@ PennyWarden 2.3.0 (in progress).
 - **New installations** present in the dark theme and print in the light one. **Upgraded installations keep the light
   theme for everything** until an Administrator turns dark on.
 
+### Under the hood
+- **Faster builds (#420).** The build of develop, test and main no longer runs the whole test suite again: the pull
+  request's checks already ran it, and pull requests must now be up to date with their target before they merge, so
+  what lands is exactly what was tested. A release is published about 20 minutes sooner. Every package is still
+  smoke-tested before it is published, and a build run by hand on a feature branch still runs the tests first.
+
 ### Upgrade
 - Migration `0060` adds `fundraiser.goal_amount_cents` (empty = no goal).
 - Migration `0061` adds correction and retirement columns to `bank_account_balance` (empty: nothing changes) and the

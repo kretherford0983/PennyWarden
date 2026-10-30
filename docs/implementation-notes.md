@@ -128,6 +128,16 @@ could not otherwise be corrected. Scope and safeguards:
   with a link; the variable picker completes dotted names.
 - Tests: `backend/tests/test_v210_organization.py` (6, including the data migration) and the E2E #126 and #312 steps.
 
+**2.3.0 build 14 — Push builds skip the repeated test suite (#420, Kyle 2026-10-30).**
+- `build.yml`: the `tests` job runs only on `workflow_dispatch`; `package`, `windows-exe`, `macos-app`, `assemble`,
+  `publish` and `site` use `!failure() && !cancelled()` (a skipped job otherwise skips everything that depends on it,
+  directly or not). A failed hand-run test job still stops packaging. The packaging smoke tests are unchanged.
+- Safe because the ruleset (develop, test, main) requires a pull request with the `tests / test` and
+  `promotion-rules` checks **and** branches up to date before merging (strict, set by Kyle in the repository
+  settings). The develop build's `notices: regenerate` only ever affected its own test run, never the package, so
+  nothing is lost there.
+- No spec impact (CI only).
+
 **2.3.0 build 13 — Users: filters and sortable columns (#409, Kyle 2026-10-29).**
 - Client-side on the already-loaded list (`pages/Users.tsx`): Roles (multi-select, OR), Security domain, Status
   (`ACTIVE` / `DISABLED` / `LOCKED` = active with `locked_until` in the future), combined with the search (AND).
