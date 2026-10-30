@@ -116,6 +116,10 @@ PennyWarden 2.2.0 (in progress).
 - **Bank accounts: *Account opened* (optional, #348).** For an account opened after PennyWarden was set up: dates
   before it count as $0, the report doesn't list it before then, and dashboard balance charts start there. Blank
   means the account existed before PennyWarden. Changes are audited.
+- **Budget Review: "history on parent" only where it can be true.** A sub-budget with no figures of its own in a
+  year now shows *history on parent* only when the parent held one amount that year (no sub-budgets besides Other).
+  Where the parent's figure is its sub-budgets' (recorded with sub-budgets, or entered as their sum), the new
+  sub-budget shows "—": it had no history then. Same on screen, in the PDF and the CSV.
 
 ### Donations part 2 (#325)
 - **A Donations page** (navigation, when the module is on): Register Users record donations and print receipts there;

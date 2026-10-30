@@ -178,6 +178,11 @@ def test_parent_sum_of_sub_budgets_and_mismatch(env, base):
     assert (p["budgeted"], p["actual"], p["from_sub_budgets"], p["mismatch"]) == ("500.00", "470.00", True, None)
     t = _row(rep, trav["id"])
     assert t["history"][0]["budgeted"] == "300.00" and t["history_note"] is None
+    # 2.2.0 (Kyle, 2026-10-30): a sub-budget new this year shows "—", not "history on parent", where the parent's
+    # figure is the sum of its sub-budgets (nothing of the new one can be in it)
+    kiw = env.budget(base["fy"]["id"], "05", "Kiwanis", amount="50.00", parent=base["exp"]["id"])
+    k = _row(_review(env, base), kiw["id"])
+    assert k["history"] == [None] and k["history_notes"] == [None] and k["history_note"] is None
     v = _view(env, base["exp"]["id"])["entries"]
     assert [(x["from_sub_budgets"], x["budgeted"], x["id"]) for x in v] == [(True, "500.00", None)]
     # the parent's own figure wins; a different sum of sub-budgets is noted, nothing is blocked
@@ -185,6 +190,9 @@ def test_parent_sum_of_sub_budgets_and_mismatch(env, base):
     p = _row(_review(env, base), base["exp"]["id"])["history"][0]
     assert (p["budgeted"], p["from_sub_budgets"]) == ("600.00", False)
     assert p["mismatch"] == {"budgeted": "500.00", "actual": "470.00"}
+    # the parent's own figure that year may include the new sub-budget: the note shows again (screen, PDF, CSV)
+    k = _row(_review(env, base), kiw["id"])
+    assert k["history_notes"] == ["history on parent"] and k["history_note"] == "history on parent"
     v = _view(env, base["exp"]["id"])["entries"]
     assert len(v) == 1 and v[0]["mismatch"] == {"budgeted": "500.00", "actual": "470.00"}
     csv_text = _review(env, base, format="csv").text
