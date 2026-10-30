@@ -128,6 +128,28 @@ could not otherwise be corrected. Scope and safeguards:
   with a link; the variable picker completes dotted names.
 - Tests: `backend/tests/test_v210_organization.py` (6, including the data migration) and the E2E #126 and #312 steps.
 
+**2.3.0 build 15 — Budget History: years included in another budget (#414, decided with Kyle 2026-10-30).**
+- Kyle: any budget of the same type at any level; years before **and** in PennyWarden; shown only on the marked
+  budget; not counted in Avg; #415's automatic *history on parent* stays where nothing is marked.
+- Storage (Claude's call): table `budget_inclusion` (migration `0068`) on the earliest budget of the marked budget's
+  line (as the #381 link holder) and looked up across `budget_history.line_budgets`, so no budget from before
+  PennyWarden is created for an event that never had an old-spreadsheet line. A PennyWarden year stores
+  `fiscal_year_id` + `included_budget_id` (a budget of that year); a year before PennyWarden stores the label/year +
+  `included_former_budget_id`. Service `services/budget_inclusions.py`.
+- Validation (BR-078/097/098): same type; not Budget 0 or deleted; the year is before the marked budget's Fiscal
+  Year; a PennyWarden year has no budget of the line and the included budget is of that year and not of the line; a
+  year before PennyWarden goes through the same label rules as entered years and has no entered figure on the line;
+  the included budget from before PennyWarden is not the line's own; one active mark per line and year (409);
+  explicit fields only; note ≤ 500.
+- Figures always win: a mark for a year that later gets figures is not shown (the History says so).
+- Budget Review: the cell stays empty (so Avg already leaves it out) and `history_notes[i]` carries
+  "included in …", ahead of #415's "history on parent"; also on the not-in-year rows of PennyWarden lines (#382).
+  The PDF prints "…, now 1000-00 Other" for the arrow (the PDF font has no → glyph); screen and CSV keep the arrow.
+- Never deleted (BR-001): retired with a reason. Audit `BUDGET_HISTORY_INCLUSION_MARKED` / `_RETIRED` on the line's
+  holder budget (AC-AUD-001–005). Budget Managers mark (`budget.manage`); every financial role and Auditors see the
+  marks in the History (`financial.view`), BR-003. Reporting only (BR-048).
+- Tests: `backend/tests/test_v230_history_included.py` (4) and the E2E step "#414".
+
 **2.3.0 build 14 — Push builds skip the repeated test suite (#420, Kyle 2026-10-30).**
 - `build.yml`: the `tests` job runs only on `workflow_dispatch`; `package`, `windows-exe`, `macos-app`, `assemble`,
   `publish` and `site` use `!failure() && !cancelled()` (a skipped job otherwise skips everything that depends on it,

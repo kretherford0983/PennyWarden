@@ -2023,6 +2023,45 @@ test("#381: a budget from before PennyWarden is created, given a year and contin
   await expect(h.getByRole("table", { name: "Budget history" })).not.toContainText(y);
 });
 
+test("#414: a year whose money was included in another budget is marked on History and shown in the Budget Review", async ({ page }) => {
+  await login(page, "bm1");
+  const post = await apiAs(page);
+  const fys = await (await page.request.get("/api/fiscal-years")).json();
+  const f41 = fys.find((f: any) => f.display_name === "FY2041");
+  const ev = await (await post("/api/budgets", { fiscal_year_id: f41.id, code: "8980", name: "Club events", budget_type: "EXPENSE", amount: "90.00" })).json();
+  const kiw = await (await post("/api/budgets", { fiscal_year_id: f41.id, parent_budget_id: ev.id, code: "05", name: "Kiwanis", amount: "40.00" })).json();
+  const firstYear = (await (await page.request.get(`/api/budgets/${kiw.id}/history/entered`)).json()).first_year;
+  const y = `FY${firstYear - 2}`;
+  const old = await (await post("/api/budgets/former", { code: "460", name: "Club nights", budget_type: "EXPENSE" })).json();
+  expect((await post(`/api/budgets/former/${old.id}/entries`, { fiscal_year_label: y, budgeted: "300.00", actual: "280.00" })).ok()).toBeTruthy();
+  await page.goto(`/budgets?fiscal_year_id=${f41.id}`);
+  await page.getByRole("button", { name: "History of 8980-05" }).click();
+  const h = page.getByRole("dialog", { name: "History of 8980-05 Kiwanis" });
+  await h.getByRole("button", { name: "Add an earlier year" }).click();
+  await page.getByRole("dialog", { name: "Add an earlier year to 8980-05 Kiwanis" }).getByLabel("Its money was included in another budget that year").check();
+  const inc = page.getByRole("dialog", { name: "Add an earlier year to 8980-05 Kiwanis" });
+  await inc.getByLabel("Year", { exact: true }).selectOption("before");
+  await inc.getByLabel("Fiscal Year").fill(y);
+  await inc.getByLabel("Included in").selectOption(String(old.id));
+  await inc.getByRole("button", { name: "Add" }).click();
+  const row = h.getByTestId("inclusion-row");
+  await expect(row).toContainText(y);
+  await expect(row).toContainText("Included in 460 Club nights");
+  // the Budget Review shows the text in that year, not "—", and leaves the year out of Avg
+  const rep = await (await page.request.get(`/api/reports/budget-review?fiscal_year_id=${f41.id}&years=-1`)).json();
+  const r = rep.expense.find((x: any) => x.id === kiw.id);
+  const i = rep.years.findIndex((x: any) => x.display_name === y);
+  expect(r.history_notes[i]).toBe("included in 460 Club nights");
+  expect(r.average).toBeNull();
+  // retired with a reason, kept in the list of retired marks
+  await row.getByRole("button", { name: `Retire the mark for ${y}` }).click();
+  const rt = page.getByRole("dialog", { name: `Retire the mark for ${y}` });
+  await rt.getByLabel("Reason (required)").fill("E2E check");
+  await rt.getByRole("button", { name: "Retire" }).click();
+  await expect(h.getByTestId("inclusion-row")).toHaveCount(0);
+  await expect(h.locator("details.retired-entries")).toContainText("retired: E2E check");
+});
+
 // ---------------------------------------------------------------- v1.5.0 CR-031: dashboard layout
 test("CR-031: dashboard sections can be hidden, reordered and reset; saved per user", async ({ page }) => {
   await login(page, "ru1", "Brand-New-Pass-99");

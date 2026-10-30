@@ -571,6 +571,16 @@ class BudgetHistoryCorrectIn(In):
     reason: Str(500)
 
 
+class BudgetInclusionIn(In):
+    """2.3.0 (#414): a year the budget's money was included in another budget. A year in PennyWarden:
+    fiscal_year_id + included_budget_id; a year before PennyWarden: fiscal_year_label + included_former_budget_id."""
+    fiscal_year_id: int | None = None
+    included_budget_id: int | None = None
+    fiscal_year_label: OptStr(40) = None
+    included_former_budget_id: int | None = None
+    note: OptStr(500) = None
+
+
 class BudgetHistoryCsvIn(In):
     fiscal_year_id: int
     csv: str = Field(min_length=1, max_length=600_000)

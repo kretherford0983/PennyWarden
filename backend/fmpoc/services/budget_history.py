@@ -305,7 +305,9 @@ def view(db: Session, ctx, b: Budget) -> dict:
                          "retired": False, "retired_at": None, "retire_reason": None, "source": "ENTERED",
                          "from_sub_budgets": True, "counted": True, "mismatch": None})
     rows.sort(key=lambda r: (r["year"], r["from_sub_budgets"], r["id"] or 0))
+    from . import budget_inclusions as incl            # 2.3.0 (#414)
     return {"first_year": first, "can_enter": not b.is_budget_zero and b.status != "DELETED", "entries": rows,
+            "inclusions": incl.for_view(db, b, first),
             "former": former_out(db, f, first) if f is not None else None,
             "holder": budget_brief(db, holder), "is_holder": holder.id == b.id}
 

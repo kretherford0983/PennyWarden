@@ -314,8 +314,9 @@ function RetireFormer({ former, onClose, onSaved }: any) {
 
 /** 2.2.0 (#284, #381): add, correct (reason required) or retire (reason required) an entered year; optionally the code
  * and name the budget had that year. */
-export function YearForm({ title, addUrl, edit, defaults, onClose, onSaved }: {
+export function YearForm({ title, addUrl, edit, defaults, onClose, onSaved, onIncluded }: {
   title?: string; addUrl: string; edit: any; defaults?: { code?: string; name?: string }; onClose: () => void; onSaved: () => void;
+  onIncluded?: () => void;   // 2.3.0 (#414): on a budget's History, the second choice
 }) {
   const e = edit.e || {};
   const [f, setF] = useState({ fiscal_year_label: e.fiscal_year_label || "", budgeted: e.budgeted || "", actual: e.actual || "", note: e.note || "",
@@ -340,6 +341,12 @@ export function YearForm({ title, addUrl, edit, defaults, onClose, onSaved }: {
           <p>The entry stops counting in the History and the Budget Review. It is kept (with your reason) and can't be deleted; the year can be entered again.</p>
         ) : (
           <>
+            {onIncluded ? (
+              <fieldset className="choices">
+                <label className="check"><input type="radio" name="year-kind" checked readOnly /> Its figures that year</label>
+                <label className="check"><input type="radio" name="year-kind" checked={false} onChange={onIncluded} /> Its money was included in another budget that year</label>
+              </fieldset>
+            ) : null}
             <Field label="Fiscal Year" hint="Include the year, for example FY2021."><input required maxLength={40} value={f.fiscal_year_label} onChange={(x) => setF({ ...f, fiscal_year_label: x.target.value })} /></Field>
             <div className="row fields">
               <Field label="Budgeted"><input required inputMode="decimal" maxLength={20} value={f.budgeted} onChange={(x) => setF({ ...f, budgeted: x.target.value })} /></Field>

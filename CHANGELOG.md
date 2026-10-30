@@ -64,6 +64,14 @@ PennyWarden 2.3.0 (in progress).
   The CSV import takes an optional *estimated* column (yes/no; an estimated row needs a note). The year is marked
   **\*** in the budget's History and the Budget Review (screen, PDF and CSV), with a footnote *\* Estimated: <the
   note>*; in the Budget Review chart its bars are lighter and its label carries the \*.
+- **A year whose money was in another budget (#414).** A budget that is new on its own (for example a sub-budget
+  split out of a parent) can say where its money was in earlier years. On the budget's **History**, *Add an earlier
+  year* has a second choice: **Its money was included in another budget that year**. Choose the year (a Fiscal Year
+  in PennyWarden, or an earlier year before PennyWarden), the budget it was included in (any budget of the same type,
+  at any level) and an optional note; no amounts. The Budget Review then shows *included in 102 Fundraisers → 100-00
+  Other* in that year instead of —, on the screen, in the PDF and the CSV. The year has no figures of its own, so it
+  isn't counted in **Avg**; the other budget shows nothing extra. *history on parent* (2.2.0) still shows where the
+  parent held one amount of its own and nothing is marked. A mark is retired with a reason, never deleted.
 
 ### Fundraisers
 - **An optional goal for a fundraiser (#372).** *New/Edit fundraiser* has a **Goal (optional)** field. When a goal is
@@ -174,6 +182,7 @@ PennyWarden 2.3.0 (in progress).
   settings and defaults to on, so no data changes.
 - Migration `0062` adds `estimated` to `fundraiser_series_result` and `budget_history_entry` (off for every existing
   entry).
+- Migration `0068` adds the table `budget_inclusion` (empty): the years marked as included in another budget.
 - Migration `0067` adds the table `report_grouping` (empty = grouped by Purpose, as in 2.3.0's catalog).
 - Migration `0066` adds `app_user.report_prefs` (empty): the Reports screen's Recently run and last options.
 - Migration `0065` adds the dark theme, the theme per output type and the dark-background logos to

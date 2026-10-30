@@ -347,7 +347,7 @@ def estimate_footnotes(rep: dict) -> list[str]:
 
 # ------------------------------------------------------------------ 2.3.0 (#382): budgets not in the chosen year
 def _add_not_in_year(db: Session, ctx, fy: FiscalYear, shown: list, first: int | None, sections: dict,
-                     entered_of, cache: dict, average) -> None:
+                     entered_of, cache: dict, average, marks_of=None) -> None:
     """Rows for the lines with figures in the years shown that have no budget in the chosen Fiscal Year (decided with
     Kyle 2026-10-29): mixed into Income and Expense in code order, tagged "not in <FY>, last <year>", shown under the
     line's most recent code and name; no current-year, projection or next-year figures. Lines group on the #89 and
@@ -436,8 +436,11 @@ def _add_not_in_year(db: Session, ctx, fy: FiscalYear, shown: list, first: int |
                               "from_sub_budgets": f["source"] == "subs", "mismatch": f["mismatch"],
                               **_estimate(f), **compare(f["budgeted"], f["actual"])})
         if any(c is not None for c in cells):
-            extra[L.budget_type].append(_nic_row(f"b{L.id}", code, L.name, L.budget_type, cells, average, fy,
-                                                 label_of(max(i for i, c in enumerate(cells) if c is not None))))
+            row = _nic_row(f"b{L.id}", code, L.name, L.budget_type, cells, average, fy,
+                           label_of(max(i for i, c in enumerate(cells) if c is not None)))
+            if marks_of is not None:                       # 2.3.0 (#414)
+                row["history_notes"] = marks_of(L, cells)
+            extra[L.budget_type].append(row)
     for f in lone:
         own = {e.year: e for e in hist._entries(db, [f.id])}
         code, name = hist.current_label(db, f)
@@ -508,6 +511,16 @@ def budget_review(db: Session, ctx, fy: FiscalYear, *, years: int = 3, projected
     all_ids = [b.id for b in db.scalars(select(Budget).where(Budget.fiscal_year_id == fy.id))]
     ytd = active_allocation_totals(db, all_ids, None, as_of)
     cache: dict[int, int] = {}
+
+    from . import budget_inclusions as incl
+
+    def marks_of(b: Budget, cells: list) -> list:
+        """2.3.0 (#414): per year, "included in ..." where the budget has no figures and a Budget Manager marked it."""
+        m = incl.notes_for(db, b, first)
+        if not m:
+            return [None] * len(cells)
+        return [m.get(("fy", y.id) if kind == "fy" else ("entered", y)) if c is None else None
+                for (kind, y), c in zip(shown, cells)]
 
     def history(b: Budget, code: str) -> tuple[list, str | None]:
         line, note = _line(db, b)
@@ -604,10 +617,12 @@ def budget_review(db: Session, ctx, fy: FiscalYear, *, years: int = 3, projected
                 kcode = budget_display_code(k, p)
                 k_ytd = ytd.get(k.id, 0)
                 h, note = history(k, kcode)
-                notes = parent_notes(h, note, ph)
+                pnotes = parent_notes(h, note, ph)
+                notes = [m or n for m, n in zip(marks_of(k, h), pnotes)]    # 2.3.0 (#414): a mark comes first
                 row = {"id": k.id, "level": "sub", "parent_id": p.id, "code": kcode, "name": k.name,
                        "budget_type": k.budget_type, "status": k.status, "state": bsvc.state(k), "is_other": k.is_other,
-                       "history": h, "history_notes": notes, "history_note": "history on parent" if any(notes) else None,
+                       "history": h, "history_notes": notes,
+                       "history_note": "history on parent" if any(n == "history on parent" for n in notes) else None,
                        "average": average(h),
                        "current": compare(k.amount_cents, k_ytd),
                        "projection": None, "next": nxt(k), "choosable": True}
@@ -620,7 +635,7 @@ def budget_review(db: Session, ctx, fy: FiscalYear, *, years: int = 3, projected
             h, note = ph, pnote
             prow = {"id": p.id, "level": "parent", "parent_id": None, "code": code, "name": p.name,
                     "budget_type": p.budget_type, "status": p.status, "state": bsvc.state(p), "is_other": False, "history": h,
-                    "history_notes": [None] * len(h), "history_note": note, "average": average(h), "current": compare(p.amount_cents, p_ytd), "projection": None,
+                    "history_notes": marks_of(p, h), "history_note": note, "average": average(h), "current": compare(p.amount_cents, p_ytd), "projection": None,
                     "next": nxt(p), "choosable": not kids}
             if projected:
                 if kids:
@@ -637,7 +652,7 @@ def budget_review(db: Session, ctx, fy: FiscalYear, *, years: int = 3, projected
             out += group
         sections[key.lower()] = out
     if not filtered:
-        _add_not_in_year(db, ctx, fy, shown, first, sections, entered_of, cache, average)
+        _add_not_in_year(db, ctx, fy, shown, first, sections, entered_of, cache, average, marks_of)
     if budget_id is not None and not (sections["income"] or sections["expense"]):
         raise validation("Choose a budget of this Fiscal Year (not Budget 0).", "budget_id")
     if parent_budget_id is not None and not (sections["income"] or sections["expense"]):
@@ -791,7 +806,8 @@ def _review_columns(rep: dict) -> list[tuple[str, callable]]:
         def cell(r, i=i):
             c = r["history"][i]
             if c is None:
-                note = "<i>history on parent</i>" if (r.get("history_notes") or [None] * len(r["history"]))[i] else "—"
+                n = (r.get("history_notes") or [None] * len(r["history"]))[i]     # 2.2.0 #415 / 2.3.0 #414
+                note = f"<i>{escape(n.replace(' → ', ', now '))}</i>" if n else "—"   # the PDF font has no arrow
                 return (note, "", "")
             extra = []
             if c.get("source") == "ENTERED":          # 2.2.0 (#284)
