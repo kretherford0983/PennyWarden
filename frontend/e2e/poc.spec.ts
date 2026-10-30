@@ -2042,7 +2042,7 @@ test("#414: a year whose money was included in another budget is marked on Histo
   const inc = page.getByRole("dialog", { name: "Add an earlier year to 8980-05 Kiwanis" });
   await inc.getByRole("combobox", { name: "Year", exact: true }).selectOption("before");
   await inc.getByLabel("Fiscal Year").fill(y);
-  await inc.getByLabel("Included in").selectOption(String(old.id));
+  await inc.getByRole("combobox", { name: "Included in" }).selectOption(String(old.id));
   await inc.getByRole("button", { name: "Add" }).click();
   const row = h.getByTestId("inclusion-row");
   await expect(row).toContainText(y);
