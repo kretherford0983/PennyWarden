@@ -8,7 +8,8 @@ from conftest import ADMIN, PASSWORD, Api, initialize
 from fmpoc.app import create_app
 from fmpoc.config import load_settings
 
-ALL = ["ADMINISTRATOR", "AUDITOR", "BUDGET_ADMIN", "BUDGET_MANAGER", "REGISTER_ADMIN", "REGISTER_USER"]
+ALL = ["ADMINISTRATOR", "AUDITOR", "BUDGET_ADMIN", "BUDGET_MANAGER", "INVOICE_MANAGER", "REGISTER_ADMIN",   # 2.4.0 (#251)
+       "REGISTER_USER"]
 
 
 @pytest.fixture
@@ -42,7 +43,7 @@ def test_local_first_user_has_every_role(local):
     assert d["kind"] != "administrator" and "review_summary" in d          # financial + Auditor dashboard
     ev = admin.get("/api/audit-events?action=SYSTEM_INITIALIZED").json()["items"][0]
     assert ev["after"]["admin_roles"] == ["ADMINISTRATOR", "BUDGET_MANAGER", "BUDGET_ADMIN", "REGISTER_USER",
-                                          "REGISTER_ADMIN", "AUDITOR"] and ev["after"]["mode"] == "local"
+                                          "REGISTER_ADMIN", "INVOICE_MANAGER", "AUDITOR"] and ev["after"]["mode"] == "local"
 
 
 def test_local_any_roles_for_new_users_and_own_roles(local):
