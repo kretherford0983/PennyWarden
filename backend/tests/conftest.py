@@ -254,3 +254,18 @@ def unique_pdf() -> bytes:
 
 def today() -> str:
     return dt.date.today().isoformat()
+
+
+# 2.4.0 (#429): a Fundraiser needs an Income and an Expense budget (an Event an Expense budget) in each Fiscal Year it
+# uses once any budget is chosen. These earlier test modules exercise other fundraiser rules (budget windows, adjacent
+# years, closed years, report pages) with one-budget setups, so the new rule is relaxed for them only; it is tested in
+# test_v240_events.py and stays in force for every other module.
+_BEFORE_REQUIRED_BUDGETS = {"test_v160_fundraisers", "test_v161_fundraiser_manage", "test_v162_fundraiser_report",
+                            "test_v171_report_fundraiser_pages", "test_v210_fundraiser_series"}
+
+
+@pytest.fixture(autouse=True)
+def _required_budgets_rule(request, monkeypatch):
+    if request.module.__name__.rsplit(".", 1)[-1] in _BEFORE_REQUIRED_BUDGETS:
+        from fmpoc.services import fundraisers as _fsvc
+        monkeypatch.setattr(_fsvc, "REQUIRED_KINDS", {"FUNDRAISER": (), "EVENT": ()})

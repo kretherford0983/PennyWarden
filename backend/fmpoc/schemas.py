@@ -519,6 +519,7 @@ class FundraiserIn(In):
     continues_from_id: int | None = None       # 2.1.0 (#277): the previous fundraiser of the series
     copy_buckets_from_id: int | None = None    # 2.1.0 (#277): "Create next year's from this one" (create only)
     goal_amount: Amount | None = None          # 2.3.0 (#372): optional goal; blank/None = no goal (left unchanged if omitted on edit)
+    event_type: Literal["FUNDRAISER", "EVENT"] | None = None   # 2.4.0 (#429): create default Fundraiser; omitted on edit = unchanged
 
 
 class FundraiserLinkIn(In):                    # 2.1.0 (#277)

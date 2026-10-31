@@ -113,10 +113,12 @@ def create(body: FundraiserIn, db: Session = Depends(get_db), ctx: Ctx = Depends
 
 # ------------------------------------------------------------------ 2.1.0 (#277): across years
 @router.get("/fundraisers/continue-options")
-def continue_options(start_date: dt.date = Query(...), fundraiser_id: int | None = None, db: Session = Depends(get_db),
+def continue_options(start_date: dt.date = Query(...), fundraiser_id: int | None = None,
+                     event_type: Literal["FUNDRAISER", "EVENT"] | None = None, db: Session = Depends(get_db),
                      ctx: Ctx = Depends(manager)):
-    """For "Continues from": the latest fundraiser of each series plus unlinked ones, from earlier Fiscal Years."""
-    return series.continue_options(db, ctx, start_date, fundraiser_id)
+    """For "Continues from": the latest fundraiser of each series plus unlinked ones, from earlier Fiscal Years
+    (2.4.0 #429: of the same type when event_type is given)."""
+    return series.continue_options(db, ctx, start_date, fundraiser_id, event_type)
 
 
 @router.get("/fundraisers/fy-report/selection")

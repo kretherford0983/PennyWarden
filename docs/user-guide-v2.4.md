@@ -2,6 +2,36 @@
 
 *2.4.0 is in progress. The full list is in the [changelog](../CHANGELOG.md).*
 
+## Events & Fundraisers
+
+The Fundraisers module is now **Events & Fundraisers** — **Events** in the menu. Everything you had is where it was.
+
+### Fundraiser or Event
+Each record has a **Type**:
+
+- **Fundraiser** — raises money: goal, donation receipts and the fundraising report, as before. Everything from before
+  2.4 is a Fundraiser.
+- **Event** — something you run that isn't a fundraiser, such as a Summer Cookout or a members' dinner. It shows
+  income, expenses and net, without a goal or donation receipts.
+
+You can change the type later with **Edit**. The goal and receipt settings are kept (just hidden while it is an
+Event), and the change is in the audit log. Events that continue each other (*Continues from*) must be the same type;
+to change the type of one that is linked with others, set *Continues from* to none first.
+
+### Budgets each type needs
+You can save a record without budgets (for example before next year's Fiscal Year exists). Once you choose budgets:
+
+- a **Fundraiser** needs an **Income and an Expense** budget,
+- an **Event** needs an **Expense** budget (Income is optional),
+
+in each Fiscal Year it uses. If one is missing, the record shows a warning and its results can't be marked final
+until you add it (or change the type). An event that runs across two Fiscal Years shows one combined Income and one
+combined Expense budget.
+
+### Reports
+The stakeholder report and presentation work for both types. The **Fiscal Year fundraising report** lists Events in
+a section of their own — they don't count in the fundraising totals.
+
 ## Attachments
 
 ### Identical files are stored once

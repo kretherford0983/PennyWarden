@@ -308,7 +308,8 @@ def _fundraisers(db: Session, ctx, fy: FiscalYear, p: dict, fy_income: int) -> d
         details.append({**row, "income_lines": sorted([(k[1], v) for k, v in lines.items() if k[0] == "INCOME"]),
                         "expense_lines": sorted([(k[1], v) for k, v in lines.items() if k[0] == "EXPENSE"]),
                         "seed_out": float_out, "seed_back": float_back, "seed_net": float_back - float_out,
-                        "prior_year": prev, "goal": fsvc.goal_vs_actual(f.goal_amount_cents, t["net"])})
+                        "prior_year": prev, "goal": None if fsvc.is_event(f) else fsvc.goal_vs_actual(f.goal_amount_cents, t["net"]),
+                        "event_type": f.event_type or "FUNDRAISER"})
     listed = rows if p["annual"] else [r for r in rows if r["in_period"] or r["revised"]]
     total_gross = sum(r["gross"] for r in rows)
     total_net = sum(r["net"] for r in rows)

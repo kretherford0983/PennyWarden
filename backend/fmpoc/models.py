@@ -643,6 +643,9 @@ class Fundraiser(Base):
     continues_from_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # 2.3.0 (#372): optional goal, compared with the net (informational only; never blocks activity)
     goal_amount_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 2.4.0 (#429): FUNDRAISER | EVENT (an Event hides the goal and donation receipts; required budgets differ)
+    event_type: Mapped[str] = mapped_column(String(20), default="FUNDRAISER", server_default="FUNDRAISER",
+                                            nullable=False)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
     created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)

@@ -180,7 +180,7 @@ function navFor(me: Me) {
     ["/entities", "Entities"],
     ["/reports", "Reports"],
   ];
-  if (me.modules?.fundraisers) fin.splice(6, 0, ["/fundraisers", "Fundraisers"]); // v1.6.0 CR-033 (optional module)
+  if (me.modules?.fundraisers) fin.splice(6, 0, ["/fundraisers", "Events"]); // v1.6.0 CR-033 (optional module); 2.4.0 (#429) "Events"
   // 2.0.0 (#164): Payments (Payments module) for Register Users, after Register
   if (me.modules?.checks && me.permissions.includes("checks.print")) fin.splice(fin.findIndex((n) => n[0] === "/register") + 1, 0, ["/payments", "Payments"]);
   // 2.2.0 (#325): Donations for the financial roles and Auditors when the Donations module is on, after Register/Payments
