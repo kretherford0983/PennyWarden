@@ -498,15 +498,15 @@ function StyleEditor({ setup, style, onClose, onSaved }: { setup: any; style: an
           <p className="hint">How the paper goes into the printer. The user picks one when printing (the sheet counter suggests it). The offset moves everything on the
             check (right / down positive) for this feed mode only; each user can also save a small adjustment for their own printer.</p>
           {/* 2.3.0 polish: kept inside its section (scrolls sideways if it must) - it no longer runs into the preview */}
-          <div className="table-wrap">
+          <div className="table-wrap feed-modes-wrap">
           <table className="table compact feed-modes">
             <thead><tr><th>Label</th><th>Kind</th><th>Details</th><th>Offset right</th><th>Offset down</th><th>Printer note</th><th /></tr></thead>
             <tbody>
               {cfg.feed_modes.map((m: any, i: number) => (
                 <tr key={m.key}>
-                  <td><input aria-label="Feed mode label" maxLength={60} value={m.label} onChange={(e) => change((c) => { c.feed_modes[i].label = e.target.value; })} /></td>
-                  <td>{m.kind === "SHEET" ? "Sheet" : "Single check"}</td>
-                  <td className="feed-details">
+                  <td data-label="Label"><input aria-label="Feed mode label" maxLength={60} value={m.label} onChange={(e) => change((c) => { c.feed_modes[i].label = e.target.value; })} /></td>
+                  <td data-label="Kind">{m.kind === "SHEET" ? "Sheet" : "Single check"}</td>
+                  <td className="feed-details" data-label="Details">
                     {m.kind === "SHEET" ? (
                       <select aria-label="Position on the sheet" value={m.position} onChange={(e) => change((c) => { c.feed_modes[i].position = Number(e.target.value); })}>
                         {cfg.stock.check_tops.map((_: number, p: number) => <option key={p} value={p}>{["Top", "Middle", "Bottom"][p] || `#${p + 1}`} check</option>)}
@@ -527,10 +527,10 @@ function StyleEditor({ setup, style, onClose, onSaved }: { setup: any; style: an
                       </>
                     )}
                   </td>
-                  <td><NumIn label="Offset right" value={m.dx} step={0.0625} min={-setup.limits.feed_offset_max} max={setup.limits.feed_offset_max} onChange={(v) => change((c) => { c.feed_modes[i].dx = v; })} /></td>
-                  <td><NumIn label="Offset down" value={m.dy} step={0.0625} min={-setup.limits.feed_offset_max} max={setup.limits.feed_offset_max} onChange={(v) => change((c) => { c.feed_modes[i].dy = v; })} /></td>
-                  <td><input aria-label="Printer note" maxLength={200} value={m.note || ""} onChange={(e) => change((c) => { c.feed_modes[i].note = e.target.value || null; })} /></td>
-                  <td>{cfg.feed_modes.length > 1 ? <button className="small" onClick={() => change((c) => { c.feed_modes.splice(i, 1); })}>Remove</button> : null}</td>
+                  <td data-label="Offset right"><NumIn label="Offset right" value={m.dx} step={0.0625} min={-setup.limits.feed_offset_max} max={setup.limits.feed_offset_max} onChange={(v) => change((c) => { c.feed_modes[i].dx = v; })} /></td>
+                  <td data-label="Offset down"><NumIn label="Offset down" value={m.dy} step={0.0625} min={-setup.limits.feed_offset_max} max={setup.limits.feed_offset_max} onChange={(v) => change((c) => { c.feed_modes[i].dy = v; })} /></td>
+                  <td className="feed-note" data-label="Printer note"><input aria-label="Printer note" maxLength={200} value={m.note || ""} onChange={(e) => change((c) => { c.feed_modes[i].note = e.target.value || null; })} /></td>
+                  <td className="feed-remove">{cfg.feed_modes.length > 1 ? <button className="small" onClick={() => change((c) => { c.feed_modes.splice(i, 1); })}>Remove</button> : null}</td>
                 </tr>
               ))}
             </tbody>

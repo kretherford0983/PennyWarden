@@ -2973,8 +2973,8 @@ test("#156-#162: Administrator sets up check printing; a Register User prints a 
   await expect(page.getByRole("heading", { name: /Check style: 3 per page/ })).toBeVisible();
   await expect(page.getByRole("img", { name: "Check preview drawn to scale" })).toContainText("SAMPLE PAYEE COMPANY INC");
   await expect(page.getByLabel("Pay to x")).toHaveValue("1.275");
-  // 2.3.0 polish: at a narrower two-column width the Feed modes table stays in the settings column and fits it
-  // (a single-check mode on a check-sized page used to run into the preview)
+  // 2.3.0 polish: at a narrower two-column width the Feed modes stay in the settings column and fit it - each feed
+  // mode a card with labelled fields (a single-check mode on a check-sized page used to run into the preview)
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.getByLabel("Page size").first().selectOption("CHECK");
   const feedWrap = page.locator(".table-wrap:has(table.feed-modes)");
@@ -2982,6 +2982,13 @@ test("#156-#162: Administrator sets up check printing; a Register User prints a 
   expect(fit.scroll).toBeLessThanOrEqual(fit.client + 1);
   const fb = (await feedWrap.boundingBox())!, sb = (await page.locator(".setup-settings").boundingBox())!;
   expect(fb.x + fb.width).toBeLessThanOrEqual(sb.x + sb.width + 1);
+  await expect(page.locator("table.feed-modes thead")).toBeHidden();
+  await expect(page.getByLabel("Printer note").first()).toBeVisible();
+  // wide enough for the table: the column headings are back
+  await page.setViewportSize({ width: 1900, height: 900 });
+  await expect(page.locator("table.feed-modes thead")).toBeVisible();
+  const fit2 = await feedWrap.evaluate((el) => ({ scroll: el.scrollWidth, client: el.clientWidth }));
+  expect(fit2.scroll).toBeLessThanOrEqual(fit2.client + 1);
   await page.setViewportSize({ width: 1280, height: 720 });
   // #174: the default memo shows in the preview as it is typed (sample data)
   await page.getByLabel("Default memo").fill("FBA {BUDGET_CODE}, INVOICE {INVOICE}");
