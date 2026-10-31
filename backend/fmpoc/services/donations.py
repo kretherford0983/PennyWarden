@@ -44,7 +44,8 @@ from .checkprint import config as cfgmod
 from . import organization as org_svc
 from .checkprint import documents, fonts, patterns
 from . import entity_vars
-from . import signers
+from . import letter_fit, signers
+from .letter_fit import FixedSpacer
 from .checkprint.service import _store_doc_copy, address_lines, format_date
 from .common import get_scoped
 
@@ -442,18 +443,35 @@ def ack_table(rows: list[tuple[str, str]], st: dict) -> Table:
 
 
 def donor_letter_pdf(cfg: ReceiptConfig, *, org: dict, donor_lines: list[str], today: dt.date,
-                     kind: str, sample: bool, watermark: str | None, doc_title: str, middle: list,
+                     kind: str, sample: bool, watermark: str | None, doc_title: str, middle,
                      closing: str, signature: "signers.SignatureBlock | None" = None) -> bytes:
     """A letter to a donor (receipt or year-end statement, 2.2.0 #256): the organization and donor heading - or the
     window-envelope layout and fold marks (#325) - then `middle`, the closing and the signer. A kind other than
-    ORIGINAL is printed in the top corner; `watermark` across the page."""
+    ORIGINAL is printed in the top corner; `watermark` across the page. `middle`: the flowables, or a function of
+    the settings giving them (so a letter can be fitted to one page with smaller type - 2.3.0 polish, letter_fit)."""
+    make = middle if callable(middle) else (lambda _c: middle)
+    skip = 1 if cfg.window == "ADDRESS_PAGE" else 0
+
+    def build(spacing: float, size: float, total: int) -> tuple[bytes, int]:
+        c = cfg if size == cfg.size else cfg.model_copy(update={"size": size})
+        return _donor_letter_once(c, org=org, donor_lines=donor_lines, today=today, kind=kind, sample=sample,
+                                  watermark=watermark, doc_title=doc_title, middle=make(c), closing=closing,
+                                  signature=signature, spacing=spacing, total=total, skip=skip)
+    return letter_fit.fit(build, cfg.size, skip)
+
+
+def _donor_letter_once(cfg: ReceiptConfig, *, org: dict, donor_lines: list[str], today: dt.date, kind: str,
+                       sample: bool, watermark: str | None, doc_title: str, middle: list, closing: str,
+                       signature: "signers.SignatureBlock | None", spacing: float, total: int,
+                       skip: int) -> tuple[bytes, int]:
     st = _styles(cfg)
     reg_f, bold, size, base = st["reg"], st["bold"], st["size"], st["base"]
     lcfg = documents.LetterConfig(font=cfg.font, size=cfg.size, window=cfg.window, window_return=cfg.window_return,
                                   fold_marks=cfg.fold_marks)
-    org_lines = [org["ORG.NAME"]] + [x for x in org["ORG.ADDRESS"].split("\n") if x]
     windowed = cfg.window != "NONE"
-    blocks = documents.window_blocks(lcfg, {"letterhead": org_lines}, donor_lines) if windowed else []
+    blocks = documents.window_blocks(lcfg, {"letterhead": [org["ORG.NAME"]] + [x for x in org["ORG.ADDRESS"].split("\n")
+                                                                                if x]}, donor_lines) if windowed else []
+    label = f"{org['ORG.NAME']} · {doc_title}"
 
     def first_page(c, doc):
         if cfg.fold_marks == "FRONT":
@@ -478,7 +496,7 @@ def donor_letter_pdf(cfg: ReceiptConfig, *, org: dict, donor_lines: list[str], t
             c.restoreState()
         page(c, doc)
 
-    def page(c, _doc):
+    def page(c, doc):
         c.saveState()
         if kind != ORIGINAL:
             c.setFont(bold, 9)
@@ -491,12 +509,13 @@ def donor_letter_pdf(cfg: ReceiptConfig, *, org: dict, donor_lines: list[str], t
             c.rotate(35)
             c.drawCentredString(0, 0, watermark)
         c.restoreState()
+        letter_fit.draw_continuation(c, doc.page, total, label, reg_f, skip)     # 2.3.0 polish
 
     story = []
     if cfg.window == "ADDRESS_PAGE":
-        story += [Spacer(1, 1), PageBreak()]                    # page 1: only the addresses, for the windows
+        story += [FixedSpacer(1, 1), PageBreak()]               # page 1: only the addresses, for the windows
     if cfg.window == "LETTER":                                  # the addresses show through the windows
-        story += [Spacer(1, (documents.FOLD_LINES[0] + 0.15 - 1) * inch),
+        story += [FixedSpacer(1, (documents.FOLD_LINES[0] + 0.15 - 1) * inch),
                   Paragraph(escape(format_date(today, cfg.date_format)), base)]
     else:
         story += [Paragraph(escape(org["ORG.NAME"]), st["strong"])]
@@ -506,20 +525,21 @@ def donor_letter_pdf(cfg: ReceiptConfig, *, org: dict, donor_lines: list[str], t
         story += [Paragraph(escape(x), base) for x in donor_lines]
     story.append(Spacer(1, size * 1.4))
     story += middle
-    story.append(Spacer(1, size * 1.2))
     block = [Paragraph(escape(closing), base)] if closing.strip() else []
     # 2.3.0 (#395): the chosen signer, shown as the letter's mode says (image only in the printed copy)
     block += signers.flowables(signature or signers.SignatureBlock(), base, bold, size, extra_title=org["ORG.NAME"])
-    if block:
-        story.append(KeepTogether(block))
+    if block:                         # 2.3.0 polish: the last paragraph goes with the closing and signature
+        story = letter_fit.with_tail(story, [Spacer(1, size * 1.2)] + block)
+    story = letter_fit.scale_spacers(story, spacing)
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=(8.5 * inch, 11 * inch), leftMargin=inch, rightMargin=inch,
                             topMargin=inch, bottomMargin=inch, title=doc_title,
                             creator="PennyWarden", author="", subject="", invariant=1)
     doc.build(story, onFirstPage=first_page, onLaterPages=page)
+    pages = doc.page
     if cfg.fold_marks == "BACK":
-        return documents._with_back_pages(buf.getvalue(), lcfg, doc_title)
-    return buf.getvalue()
+        return documents._with_back_pages(buf.getvalue(), lcfg, doc_title), pages
+    return buf.getvalue(), pages
 
 
 def addressee_lines(cfg: ReceiptConfig, values: dict, name: str, address: list[str]) -> list[str]:
@@ -537,6 +557,17 @@ def receipt_pdf(cfg: ReceiptConfig, data: ReceiptData, sample: bool = False, wat
     if sample and watermark is None:
         watermark = "SAMPLE - NOT A RECEIPT"
     texts, _empty = receipt_texts(cfg, data)
+    values = values_for(cfg, data)
+    return donor_letter_pdf(cfg, org=data.org, donor_lines=addressee_lines(cfg, values, data.donor_name,
+                                                                           data.donor_address),
+                            today=data.today, kind=data.kind, sample=sample, watermark=watermark,
+                            doc_title=f"Donation receipt {data.number}",
+                            middle=lambda c: _receipt_middle(c, data, texts, values), closing=texts["closing"],
+                            signature=data.signature)
+
+
+def _receipt_middle(cfg: ReceiptConfig, data: ReceiptData, texts: dict, values: dict) -> list:
+    """The receipt between the addresses and the closing, at the settings' type size."""
     st = _styles(cfg)
     size, base = st["size"], st["base"]
     middle = []
@@ -560,13 +591,9 @@ def receipt_pdf(cfg: ReceiptConfig, data: ReceiptData, sample: bool = False, wat
     rows.append(("Receipt No.", data.number))
     ack = [ack_table(rows, st), Spacer(1, size * 0.6), Paragraph(escape(goods_statement(data.goods)), st["strong"])]
     if data.items:                                  # 2.2.0 (#325): always with items; the wording is editable
-        ack += [Spacer(1, size * 0.4), Paragraph(escape(items_note_text(cfg, values_for(cfg, data))), base)]
+        ack += [Spacer(1, size * 0.4), Paragraph(escape(items_note_text(cfg, values)), base)]
     middle.append(KeepTogether(ack))
-    return donor_letter_pdf(cfg, org=data.org, donor_lines=addressee_lines(cfg, values_for(cfg, data), data.donor_name,
-                                                                           data.donor_address),
-                            today=data.today, kind=data.kind, sample=sample, watermark=watermark,
-                            doc_title=f"Donation receipt {data.number}", middle=middle, closing=texts["closing"],
-                            signature=data.signature)
+    return middle
 
 
 SAMPLE_DONOR = ["SAMPLE DONOR", "123 Main Street", "Sample Town, US 55555"]

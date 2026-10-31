@@ -98,6 +98,13 @@ PennyWarden 2.3.0 (in progress).
 - The receipt dialog's "setup missing" message now points to System/About → Organization, where the EIN and address
   are entered.
 
+### Letters that run onto a second page
+- **The signature no longer ends up alone on page 2.** Donation receipts, year-end statements and payment cover
+  letters that only just run over are fitted onto one page (tighter spacing, then up to 1 pt smaller type). When a
+  letter really needs two pages, its last paragraph moves to page 2 with the closing and signature.
+- Page 2 onward is headed with the organization, the document and its number, and *Page 2 of 2*; page 1 ends with
+  *Continued on page 2*. The window-envelope layout, pre-printed letterhead and the room to sign by hand never shrink.
+
 ### Setup pages (#394)
 - **One layout for every setup editor.** Donations Setup, check styles, the payment cover letter and the envelope
   editors (Payments, Donations and the Envelopes page) now put the settings on the left and the live preview on the

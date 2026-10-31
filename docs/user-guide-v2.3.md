@@ -100,6 +100,12 @@ can watch each change. Choose **Receipt** or **Year-end statement** above the pr
 narrow screen the preview is at the top of the page; tick **Keep at the top** to keep it there while you scroll. The
 check style, cover letter and envelope editors work the same way.
 
+### Letters that run onto a second page
+Receipts, year-end statements and payment cover letters that only just run over now fit on one page – the spacing
+tightens, and if needed the type gets slightly smaller. A letter that needs two pages takes its last paragraph to
+page 2 with the signature, so the signature is never on a page by itself. The second page is headed with your
+organization, the document and its number, and *Page 2 of 2*.
+
 ### Signers for receipts and statements
 Signers are now kept on one **Signers** page (Administrators, next to Envelopes), shared by checks, payment cover
 letters and donation letters. Add a signer there, upload a signature image if you want one, and tick what the signer
