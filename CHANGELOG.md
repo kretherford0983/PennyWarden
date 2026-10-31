@@ -5,6 +5,14 @@ Versions are `Breaking.Major.Minor` from 1.6.0 (docs/branching.md).
 ## 2.4.0 — unreleased
 PennyWarden 2.4.0 (in progress).
 
+### Invoices
+- **Invoiced Income budgets (#250).** A Budget Manager can mark an Income budget as **Invoiced Income** (budget row
+  menu → *Mark as Invoiced Income*); its sub-budgets and Other carry it. It is shown with a 🧾 *Invoiced income* label
+  on the budget lists and in the Audit / Close report, and copying the budget into a new Fiscal Year keeps it. On an
+  Approved budget it can be changed only after unlocking the budget with a reason. Each change is in the audit log.
+  The budget still counts as income everywhere; the designation is groundwork for the Invoices module later in 2.4.0
+  and has no effect on the Register until that module is turned on.
+
 ### Events & Fundraisers
 - **The Fundraisers module is now Events & Fundraisers (#429).** The menu item is **Events**; the module setting and
   the pages read *Events & Fundraisers*, and the setting lists examples (fundraisers, a Summer Cookout, an annual

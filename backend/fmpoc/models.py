@@ -215,6 +215,8 @@ class Budget(Base):
     continues_former_budget_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     status_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # 2.4.0 (#250): Invoiced Income - set on an Income parent, carried by its sub-budgets and Other (BR-016)
+    invoiced_income: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
     created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("app_user.id"), nullable=True)
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
