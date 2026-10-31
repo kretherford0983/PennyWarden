@@ -4418,7 +4418,7 @@ test("#376: an Administrator groups the Reports catalog by Subject, renames and 
   await card.getByLabel("Category of Financial Flow").selectOption({ label: "This Fiscal Year" });
   // removing a category with reports asks where they go
   await card.getByRole("button", { name: "Remove…" }).last().click();       // System: no reports, removed at once
-  await expect(card.getByTestId("rs-category")).toHaveCount(5);
+  await expect(card.getByTestId("rs-category")).toHaveCount(6)   // 2.4.0 (#255): + Invoices;
   await card.getByRole("button", { name: "Remove…" }).nth(3).click();       // Entities: has a report
   await expect(card.getByRole("group", { name: "Remove Entities" })).toBeVisible();
   await card.getByRole("button", { name: "Keep it" }).click();
@@ -4442,7 +4442,7 @@ test("#376: an Administrator groups the Reports catalog by Subject, renames and 
   page.once("dialog", (d) => d.accept());
   await card.getByRole("button", { name: "Reset to defaults" }).click();
   await expect(card.getByRole("status")).toHaveText("Saved.");
-  await expect(card.getByTestId("rs-category")).toHaveCount(6);
+  await expect(card.getByTestId("rs-category")).toHaveCount(7);
   await card.getByRole("radio", { name: /Purpose/ }).check();
   await card.getByRole("button", { name: "Save and group by Purpose" }).click();
   await expect(card.getByRole("status")).toHaveText("Saved.");
