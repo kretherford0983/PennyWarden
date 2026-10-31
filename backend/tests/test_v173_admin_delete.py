@@ -53,7 +53,7 @@ def test_migration_adds_the_roles(tmp_path):
     command.upgrade(alembic_config(url), "head")
     command.upgrade(alembic_config(url), "head")
     got = sorted(r[0] for r in sqlite3.connect(tmp_path / "m.sqlite3").execute("select code from role"))
-    assert got == ["ADMINISTRATOR", "BUDGET_ADMIN", "BUDGET_MANAGER", "REGISTER_ADMIN"]
+    assert got == ["ADMINISTRATOR", "BUDGET_ADMIN", "BUDGET_MANAGER", "INVOICE_MANAGER", "REGISTER_ADMIN"]   # 2.4.0 (#251)
     cols = [r[1] for r in sqlite3.connect(tmp_path / "m.sqlite3").execute("pragma table_info(register_transaction)")]
     assert {"deleted_at", "deleted_by_user_id", "delete_reason"} <= set(cols)
 
