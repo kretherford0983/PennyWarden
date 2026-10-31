@@ -128,6 +128,26 @@ could not otherwise be corrected. Scope and safeguards:
   with a link; the variable picker completes dotted names.
 - Tests: `backend/tests/test_v210_organization.py` (6, including the data migration) and the E2E #126 and #312 steps.
 
+**2.4.0 build 9 — Batch invoicing (#248).** The issue left its rules open ("to be identified when planned"); the
+build follows these proposals (posted on the issue for Kyle to confirm):
+- `invoice_batch` (id, name, created) and `invoice.batch_id` (migration `0078`; Reinitialize wipes batches after
+  invoices; selective restore carries them before invoices).
+- `POST /api/invoices/batches` (Invoice Manager): the customers, lines, dates, tax, discount, notes and invoice fields
+  of one invoice; one **draft** per customer through the normal invoice create path (every invoice rule applies),
+  numbered in customer-name order, all in one transaction - an error on any customer creates nothing and names the
+  customer. Up to 500 customers; no duplicates. Audited `INVOICE_BATCH_CREATED` (plus each `INVOICE_CREATED`).
+- The batch is a label: each invoice stays ordinary (edit while a draft, void, send, payments). `GET
+  /api/invoices/batches[/{id}]` for invoice viewers; the invoice shows its batch.
+- `POST .../batches/{id}/send` marks the batch's remaining drafts as sent one by one (each keeps its PDF, exactly as
+  when sent alone); an invoice that can't be sent is reported and the others go ahead. Audited `INVOICE_BATCH_SENT`.
+- `GET .../batches/{id}/pdf`: the combined PDF of every invoice of the batch that isn't void, in number order (drafts
+  marked DRAFT).
+- Not done: recurring invoices (the issue's "could later grow into").
+- New rules: **BR-INV-BAT-001** a batch creates one draft per customer, all or none; **-002** a batch never changes
+  invoice rules - each invoice is numbered, edited, sent, voided and paid on its own; **-003** sending a batch sends
+  only its drafts and keeps each invoice's PDF; **-004** the combined PDF leaves out void invoices. ACs
+  **AC-INV-BAT-001..005**. Tests: `backend/tests/test_v240_invoice_batches.py` (4).
+
 **2.4.0 build 8 — Invoice reports (#255).**
 - `services/invoice_reports.py`: the seven reports as sections (columns, rows, totals) rendered by one JSON, one CSV
   (formula-safe, negative amounts left as numbers) and one PDF writer (landscape letter, page footer). Route

@@ -49,7 +49,7 @@ DATA_TABLES = (
     "fundraiser_line_contributor", "fundraiser_bucket_line",
     "donation", "donation_line", "donation_detail", "donation_receipt", "donation_statement",
     "invoice_unit_type", "invoice_product_category", "invoice_product", "invoice_tax_rate",   # 2.4.0 (#252)
-    "invoice", "invoice_line", "invoice_revision", "invoice_payment",                     # 2.4.0 (#253, #254)
+    "invoice_batch", "invoice", "invoice_line", "invoice_revision", "invoice_payment",    # 2.4.0 (#248, #253, #254)
 )
 SETTINGS_SECTIONS = {
     "settings.general": {"tables": ("signature_template", "report_grouping",     # 2.3.0 (#376): report grouping

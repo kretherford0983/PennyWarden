@@ -572,6 +572,19 @@ class InvoiceIn(In):                         # 2.4.0 (#253)
     custom_values: dict[str, str | None] | None = None    # 2.4.0 (#253 part 2)
 
 
+class InvoiceBatchIn(In):                    # 2.4.0 (#248): one draft per customer
+    name: OptStr(120) = None
+    customer_entity_ids: list[int] = Field(default_factory=list, max_length=1000)
+    invoice_date: Date
+    due_date: OptDate = None
+    terms_text: OptStr(200) = None
+    notes: OptStr(2000) = None
+    tax_rate_id: int | None = None
+    discount: InvoiceDiscountIn | None = None
+    lines: list[InvoiceLineIn] = Field(default_factory=list, max_length=200)
+    custom_values: dict[str, str | None] | None = None
+
+
 class InvoiceFieldIn(In):                    # 2.4.0 (#253 part 2): an Administrator-defined field
     level: Literal["INVOICE", "LINE"] | None = None
     field_type: Literal["TEXT", "NUMBER", "DATE", "PICKLIST"] | None = None

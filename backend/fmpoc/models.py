@@ -1426,6 +1426,7 @@ class Invoice(Base):
     write_off_note: Mapped[str | None] = mapped_column(String(500), nullable=True)
     write_off_self_approved: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
     custom_values: Mapped[str | None] = mapped_column(Text, nullable=True)     # 2.4.0 (#253 part 2): JSON {field id: value}
+    batch_id: Mapped[int | None] = mapped_column(ForeignKey("invoice_batch.id"), nullable=True, index=True)   # 2.4.0 (#248)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
     created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
@@ -1493,6 +1494,17 @@ class InvoiceCustomField(Base):
     created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
     updated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class InvoiceBatch(Base):
+    """2.4.0 (#248): invoices created together for many customers (one draft each). A label on the invoices: each one
+    stays an ordinary invoice."""
+    __tablename__ = "invoice_batch"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class InvoicePayment(Base):
