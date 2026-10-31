@@ -9,6 +9,7 @@ import { MaintenancePanel } from "./Maintenance";
 import { ReinitializePanel } from "./Reinitialize";
 import { TestingPanel } from "./Testing";
 import { BackupWarningSetting, DiagnosticsPanel, HealthPanel, OrganizationPanel, OrganizationView, SecurityOverviewPanel, SessionsPanel, SettingsPanel } from "./AdminSettings";
+import { EmailSettingsPanel } from "./Email";
 
 /** 2.0.0 build 11 (#216, docs/ui-standards.md): System/About in tabs, each at its own address (/about/<tab>, so it can
  * be bookmarked, reloaded and reached with Back). Tabs the user can't use are not shown; an unknown or unavailable tab
@@ -68,7 +69,7 @@ export default function About() {
     ),
     branding: () => <Suspense fallback={<Loading />}><BrandingPanel org={org || ""} /></Suspense>,      // 2.2.0 (#280)
     reports: () => <ReportSettings />,      // 2.3.0 (#376)
-    settings: () => <SettingsPanel />,
+    settings: () => <><SettingsPanel />{can("email.setup") ? <EmailSettingsPanel /> : null}</>,      // 2.4.0 (#249): email
     backups: () => (
       <>
         {backups ? <BackupRestore maxMb={a.restore_max_mb} /> : null}

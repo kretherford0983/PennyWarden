@@ -50,10 +50,12 @@ DATA_TABLES = (
     "donation", "donation_line", "donation_detail", "donation_receipt", "donation_statement",
     "invoice_unit_type", "invoice_product_category", "invoice_product", "invoice_tax_rate",   # 2.4.0 (#252)
     "invoice_batch", "invoice", "invoice_line", "invoice_revision", "invoice_payment",    # 2.4.0 (#248, #253, #254)
+    "email_log",                                                                          # 2.4.0 (#249)
 )
 SETTINGS_SECTIONS = {
     "settings.general": {"tables": ("signature_template", "report_grouping",     # 2.3.0 (#376): report grouping
-                                    "invoice_settings", "invoice_custom_field"),  # 2.4.0 (#253): Invoices Setup
+                                    "invoice_settings", "invoice_custom_field",   # 2.4.0 (#253): Invoices Setup
+                                    "email_settings"),                            # 2.4.0 (#249): mail server
                          "workspace": ("name", "fundraisers_enabled", "checks_enabled", "donations_enabled", "invoices_enabled"),
                          "label": "General (organization profile, optional modules)"},
     "settings.backups": {"tables": ("backup_schedule", "backup_run"), "workspace": ("backup_warning_days",),
@@ -265,6 +267,7 @@ def _reencrypt(con, old: crypto.KeyMaterial, new: crypto.KeyMaterial, tables: se
     """Re-encrypts the encrypted values of `tables` in main (they came from the current installation) with the
     backup's key."""
     from .checkprint.service import SIGNATURE_AAD
+    from .email import AAD as SMTP_AAD
     n = {"bank_accounts": 0, "two_step": 0, "signatures": 0}
     if "bank_account" in tables:
         for rid, ct in con.execute("SELECT id, account_number_ciphertext FROM main.bank_account").fetchall():
@@ -287,6 +290,11 @@ def _reencrypt(con, old: crypto.KeyMaterial, new: crypto.KeyMaterial, tables: se
             con.execute("UPDATE main.check_signer SET image_ciphertext = ? WHERE id = ?",
                         (crypto.encrypt(new, crypto.decrypt(old, ct, SIGNATURE_AAD), SIGNATURE_AAD), rid))
             n["signatures"] += 1
+    if "email_settings" in tables:             # 2.4.0 (#249): the mail server password
+        for rid, ct in con.execute("SELECT id, password_enc FROM main.email_settings").fetchall():
+            if ct:
+                con.execute("UPDATE main.email_settings SET password_enc = ? WHERE id = ?",
+                            (crypto.encrypt(new, crypto.decrypt(old, ct, SMTP_AAD), SMTP_AAD), rid))
     return n
 
 

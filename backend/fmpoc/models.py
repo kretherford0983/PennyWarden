@@ -1507,6 +1507,46 @@ class InvoiceBatch(Base):
     created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
+class EmailSettings(Base):
+    """2.4.0 (#249): the outgoing mail server, set by the Administrator. The password is encrypted with the application
+    key, never shown again after saving (replace only) and never logged, audited or returned (BR-103/104)."""
+    __tablename__ = "email_settings"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), unique=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
+    host: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    port: Mapped[int] = mapped_column(Integer, default=587)
+    security: Mapped[str] = mapped_column(String(10), default="STARTTLS")        # STARTTLS | SSL | NONE
+    username: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    password_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
+    from_address: Mapped[str | None] = mapped_column(String(254), nullable=True)
+    from_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    reply_to: Mapped[str | None] = mapped_column(String(254), nullable=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    updated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class EmailLog(Base):
+    """2.4.0 (#249): every email sent (or attempted) to a customer: what, to whom, by whom, when, the attachment's
+    SHA-256 and the result. Never the mail server's password; the message text is kept as sent."""
+    __tablename__ = "email_log"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(12))                          # INVOICE | STATEMENT | TEST
+    invoice_id: Mapped[int | None] = mapped_column(ForeignKey("invoice.id"), nullable=True, index=True)
+    customer_entity_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    to_address: Mapped[str] = mapped_column(String(1000))
+    cc_address: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    subject: Mapped[str] = mapped_column(String(200))
+    body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    attachment_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    attachment_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    status: Mapped[str] = mapped_column(String(8))                         # SENT | FAILED
+    error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    sent_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    sent_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
 class InvoicePayment(Base):
     """2.4.0 (#254): a deposit allocation that pays an invoice (PAYMENT), its overpayment (OVERPAYMENT), or a refund
     withdrawal allocation of that overpayment (REFUND). The amount is the allocation's; only ACTIVE transactions

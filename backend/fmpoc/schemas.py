@@ -585,6 +585,36 @@ class InvoiceBatchIn(In):                    # 2.4.0 (#248): one draft per custo
     custom_values: dict[str, str | None] | None = None
 
 
+class EmailSettingsIn(In):                   # 2.4.0 (#249): the Administrator's outgoing mail server
+    enabled: bool = False
+    host: OptStr(255) = None
+    port: int = 587
+    security: Literal["STARTTLS", "SSL", "NONE"] = "STARTTLS"
+    username: OptStr(255) = None
+    password: Annotated[str | None, StringConstraints(max_length=500)] = None   # empty = keep the saved one
+    clear_password: bool = False
+    from_address: OptStr(254) = None
+    from_name: OptStr(120) = None
+    reply_to: OptStr(254) = None
+
+
+class EmailTestIn(In):
+    to: Str(254)
+
+
+class EmailSendIn(In):                       # 2.4.0 (#249): one email, sent by a person
+    to: list[Str(254)] = Field(default_factory=list, max_length=10)
+    cc: list[Str(254)] = Field(default_factory=list, max_length=10)
+    subject: Str(200)
+    message: OptStr(10000) = None
+
+
+class StatementEmailIn(EmailSendIn):
+    customer_entity_id: int
+    date_from: Date
+    date_to: Date
+
+
 class InvoiceFieldIn(In):                    # 2.4.0 (#253 part 2): an Administrator-defined field
     level: Literal["INVOICE", "LINE"] | None = None
     field_type: Literal["TEXT", "NUMBER", "DATE", "PICKLIST"] | None = None
