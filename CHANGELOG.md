@@ -39,6 +39,9 @@ PennyWarden 2.3.0 (in progress).
   the chosen quarter is listed as **Revised**; activity after the cutoff is noted, not counted. Fundraisers of the
   quarter get their own page: income and expenses by budget line, seed cash, last year's result in the same series
   and the goal, when there is one.
+- In the budgets' *Over / under* column, income received above its budget reads **+$X above budget**, as elsewhere in
+  the app (it showed as a negative amount). An account whose opening balance is dated on the Fiscal Year's first day
+  now shows that balance as its starting balance (it showed a dash).
 - Generating either file is recorded in the audit log (Fiscal Year, period, cutoff, Preliminary, whether there was
   commentary). Requires the financial view permission, like the other reports.
 
@@ -59,6 +62,10 @@ PennyWarden 2.3.0 (in progress).
   current-year, projection and next-year columns show —. Lines follow the continuation links, never the code, so a
   reused code is never merged with an unrelated budget. On the screen, in the PDF and the CSV (and so in the review
   appended to the Planning Sheet). A review of one budget or one parent is unchanged.
+- **Budget Review PDF on one page across.** Choose the PDF paper — letter or legal, both landscape — with the other
+  options. Prior years, *Projected* and *Next year's budget* can add up to 6 columns on letter and 9 on legal, so
+  every column stays on the page (it used to continue the columns on the next page); the Prior years list offers only
+  what fits. Prior years run 0–9 — *All linked years* is gone, and a saved "all" becomes the most that fits.
 - **Estimated years before PennyWarden (#390).** A budget year entered from before PennyWarden (*Add an earlier
   year*, *Before PennyWarden*, *Correct*) has an **Estimated** box; when it is ticked a note saying why is required.
   The CSV import takes an optional *estimated* column (yes/no; an estimated row needs a note). The year is marked
@@ -98,6 +105,13 @@ PennyWarden 2.3.0 (in progress).
 - The receipt dialog's "setup missing" message now points to System/About → Organization, where the EIN and address
   are entered.
 
+### Letters that run onto a second page
+- **The signature no longer ends up alone on page 2.** Donation receipts, year-end statements and payment cover
+  letters that only just run over are fitted onto one page (tighter spacing, then up to 1 pt smaller type). When a
+  letter really needs two pages, its last paragraph moves to page 2 with the closing and signature.
+- Page 2 onward is headed with the organization, the document and its number, and *Page 2 of 2*; page 1 ends with
+  *Continued on page 2*. The window-envelope layout, pre-printed letterhead and the room to sign by hand never shrink.
+
 ### Setup pages (#394)
 - **One layout for every setup editor.** Donations Setup, check styles, the payment cover letter and the envelope
   editors (Payments, Donations and the Envelopes page) now put the settings on the left and the live preview on the
@@ -105,6 +119,8 @@ PennyWarden 2.3.0 (in progress).
   watch the result (a preview taller than the window scrolls inside its column).
 - On narrow screens the preview sits at the top of the page, with **Keep at the top** to lock it there (remembered
   per page while the app is open).
+- Check Setup's **Feed modes** table now fits the settings column at in-between window widths (it used to run into
+  the preview): the details stack and the text boxes shrink, and at the narrowest it scrolls inside its section.
 - Donations Setup's preview switches between the **Receipt** and the **Year-end statement** (replacing *Show the
   statement preview*).
 
@@ -118,6 +134,10 @@ PennyWarden 2.3.0 (in progress).
   signer and one of: *None*, *Printed name and title*, *Signature image and printed name*, or *Printed name with
   space to sign by hand*. The year-end statement can use its own signer or follow the receipt. Cover letters can
   still follow the check's signer (*Same as the check*, the default).
+- **The signer chosen when printing.** A receipt, year-end statement or cover letter can leave the signer to the
+  Register User when printing (the one in the settings is the default). The print screen asks only when more than one
+  signer is tagged for that kind of letter. A reprint starts from whoever signed the copy it reprints; *Print all*
+  year-end statements uses one signer for the whole batch; a cover letter starts from the check's signer.
 - The signature image prints only on the copy you print or download; the copy kept with the payment or donation shows
   the printed name instead, as a check's record copy does. A signer without an image falls back to space to sign
   (Donations Setup warns).
@@ -182,6 +202,8 @@ PennyWarden 2.3.0 (in progress).
   settings and defaults to on, so no data changes.
 - Migration `0062` adds `estimated` to `fundraiser_series_result` and `budget_history_entry` (off for every existing
   entry).
+- Migration `0069` adds `signer_id` to `donation_receipt` and `donation_statement` (empty for receipts and
+  statements printed before): who signed each one.
 - Migration `0068` adds the table `budget_inclusion` (empty): the years marked as included in another budget.
 - Migration `0067` adds the table `report_grouping` (empty = grouped by Purpose, as in 2.3.0's catalog).
 - Migration `0066` adds `app_user.report_prefs` (empty): the Reports screen's Recently run and last options.

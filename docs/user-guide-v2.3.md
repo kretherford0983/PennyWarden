@@ -49,6 +49,11 @@ no budget continues yet. They appear among the Income and Expense budgets, under
 had, with a **Not in FY…, last FY…** tag. Their earlier years and averages are shown as usual; the current year,
 *Projected* and next year show —. Budgets are matched by their continuation links, never just by the code.
 
+**Paper and columns.** Choose **Paper (PDF)** — letter or legal, both landscape — before running the review. Prior
+years, the *Projected* column and *Next year's budget* add up to 6 columns on letter and 9 on legal, so the whole
+review prints one page across; the **Prior years** list only offers what fits (ticking *Projected* or *Next year's
+budget* takes one off). Up to 9 prior years can be shown.
+
 ### Estimated figures from before PennyWarden
 When you enter a budget year from before PennyWarden (*Add an earlier year*, *Before PennyWarden*, or a CSV import),
 tick **Estimated** if the figure is an estimate — the note then has to say why. The year is marked **\*** in the
@@ -100,6 +105,12 @@ can watch each change. Choose **Receipt** or **Year-end statement** above the pr
 narrow screen the preview is at the top of the page; tick **Keep at the top** to keep it there while you scroll. The
 check style, cover letter and envelope editors work the same way.
 
+### Letters that run onto a second page
+Receipts, year-end statements and payment cover letters that only just run over now fit on one page – the spacing
+tightens, and if needed the type gets slightly smaller. A letter that needs two pages takes its last paragraph to
+page 2 with the signature, so the signature is never on a page by itself. The second page is headed with your
+organization, the document and its number, and *Page 2 of 2*.
+
 ### Signers for receipts and statements
 Signers are now kept on one **Signers** page (Administrators, next to Envelopes), shared by checks, payment cover
 letters and donation letters. Add a signer there, upload a signature image if you want one, and tick what the signer
@@ -111,6 +122,12 @@ you print; the copy kept with the donation shows the printed name.
 Cover letters (**Payments Setup → cover letter → Signed by**) can follow the check's signer, as before, or always use
 one signer tagged for cover letters, with the same choice of how the signature shows. After the upgrade everything
 prints as it did: your existing signers are tagged for checks, and the typed donation signer became a signer.
+
+**Choosing the signer when printing.** Tick **Chosen when printing** under the signer (receipts and cover letters),
+or set **Statement signer chosen** to *When printing* for year-end statements. The signer you picked becomes the
+default, and whoever prints chooses from the signers tagged for that kind of letter – the choice appears only when
+more than one is tagged. A reprint starts from whoever signed the earlier copy; *Print all* statements uses one signer
+for all of them; a cover letter starts from the check's signer when that person signs letters too.
 
 ## Bank accounts
 
