@@ -85,7 +85,8 @@ class LetterConfig(_M):
     fallback_role: str = Field(default="", max_length=120)
     # 2.3.0 (#395): the signer - the check's signer (else the chosen one) or always the chosen one - and how the
     # signature is shown (NONE, PRINTED, IMAGE: the image above the name, SPACE: room to sign by hand)
-    signer_source: Literal["SAME_AS_CHECK", "FIXED"] = "SAME_AS_CHECK"
+    # 2.3.0 polish (Kyle, 2026-10-31): AT_PRINT - chosen when printing, `signer_id` the default
+    signer_source: Literal["SAME_AS_CHECK", "FIXED", "AT_PRINT"] = "SAME_AS_CHECK"
     signer_id: int | None = None
     signature_mode: Literal["NONE", "PRINTED", "IMAGE", "SPACE"] = "PRINTED"
     include_by_default: bool = True

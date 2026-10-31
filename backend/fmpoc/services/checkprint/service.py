@@ -1280,8 +1280,9 @@ def update_document(db: Session, ctx, d: CheckDocument, name: str, config: dict)
     if d.kind == "LETTER":                 # 2.3.0 (#395): only signers tagged for payment cover letters
         from .. import signers as sg
         sg.require_tagged(db, ctx, cfg.signer_id, sg.COVER_LETTERS, "signer_id")
-        if cfg.signer_source == "FIXED" and cfg.signer_id is None and cfg.signature_mode != "NONE":
-            raise validation("Choose the signer, or Same as the check's signer.", "signer_id")
+        if cfg.signer_source in ("FIXED", "AT_PRINT") and cfg.signer_id is None and cfg.signature_mode != "NONE":
+            raise validation("Choose the signer (the default when chosen when printing), or Same as the check's "
+                             "signer.", "signer_id")
     before = _doc_snapshot(d)
     d.name, d.config_json = name, json.dumps(cfg.model_dump())
     d.updated_by_user_id, d.updated_at = ctx.user.id, utcnow()
@@ -1367,11 +1368,35 @@ def _letter_signer(db: Session, ctx, signer_id: int | None) -> CheckSigner | Non
     return s if s.active else None
 
 
-def letter_signature(db: Session, ctx, cfg, check_signer_id: int | None, km, with_image: bool):
-    """2.3.0 (#395): the cover letter's signer - the check's signer when the template says Same as the check's
-    signer (else the template's chosen signer) - and its signature block. A Register User can't change it."""
+def letter_signing(db: Session, ctx, cfg, check_signer_id: int | None) -> dict:
+    """2.3.0 polish: the print screen's signer choice for a cover letter chosen when printing (asked only with more
+    than one signer tagged for cover letters). It starts from the check's signer when that one is tagged for cover
+    letters, else the template's default."""
     from .. import signers as sg
+    choice = sg.AT_PRINT if cfg.signer_source == "AT_PRINT" else sg.FIXED
+    return sg.signing_out(db, ctx, sg.COVER_LETTERS, choice, cfg.signer_id, cfg.signature_mode, check_signer_id)
+
+
+def letter_signature(db: Session, ctx, cfg, check_signer_id: int | None, km, with_image: bool,
+                     letter_signer_id: int | None = None):
+    """2.3.0 (#395): the cover letter's signer - the check's signer when the template says Same as the check's
+    signer (else the template's chosen signer) - and its signature block. 2.3.0 polish: a template chosen when
+    printing takes `letter_signer_id` (checked: tagged for cover letters, active), else its default; otherwise a
+    Register User can't change it (a different `letter_signer_id` is refused)."""
+    from .. import signers as sg
+    if cfg.signer_source == "AT_PRINT":
+        sid = sg.chosen(db, ctx, sg.COVER_LETTERS, sg.AT_PRINT, cfg.signer_id, letter_signer_id, "letter_signer_id") \
+            if cfg.signature_mode != "NONE" else None
+        s = db.get(CheckSigner, sid) if sid else None
+        if s is None:
+            return None, sg.SignatureBlock(mode="PRINTED" if cfg.signature_mode != "NONE" else "NONE")
+        return s, sg.block_for(km, s, cfg.signature_mode, with_image)
     s = _letter_signer(db, ctx, check_signer_id) if cfg.signer_source == "SAME_AS_CHECK" else None
+    if letter_signer_id is not None:
+        x = s.id if s is not None else cfg.signer_id
+        if letter_signer_id != x:
+            raise validation("This letter template sets its signer; it can't be changed when printing.",
+                             "letter_signer_id")
     if s is None and cfg.signer_id is not None:
         x = db.get(CheckSigner, cfg.signer_id)
         s = x if x is not None and x.workspace_id == ctx.workspace_id and x.active else None
@@ -1440,11 +1465,14 @@ def letter_fold_default(db: Session, ctx, d: CheckDocument) -> str:
 
 
 def print_letter(db: Session, ctx, settings, t: RegisterTransaction, d: CheckDocument, signer_id: int | None,
-                 confirmations: list[str], fold: str | None = None, km=None) -> bytes:
+                 confirmations: list[str], fold: str | None = None, km=None,
+                 letter_signer_id: int | None = None) -> bytes:
+    """`signer_id`: the check's signer; `letter_signer_id`: the letter's own, when chosen when printing."""
     if d.kind != "LETTER" or not d.active:
         raise conflict("TEMPLATE_INACTIVE", "Choose an active letter template.")
     cfg = doc_config(d)
-    signer, sig = letter_signature(db, ctx, cfg, signer_id, None, False)   # record copy: never the image (#395)
+    signer, sig = letter_signature(db, ctx, cfg, signer_id, None, False,    # record copy: never the image (#395)
+                                   letter_signer_id)
     data = letter_data(db, ctx, t, _date_format_for(db, ctx, t), signer, cfg.addressee, sig)
     _texts, empty = documents.letter_texts(cfg, data)
     warnings = []
@@ -1462,7 +1490,7 @@ def print_letter(db: Session, ctx, settings, t: RegisterTransaction, d: CheckDoc
                                   f"letter-{t.check_number or t.id}.pdf", pdf)
     printed = pdf
     if cfg.signature_mode == "IMAGE" and km is not None and signer is not None:   # #395: the image only when printed
-        _s, sig2 = letter_signature(db, ctx, cfg, signer_id, km, True)
+        _s, sig2 = letter_signature(db, ctx, cfg, signer_id, km, True, letter_signer_id)
         if sig2.image:
             printed = documents.letter_pdf(cfg, data.model_copy(update={"signature_mode": "IMAGE",
                                                                         "signature_image": sig2.image}),
