@@ -58,6 +58,25 @@ tax. The invoice shows *Paid*, the *Open balance*, and each payment with a link 
   the invoice (choosing the budget it moves to) if it was linked by mistake.
 - Voiding a payment in the Register (a bounced cheque, say) puts the invoice back to *Sent* or *Partly paid*.
 
+### Invoice reports
+**Reports → Invoices** has seven reports. Each shows on screen first; **Open** gives the PDF and **Download CSV** a
+spreadsheet (the customer statement is a PDF to send to the customer).
+
+| Report | Answers |
+|---|---|
+| Open invoices | Which invoices still have money owed on a date, and how late they are |
+| Aging | How much each customer owes, by how long it's overdue |
+| Customer statement | One customer's invoices, payments and balance for a period |
+| Sales tax collected | Tax charged and collected per rate, for your sales tax return |
+| Invoice register | Every invoice in a period with its status, payments and revisions |
+| Sales by product / category | What was invoiced, by product, category or Income budget |
+| Payments, write-offs, discounts and refunds | Money in and out on invoices, and amounts given up (self-approved write-offs marked) |
+
+**Overdue invoices** appear on the Dashboard. Invoice Managers also see **Invoice reminders** at the top of the
+Invoices page for unpaid invoices from their due date (or a number of days later - the Administrator sets it under
+*Overdue reminder* in Invoices Setup). Open invoices don't stop a Fiscal Year from being closed; the Close report
+lists them for information.
+
 ## Invoiced Income budgets
 Money collected on invoices should go to budgets set aside for it. A Budget Manager marks an Income budget with
 **Mark as Invoiced Income** in the budget's row menu (Budgets page); its sub-budgets carry the mark too, and it shows

@@ -586,6 +586,7 @@ class InvoiceSetupIn(In):                    # 2.4.0 (#253): the Administrator's
     terms_days: int = 30
     terms_text: OptStr(200) = None
     default_notes: OptStr(2000) = None
+    overdue_reminder_days: int | None = None      # 2.4.0 (#255): reminder to Invoice Managers, due date + N days
 
 
 class InvoiceWriteOffDecisionIn(In):          # 2.4.0 (#253)

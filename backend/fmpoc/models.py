@@ -1385,6 +1385,7 @@ class InvoiceSettings(Base):
     terms_days: Mapped[int] = mapped_column(Integer, default=30)
     terms_text: Mapped[str | None] = mapped_column(String(200), nullable=True)
     default_notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    overdue_reminder_days: Mapped[int] = mapped_column(Integer, default=0, server_default="0")   # 2.4.0 (#255)
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
     updated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 

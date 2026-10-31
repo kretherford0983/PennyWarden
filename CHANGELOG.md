@@ -28,6 +28,16 @@ PennyWarden 2.4.0 (in progress).
   (*Write-off pending* until then; *self-approved* when one person holds both roles). Void and write-off change no
   budget or balance. Everything is in the audit log. Register Users, Budget Managers, Budget Users and Auditors can
   view invoices.
+- **Invoice reports (#255).** **Reports** has an **Invoices** group: *Open invoices*, *Aging* (current, 1–30, 31–60,
+  61–90, over 90 days), *Customer statement* (PDF), *Sales tax collected* (charged and collected per rate),
+  *Invoice register*, *Sales by product / category* (or Income budget) and *Payments, write-offs, discounts and
+  refunds* (self-approved write-offs marked) - on screen, as PDF and as CSV, with Recently run and deep links like
+  the other reports. Invoice Managers, Register Users, Budget Managers, Budget Users and Auditors can run them (not the
+  Administrator); Invoice Managers now have **Reports** in their menu for these.
+- **Overdue invoices:** a dashboard section for everyone who can view invoices, and reminders for Invoice Managers on
+  the Invoices page from the due date plus a number of days the Administrator sets in Invoices Setup (default 0).
+- The **Fiscal Year Close** report lists invoices still open at the year's end (for information; they don't prevent
+  closing), and the restore re-entry report lists invoices created after the backup.
 - **Payments (#254).** A Register User records a payment from the invoice (**Record payment…**): one deposit,
   spread over the invoice lines' Invoiced Income budgets and the sales tax; the invoice becomes *Partly paid* or
   *Paid*. An existing deposit on an Invoiced Income budget can be linked instead (**Link a deposit…**, Invoice
