@@ -39,6 +39,9 @@ PennyWarden 2.3.0 (in progress).
   the chosen quarter is listed as **Revised**; activity after the cutoff is noted, not counted. Fundraisers of the
   quarter get their own page: income and expenses by budget line, seed cash, last year's result in the same series
   and the goal, when there is one.
+- In the budgets' *Over / under* column, income received above its budget reads **+$X above budget**, as elsewhere in
+  the app (it showed as a negative amount). An account whose opening balance is dated on the Fiscal Year's first day
+  now shows that balance as its starting balance (it showed a dash).
 - Generating either file is recorded in the audit log (Fiscal Year, period, cutoff, Preliminary, whether there was
   commentary). Requires the financial view permission, like the other reports.
 

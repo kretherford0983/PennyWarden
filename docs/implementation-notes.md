@@ -198,6 +198,16 @@ statements and payment cover letters:
   nothing is lost there.
 - No spec impact (CI only).
 
+**2.3.0 polish — Quarterly / Annual report fixes (#373 follow-up, Kyle 2026-10-31).**
+- Over / under: income received above its budget prints "+$X above budget" (green in the PDF, as reports.py's
+  CR-019 cell), not a negative amount; an expense over budget stays negative. The note under the tables says so
+  (`period_report_output.ou_text`, `_ou_cell`, `OU_NOTE`). The data (`remaining`) is unchanged.
+- Starting balance: `period_report._balance` returned "no data" for the day before a register account's Opening
+  Balance Date, so an opening balance dated on the Fiscal Year's first day showed a dash. The opening balance is the
+  balance at the start of its date (the end of the day before), as `bank.available_cents` and the Register's
+  starting balance already treat it (BR-043); only days before that are "no data".
+- Tests: two more in `backend/tests/test_v230_period_report.py`.
+
 **2.3.0 build 13 — Users: filters and sortable columns (#409, Kyle 2026-10-29).**
 - Client-side on the already-loaded list (`pages/Users.tsx`): Roles (multi-select, OR), Security domain, Status
   (`ACTIVE` / `DISABLED` / `LOCKED` = active with `locked_until` in the future), combined with the search (AND).
