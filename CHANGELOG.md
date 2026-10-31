@@ -112,6 +112,8 @@ PennyWarden 2.3.0 (in progress).
   watch the result (a preview taller than the window scrolls inside its column).
 - On narrow screens the preview sits at the top of the page, with **Keep at the top** to lock it there (remembered
   per page while the app is open).
+- Check Setup's **Feed modes** table now fits the settings column at in-between window widths (it used to run into
+  the preview): the details stack and the text boxes shrink, and at the narrowest it scrolls inside its section.
 - Donations Setup's preview switches between the **Receipt** and the **Year-end statement** (replacing *Show the
   statement preview*).
 
