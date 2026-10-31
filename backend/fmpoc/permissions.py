@@ -98,6 +98,10 @@ PERMISSIONS: dict[str, set[str]] = {
     "invoice.catalog_view": {INVOICE_MANAGER, BUDGET_MANAGER, BUDGET_USER, AUDITOR},
     # 2.4.0 (#253): a write-off is requested by an Invoice Manager and approved or rejected by a Budget Manager
     "invoice.write_off_decide": {BUDGET_MANAGER},
+    # 2.4.0 (#254): payments - the Register User records the money (the deposit) and refunds an overpayment; an
+    # Invoice Manager may link a deposit already on an Invoiced Income budget; only Register Users unlink
+    "invoice.record_payment": {REGISTER_USER},
+    "invoice.link_payment": {REGISTER_USER, INVOICE_MANAGER},
 }
 
 

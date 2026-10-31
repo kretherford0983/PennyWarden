@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useState, type FormEvent } from "react";
-import { api, money } from "../api";
-import { EntityPicker, ErrorBox, Field, GuardedForm, Loading, Modal } from "../components";
+import { api, money, qs } from "../api";
+import { EntityPicker, ErrorBox, Field, GuardedForm, Loading, Modal, useConfirmable } from "../components";
 import { Link, useRouter } from "../router";
 import { useMe } from "../App";
 
@@ -24,7 +24,7 @@ export default function Invoices() {
           <li><b>Auditors</b> review everything.</li>
         </ul>
         <p className="hint">One person may hold several of these roles in a small organization; keeping them apart lets someone else check each step.</p>
-        <p className="muted" data-testid="inv-coming">Payments and invoice reports appear here as they are added in this release.</p>
+        <p className="muted" data-testid="inv-coming">Invoice reports appear here as they are added in this release.</p>
       </section>
       <InvoiceList manage={can("invoice.manage")} />
       {/* 2.4.0 (#252): Invoice Managers keep it; Budget Managers, Budget Users and Auditors see it */}
@@ -314,6 +314,7 @@ export function InvoiceDetail({ id }: { id: number }) {
           <ul>{i.versions.map((v: any) => <li key={v.revision}><a href={v.pdf_url} target="_blank" rel="noreferrer">{v.number}</a> — {money(v.total)}, sent {String(v.sent_at).slice(0, 10)}{v.reason ? <span className="muted"> · revised: {v.reason}</span> : null}</li>)}</ul>
         </section>
       ) : null}
+      {i.payments && i.status !== "DRAFT" ? <Payments i={i} onChanged={setI} /> : null}
       {editing ? <InvoiceForm current={i} onClose={() => setEditing(false)} onSaved={(x) => { setEditing(false); setI(x); }} /> : null}
       {ask ? <AskText {...ask} onClose={() => setAsk(null)} onDone={async (t) => { await act(ask.url, ask.body ? ask.body(t) : { reason: t }); setAsk(null); }} /> : null}
     </div>
@@ -477,4 +478,144 @@ function FieldInput({ f, value, onChange, prefix = "" }: { f: any; value: string
   if (f.field_type === "PICKLIST") return <Field label={label}><select required={f.required} value={value} onChange={(e) => onChange(e.target.value)}><option value="">— choose —</option>{f.options.map((o: string) => <option key={o} value={o}>{o}</option>)}</select></Field>;
   if (f.field_type === "DATE") return <Field label={label}><input type="date" required={f.required} value={value} onChange={(e) => onChange(e.target.value)} /></Field>;
   return <Field label={label}><input required={f.required} inputMode={f.field_type === "NUMBER" ? "decimal" : undefined} maxLength={200} value={value} onChange={(e) => onChange(e.target.value)} /></Field>;
+}
+
+// 2.4.0 (#254): payments. A Register User records the money (a deposit on the lines' Invoiced Income budgets) or
+// refunds an overpayment; an Invoice Manager or Register User links an existing deposit; a Register User unlinks.
+function Payments({ i, onChanged }: { i: any; onChanged: (i: any) => void }) {
+  const { can } = useMe();
+  const [mode, setMode] = useState<null | "pay" | "refund" | "link">(null);
+  const [unlink, setUnlink] = useState<any>(null);
+  const p = i.payments;
+  const open = ["SENT", "PARTLY_PAID", "PAID"].includes(i.status) && i.write_off?.status !== "PENDING";
+  const live = p.links.filter((x: any) => !x.unlinked);
+  return (
+    <section className="card" aria-labelledby="inv-pay-h" data-testid="inv-payments">
+      <h2 id="inv-pay-h">Payments</h2>
+      <dl className="dl">
+        <dt>Paid</dt><dd data-testid="inv-paid">{money(p.paid)}</dd>
+        <dt>Open balance</dt><dd data-testid="inv-open">{money(p.open)}</dd>
+        {Number(p.overpaid) ? <><dt>Overpaid</dt><dd>{money(p.overpaid)}{Number(p.refunded) ? ` (refunded ${money(p.refunded)})` : ""}</dd></> : null}
+      </dl>
+      {live.length ? (
+        <table className="table">
+          <thead><tr><th>Date</th><th>Kind</th><th className="num">Amount</th><th>Budget</th><th>Register</th><th /></tr></thead>
+          <tbody>{live.map((x: any) => (
+            <tr key={x.id} className={x.status !== "ACTIVE" ? "muted" : undefined}>
+              <td>{x.date}</td>
+              <td>{x.kind === "PAYMENT" ? "Payment" : x.kind === "OVERPAYMENT" ? "Overpayment" : "Refund"}{x.status !== "ACTIVE" ? <span className="badge grey">Void</span> : null}</td>
+              <td className="num">{x.kind === "REFUND" ? "−" : ""}{money(x.amount)}</td>
+              <td>{x.budget?.label}</td>
+              <td>{can("register.view") && x.bank_account_id ? <Link to={`/register?account=${x.bank_account_id}&txn=${x.transaction_id}`}>Transaction #{x.transaction_id}</Link> : `#${x.transaction_id}`}</td>
+              <td>{can("transaction.manage") && x.status === "ACTIVE" && x.kind !== "REFUND" ? <button className="small" onClick={() => setUnlink(x)}>Unlink…</button> : null}</td>
+            </tr>
+          ))}</tbody>
+        </table>
+      ) : <p className="muted">No payments yet.</p>}
+      {open ? <div className="row">
+        {can("invoice.record_payment") ? <button className="primary" onClick={() => setMode("pay")}>Record payment…</button> : null}
+        {can("invoice.link_payment") && Number(p.open) > 0 ? <button onClick={() => setMode("link")}>Link a deposit…</button> : null}
+        {can("invoice.record_payment") && Number(p.refundable) > 0 ? <button onClick={() => setMode("refund")}>Refund overpayment…</button> : null}
+      </div> : null}
+      {mode === "pay" || mode === "refund" ? <MoneyForm i={i} refund={mode === "refund"} onClose={() => setMode(null)} onDone={(x) => { setMode(null); onChanged(x); }} /> : null}
+      {mode === "link" ? <LinkForm i={i} onClose={() => setMode(null)} onDone={(x) => { setMode(null); onChanged(x); }} /> : null}
+      {unlink ? <UnlinkForm i={i} link={unlink} onClose={() => setUnlink(null)} onDone={(x) => { setUnlink(null); onChanged(x); }} /> : null}
+    </section>
+  );
+}
+
+function useAccounts() {
+  const [accts, setAccts] = useState<any[]>([]);
+  useEffect(() => { api.get("/api/bank-accounts").then((l: any[]) => setAccts(l.filter((a) => a.status === "ACTIVE"))); }, []);
+  return accts;
+}
+
+function MoneyForm({ i, refund, onClose, onDone }: { i: any; refund: boolean; onClose: () => void; onDone: (i: any) => void }) {
+  const accts = useAccounts();
+  const { run, dialog } = useConfirmable();
+  const [err, setErr] = useState<unknown>(null);
+  const [v, setV] = useState({ bank_account_id: "", amount: refund ? i.payments.refundable : i.payments.open, transaction_date: new Date().toISOString().slice(0, 10), check_number: "", notes: "" });
+  useEffect(() => { if (accts.length === 1 && !v.bank_account_id) setV((x) => ({ ...x, bank_account_id: String(accts[0].id) })); }, [accts]); // eslint-disable-line react-hooks/exhaustive-deps
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    setErr(null);
+    try {
+      const r: any = await run((codes) => api.post(`/api/invoices/${i.id}/${refund ? "refunds" : "payments"}`, {
+        bank_account_id: Number(v.bank_account_id), amount: v.amount, transaction_date: v.transaction_date || null, notes: v.notes || null,
+        ...(refund ? { check_number: v.check_number || null, confirmations: codes } : { confirm_overpayment: codes.includes("OVERPAYMENT"), confirmations: codes.filter((c) => c !== "OVERPAYMENT") }),
+      }));
+      if (r) onDone(r.invoice);
+    } catch (x) { setErr(x); }
+  }
+  return (
+    <Modal title={refund ? "Refund overpayment" : "Record payment"} onClose={onClose}>
+      <form onSubmit={submit}>
+        <ErrorBox error={err} />
+        <p className="hint">{refund
+          ? `A withdrawal that reduces the Invoiced Income budget (up to ${money(i.payments.refundable)}).`
+          : `A deposit for invoice ${i.number}, spread over its lines' Invoiced Income budgets. Open balance ${money(i.payments.open)}; more than that is recorded as an overpayment.`}</p>
+        <Field label="Bank account"><select required value={v.bank_account_id} onChange={(e) => setV({ ...v, bank_account_id: e.target.value })}>
+          <option value="">Choose…</option>{accts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select></Field>
+        <Field label="Amount"><input required inputMode="decimal" value={v.amount} onChange={(e) => setV({ ...v, amount: e.target.value })} /></Field>
+        <Field label="Date"><input type="date" required value={v.transaction_date} onChange={(e) => setV({ ...v, transaction_date: e.target.value })} /></Field>
+        {refund ? <Field label="Check number"><input maxLength={20} value={v.check_number} onChange={(e) => setV({ ...v, check_number: e.target.value })} /></Field> : null}
+        <Field label="Notes"><textarea rows={2} maxLength={4000} value={v.notes} onChange={(e) => setV({ ...v, notes: e.target.value })} /></Field>
+        <div className="actions"><button type="button" onClick={onClose}>Cancel</button><button className="primary" type="submit">{refund ? "Record refund" : "Record payment"}</button></div>
+      </form>
+      {dialog}
+    </Modal>
+  );
+}
+
+function LinkForm({ i, onClose, onDone }: { i: any; onClose: () => void; onDone: (i: any) => void }) {
+  const { run, dialog } = useConfirmable();
+  const [rows, setRows] = useState<any[] | null>(null);
+  const [err, setErr] = useState<unknown>(null);
+  useEffect(() => { api.get(`/api/invoices/${i.id}/link-candidates`).then(setRows, setErr); }, [i.id]);
+  async function pick(aid: number) {
+    setErr(null);
+    try { const r = await run((codes) => api.post(`/api/invoices/${i.id}/links`, { allocation_id: aid, confirmations: codes })); if (r) onDone(r); }
+    catch (x) { setErr(x); }
+  }
+  return (
+    <Modal title="Link a deposit" onClose={onClose}>
+      <ErrorBox error={err} />
+      <p className="hint">Deposit lines on an Invoiced Income budget that aren't linked yet. A line larger than the open balance ({money(i.payments.open)}) is split in the register first.</p>
+      {rows === null ? <Loading /> : rows.length ? (
+        <table className="table"><thead><tr><th>Date</th><th>From</th><th>Budget</th><th className="num">Amount</th><th /></tr></thead>
+          <tbody>{rows.map((r) => <tr key={r.allocation_id}><td>{r.date}</td><td>{r.entity || "—"}</td><td>{r.budget?.label}</td><td className="num">{money(r.amount)}</td>
+            <td><button className="small" onClick={() => pick(r.allocation_id)}>Link</button></td></tr>)}</tbody></table>
+      ) : <p className="muted">No unlinked deposits on Invoiced Income budgets.</p>}
+      <div className="actions"><button type="button" onClick={onClose}>Close</button></div>
+      {dialog}
+    </Modal>
+  );
+}
+
+function UnlinkForm({ i, link, onClose, onDone }: { i: any; link: any; onClose: () => void; onDone: (i: any) => void }) {
+  const [opts, setOpts] = useState<any[]>([]);
+  const [v, setV] = useState({ budget: "", reason: "" });
+  const [err, setErr] = useState<unknown>(null);
+  useEffect(() => {
+    api.get(`/api/budgets/selectable${qs({ fiscal_year_id: link.budget?.fiscal_year_id, transaction_type: "DEPOSIT" })}`)
+      .then((o: any[]) => setOpts(o.filter((b) => !b.invoiced_income)), setErr);
+  }, [link]);
+  async function submit(e: FormEvent) {
+    e.preventDefault();
+    setErr(null);
+    try { onDone(await api.post(`/api/invoices/${i.id}/links/${link.id}/unlink`, { move_to_budget_id: Number(v.budget), reason: v.reason })); }
+    catch (x) { setErr(x); }
+  }
+  return (
+    <Modal title="Unlink payment" onClose={onClose}>
+      <form onSubmit={submit}>
+        <ErrorBox error={err} />
+        <p className="hint">The {money(link.amount)} line stays in the register and moves to another budget in the same step; the invoice's open balance goes back up.</p>
+        <Field label="Move the line to"><select required value={v.budget} onChange={(e) => setV({ ...v, budget: e.target.value })}>
+          <option value="">Choose…</option>{opts.map((b) => <option key={b.id} value={b.id}>{b.label}</option>)}</select></Field>
+        <Field label="Reason"><textarea required rows={2} maxLength={500} value={v.reason} onChange={(e) => setV({ ...v, reason: e.target.value })} /></Field>
+        <div className="actions"><button type="button" onClick={onClose}>Cancel</button><button className="primary" type="submit" disabled={!v.budget || !v.reason.trim()}>Unlink</button></div>
+      </form>
+    </Modal>
+  );
 }

@@ -96,7 +96,8 @@ def _budget_brief(db: Session, budget_id: int | None) -> dict | None:
     simple = b.is_other and p is not None and not bsvc.children_of(db, p)[0]
     fy = db.get(FiscalYear, b.fiscal_year_id)
     return {"id": b.id, "label": budget_label(p, None) if simple else budget_label(b, p),
-            "fiscal_year": fy.display_name if fy else None, "invoiced_income": bool(b.invoiced_income)}
+            "fiscal_year": fy.display_name if fy else None, "fiscal_year_id": b.fiscal_year_id,
+            "invoiced_income": bool(b.invoiced_income)}
 
 
 def current_fiscal_year(db: Session, ws_id: int, today: dt.date | None = None) -> FiscalYear | None:

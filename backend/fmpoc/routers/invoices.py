@@ -252,3 +252,51 @@ def decide_write_off(iid: int, body: InvoiceWriteOffDecisionIn, db: Session = De
     i = docs.decide_write_off(db, ctx, docs.get(db, ctx, iid), body.approve, body.note)
     db.commit()
     return docs.out(db, ctx, i)
+
+
+# ------------------------------------------------------------------ 2.4.0 (#254): payments
+from ..schemas import InvoiceLinkIn, InvoicePaymentIn, InvoiceRefundIn, InvoiceUnlinkIn  # noqa: E402
+from ..services import invoice_payments as pay  # noqa: E402
+from ..services import register as reg_svc  # noqa: E402
+
+
+@router.post("/{iid}/payments", status_code=201)
+def record_payment(iid: int, body: InvoicePaymentIn, db: Session = Depends(get_db),
+                   ctx: Ctx = Depends(require("invoice.record_payment"))):
+    """Register User: creates the deposit (allocations on the lines' Invoiced Income budgets) and links it."""
+    i = docs.get(db, ctx, iid)
+    t = pay.record_payment(db, ctx, i, body)
+    db.commit()
+    return {"invoice": docs.out(db, ctx, i), "transaction": reg_svc.out(db, t)}
+
+
+@router.get("/{iid}/link-candidates")
+def link_candidates(iid: int, db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.link_payment"))):
+    return pay.candidates(db, ctx, docs.get(db, ctx, iid))
+
+
+@router.post("/{iid}/links", status_code=201)
+def link_payment(iid: int, body: InvoiceLinkIn, db: Session = Depends(get_db),
+                 ctx: Ctx = Depends(require("invoice.link_payment"))):
+    i = docs.get(db, ctx, iid)
+    pay.link(db, ctx, i, body.allocation_id, body.confirmations)
+    db.commit()
+    return docs.out(db, ctx, i)
+
+
+@router.post("/{iid}/links/{link_id}/unlink")
+def unlink_payment(iid: int, link_id: int, body: InvoiceUnlinkIn, db: Session = Depends(get_db),
+                   ctx: Ctx = Depends(require("transaction.manage"))):
+    i = docs.get(db, ctx, iid)
+    pay.unlink(db, ctx, i, link_id, body.move_to_budget_id, body.reason)
+    db.commit()
+    return docs.out(db, ctx, i)
+
+
+@router.post("/{iid}/refunds", status_code=201)
+def refund(iid: int, body: InvoiceRefundIn, db: Session = Depends(get_db),
+           ctx: Ctx = Depends(require("invoice.record_payment"))):
+    i = docs.get(db, ctx, iid)
+    t = pay.refund(db, ctx, i, body)
+    db.commit()
+    return {"invoice": docs.out(db, ctx, i), "transaction": reg_svc.out(db, t)}

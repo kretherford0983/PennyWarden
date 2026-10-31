@@ -43,6 +43,21 @@ An Administrator sets the number pattern, the payment terms and default notes in
 **custom fields** (on the invoice or on each line: text, number, date or a pick-list; required or not; on the PDF or
 not), and can make a **Test print** with sample data.
 
+### Payments
+A **Register User** records money received from the invoice itself: **Record payment…** asks for the bank account,
+the amount and the date, and creates the deposit in the Register - spread over the invoice's budgets and the sales
+tax. The invoice shows *Paid*, the *Open balance*, and each payment with a link to its Register transaction.
+
+- A payment smaller than the open balance makes the invoice **Partly paid**; the rest can be paid later.
+- More than the open balance is an **overpayment** - you're asked to confirm, and **Refund overpayment…** later
+  records the cheque or transfer back to the customer.
+- A deposit already in the Register on an Invoiced Income budget can be attached with **Link a deposit…** (Invoice
+  Managers can do this too). A deposit on another budget is re-allocated in the Register first.
+- While Invoices is turned on, deposits to Invoiced Income budgets are entered from the invoice, not directly in the
+  Register. A payment line linked to an invoice can't change its amount or budget in the Register; **Unlink…** it on
+  the invoice (choosing the budget it moves to) if it was linked by mistake.
+- Voiding a payment in the Register (a bounced cheque, say) puts the invoice back to *Sent* or *Partly paid*.
+
 ## Invoiced Income budgets
 Money collected on invoices should go to budgets set aside for it. A Budget Manager marks an Income budget with
 **Mark as Invoiced Income** in the budget's row menu (Budgets page); its sub-budgets carry the mark too, and it shows

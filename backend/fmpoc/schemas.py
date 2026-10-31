@@ -593,6 +593,40 @@ class InvoiceWriteOffDecisionIn(In):          # 2.4.0 (#253)
     note: OptStr(500) = None
 
 
+class InvoicePaymentIn(In):                   # 2.4.0 (#254): Record payment (Register User)
+    bank_account_id: int
+    amount: Amount
+    transaction_date: OptDate = None
+    clear_date: OptDate = None
+    notes: OptStr(4000) = None
+    confirm_overpayment: bool = False
+    confirmations: Confirmations = []
+
+
+class InvoiceLinkIn(In):                      # 2.4.0 (#254)
+    allocation_id: int
+    confirmations: Confirmations = []
+
+
+class InvoiceUnlinkIn(In):                    # 2.4.0 (#254)
+    move_to_budget_id: int
+    reason: Str(500)
+
+
+class InvoiceRefundIn(In):                    # 2.4.0 (#254): refund of an overpayment
+    bank_account_id: int
+    amount: Amount
+    transaction_date: OptDate = None
+    clear_date: OptDate = None
+    check_number: Annotated[str | None, StringConstraints(strip_whitespace=True, max_length=20,
+                                                          pattern=r"^[A-Za-z0-9-]*$")] = None
+    electronic_payment: bool | None = None
+    payment_method: PaymentMethod | None = None
+    payment_reference: PaymentReferenceStr = None
+    notes: OptStr(4000) = None
+    confirmations: Confirmations = []
+
+
 class InvoicedIncomeIn(In):                   # 2.4.0 (#250)
     invoiced_income: bool
 

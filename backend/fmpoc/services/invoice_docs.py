@@ -249,6 +249,8 @@ def out(db: Session, ctx, i: Invoice, brief: bool = False) -> dict:
             "invoice_date": i.invoice_date.isoformat(), "due_date": i.due_date.isoformat(),
             "overdue": i.status in OPEN and i.due_date < dt.date.today(),
             "total": fmt(t["total"]), "write_off_status": i.write_off_status}
+    from .invoice_payments import figures                    # 2.4.0 (#254)
+    base["open"] = fmt(figures(db, i)["open"]) if i.status in OPEN + ("DRAFT",) else "0.00"
     if brief:
         return base
     revs = list(db.scalars(select(InvoiceRevision).where(InvoiceRevision.invoice_id == i.id)
@@ -285,14 +287,21 @@ def out(db: Session, ctx, i: Invoice, brief: bool = False) -> dict:
                           "sent_at": r.sent_at.isoformat() + "Z",
                           "pdf_url": f"/api/attachments/{r.attachment_id}/content" if r.attachment_id else None,
                           "reason": r.reason} for r in revs],
+            "payments": _payments_out(db, i),
             "can": {"edit": i.status == "DRAFT", "send": i.status == "DRAFT", "revise": i.status in OPEN,
                     "void": i.status in ("DRAFT", "SENT") and not _has_payments(db, i),
                     "write_off": i.status in OPEN and i.write_off_status != "PENDING",
                     "decide_write_off": i.write_off_status == "PENDING"}}
 
 
+def _payments_out(db: Session, i: Invoice) -> dict:
+    from .invoice_payments import payments_out
+    return payments_out(db, i)
+
+
 def _has_payments(db: Session, i: Invoice) -> bool:
-    return False          # 2.4.0 (#254) links deposits; until then an invoice has no payments
+    from .invoice_payments import has_payments          # 2.4.0 (#254)
+    return has_payments(db, i)
 
 
 def get(db: Session, ctx, iid: int) -> Invoice:
@@ -436,6 +445,12 @@ def update(db: Session, ctx, i: Invoice, body) -> Invoice:
     before = snapshot(i)
     _apply(db, ctx, i, body, creating=False)
     db.flush()
+    if i.revision:                      # 2.4.0 (#254): a revision can't bring the total below what was paid
+        from .invoice_payments import figures
+        f = figures(db, i)
+        if f["total"] < f["paid"]:
+            raise validation(f"The revised total ({fmt(f['total'])}) can't be below the amount already paid "
+                             f"({fmt(f['paid'])}).", "lines")
     after = snapshot(i)
     if after != before:
         audit.record(db, ctx, "INVOICE_UPDATED", "invoice", i.id, before, after)
@@ -464,6 +479,8 @@ def send(db: Session, ctx, settings, i: Invoice) -> Invoice:
         i.status = "SENT"
         i.sent_at, i.sent_by_user_id = utcnow(), ctx.user.id
         db.flush()
+        from .invoice_payments import refresh_status        # 2.4.0 (#254): a revision may already be (partly) paid
+        refresh_status(db, ctx, i)
         audit.record(db, ctx, "INVOICE_SENT", "invoice", i.id, before,
                      {**snapshot(i), "pdf_attachment_id": att.id, "pdf_sha256": hashlib.sha256(pdf).hexdigest()})
         db.commit()
