@@ -124,23 +124,141 @@ def _write_file(settings, data: bytes) -> tuple[str, Path]:
     return key, path
 
 
-def store_system_fy_document(db: Session, ctx, settings, fy: FiscalYear, filename: str, data: bytes,
-                             document_type: str) -> tuple[Attachment, Path]:
-    """Stores an application-generated PDF (e.g. the Close report) as a permanent Fiscal Year attachment. Runs inside
-    the caller's database transaction; the caller commits (or deletes the returned path on failure)."""
-    key, path = _write_file(settings, data)
-    att = Attachment(workspace_id=ctx.workspace_id, original_filename=sanitize_filename(filename), storage_key=key,
-                     mime_type="application/pdf", size_bytes=len(data), sha256=hashlib.sha256(data).hexdigest(),
-                     uploaded_by_user_id=ctx.user.id, active=True, fiscal_year_id=fy.id, document_type=document_type,
-                     system_generated=True, sort_order=_next_position(db, "fiscal_year", fy.id))
-    db.add(att)
-    db.flush()
-    audit.record(db, ctx, "ATTACHMENT_ADDED", "attachment", att.id, None, snapshot(att))
+# ------------------------------------------------------------------ 2.4.0 (#425): identical content is stored once
+def stored_match(db: Session, workspace_id: int, settings, data: bytes, sha: str | None = None) -> Attachment | None:
+    """An attachment of this workspace whose stored file has exactly these bytes (SHA-256 first, then a byte-for-byte
+    comparison), else None. Removed attachments count too: their files are kept for history."""
+    sha = sha or hashlib.sha256(data).hexdigest()
+    seen: set[str] = set()
+    for a in db.scalars(select(Attachment).where(Attachment.workspace_id == workspace_id, Attachment.sha256 == sha,
+                                                 Attachment.size_bytes == len(data)).order_by(Attachment.id)):
+        if a.storage_key in seen:
+            continue
+        seen.add(a.storage_key)
+        try:
+            if path_for(settings, a).read_bytes() == data:
+                return a
+        except (OSError, AppError):
+            continue
+    return None
+
+
+def new_record(db: Session, ctx, settings, data: bytes, **fields) -> tuple[Attachment, Path | None]:
+    """Creates an attachment record for these (already validated) bytes and its ATTACHMENT_ADDED audit event, inside
+    the caller's database transaction. An identical stored file in the workspace is linked instead of writing a new
+    one (the audit event notes the link). Returns the record and the path of a newly written file (None when linked)
+    so the caller can remove it if the transaction fails - a linked file is never removed (#425)."""
+    sha = hashlib.sha256(data).hexdigest()
+    match = stored_match(db, ctx.workspace_id, settings, data, sha)
+    if match is not None:
+        key, path = match.storage_key, None
+    else:
+        key, path = _write_file(settings, data)
+    try:
+        att = Attachment(workspace_id=ctx.workspace_id, storage_key=key, size_bytes=len(data), sha256=sha,
+                         uploaded_by_user_id=ctx.user.id, active=True, **fields)
+        db.add(att)
+        db.flush()
+        after = snapshot(att)
+        if match is not None:
+            after["shares_file_with_attachment_id"] = match.id
+        audit.record(db, ctx, "ATTACHMENT_ADDED", "attachment", att.id, None, after)
+    except Exception:
+        discard_new_file(path)       # the caller never got the path; the caller rolls the transaction back
+        raise
     return att, path
 
 
+def discard_new_file(path: Path | None) -> None:
+    """After a failed save: removes a file this request wrote (never a linked, shared one)."""
+    if path is not None:
+        try:
+            path.unlink()
+        except OSError:
+            pass
+
+
+def merge_duplicate_files(session_factory, settings) -> dict:
+    """2.4.0 (#425): links attachment records whose stored files have identical content to one file and removes the
+    extra copies. Runs at start-up after the migrations (an upgrade from 2.3 and earlier: after the installer's
+    pre-upgrade backup) and after a restore; with nothing to merge it is one query. Each file is read and its SHA-256
+    checked against the recorded value first - a file that is missing or no longer matches is left alone and
+    reported (logged, and counted in the audit event). Only files no record references any more are removed, after
+    the database change is committed. Returns counts."""
+    import logging
+    from types import SimpleNamespace
+    log = logging.getLogger("fmpoc.attachments")
+    result = {"groups": 0, "records_relinked": 0, "files_removed": 0, "bytes_freed": 0, "files_not_verified": 0}
+    with session_factory() as db:
+        groups = db.execute(select(Attachment.workspace_id, Attachment.sha256)
+                            .group_by(Attachment.workspace_id, Attachment.sha256)
+                            .having(func.count(func.distinct(Attachment.storage_key)) > 1)).all()
+        if not groups:
+            return result
+        removable: list[Path] = []
+        per_ws: dict[int, dict] = {}
+        for ws_id, sha in groups:
+            rows = list(db.scalars(select(Attachment).where(Attachment.workspace_id == ws_id,
+                                                            Attachment.sha256 == sha).order_by(Attachment.id)))
+            keeper, keeper_data = None, None
+            for key in dict.fromkeys(a.storage_key for a in rows):     # oldest first
+                first = next(a for a in rows if a.storage_key == key)
+                try:
+                    data = path_for(settings, first).read_bytes()
+                except (OSError, AppError):
+                    data = None
+                if data is None or hashlib.sha256(data).hexdigest() != sha:
+                    result["files_not_verified"] += 1
+                    log.warning("Attachment %s: stored file missing or its SHA-256 differs from the recorded one; "
+                                "left as it is (not merged).", first.id)
+                    continue
+                if keeper is None:
+                    keeper, keeper_data = key, data
+                    continue
+                if data != keeper_data:          # same hash, different bytes: never merged
+                    result["files_not_verified"] += 1
+                    continue
+                extra = path_for(settings, first)        # before the rows move to the kept file
+                for a in rows:
+                    if a.storage_key == key:
+                        a.storage_key = keeper
+                        result["records_relinked"] += 1
+                        w = per_ws.setdefault(ws_id, {"records_relinked": 0, "files_removed": 0, "bytes_freed": 0})
+                        w["records_relinked"] += 1
+                removable.append(extra)
+                per_ws[ws_id]["files_removed"] += 1
+                per_ws[ws_id]["bytes_freed"] += len(data)
+                result["bytes_freed"] += len(data)
+            result["groups"] += 1
+        db.flush()
+        for ws_id, counts in per_ws.items():
+            ctx = SimpleNamespace(workspace_id=ws_id, user=None, correlation_id=None, ip=None)
+            audit.record(db, ctx, "ATTACHMENT_FILES_MERGED", "workspace", ws_id, None,
+                         {**counts, "files_not_verified": result["files_not_verified"],
+                          "note": "Identical attachment files are now stored once; every attachment is unchanged."},
+                         )
+        db.commit()
+    for p in removable:
+        try:
+            p.unlink()
+            result["files_removed"] += 1
+        except OSError:
+            pass
+    log.info("Attachment files merged: %s", result)
+    return result
+
+
+def store_system_fy_document(db: Session, ctx, settings, fy: FiscalYear, filename: str, data: bytes,
+                             document_type: str) -> tuple[Attachment, Path | None]:
+    """Stores an application-generated PDF (e.g. the Close report) as a permanent Fiscal Year attachment. Runs inside
+    the caller's database transaction; the caller commits (or discards the returned new file on failure)."""
+    return new_record(db, ctx, settings, data, original_filename=sanitize_filename(filename),
+                      mime_type="application/pdf", fiscal_year_id=fy.id, document_type=document_type,
+                      system_generated=True, sort_order=_next_position(db, "fiscal_year", fy.id))
+
+
 def store(db: Session, ctx, settings, owner_type: str, owner_id: int, filename: str | None, data: bytes,
-          document_type: str | None = None) -> Attachment:
+          document_type: str | None = None, attach_anyway: bool = False) -> Attachment:
     check_manage(ctx, owner_type)
     owner, _txn, _fy = _resolve_owner(db, ctx, owner_type, owner_id)
     if owner_type == "fundraiser":
@@ -163,16 +281,21 @@ def store(db: Session, ctx, settings, owner_type: str, owner_id: int, filename: 
     if detected is None or detected != EXT_TYPES[ext]:
         raise AppError(415, "UNSUPPORTED_TYPE",
                        "The file content is not a valid PDF, JPEG or PNG matching its extension.")
-    key, path = _write_file(settings, data)
+    # #425: the same file already attached to this record - the user decides (checked after validation, server-side)
+    if not attach_anyway:
+        col = getattr(Attachment, OWNER_COLUMN[owner_type])
+        same = db.scalar(select(Attachment).where(col == owner.id, Attachment.active.is_(True),
+                                                  Attachment.sha256 == hashlib.sha256(data).hexdigest())
+                         .order_by(Attachment.id))
+        if same is not None:
+            raise AppError(409, "DUPLICATE_ON_RECORD",
+                           f"This file is already attached here as \"{same.original_filename}\". "
+                           "Attach it again anyway?")
+    path = None
     try:
-        att = Attachment(workspace_id=ctx.workspace_id, original_filename=clean, storage_key=key, mime_type=detected,
-                         size_bytes=len(data), sha256=hashlib.sha256(data).hexdigest(),
-                         uploaded_by_user_id=ctx.user.id, active=True, document_type=document_type,
-                         sort_order=_next_position(db, owner_type, owner.id))
-        setattr(att, OWNER_COLUMN[owner_type], owner.id)
-        db.add(att)
-        db.flush()
-        audit.record(db, ctx, "ATTACHMENT_ADDED", "attachment", att.id, None, snapshot(att))
+        att, path = new_record(db, ctx, settings, data, original_filename=clean, mime_type=detected,
+                               document_type=document_type, sort_order=_next_position(db, owner_type, owner.id),
+                               **{OWNER_COLUMN[owner_type]: owner.id})
         # v1.2: documentation now exists, so a "no attachment will be provided" marker no longer applies
         if owner_type == "allocation" and owner.no_attachment:
             owner.no_attachment, owner.no_attachment_reason = False, None
@@ -194,10 +317,7 @@ def store(db: Session, ctx, settings, owner_type: str, owner_id: int, filename: 
         db.commit()
     except Exception:
         db.rollback()
-        try:
-            path.unlink()
-        except OSError:
-            pass
+        discard_new_file(path)
         raise
     return att
 

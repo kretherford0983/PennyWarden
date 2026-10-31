@@ -128,6 +128,48 @@ could not otherwise be corrected. Scope and safeguards:
   with a link; the variable picker completes dotted names.
 - Tests: `backend/tests/test_v210_organization.py` (6, including the data migration) and the E2E #126 and #312 steps.
 
+**2.4.0 build 1 — Attachment deduplication (#425, decided with Kyle 2026-10-30).**
+- Kyle: identical content is stored once and linked; existing duplicates are merged at the upgrade (after the
+  pre-upgrade backup, each file's hash verified first); the rule covers every attachment, PennyWarden's generated PDFs
+  included; the *Attachment added* audit event notes the link; the same file twice on one record warns with
+  **Cancel / Attach anyway**, a match on another record links silently.
+- Storage (Claude's call, one of the two shapes in the issue): `attachment.storage_key` is no longer unique (migration
+  `0069`, plus an index on `workspace_id, sha256`); every attachment record keeps its own row and owner, and records
+  with identical content point at one stored file. Chosen over a separate `attachment_file` table because backup,
+  selective restore, Reinitialize, reports and downloads already work per stored file / per row and need no change;
+  shared files are countable with `GROUP BY storage_key` (Diagnostics does). No new table, so nothing to add to
+  Reinitialize `WIPE` / selective-restore `DATA_TABLES`.
+- `services/attachments.new_record()` is the one place an attachment is created (uploads, Close report, check record
+  copies, receipt/statement/envelope copies): after the caller's validation it looks for a stored file of the
+  workspace with the same SHA-256 and size, compares the bytes, and links it; otherwise it writes a new file. It
+  returns the path only of a newly written file, so a failed save removes only that file - a linked file is never
+  removed. Removed attachments' files count as matches (they are kept for history).
+- Same-record check (server-side, after validation): an **active** attachment of the same owner with the same SHA-256
+  -> 409 `DUPLICATE_ON_RECORD`; `POST /api/attachments?...&attach_anyway=true` adds it. The client
+  (`useAttachmentUpload` in components.tsx: attachment lists and the transaction form's files) shows *Same file
+  already attached* with Cancel / Attach anyway. A removed copy does not count.
+- Upload responses are unchanged: the other record is never shown (BR-099); the link is only in the audit event
+  (`shares_file_with_attachment_id`).
+- Merge of existing duplicates: `merge_duplicate_files()` runs at start-up after the migrations and after a web
+  restore (a backup from an earlier version). With nothing to merge it is one query. Per group (workspace + SHA-256)
+  the oldest verified file is kept; a file that is missing, fails its recorded hash or differs byte-wise is left as it
+  is, logged and counted; the extra copies are deleted only after the commit. One `ATTACHMENT_FILES_MERGED` audit
+  event per workspace (counts only).
+- Reports: unchanged - each attachment row verifies its file, so a damaged shared file is reported on every record
+  linked to it. Diagnostics/health check: `attachment_records`, `attachment_shared_files`, `attachment_bytes_saved`
+  (counts only), shown under *Shared files* on System/About when any file is shared.
+- New rules (spec docs unchanged): **BR-ATT-DEDUP-001** identical attachment content is stored once per workspace and
+  linked; **-002** the same file twice on one record needs the user's confirmation (server-side); **-003** a stored
+  file is never deleted or overwritten while any attachment record (active, removed or on a VOID transaction)
+  references it; **-004** the upgrade merges existing duplicates after verifying each file's hash. ACs:
+  **AC-ATT-DEDUP-001** cross-record link (no warning, other record not revealed); **-002/-003** same-record warning,
+  Cancel and Attach anyway, UI and direct API; **-004** removing one link leaves the others; **-005** upgrade/start-up
+  merge (damaged file left and reported, idempotent); **-006** generated copies follow the rule; **-007** audit link
+  note and atomic rollback that keeps a shared file; **-008** diagnostics counts. Unchanged and re-tested: BR-073/074,
+  BR-100/101, AC-ATT-001..004, AC-SEC-014..017, AC-AUD-001/003.
+- Tests: `backend/tests/test_v240_attachment_dedup.py` (15) and the E2E step "#425" (in the #259 reorder step). The
+  test helper `env.fy_doc` now uploads a PDF with content of its own.
+
 **2.3.0 build 15 — Budget History: years included in another budget (#414, decided with Kyle 2026-10-30).**
 - Kyle: any budget of the same type at any level; years before **and** in PennyWarden; shown only on the marked
   budget; not counted in Avg; #415's automatic *history on parent* stays where nothing is marked.

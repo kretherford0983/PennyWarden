@@ -193,8 +193,9 @@ class Env:
 
     def fy_doc(self, fy_id, document_type="UNSPECIFIED", name="doc.pdf"):
         """v1.3 CR-007: upload a typed Fiscal Year document as the Budget Manager."""
+        # 2.4.0 (#425): each document has its own content (the same file twice on one Fiscal Year asks first)
         r = self.bm.c.post(f"/api/attachments?owner_type=fiscal_year&owner_id={fy_id}&document_type={document_type}",
-                           files={"file": (name, PDF_BYTES, "application/pdf")}, headers={"X-CSRF-Token": self.bm.csrf})
+                           files={"file": (name, unique_pdf(), "application/pdf")}, headers={"X-CSRF-Token": self.bm.csrf})
         assert r.status_code == 201, r.text
         return r.json()
 
@@ -233,14 +234,22 @@ def png_bytes(size=(4, 4)) -> bytes:
     return buf.getvalue()
 
 
-def jpeg_bytes() -> bytes:
+def jpeg_bytes(other: bool = False) -> bytes:
     buf = io.BytesIO()
-    Image.new("RGB", (4, 4), (10, 200, 10)).save(buf, "JPEG")
+    Image.new("RGB", (4, 4), (10, 10, 200) if other else (10, 200, 10)).save(buf, "JPEG")
     return buf.getvalue()
 
 
 PDF_BYTES = (b"%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[]/Count 0>>endobj\n"
              b"trailer<</Root 1 0 R>>\n%%EOF\n")
+
+
+_pdf_seq = itertools.count(1)
+
+
+def unique_pdf() -> bytes:
+    """A valid minimal PDF with content of its own (2.4.0 #425: identical files are stored once)."""
+    return PDF_BYTES.replace(b"%PDF-1.4\n", b"%%PDF-1.4\n%% doc %d\n" % next(_pdf_seq), 1)
 
 
 def today() -> str:

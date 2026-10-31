@@ -197,6 +197,41 @@ export function useConfirmable() {
   return { run, dialog };
 }
 
+/** 2.4.0 (#425): uploads a file; when the identical file is already attached to the same record the server answers
+ * DUPLICATE_ON_RECORD and the user decides - Cancel (nothing added) or Attach anyway (sent again with attach_anyway).
+ * Resolves true when the file was added, false when cancelled. */
+export function useAttachmentUpload() {
+  const [pending, setPending] = useState<null | { name: string; message: string; decide: (attach: boolean) => void }>(null);
+  async function upload(url: string, file: File): Promise<boolean> {
+    try {
+      await api.upload(url, file);
+      return true;
+    } catch (e) {
+      if (!(e instanceof ApiError && e.code === "DUPLICATE_ON_RECORD")) throw e;
+      const attach = await new Promise<boolean>((resolve) => {
+        let done = false;
+        setPending({ name: file.name, message: e.message, decide: (a) => { if (done) return; done = true; setPending(null); resolve(a); } });
+      });
+      if (!attach) return false;
+      await api.upload(`${url}${url.includes("?") ? "&" : "?"}attach_anyway=true`, file);
+      return true;
+    }
+  }
+  const dialog = pending ? (
+    <Modal title="Same file already attached" onClose={() => pending.decide(false)}>
+      <div className="alert warn" role="alert">
+        <p><strong>{pending.name}</strong>: {pending.message}</p>
+        <p>If you meant to choose a different file, cancel and pick it.</p>
+      </div>
+      <div className="actions">
+        <button onClick={() => pending.decide(false)}>Cancel</button>
+        <button className="primary" onClick={() => pending.decide(true)}>Attach anyway</button>
+      </div>
+    </Modal>
+  ) : null;
+  return { upload, dialog };
+}
+
 export function Lock({ open }: { open: boolean }) {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" className="lock-icon">
@@ -297,6 +332,7 @@ export function Attachments({ ownerType, ownerId, canUpload, canRemove, title = 
   const [err, setErr] = useState<unknown>(null);
   const [viewIdx, setViewIdx] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
+  const dup = useAttachmentUpload();   // #425
   const items = documentTypes ? all.filter((a) => documentTypes.includes(a.document_type || "UNSPECIFIED")) : all;
   const load = () => api.get(`/api/attachments${qs({ owner_type: ownerType, owner_id: ownerId })}`).then(setAll, setErr);
   useEffect(() => {
@@ -315,9 +351,11 @@ export function Attachments({ ownerType, ownerId, canUpload, canRemove, title = 
     }
     setBusy(true);
     try {
-      await api.upload(`/api/attachments${qs({ owner_type: ownerType, owner_id: ownerId, document_type: documentTypes?.[0] })}`, f);
-      await load();
-      onChanged?.();
+      const added = await dup.upload(`/api/attachments${qs({ owner_type: ownerType, owner_id: ownerId, document_type: documentTypes?.[0] })}`, f);
+      if (added) {
+        await load();
+        onChanged?.();
+      }
     } catch (e) {
       setErr(e);
     } finally {
@@ -429,6 +467,7 @@ export function Attachments({ ownerType, ownerId, canUpload, canRemove, title = 
           )}
         </Modal>
       ) : null}
+      {dup.dialog}
     </section>
   );
 }

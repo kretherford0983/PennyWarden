@@ -875,15 +875,10 @@ def print_check(db: Session, ctx, settings, km, job: Job, *, check_number: str |
 
 
 def store_transaction_document(db: Session, ctx, settings, t: RegisterTransaction, filename: str, data: bytes):
-    key, path = att_svc._write_file(settings, data)
-    att = Attachment(workspace_id=ctx.workspace_id, original_filename=att_svc.sanitize_filename(filename),
-                     storage_key=key, mime_type="application/pdf", size_bytes=len(data),
-                     sha256=hashlib.sha256(data).hexdigest(), uploaded_by_user_id=ctx.user.id, active=True,
-                     transaction_id=t.id, document_type=CHECK_COPY, system_generated=True,
-                     sort_order=att_svc._next_position(db, "transaction", t.id))   # #259: after reordered ones
-    db.add(att)
-    db.flush()
-    audit.record(db, ctx, "ATTACHMENT_ADDED", "attachment", att.id, None, att_svc.snapshot(att))
+    att, path = att_svc.new_record(db, ctx, settings, data, original_filename=att_svc.sanitize_filename(filename),
+                                   mime_type="application/pdf", transaction_id=t.id, document_type=CHECK_COPY,
+                                   system_generated=True,
+                                   sort_order=att_svc._next_position(db, "transaction", t.id))   # #259: after reordered
     if t.no_attachment:
         t.no_attachment, t.no_attachment_reason = False, None
         t.no_attachment_set_at = t.no_attachment_set_by_user_id = None
@@ -1388,14 +1383,9 @@ def _store_doc_copy(db: Session, ctx, settings, t: RegisterTransaction, kind_typ
                                               Attachment.sha256 == sha))
     if same is not None:
         return False, None
-    key, path = att_svc._write_file(settings, pdf)
-    att = Attachment(workspace_id=ctx.workspace_id, original_filename=att_svc.sanitize_filename(filename),
-                     storage_key=key, mime_type="application/pdf", size_bytes=len(pdf), sha256=sha,
-                     uploaded_by_user_id=ctx.user.id, active=True, transaction_id=t.id, document_type=kind_type,
-                     system_generated=True, sort_order=att_svc._next_position(db, "transaction", t.id))
-    db.add(att)
-    db.flush()
-    audit.record(db, ctx, "ATTACHMENT_ADDED", "attachment", att.id, None, att_svc.snapshot(att))
+    _att, path = att_svc.new_record(db, ctx, settings, pdf, original_filename=att_svc.sanitize_filename(filename),
+                                    mime_type="application/pdf", transaction_id=t.id, document_type=kind_type,
+                                    system_generated=True, sort_order=att_svc._next_position(db, "transaction", t.id))
     return True, path
 
 

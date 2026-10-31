@@ -1,12 +1,12 @@
 """Fiscal Years. AC-FY-001..013, AC-FY-VIS-001..011."""
 import datetime as dt
 
-from conftest import PDF_BYTES
+from conftest import PDF_BYTES, unique_pdf
 
 
 def upload_fy_doc(env, fy_id, document_type="AUDIT_SIGNOFF"):
     r = env.bm.c.post(f"/api/attachments?owner_type=fiscal_year&owner_id={fy_id}&document_type={document_type}",
-                      files={"file": ("signoff.pdf", PDF_BYTES, "application/pdf")},
+                      files={"file": ("signoff.pdf", unique_pdf(), "application/pdf")},
                       headers={"X-CSRF-Token": env.bm.csrf})
     assert r.status_code == 201, r.text
     return r.json()
