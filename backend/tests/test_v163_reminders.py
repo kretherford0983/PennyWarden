@@ -96,6 +96,6 @@ def test_show_days_before_edit_delete_and_links(env, base):
 
 def test_dashboard_layout_has_notifications_section(env):
     keys = [s["key"] for s in env.bu.get("/api/auth/me").json()["dashboard_layout"]]
-    assert keys[0] == "notifications" and len(keys) == 7
+    assert keys[0] == "notifications" and len(keys) == 8      # 2.4.0 (#255): + Overdue invoices
     r = env.bu.put("/api/me/preferences", {"dashboard_layout": [{"key": "notifications", "visible": False}]})
     assert r.status_code == 200 and r.json()["dashboard_layout"][0] == {"key": "notifications", "visible": False}
