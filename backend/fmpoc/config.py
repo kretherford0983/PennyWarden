@@ -17,7 +17,7 @@ APP_NAME = "PennyWarden"
 PREVIOUS_APP_NAMES = (("Fundwarden", "fundwarden"),                            # 1.6.6 - 1.6.8
                       ("FinancialManagementPOC", "financial-management-poc"))  # before 1.6.6
 LEGACY_APP_NAME = PREVIOUS_APP_NAMES[-1][0]
-VERSION = "2.2.0"
+VERSION = "2.2.1"
 
 
 BUILD_INFO_FILE = Path(__file__).with_name("build_info.json")

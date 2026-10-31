@@ -2,7 +2,15 @@
 
 Versions are `Breaking.Major.Minor` from 1.6.0 (docs/branching.md).
 
-## 2.2.0 — unreleased
+## 2.2.1 — unreleased
+Security hotfix for 2.2.0. No database migration; going back to 2.2.0 is just reinstalling it.
+- **pypdf 6.21.4 (seven advisories, CVE-2026-119203 to CVE-2026-119209).** A specially crafted PDF could make pypdf
+  loop forever or use a very large amount of memory or time. PennyWarden opens PDFs that users attach (to include
+  them in the End of Year Audit and Fiscal Year Close reports), so a signed-in user who can add attachments could
+  upload such a file and slow down or stop the server when one of those reports is run. No data could be read or
+  changed. pypdf 6.21.2 → 6.21.4 fixes all seven; nothing else changes.
+
+## 2.2.0 — 2026-10-30
 PennyWarden 2.2.0 (in progress).
 
 ### Security
