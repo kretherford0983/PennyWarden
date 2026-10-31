@@ -118,7 +118,7 @@ def test_matches_the_budget_actuals_to_the_cent(env, base, hist):
 def test_years_parameter_and_gaps(env, base, hist):
     f25 = env.fy("2025", "2024-07-01", "2025-06-30")
     assert rep(env, base, years=1)["years"][0]["display_name"] == "FY2026"
-    full = rep(env, base, years=-1)
+    full = rep(env, base, years=9)
     assert [y["display_name"] for y in full["years"]] == ["FY2025", "FY2026"]
     ops = row(full, base["exp"]["id"])
     assert ops["history"][0] is None                         # no linked budget in FY2025: printed —
@@ -195,7 +195,7 @@ def test_rejected_history_is_labelled(env, base, hist):
     old = env.budget(f25["id"], "0800", "Operations", "EXPENSE", "800.00")
     _link(env, hist["ops26"], old["id"])
     assert env.bm.post(f"/api/budgets/{old['id']}/reject", {"reason": "Not needed"}).status_code == 200
-    r = rep(env, base, years=-1)
+    r = rep(env, base, years=9)
     h = row(r, base["exp"]["id"])["history"]
     assert h[0]["status"] == "REJECTED" and h[0]["code"] == "0800"
 

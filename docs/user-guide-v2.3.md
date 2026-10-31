@@ -49,6 +49,11 @@ no budget continues yet. They appear among the Income and Expense budgets, under
 had, with a **Not in FY…, last FY…** tag. Their earlier years and averages are shown as usual; the current year,
 *Projected* and next year show —. Budgets are matched by their continuation links, never just by the code.
 
+**Paper and columns.** Choose **Paper (PDF)** — letter or legal, both landscape — before running the review. Prior
+years, the *Projected* column and *Next year's budget* add up to 6 columns on letter and 9 on legal, so the whole
+review prints one page across; the **Prior years** list only offers what fits (ticking *Projected* or *Next year's
+budget* takes one off). Up to 9 prior years can be shown.
+
 ### Estimated figures from before PennyWarden
 When you enter a budget year from before PennyWarden (*Add an earlier year*, *Before PennyWarden*, or a CSV import),
 tick **Estimated** if the figure is an estimate — the note then has to say why. The year is marked **\*** in the
