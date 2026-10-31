@@ -139,9 +139,11 @@ function ModulesPanel() {
       <ErrorBox error={err} />
       {m ? (
         <>
-          <label className="check"><input type="checkbox" checked={m.fundraisers} onChange={(e) => toggle("fundraisers", e.target.checked)} /> Fundraiser module</label>
-          <p className="hint">Adds <b>Fundraisers</b> to the menu of Budget Managers, Budget Users, Register Users and Auditors (it appears at their next sign-in or page reload).
-            Turning it off hides the module; fundraisers that were set up are kept.</p>
+          <label className="check"><input type="checkbox" checked={m.fundraisers} onChange={(e) => toggle("fundraisers", e.target.checked)} /> Events &amp; Fundraisers module</label>
+          {/* 2.4.0 (#429) */}
+          <p className="hint">Track events of every kind — for example fundraisers, a Summer Cookout, an annual picnic or a members' dinner — with their income, expenses and net.
+            Adds <b>Events</b> to the menu of Budget Managers, Budget Users, Register Users and Auditors (it appears at their next sign-in or page reload).
+            Turning it off hides the module; events and fundraisers that were set up are kept.</p>
           <label className="check"><input type="checkbox" checked={!!m.checks} onChange={(e) => toggle("checks", e.target.checked)} /> Payments module</label>
           <p className="hint">Check printing, payments, cover letters and envelopes. Adds <b>Payments Setup</b> to the Administrator's menu (check styles,
             signatures, letter and envelope templates, test prints), and <b>Payments</b> and a <b>Print check</b> action on withdrawals for Register Users. For

@@ -128,6 +128,42 @@ could not otherwise be corrected. Scope and safeguards:
   with a link; the variable picker completes dotted names.
 - Tests: `backend/tests/test_v210_organization.py` (6, including the data migration) and the E2E #126 and #312 steps.
 
+**2.4.0 build 2 — Events & Fundraisers (#429, decided with Kyle 2026-10-30).**
+- UI-only rename: nav **Events**; *Events & Fundraisers* on the module setting (with examples), the list page heading
+  and back links; "Series" for the series link. Internal names unchanged: tables `fundraiser*`, `/api/fundraisers*`,
+  audit object type `fundraiser`, code identifiers.
+- `fundraiser.event_type` (`FUNDRAISER` | `EVENT`, migration `0070`, server default Fundraiser for every existing row).
+  Writable only through `FundraiserIn` (create/edit, `fundraiser.manage`); omitted on edit = unchanged; other bodies
+  refuse it (`extra="forbid"`).
+- Required budgets (`REQUIRED_KINDS`): Fundraiser = Income + Expense, Event = Expense, per Fiscal Year used; a shell
+  (no budgets) is always allowed. **Checked when the record is created and whenever its budgets or type change**
+  (422 `REQUIRED_BUDGETS` with the gaps) — Claude's reading of "existing records are kept as-is with a warning": an
+  upgraded record missing one can still be renamed/edited otherwise, shows `REQUIRED_BUDGET_MISSING`, and *Mark
+  results final* is refused (409) until fixed or retyped.
+- Type change: audited in `FUNDRAISER_UPDATED` (before/after `event_type`); goal and bucket `is_donation` kept. An
+  Event's detail returns no goal (`totals.goal = null`), the Quarterly/Annual report shows no goal for it, its donation
+  buckets don't suggest receipts (`donation_bucket_allocations`, `fundraiser_unreceipted`), and the UI hides the goal
+  field, the bucket donation flag and the *Donations without a receipt* panel.
+- A series holds one type (`series_type()` = its events' type): *Continues from* (`set_link`, options filtered by
+  `event_type`), *Add to a series* and *Merge* refuse a mismatch (409 `SERIES_TYPE`); changing the type of an event in
+  a series with other events is refused until it is unlinked. *Create next year's* copies the type.
+- Combined budgets: `detail.combined_budgets` gives one budgeted Income and Expense figure (sum over Fiscal Years) and
+  the labels; actual figures were already combined.
+- Reports: stakeholder report/deck say "event" for an Event (no goal there before either); FY fundraising report/deck:
+  `fy_report()` keeps the fundraising figures, history, shares and series history for Fundraisers only and returns
+  `events` (+ `events_net`), shown as *Events (not fundraisers)* in the PDF and an *events* slide.
+- Demo/test data: *Fall Mattress Sale* (demo) and *Summer Car Wash* (test data) gained an Expense budget.
+- Tests: `backend/tests/test_v240_events.py` (9). Earlier fundraiser test modules that use one-budget setups to test
+  other rules run with the rule relaxed (conftest `_BEFORE_REQUIRED_BUDGETS`); every other module runs with it on.
+  E2E: Harvest Dinner is created as an Event (type, no goal field, *Create event*); the goal is tested on the Spring
+  Fair shell.
+- New rules (spec docs unchanged): **BR-EVT-001** each event is a Fundraiser or an Event (default Fundraiser);
+  **-002** required budgets by type per Fiscal Year once budgets are chosen, shells allowed, final blocked while
+  missing; **-003** a type change is audited and keeps goal/receipt data; **-004** a series holds one type; **-005**
+  Events are reported apart from fundraising totals. ACs **AC-EVT-001..010** as in the issue's checklist (rename and
+  internal names; series type; type change audit; Event hides goal/receipts; shells; Event/Fundraiser required budgets;
+  final blocked; upgraded record warning; combined figures; FY report separate section; mass assignment and roles).
+
 **2.4.0 build 1 — Attachment deduplication (#425, decided with Kyle 2026-10-30).**
 - Kyle: identical content is stored once and linked; existing duplicates are merged at the upgrade (after the
   pre-upgrade backup, each file's hash verified first); the rule covers every attachment, PennyWarden's generated PDFs
