@@ -557,6 +557,7 @@ class InvoiceLineIn(In):                     # 2.4.0 (#253): every line comes fr
     discount_kind: Literal["AMOUNT", "PERCENT"] | None = None
     discount_value: OptStr(20) = None
     discount_reason: OptStr(200) = None
+    custom_values: dict[str, str | None] | None = None    # 2.4.0 (#253 part 2): {field id: value}
 
 
 class InvoiceIn(In):                         # 2.4.0 (#253)
@@ -568,6 +569,16 @@ class InvoiceIn(In):                         # 2.4.0 (#253)
     tax_rate_id: int | None = None
     discount: InvoiceDiscountIn | None = None
     lines: list[InvoiceLineIn] = Field(default_factory=list, max_length=200)
+    custom_values: dict[str, str | None] | None = None    # 2.4.0 (#253 part 2)
+
+
+class InvoiceFieldIn(In):                    # 2.4.0 (#253 part 2): an Administrator-defined field
+    level: Literal["INVOICE", "LINE"] | None = None
+    field_type: Literal["TEXT", "NUMBER", "DATE", "PICKLIST"] | None = None
+    name: Str(60)
+    options: list[Str(80)] = Field(default_factory=list, max_length=50)
+    required: bool = False
+    show_on_pdf: bool = True
 
 
 class InvoiceSetupIn(In):                    # 2.4.0 (#253): the Administrator's setup

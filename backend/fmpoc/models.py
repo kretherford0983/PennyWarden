@@ -1424,6 +1424,7 @@ class Invoice(Base):
     write_off_decided_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     write_off_note: Mapped[str | None] = mapped_column(String(500), nullable=True)
     write_off_self_approved: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
+    custom_values: Mapped[str | None] = mapped_column(Text, nullable=True)     # 2.4.0 (#253 part 2): JSON {field id: value}
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
     created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
@@ -1453,6 +1454,7 @@ class InvoiceLine(Base):
     discount_kind: Mapped[str | None] = mapped_column(String(10), nullable=True)
     discount_value: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     discount_reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    custom_values: Mapped[str | None] = mapped_column(Text, nullable=True)     # 2.4.0 (#253 part 2): JSON {field id: value}
 
     invoice: Mapped["Invoice"] = relationship(back_populates="lines")
 
@@ -1470,3 +1472,23 @@ class InvoiceRevision(Base):
     reason: Mapped[str | None] = mapped_column(String(500), nullable=True)   # why the next revision was made
     sent_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
     sent_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class InvoiceCustomField(Base):
+    """2.4.0 (#253 part 2): an Administrator-defined field on invoices or on their lines - text, number, date or a
+    pick-list - with a required flag and a show-on-PDF flag. Retired, never deleted (values stay on old invoices)."""
+    __tablename__ = "invoice_custom_field"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
+    level: Mapped[str] = mapped_column(String(10))            # INVOICE | LINE
+    name: Mapped[str] = mapped_column(String(60))
+    field_type: Mapped[str] = mapped_column(String(10))       # TEXT | NUMBER | DATE | PICKLIST
+    options: Mapped[str | None] = mapped_column(Text, nullable=True)        # JSON list for a pick-list
+    required: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
+    show_on_pdf: Mapped[bool] = mapped_column(Boolean, default=True, server_default=sa_true(), nullable=False)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=sa_true(), nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    updated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
