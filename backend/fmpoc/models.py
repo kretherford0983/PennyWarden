@@ -1304,3 +1304,69 @@ class DonationStatement(Base):
     attachment_id: Mapped[int | None] = mapped_column(ForeignKey("attachment.id"), nullable=True)
     printed_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
     printed_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+# ---------------------------------------------------------------- 2.4.0 (#252): Invoices - the product catalog
+class InvoiceUnitType(Base):
+    """A unit a product is sold in (each, hour, month...). Maintained by Invoice Managers; retired, never deleted."""
+    __tablename__ = "invoice_unit_type"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
+    name: Mapped[str] = mapped_column(String(40))
+    active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=sa_true(), nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    updated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class InvoiceProductCategory(Base):
+    """A product category (dues, sponsorships, event fees...). Maintained by Invoice Managers; retired, never deleted."""
+    __tablename__ = "invoice_product_category"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
+    name: Mapped[str] = mapped_column(String(80))
+    active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=sa_true(), nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    updated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class InvoiceProduct(Base):
+    """What the organization bills for: price, unit, category, taxable, and the Invoiced Income budget the money goes
+    to. An invoice line copies its description and price (a later catalog change never alters an issued invoice).
+    `is_system` marks the built-in Discount item (no budget, no price)."""
+    __tablename__ = "invoice_product"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    code: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    description: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    unit_price_cents: Mapped[int] = mapped_column(BigInteger, default=0)
+    unit_type_id: Mapped[int | None] = mapped_column(ForeignKey("invoice_unit_type.id"), nullable=True)
+    category_id: Mapped[int | None] = mapped_column(ForeignKey("invoice_product_category.id"), nullable=True)
+    taxable: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
+    budget_id: Mapped[int | None] = mapped_column(ForeignKey("budget.id"), nullable=True, index=True)
+    is_system: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=sa_true(), nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    updated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class InvoiceTaxRate(Base):
+    """A sales tax rate (in thousandths of a percent: 7.25 % = 7250) and the Invoiced Income budget it is collected
+    into. Kept in the catalog so the Administrator stays out of budgets (BR-003)."""
+    __tablename__ = "invoice_tax_rate"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
+    name: Mapped[str] = mapped_column(String(80))
+    rate_milli_pct: Mapped[int] = mapped_column(Integer)
+    budget_id: Mapped[int | None] = mapped_column(ForeignKey("budget.id"), nullable=True, index=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=sa_true(), nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    updated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)

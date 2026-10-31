@@ -128,6 +128,34 @@ could not otherwise be corrected. Scope and safeguards:
   with a link; the variable picker completes dotted names.
 - Tests: `backend/tests/test_v210_organization.py` (6, including the data migration) and the E2E #126 and #312 steps.
 
+**2.4.0 build 5 — Product catalog (#252, decided 2026-10-16).**
+- Tables (migration `0073`): `invoice_unit_type`, `invoice_product_category`, `invoice_product` (name, code, description,
+  unit price, unit type, category, taxable, `budget_id`, `is_system`, active), `invoice_tax_rate` (name,
+  `rate_milli_pct` = thousandths of a percent, `budget_id`, active). All four are in Reinitialize `WIPE` (before
+  `Budget`) and selective-restore `DATA_TABLES`; after a Reinitialize with the module on the seed comes back.
+- Seed when the module is turned on (once): unit types Each, Hour, Day, Week, Month, Year and the built-in
+  **Discount** product (`is_system`, no price or budget, can't be edited or inactivated).
+- Permissions: `invoice.catalog_manage` (IM), `invoice.catalog_view` (IM, BM, BU, Auditor) - per the issue's matrix
+  the Register User has no catalog access; Administrator none (BR-003). Module off -> 404 `MODULE_DISABLED`.
+- Budget picker `GET /api/invoices/catalog/budget-options`: per open Fiscal Year, the Register's selectable deposit
+  leaves on Invoiced Income families, `{id, label}` only (no amounts/actuals). Saving checks the budget server-side
+  (Income, Invoiced Income, not Budget 0, not rejected/inactive/deleted, open year, a selectable leaf).
+- Retire, never delete: `POST .../{id}/inactivate|restore`; no DELETE routes. Every change audited
+  (`INVOICE_PRODUCT_*`, `INVOICE_TAX_RATE_*`, `INVOICE_UNIT_TYPE_*`, `INVOICE_CATEGORY_*`) with before/after. Names
+  are unique per kind (case-insensitive, inactive included); product codes unique when given.
+- Continuation (#89): `budget_for_year(budget, fy)` follows `continues_budget_id` (a simple budget is chosen by its
+  Other leaf, so its parent's chain is followed and that year's simple leaf used); `needs_budget` = no Invoiced Income
+  continuation in the **current** Fiscal Year (the open year covering today, else the latest open one). The issue
+  marks the payment-time behaviour (Register User picks a budget with a warning) as proposed; it lands with Payments.
+- UI: *Product catalog* card on the Invoices page (tabs Products / Tax rates / Unit types / Categories, Show inactive,
+  New/Edit/Inactivate/Restore for IM).
+- New rules (spec docs unchanged): **BR-INV-CAT-001** catalog maintained by IM, viewed by BM/BU/Auditor, never the
+  Administrator; **-002** retired, never deleted, audited; **-003** product and tax-rate budgets are Invoiced Income
+  only, picked without amounts; **-004** a product's budget follows the continuation link, else *needs budget*. ACs
+  **AC-INV-CAT-001..006** (seed; maintain + audit; picker/validation/mass assignment; roles; continuation; object
+  scope).
+- Tests: `backend/tests/test_v240_invoice_catalog.py` (6).
+
 **2.4.0 build 4 — Invoices module switch and the Invoice Manager role (#251, decided 2026-10-16).**
 - `workspace.invoices_enabled` and the role `INVOICE_MANAGER` (Financial; migration `0072`; seeded for new installs
   from `ROLE_DEFS`; a new local install's first user gets it too). `services/invoices.py`: switch (audited

@@ -37,6 +37,9 @@ def set_module(db: Session, ctx, enabled: bool) -> bool:
         ws.invoices_enabled = enabled
         audit.record(db, ctx, "MODULE_ENABLED" if enabled else "MODULE_DISABLED", "module", "invoices",
                      {"invoices_enabled": before}, {"invoices_enabled": enabled}, category="SECURITY")
+    if enabled:                       # 2.4.0 (#252): common unit types and the built-in Discount item, once
+        from .invoice_catalog import ensure_seeded
+        ensure_seeded(db, ctx)
     return enabled
 
 

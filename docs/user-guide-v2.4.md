@@ -15,6 +15,19 @@ A small organization can give one person several roles; the Security page lists 
 Invoice Manager and Register User together, just so it is known. An Invoice Manager on their own sees the Register
 (read-only), Entities (customers) and Invoices.
 
+### The product catalog
+Invoices are built from the catalog, never typed by hand. On **Invoices → Product catalog**, an Invoice Manager adds:
+
+- **Products** — what you bill for (annual dues, a sponsorship level, an event fee): price, unit (each, hour,
+  month…), optional category and code, whether it is taxable, and the **Invoiced Income budget** the money goes to.
+  A *Miscellaneous* product is handy for one-off charges.
+- **Tax rates** — name, rate and the Invoiced Income budget the tax goes to.
+- **Unit types** and **Categories** — the lists the products use.
+
+A **Discount** item is built in. Nothing is deleted: inactivate what you no longer use (and restore it if needed).
+When a new Fiscal Year starts, copy or continue the Invoiced Income budgets so products follow them; a product shows
+**Needs budget** until its budget is continued (or you choose a new one).
+
 ## Invoiced Income budgets
 Money collected on invoices should go to budgets set aside for it. A Budget Manager marks an Income budget with
 **Mark as Invoiced Income** in the budget's row menu (Budgets page); its sub-budgets carry the mark too, and it shows
