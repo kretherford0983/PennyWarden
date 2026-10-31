@@ -193,7 +193,7 @@ PennyWarden 2.3.0 (in progress).
   letters keep signing with the check's signer by printed name; a typed fallback name (without variables) becomes a
   signer tagged for cover letters. Nothing prints differently.
 
-## 2.2.1 — unreleased
+## 2.2.1 — 2026-10-30
 Security hotfix for 2.2.0. No database migration; going back to 2.2.0 is just reinstalling it.
 - **pypdf 6.21.4 (seven advisories, CVE-2026-119203 to CVE-2026-119209).** A specially crafted PDF could make pypdf
   loop forever or use a very large amount of memory or time. PennyWarden opens PDFs that users attach (to include
