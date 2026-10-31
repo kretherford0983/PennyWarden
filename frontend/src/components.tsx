@@ -675,3 +675,27 @@ export function RowMenu({ name, actions }: { name: string; actions: (RowAction |
     </>
   );
 }
+
+// ------------------------------------------------------------------ 2.3.0 polish: the signer chosen when printing
+/** A letter's signing from the API (`signing`): asked only when its settings say "chosen when printing" and more than
+ * one signer is tagged for it. */
+export type Signing = { choice: string; ask: boolean; default_id: number | null; signers: { id: number; name: string; title: string }[] };
+
+/** The signer chosen for this print: the API's starting signer until the user picks another (null: none to send). */
+export function useSignerChoice(signing: Signing | null | undefined) {
+  const [picked, setPicked] = useState<number | null>(null);
+  const valid = !!signing?.ask && picked != null && signing.signers.some((s) => s.id === picked);
+  const value = signing?.ask ? (valid ? picked : signing.default_id) : null;
+  return { value, set: setPicked, body: value != null ? { signer_id: value } : {} };
+}
+
+export function SignerPicker({ signing, value, onChange, label = "Signed by", testId }: { signing: Signing | null | undefined; value: number | null; onChange: (id: number) => void; label?: string; testId?: string }) {
+  if (!signing?.ask) return null;
+  return (
+    <Field label={label}>
+      <select data-testid={testId} value={value ?? ""} onChange={(e) => onChange(Number(e.target.value))}>
+        {signing.signers.map((s) => <option key={s.id} value={s.id}>{s.name}{s.title ? ` (${s.title})` : ""}</option>)}
+      </select>
+    </Field>
+  );
+}

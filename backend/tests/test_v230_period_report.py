@@ -171,3 +171,31 @@ def test_pdf_pptx_audit_and_permissions(env, base, today):
     # commentary is limited
     r = env.bm.get("/api/reports/period", params={"fiscal_year_id": fy, "period": "Q2", "commentary": "x" * 2001})
     assert r.status_code == 422
+
+
+# ------------------------------------------------------------------ 2.3.0 polish (Kyle, 2026-10-31)
+def test_opening_balance_on_the_first_day_is_the_starting_balance(env, base, today):
+    """An Opening Balance Date on the Fiscal Year's first day is the year's starting balance (BR-043), as the
+    Register shows it; an account that started later has no starting balance."""
+    fy = base["fy"]["id"]
+    on_day = env.account(opening="250.00", opening_balance_date="2026-07-01", account_name="Savings on day one")
+    later = env.account(opening="40.00", opening_balance_date="2026-07-02", account_name="Savings day two")
+    env.txn(on_day["id"], "DEPOSIT", [{"budget_id": base["inc_leaf"], "amount": "10.00"}], date="2026-07-01")
+    rows = {a["id"]: a for a in _rep(env, fy, "ANNUAL")["accounts"]}
+    assert (rows[on_day["id"]]["start"], rows[on_day["id"]]["end"], rows[on_day["id"]]["change"]) == (25000, 26000, 1000)
+    assert rows[later["id"]]["start"] is None and rows[later["id"]]["end"] == 4000
+    reg = env.ru.get(f"/api/register?bank_account_id={on_day['id']}&fiscal_year_id={fy}").json()
+    assert reg["starting_balance"] == "250.00"                           # the same as the Register
+
+
+def test_income_above_budget_reads_as_above_budget(env, base, today):
+    fy = base["fy"]["id"]
+    env.txn(base["acct"]["id"], "DEPOSIT", [{"budget_id": base["inc_leaf"], "amount": "6000.00"}], date="2026-08-01")
+    env.txn(base["acct"]["id"], "WITHDRAWAL", [{"budget_id": base["exp_leaf"], "amount": "100.00"}], date="2026-08-02")
+    text = _flat(env.auditor.get("/api/reports/period", params={"fiscal_year_id": fy, "period": "Q1"}).content)
+    assert "+$1,000.00 above budget" in text and "-$1,000.00" not in text
+    assert "$99,900.00" in text                                          # expense under budget: unchanged
+    r = env.auditor.get("/api/reports/period", params={"fiscal_year_id": fy, "period": "ANNUAL", "format": "pptx"})
+    prs = Presentation(io.BytesIO(r.content))
+    cells = [c.text for s in prs.slides for sh in s.shapes if sh.has_table for row in sh.table.rows for c in row.cells]
+    assert "+$1,000.00 above budget" in cells and "-$1,000.00" not in cells

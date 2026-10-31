@@ -23,7 +23,7 @@ from . import fundraiser_deck as deck
 from .common import GROSS_BUDGET_NOTE
 from .fundraiser_summary import _band, _table, _tile, heading, safe_name
 
-from .reports import FRAME_W, P, S, _AuditDoc, _Mark, _stamp_and_write
+from .reports import FRAME_W, P, PM, S, _AuditDoc, _Mark, _stamp_and_write
 from .reports import money as cm
 
 DASH = "—"
@@ -82,6 +82,24 @@ def notes_lines(rep: dict) -> list[str]:
 
 
 # ------------------------------------------------------------------ PDF
+OU_NOTE = ("Over / under = budgeted − actual: an expense budget below zero is over budget; income received above "
+           "its budget shows as +$X above budget, as elsewhere in the app.")
+
+
+def ou_text(key: str, cents: int) -> str:
+    """2.3.0 polish (Kyle, 2026-10-31): Over / under as the rest of the app shows it - income received above budget is
+    "+$X above budget" (CR-019), not a negative amount; an expense over budget stays negative."""
+    if key == "income" and cents < 0:
+        return f"+{cm(-cents)} above budget"
+    return cm(cents)
+
+
+def _ou_cell(key: str, cents: int, bold: bool = False):
+    if key == "income" and cents < 0:
+        return PM(f'<font color="#1d6b2c"><b>+{escape(cm(-cents))}</b> above budget</font>', "cellr")
+    return P(cm(cents), "cellr")
+
+
 def _hdr(cells: list[str]) -> list:
     """Header cells: the first left-aligned, the figures right-aligned (as their columns)."""
     return [P(c, "cellb" if i == 0 else "fs_rb") for i, c in enumerate(cells)]
@@ -104,12 +122,12 @@ def _budget_table(rep: dict, key: str, W: float) -> list:
     def cells(x: dict, label: str) -> list:
         if rep["annual"]:
             row = [P(label, "cell"), *[P(cm(v), "cellr") for v in x["columns"]], P(cm(x["ytd"]), "cellr"),
-                   P(cm(x["budgeted"]), "cellr"), P(cm(x["remaining"]), "cellr")]
+                   P(cm(x["budgeted"]), "cellr"), _ou_cell(key, x["remaining"])]
             if prior:
                 row.append(P(_m(x["prior_ytd"]), "cellr"))
         else:
             row = [P(label, "cell"), P(cm(x["columns"][0]), "cellr"), P(cm(x["budgeted"]), "cellr"),
-                   P(cm(x["ytd"]), "cellr"), P(cm(x["remaining"]), "cellr")]
+                   P(cm(x["ytd"]), "cellr"), _ou_cell(key, x["remaining"])]
             if prior:
                 row += [P(_m(x["prior_period"]), "cellr"), P(_m(x["prior_ytd"]), "cellr")]
         return row
@@ -212,7 +230,7 @@ def build_pdf(org: str, rep: dict) -> tuple[bytes, _AuditDoc]:
         f += [Spacer(1, 8), *heading(f"{label} budgets", "h2")]
         if key == "income":
             f.append(P("The Fiscal Year's budgets with their sub-budgets (Rejected or Inactive ones only when they have "
-                       "activity). Over / under = budgeted − actual; negative = over budget.", "small"))
+                       "activity). " + OU_NOTE, "small"))
         f += _budget_table(rep, key, W)
     if rep["budgets"]["budget_zero"]:
         f.append(P(f"Budget 0 (transfers and other non-budget activity) year to date: "
@@ -353,9 +371,10 @@ def build_pptx(org: str, rep: dict) -> bytes:
         rows = []
         for r in sec["rows"]:
             for x, ind in [(r, ""), *[(c, "   ") for c in r["children"]]]:
-                rows.append([ind + x["label"], *([cm(v) for v in x["columns"]]), cm(x["ytd"]), cm(x["budgeted"]), cm(x["remaining"])])
+                rows.append([ind + x["label"], *([cm(v) for v in x["columns"]]), cm(x["ytd"]), cm(x["budgeted"]),
+                             ou_text(key, x["remaining"])])
         t = sec["total"]
-        rows.append(["Total", *[cm(v) for v in t["columns"]], cm(t["ytd"]), cm(t["budgeted"]), cm(t["remaining"])])
+        rows.append(["Total", *[cm(v) for v in t["columns"]], cm(t["ytd"]), cm(t["budgeted"]), ou_text(key, t["remaining"])])
         head = ["Budget", *(b["columns"] if rep["annual"] else ["Quarter"]), "YTD actual" if not rep["annual"] else "Actual",
                 "Budgeted", "Over / under"]
         n = len(head) - 1
@@ -366,7 +385,7 @@ def build_pptx(org: str, rep: dict) -> bytes:
             deck._table(sl, Inches(0.6), Inches(1.7), Inches(12.1), [head] + part, widths, set(range(1, len(head))),
                         bold_rows=[i + 1 for i, r in enumerate(part) if r[0] == "Total"], size=11)
             deck._text(sl, Inches(0.6), Inches(6.75), Inches(12.1), Inches(0.5), GROSS_BUDGET_NOTE, size=11, color=deck.C.GREY)
-            deck._notes(sl, ["Over / under = budgeted − actual; negative = over budget.", GROSS_BUDGET_NOTE])
+            deck._notes(sl, [OU_NOTE, GROSS_BUDGET_NOTE])
     # 5. fundraisers
     fr = rep["fundraisers"]
     if fr["enabled"]:

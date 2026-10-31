@@ -128,6 +128,25 @@ could not otherwise be corrected. Scope and safeguards:
   with a link; the variable picker completes dotted names.
 - Tests: `backend/tests/test_v210_organization.py` (6, including the data migration) and the E2E #126 and #312 steps.
 
+**2.3.0 polish — The signer chosen when printing (#395 follow-up, decided with Kyle 2026-10-31).**
+A letter's signer can be left to the Register User when printing, for donation receipts, year-end statements and
+payment cover letters.
+- Settings: donation receipts `signer_choice` FIXED | AT_PRINT; statements `statement_signer_choice` (None = the
+  receipt's); cover letters a third `signer_source`, AT_PRINT. The setting's signer is the default and stays
+  required while a signature is printed.
+- The print screen asks only when more than one active signer is tagged for the area; with one, that one signs.
+  `signers.signing_out` gives each screen `{choice, ask, signers, default_id}`; `signers.chosen` checks the pick
+  (tagged for the area, active, in the workspace - BR-078/BR-099). A pick while the setting is Fixed, or for a letter
+  printed without a signature, is refused (BR-098).
+- Where the choice starts: a reprinted receipt or statement starts from the signer of the copy it reprints (Kyle);
+  Print all statements takes one signer for the batch; a cover letter starts from the check's signer when that one is
+  tagged for cover letters, else the template's default. API fields: `signer_id` on the receipt/statement print and
+  preview bodies, `letter_signer_id` on the cover letter print (`signer_id` there stays the check's signer).
+- Migration `0069` adds `signer_id` (plain integer, like `printed_by_user_id`) to `donation_receipt` and
+  `donation_statement`; the printed audit events record it. A different signer does not make a new receipt number:
+  the signature is not part of the content compared for Duplicate/Corrected.
+- Tests: `backend/tests/test_v230_signer_at_print.py` (7).
+
 **2.3.0 build 15 — Budget History: years included in another budget (#414, decided with Kyle 2026-10-30).**
 - Kyle: any budget of the same type at any level; years before **and** in PennyWarden; shown only on the marked
   budget; not counted in Avg; #415's automatic *history on parent* stays where nothing is marked.
@@ -152,6 +171,23 @@ could not otherwise be corrected. Scope and safeguards:
   restore (#319) restores them with the data (`partial_restore.DATA_TABLES`).
 - Tests: `backend/tests/test_v230_history_included.py` (5) and the E2E step "#414".
 
+**2.3.0 polish — Letters that run onto a second page (decided with Kyle 2026-10-31).**
+A signature pushed alone onto page 2 looked odd. `services/letter_fit.py` lays out donation receipts, year-end
+statements and payment cover letters:
+- Fit when close: a letter laid out on two letter pages is tried again with spacing between sections at 60%, then
+  0.5 pt and 1 pt smaller type (not below 8 pt); the first that fits one page is used. Three or more pages are not
+  squeezed. `FixedSpacer` keeps the window-envelope offset, pre-printed letterhead margin and the room to sign by
+  hand at full height.
+- Keep with the last paragraph: the letter's last paragraph (the last paragraph inside the acknowledgment block, or
+  a cover letter's last closing paragraph) is kept together with the closing/sign-off and signature. Tables are
+  never pulled along. The acknowledgment table itself stays one block, as before.
+- Continuation: when more than one letter page remains, later pages carry "<organization> · <document> · Page N of
+  M" at the top left (clear of the DUPLICATE/CORRECTED mark) and page 1 "Continued on page 2" at the bottom. The
+  address-only page of a double-window layout isn't counted. Fold marks on the back are added after the layout.
+- Receipts and statements build their middle from the settings (`_receipt_middle`, `_statement_middle`) so the
+  smaller type can be tried. Nothing in the settings or data changes; no migration.
+- Tests: `backend/tests/test_v230_letter_page_breaks.py` (7).
+
 **2.3.0 build 14 — Push builds skip the repeated test suite (#420, Kyle 2026-10-30).**
 - `build.yml`: the `tests` job runs only on `workflow_dispatch`; `package`, `windows-exe`, `macos-app`, `assemble`,
   `publish` and `site` use `!failure() && !cancelled()` (a skipped job otherwise skips everything that depends on it,
@@ -162,12 +198,36 @@ could not otherwise be corrected. Scope and safeguards:
   nothing is lost there.
 - No spec impact (CI only).
 
+**2.3.0 polish — Quarterly / Annual report fixes (#373 follow-up, Kyle 2026-10-31).**
+- Over / under: income received above its budget prints "+$X above budget" (green in the PDF, as reports.py's
+  CR-019 cell), not a negative amount; an expense over budget stays negative. The note under the tables says so
+  (`period_report_output.ou_text`, `_ou_cell`, `OU_NOTE`). The data (`remaining`) is unchanged.
+- Starting balance: `period_report._balance` returned "no data" for the day before a register account's Opening
+  Balance Date, so an opening balance dated on the Fiscal Year's first day showed a dash. The opening balance is the
+  balance at the start of its date (the end of the day before), as `bank.available_cents` and the Register's
+  starting balance already treat it (BR-043); only days before that are "no data".
+- Tests: two more in `backend/tests/test_v230_period_report.py`.
+
 **2.3.0 build 13 — Users: filters and sortable columns (#409, Kyle 2026-10-29).**
 - Client-side on the already-loaded list (`pages/Users.tsx`): Roles (multi-select, OR), Security domain, Status
   (`ACTIVE` / `DISABLED` / `LOCKED` = active with `locked_until` in the future), combined with the search (AND).
   Sortable headings as in the register (`aria-sort`, a button per heading); default Last name ascending; empty values
   last either way; ties by last name, first name, username. Not remembered between visits. No API or data change.
 - Test: E2E "#134" extended (roles OR, domain, status, clear, sort and reverse).
+
+**2.3.0 polish — Budget Review PDF: every column on one page; letter or legal (Kyle, 2026-10-31).**
+- Avg and the current year always print. Prior years + Projected + Next year's budget may add up to
+  `budget_planning.pdf_max_added(paper)` = 6 on landscape letter and 9 on landscape legal. That number comes from the
+  page geometry: (frame width − 0.95 in label) // 1.0 in minimum column − 2 fixed columns.
+- A PDF over the limit is refused (`check_pdf_fits`, 422 on `years`) before anything is generated or audited. The
+  JSON gives `added_columns` and `pdf_max_added` for the screen, and the audit summary records `paper`.
+- `years` is 0–9 (`REVIEW_MAX_YEARS`); `-1` ("every linked year") was removed. The screen offers prior years up to
+  the paper's limit, less Projected and Next year. A saved option from Recently run is clamped: "all" becomes the
+  most that fits.
+- The Planning Sheet's appended review (3 years + Projected + Next) stays on letter.
+- The banding code ("Columns 1 of 2") remains for a review produced internally, but the API never reaches it.
+- Tests: `backend/tests/test_v230_review_pdf_columns.py`. `years=-1` in the 2.1.0 tests became `years=9`. The E2E
+  #382 step checks the options and runs on legal with 9 years.
 
 **2.3.0 build 12 — Report settings: configurable report grouping (#376).**
 - New business rule (recorded here; spec docs aren't changed in the repo): **report grouping is workspace
