@@ -2124,7 +2124,7 @@ test("CR-033: Administrator turns on fundraisers; Budget Manager creates, filter
   let dlg = page.getByRole("dialog", { name: "New event or fundraiser" });
   await dlg.getByLabel("Name").fill("Harvest Dinner");
   // 2.4.0 (#429): a dinner that isn't a fundraiser - an Event needs only an Expense budget
-  await dlg.getByLabel("Type", { exact: true }).selectOption("EVENT");
+  await dlg.getByRole("combobox", { name: /^Type/ }).selectOption("EVENT");
   await expect(dlg.getByLabel("Goal (optional)")).toHaveCount(0);
   await dlg.getByLabel("Event start date").fill("2026-10-15");
   const exp = dlg.getByLabel("Expense budget (FY2027)");
