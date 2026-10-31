@@ -486,7 +486,8 @@ class Attachment(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
     original_filename: Mapped[str] = mapped_column(String(255))
-    storage_key: Mapped[str] = mapped_column(String(80), unique=True)  # application generated
+    # application generated; 2.4.0 (#425): shared by every attachment record with identical content (not unique)
+    storage_key: Mapped[str] = mapped_column(String(80), index=True)
     mime_type: Mapped[str] = mapped_column(String(40))
     size_bytes: Mapped[int] = mapped_column(Integer)
     sha256: Mapped[str] = mapped_column(String(64))
@@ -511,6 +512,8 @@ class Attachment(Base):
     system_generated: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
     # 2.1.0 (#259): position among its owner's attachments; None = upload order (listed by COALESCE(sort_order, id))
     sort_order: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    __table_args__ = (Index("ix_attachment_workspace_sha256", "workspace_id", "sha256"),)   # 2.4.0 (#425)
 
 
 class RequestKey(Base):

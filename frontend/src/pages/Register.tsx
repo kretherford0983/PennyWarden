@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useRef, useState, type FormEvent } from "react";
 import { api, money, newRequestKey, qs, todayIso } from "../api";
-import { allocationLabel, Attachments, EntityPicker, ErrorBox, Field, Loading, Modal, PendingFiles, useConfirmable, GuardedForm } from "../components";
+import { allocationLabel, Attachments, EntityPicker, ErrorBox, Field, Loading, Modal, PendingFiles, useConfirmable, GuardedForm, useAttachmentUpload } from "../components";
 import { useMe } from "../App";
 import { EntityForm } from "./Entities";
 import { NO_PAYMENT_DOCUMENTS, PrintCheckDialog } from "./CheckPrint";
@@ -336,6 +336,7 @@ export function TxnForm({ account, txn, initial, fys, onClose, onSaved, payment,
   const [typeDlg, setTypeDlg] = useState<string | null>(null);
   const [newEnt, setNewEnt] = useState(false);
   const { run, dialog } = useConfirmable();
+  const dup = useAttachmentUpload();   // 2.4.0 (#425): the same file twice on one record - Cancel / Attach anyway
   const requestKey = useRef(newRequestKey()).current; // CR-011: repeated submits of this form create one transaction
   const loadEntities = () => api.get("/api/entities?status=active").then(setEntities);
   useEffect(() => { loadEntities(); }, []);
@@ -417,7 +418,7 @@ export function TxnForm({ account, txn, initial, fys, onClose, onSaved, payment,
       }
       const failed: string[] = [];
       for (const [ot, oid, f] of jobs) {
-        try { await api.upload(`/api/attachments${qs({ owner_type: ot, owner_id: oid })}`, f); }
+        try { await dup.upload(`/api/attachments${qs({ owner_type: ot, owner_id: oid })}`, f); }   // #425: Cancel = skip
         catch (x: any) { failed.push(`${f.name}: ${x?.message || "upload failed"}`); }
       }
       if (failed.length) { setUploadIssues({ id: saved.id, failed }); setSavedTxn(saved); }
@@ -547,6 +548,7 @@ export function TxnForm({ account, txn, initial, fys, onClose, onSaved, payment,
         <div className="actions">{!isNew ? <DeleteTxnButton txn={txn} onDeleted={onSaved} /> : null}<button type="button" onClick={onClose}>Cancel</button><button className="primary" type="submit">{payment ? (h.electronic_payment ? "Save payment" : "Save and print check") : "Save"}</button></div>
       </GuardedForm>
       {dialog}
+      {dup.dialog}
       {noAttDlg !== null ? (
         <Modal title="No attachment?" onClose={() => setNoAttDlg(null)}>
           <div className="alert warn" role="alert">Transactions should have supporting documentation (receipt, invoice, statement). Only mark this when no document is available — for example interest or other amounts deposited directly by the bank. The transaction will be listed as a Fiscal Year review warning.</div>

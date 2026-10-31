@@ -384,17 +384,12 @@ def _keep(db: Session, ctx, settings, x: dict, pdf: bytes) -> tuple[DonationStat
                           printed_by_user_id=ctx.user.id, printed_at=utcnow())
     db.add(s)
     db.flush()
-    key, path = att_svc._write_file(settings, pdf)
     suffix = "-duplicate" if x["kind"] == dn.DUPLICATE else ""
-    att = Attachment(workspace_id=ctx.workspace_id,
-                     original_filename=att_svc.sanitize_filename(f"statement-{x['number']}{suffix}.pdf"),
-                     storage_key=key, mime_type="application/pdf", size_bytes=len(pdf),
-                     sha256=hashlib.sha256(pdf).hexdigest(), uploaded_by_user_id=ctx.user.id, active=True,
-                     donation_statement_id=s.id, document_type=STATEMENT_COPY, system_generated=True)
-    db.add(att)
-    db.flush()
+    att, path = att_svc.new_record(db, ctx, settings, pdf,
+                                   original_filename=att_svc.sanitize_filename(f"statement-{x['number']}{suffix}.pdf"),
+                                   mime_type="application/pdf", donation_statement_id=s.id,
+                                   document_type=STATEMENT_COPY, system_generated=True)
     s.attachment_id = att.id
-    audit.record(db, ctx, "ATTACHMENT_ADDED", "attachment", att.id, None, att_svc.snapshot(att))
     audit.record(db, ctx, "DONATION_STATEMENT_PRINTED", "donation_statement", s.id, None,
                  {"statement_id": s.id, "number": s.number, "kind": s.kind, "year": s.year, "donor_entity_id": e.id,
                   "total_cents": s.total_cents, "goods_cents": s.goods_cents, "gifts": s.gifts, "items": s.items,
@@ -408,10 +403,11 @@ def _commit(db: Session, paths: list) -> None:
     except Exception:
         db.rollback()
         for p in paths:
-            try:
-                p.unlink()
-            except OSError:
-                pass
+            if p is not None:          # #425: None = linked to an already stored file, never removed
+                try:
+                    p.unlink()
+                except OSError:
+                    pass
         raise
 
 
@@ -540,15 +536,10 @@ def print_envelope(db: Session, ctx, settings, s: DonationStatement, doc_id: int
     if db.scalar(select(Attachment).where(Attachment.donation_statement_id == s.id,
                                           Attachment.document_type == ENVELOPE_COPY,
                                           Attachment.sha256 == sha)) is None:
-        key, path = att_svc._write_file(settings, copy_pdf)
-        att = Attachment(workspace_id=ctx.workspace_id,
-                         original_filename=att_svc.sanitize_filename(f"envelope-{s.number}.pdf"), storage_key=key,
-                         mime_type="application/pdf", size_bytes=len(copy_pdf), sha256=sha,
-                         uploaded_by_user_id=ctx.user.id, active=True, donation_statement_id=s.id,
-                         document_type=ENVELOPE_COPY, system_generated=True)
-        db.add(att)
-        db.flush()
-        audit.record(db, ctx, "ATTACHMENT_ADDED", "attachment", att.id, None, att_svc.snapshot(att))
+        _att, path = att_svc.new_record(db, ctx, settings, copy_pdf,
+                                        original_filename=att_svc.sanitize_filename(f"envelope-{s.number}.pdf"),
+                                        mime_type="application/pdf", donation_statement_id=s.id,
+                                        document_type=ENVELOPE_COPY, system_generated=True)
         added = True
     audit.record(db, ctx, "DONATION_ENVELOPE_PRINTED", "donation_statement", s.id, None,
                  {"statement_id": s.id, "document_id": doc.id, "donor_entity_id": e.id, "return_address": use_return,

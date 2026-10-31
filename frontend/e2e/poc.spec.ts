@@ -727,6 +727,8 @@ test("#373: the Quarterly / Annual financial report - period choice, commentary,
 
 // ---------------------------------------------------------------- v1.3 enhancements
 const PDF = Buffer.from("%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[]/Count 0>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n");
+// 2.4.0 (#425): a PDF with content of its own (the same file twice on one record asks first)
+const pdfOf = (tag: string) => Buffer.from(PDF.toString("latin1").replace("%PDF-1.4\n", `%PDF-1.4\n% ${tag}\n`), "latin1");
 
 async function pickTravel(dlg: any, i = 1) {
   await dlg.getByLabel(`Allocation ${i} Fiscal Year`).selectOption({ label: "FY2027 — Draft" });
@@ -817,7 +819,7 @@ test("CR-007 / CR-008: Fiscal Year document types, approval rules and the Close 
   await dlg.getByRole("button", { name: "Approve" }).click();
   await expect(page.getByRole("heading", { name: /FY2031/, level: 1 })).toContainText("Approved");
   // an "other" document can be re-labelled as the Audit Signoff
-  await page.getByLabel(/Add other document/).setInputFiles({ name: "auditor-letter.pdf", mimeType: "application/pdf", buffer: PDF });
+  await page.getByLabel(/Add other document/).setInputFiles({ name: "auditor-letter.pdf", mimeType: "application/pdf", buffer: pdfOf("auditor-letter") });
   await page.getByLabel("Document type of auditor-letter.pdf").selectOption("AUDIT_SIGNOFF");
   const signoff = page.locator(".fy-docs section.attachments", { has: page.getByRole("heading", { name: /Audit Signoff/ }) });
   await expect(signoff).toContainText("auditor-letter.pdf");
@@ -983,10 +985,20 @@ test("2.1.0 (#262, #260, #259): register sort, electronic payment, reorder attac
   // #259: two attachments, reordered
   await row.getByRole("button", { name: /Details for transaction/ }).click();
   const files = page.locator("section.attachments").filter({ hasText: "Transaction attachments" }).first();
-  for (const n of ["first-invoice.pdf", "second-receipt.pdf"]) {
-    await files.locator("input[type=file]").setInputFiles({ name: n, mimeType: "application/pdf", buffer: PDF });
-    await expect(files).toContainText(n);
-  }
+  await files.locator("input[type=file]").setInputFiles({ name: "first-invoice.pdf", mimeType: "application/pdf", buffer: PDF });
+  await expect(files).toContainText("first-invoice.pdf");
+  // 2.4.0 (#425): the identical file again on the same transaction asks first - Cancel adds nothing
+  await files.locator("input[type=file]").setInputFiles({ name: "second-receipt.pdf", mimeType: "application/pdf", buffer: PDF });
+  let same = page.getByRole("dialog", { name: "Same file already attached" });
+  await expect(same).toContainText("first-invoice.pdf");
+  await same.getByRole("button", { name: "Cancel" }).click();
+  await expect(same).toHaveCount(0);
+  await expect(files).not.toContainText("second-receipt.pdf");
+  // ... Attach anyway adds it
+  await files.locator("input[type=file]").setInputFiles({ name: "second-receipt.pdf", mimeType: "application/pdf", buffer: PDF });
+  same = page.getByRole("dialog", { name: "Same file already attached" });
+  await same.getByRole("button", { name: "Attach anyway" }).click();
+  await expect(files).toContainText("second-receipt.pdf");
   await files.getByRole("button", { name: "Reorder…" }).click();
   const order = page.locator("section.attachments").filter({ hasText: "set the order" });
   await order.getByRole("button", { name: "Move second-receipt.pdf up" }).click();

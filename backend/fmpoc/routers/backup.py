@@ -427,6 +427,11 @@ def run_restore(app, job, up: dict, passphrase: str, actor: dict) -> None:
         job.advance("Restarting the application")
         engine = make_engine(settings.database_url)
         factory = make_session_factory(engine)
+        try:   # 2.4.0 (#425): a backup from an earlier version may hold identical files more than once
+            from ..services.attachments import merge_duplicate_files
+            merge_duplicate_files(factory, settings)
+        except Exception:  # noqa: BLE001 - tried again at the next start
+            pass
         with factory() as s:
             now = utcnow()
             s.execute(update(AuthSession).where(AuthSession.revoked_at.is_(None)).values(revoked_at=now))

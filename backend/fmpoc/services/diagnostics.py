@@ -75,7 +75,28 @@ def migration_state(db: Session, settings) -> dict:
 def storage(db: Session, settings) -> dict:
     att, att_files = dir_size(settings.attachments_dir)
     return {"database_bytes": database_size(settings), "attachments_bytes": att, "attachment_files": att_files,
-            "disk": disk(settings), "migrations": migration_state(db, settings)}
+            **shared_attachment_files(db), "disk": disk(settings), "migrations": migration_state(db, settings)}
+
+
+def shared_attachment_files(db: Session) -> dict:
+    """2.4.0 (#425): counts only - how many attachment records exist, how many stored files more than one of them
+    shares, and the space deduplication saved (no file names or owners)."""
+    from sqlalchemy import func, select
+
+    from ..models import Attachment
+    per_file = (select(Attachment.storage_key, func.count(Attachment.id).label("n"),
+                       func.max(Attachment.size_bytes).label("size")).group_by(Attachment.storage_key).subquery())
+    records, shared, saved = db.execute(select(
+        func.coalesce(func.sum(per_file.c.n), 0),
+        func.coalesce(func.sum(case_when(per_file.c.n > 1, 1)), 0),
+        func.coalesce(func.sum((per_file.c.n - 1) * per_file.c.size), 0))).one()
+    return {"attachment_records": int(records), "attachment_shared_files": int(shared),
+            "attachment_bytes_saved": int(saved)}
+
+
+def case_when(cond, value):
+    from sqlalchemy import case
+    return case((cond, value), else_=0)
 
 
 # ------------------------------------------------------------------ scrubbing

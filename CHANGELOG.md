@@ -2,6 +2,24 @@
 
 Versions are `Breaking.Major.Minor` from 1.6.0 (docs/branching.md).
 
+## 2.4.0 — unreleased
+PennyWarden 2.4.0 (in progress).
+
+### Attachments
+- **Identical files are stored once (#425).** When you attach a file that is already stored anywhere in PennyWarden,
+  the file is not saved to disk again: the new attachment is linked to the stored copy. Nothing changes on screen —
+  each record still has its own attachment, with its own name, uploader and date, and removing it never affects
+  another record. PennyWarden's own saved PDFs (Close report, check record copies, receipt, statement and envelope
+  copies) follow the same rule. The audit log notes when an added attachment shares a stored file.
+- **Same file twice on one record asks first.** If the file you pick is already attached to the record you are
+  adding it to, PennyWarden asks *Same file already attached* — **Cancel** (nothing is added; pick the file you
+  meant) or **Attach anyway**. A match on a different record never asks.
+- **The upgrade merges existing duplicates.** At the first start after the upgrade (after the installer's pre-upgrade
+  backup), attachments with identical content are linked to one stored file and the extra copies are removed. Each
+  file's checksum is verified first; a file that no longer matches its recorded checksum is left alone and reported in
+  the log and the audit event. A restore of a backup from an earlier version is merged the same way.
+- System/About → **Health** shows how many files are shared and the space saved.
+
 ## 2.3.0 — unreleased
 PennyWarden 2.3.0 (in progress).
 
