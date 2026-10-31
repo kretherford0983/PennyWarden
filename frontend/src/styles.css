@@ -421,6 +421,13 @@ fieldset.keep { border: 1px solid var(--border, #d0d7de); border-radius: 6px; pa
 .num-in .unit { font-size: 11px; color: var(--muted); }
 .field-table td { white-space: nowrap; }
 .field-table select { max-width: 150px; }
+/* 2.3.0 polish: Check Setup's Feed modes table fits its half of the two-column setup layout - the details stack,
+   the text boxes shrink, the offsets don't wrap; at the narrowest it scrolls inside its section */
+.feed-modes td { vertical-align: top; }
+.feed-modes .feed-details { display: flex; flex-direction: column; align-items: stretch; gap: 0.35rem; min-width: 9rem; }
+.feed-modes .feed-details select { width: 100%; min-width: 0; }
+.feed-modes input[aria-label="Feed mode label"], .feed-modes input[aria-label="Printer note"] { width: 100%; min-width: 7rem; }
+.feed-modes td:nth-child(4), .feed-modes td:nth-child(5) { white-space: nowrap; }
 /* #214: a sticky action bar is a solid footer across the whole content area, down to the window's edge - nothing
    scrolls visibly behind, beside or below it (it covers the content area's padding) */
 .sticky-actions { position: sticky; bottom: calc(-1 * var(--pad-y, 16px)); z-index: 7; background: var(--bg);

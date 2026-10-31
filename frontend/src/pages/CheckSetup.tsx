@@ -497,14 +497,16 @@ function StyleEditor({ setup, style, onClose, onSaved }: { setup: any; style: an
         <Section id="feed" title="Feed modes">
           <p className="hint">How the paper goes into the printer. The user picks one when printing (the sheet counter suggests it). The offset moves everything on the
             check (right / down positive) for this feed mode only; each user can also save a small adjustment for their own printer.</p>
-          <table className="table compact">
+          {/* 2.3.0 polish: kept inside its section (scrolls sideways if it must) - it no longer runs into the preview */}
+          <div className="table-wrap">
+          <table className="table compact feed-modes">
             <thead><tr><th>Label</th><th>Kind</th><th>Details</th><th>Offset right</th><th>Offset down</th><th>Printer note</th><th /></tr></thead>
             <tbody>
               {cfg.feed_modes.map((m: any, i: number) => (
                 <tr key={m.key}>
                   <td><input aria-label="Feed mode label" maxLength={60} value={m.label} onChange={(e) => change((c) => { c.feed_modes[i].label = e.target.value; })} /></td>
                   <td>{m.kind === "SHEET" ? "Sheet" : "Single check"}</td>
-                  <td>
+                  <td className="feed-details">
                     {m.kind === "SHEET" ? (
                       <select aria-label="Position on the sheet" value={m.position} onChange={(e) => change((c) => { c.feed_modes[i].position = Number(e.target.value); })}>
                         {cfg.stock.check_tops.map((_: number, p: number) => <option key={p} value={p}>{["Top", "Middle", "Bottom"][p] || `#${p + 1}`} check</option>)}
@@ -513,10 +515,10 @@ function StyleEditor({ setup, style, onClose, onSaved }: { setup: any; style: an
                       <>
                         <select aria-label="Which end feeds first" value={m.lead} onChange={(e) => change((c) => { c.feed_modes[i].lead = e.target.value; })}>
                           <option value="DATE_END">Date end first</option><option value="PAYTO_END">Pay-to end first</option>
-                        </select>{" "}
+                        </select>
                         <select aria-label="Page size" value={m.page} onChange={(e) => change((c) => { c.feed_modes[i].page = e.target.value; })}>
                           <option value="LETTER">Letter page (no printer setup needed)</option><option value="CHECK">Check-sized page</option>
-                        </select>{" "}
+                        </select>
                         {m.page === "LETTER" ? (
                           <select aria-label="Manual-feed guides" value={m.guide} onChange={(e) => change((c) => { c.feed_modes[i].guide = e.target.value; })}>
                             <option value="CENTER">Guides center the paper</option><option value="LEFT">Against the left guide</option><option value="RIGHT">Against the right guide</option>
@@ -533,6 +535,7 @@ function StyleEditor({ setup, style, onClose, onSaved }: { setup: any; style: an
               ))}
             </tbody>
           </table>
+          </div>
           <div className="actions left">
             <button className="small" onClick={() => change((c) => { c.feed_modes.push({ key: `sheet_${Date.now() % 100000}`, label: "Sheet – middle check", kind: "SHEET", position: Math.min(1, c.stock.check_tops.length - 1), lead: "DATE_END", page: "LETTER", guide: "CENTER", dx: 0, dy: 0, note: null }); })}
                     disabled={cfg.feed_modes.length >= 6}>Add sheet feed mode</button>
