@@ -59,6 +59,10 @@ PennyWarden 2.3.0 (in progress).
   current-year, projection and next-year columns show —. Lines follow the continuation links, never the code, so a
   reused code is never merged with an unrelated budget. On the screen, in the PDF and the CSV (and so in the review
   appended to the Planning Sheet). A review of one budget or one parent is unchanged.
+- **Budget Review PDF on one page across.** Choose the PDF paper — letter or legal, both landscape — with the other
+  options. Prior years, *Projected* and *Next year's budget* can add up to 6 columns on letter and 9 on legal, so
+  every column stays on the page (it used to continue the columns on the next page); the Prior years list offers only
+  what fits. Prior years run 0–9 — *All linked years* is gone, and a saved "all" becomes the most that fits.
 - **Estimated years before PennyWarden (#390).** A budget year entered from before PennyWarden (*Add an earlier
   year*, *Before PennyWarden*, *Correct*) has an **Estimated** box; when it is ticked a note saying why is required.
   The CSV import takes an optional *estimated* column (yes/no; an estimated row needs a note). The year is marked

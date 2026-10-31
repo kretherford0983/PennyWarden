@@ -169,6 +169,20 @@ could not otherwise be corrected. Scope and safeguards:
   last either way; ties by last name, first name, username. Not remembered between visits. No API or data change.
 - Test: E2E "#134" extended (roles OR, domain, status, clear, sort and reverse).
 
+**2.3.0 polish — Budget Review PDF: every column on one page; letter or legal (Kyle, 2026-10-31).**
+- Avg and the current year always print. Prior years + Projected + Next year's budget may add up to
+  `budget_planning.pdf_max_added(paper)` = 6 on landscape letter and 9 on landscape legal. That number comes from the
+  page geometry: (frame width − 0.95 in label) // 1.0 in minimum column − 2 fixed columns.
+- A PDF over the limit is refused (`check_pdf_fits`, 422 on `years`) before anything is generated or audited. The
+  JSON gives `added_columns` and `pdf_max_added` for the screen, and the audit summary records `paper`.
+- `years` is 0–9 (`REVIEW_MAX_YEARS`); `-1` ("every linked year") was removed. The screen offers prior years up to
+  the paper's limit, less Projected and Next year. A saved option from Recently run is clamped: "all" becomes the
+  most that fits.
+- The Planning Sheet's appended review (3 years + Projected + Next) stays on letter.
+- The banding code ("Columns 1 of 2") remains for a review produced internally, but the API never reaches it.
+- Tests: `backend/tests/test_v230_review_pdf_columns.py`. `years=-1` in the 2.1.0 tests became `years=9`. The E2E
+  #382 step checks the options and runs on legal with 9 years.
+
 **2.3.0 build 12 — Report settings: configurable report grouping (#376).**
 - New business rule (recorded here; spec docs aren't changed in the repo): **report grouping is workspace
   configuration; every report belongs to exactly one category of the active scheme; grouping is display-only and

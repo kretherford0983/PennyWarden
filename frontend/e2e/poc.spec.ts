@@ -1919,7 +1919,7 @@ test("#284: a Budget Manager enters years before PennyWarden on History and impo
   await expect(imp.getByRole("status")).toContainText("1 year was entered.");
   await imp.getByRole("button", { name: "Done" }).click();
   // the Budget Review shows the entered years after the PennyWarden ones, labelled entered
-  const rep = await (await page.request.get(`/api/reports/budget-review?fiscal_year_id=${f41.id}&years=-1`)).json();
+  const rep = await (await page.request.get(`/api/reports/budget-review?fiscal_year_id=${f41.id}&years=9`)).json();
   const entered = rep.years.filter((y: any) => y.entered).map((y: any) => y.display_name);
   expect(entered).toEqual(expect.arrayContaining([y1, y2]));
   const row = rep.expense.find((r: any) => r.code === "8900");
@@ -1941,7 +1941,13 @@ test("#382: the Budget Review lists a budget of the years shown that is not in t
   await page.goto("/reports");
   await page.getByRole("link", { name: "Budget Review", exact: true }).click();
   await page.getByLabel("Budget Review Fiscal Year").selectOption(String(f41.id));
-  await page.getByLabel("Prior years").selectOption("-1");
+  // 2.3.0 polish: prior years follow the PDF paper - up to 6 on letter (less Projected / Next year), 9 on legal
+  await expect(page.getByLabel("Prior years").locator("option")).toHaveCount(7);
+  await page.getByLabel("Projected column").check();
+  await expect(page.getByLabel("Prior years").locator("option")).toHaveCount(6);
+  await page.getByLabel("Projected column").uncheck();
+  await page.getByLabel("PDF paper").selectOption("LEGAL");
+  await page.getByLabel("Prior years").selectOption("9");
   await page.getByRole("button", { name: "Run report" }).click();
   const table = page.locator(".budget-review").getByRole("table", { name: "Budget Review" });
   const head = table.locator("th", { hasText: "460 Darts League" });
@@ -2048,7 +2054,7 @@ test("#414: a year whose money was included in another budget is marked on Histo
   await expect(row).toContainText(y);
   await expect(row).toContainText("Included in 460 Club nights");
   // the Budget Review shows the text in that year, not "—", and leaves the year out of Avg
-  const rep = await (await page.request.get(`/api/reports/budget-review?fiscal_year_id=${f41.id}&years=-1`)).json();
+  const rep = await (await page.request.get(`/api/reports/budget-review?fiscal_year_id=${f41.id}&years=9`)).json();
   const r = rep.expense.find((x: any) => x.id === kiw.id);
   const i = rep.years.findIndex((x: any) => x.display_name === y);
   expect(r.history_notes[i]).toBe("included in 460 Club nights");
