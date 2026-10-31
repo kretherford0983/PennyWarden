@@ -236,6 +236,21 @@ def statement_pdf(cfg, *, org: dict, donor_name: str, donor_address: list[str], 
     vals = statement_values(cfg, org, donor_name, donor_address, year, number, total_cents, today, donor_values,
                             signature)
     texts, _empty = statement_texts(cfg, vals)
+    lines = dn.addressee_lines(cfg, {k: v for k, v in vals.items() if k != "DONATION_TABLE"}, donor_name,
+                               donor_address)
+
+    def mk(c) -> list:                       # 2.3.0 polish: rebuilt at a smaller type size to fit one page
+        return _statement_middle(c, texts, vals, org, donor_name, year, number, kind_note, rows, total_cents,
+                                 goods, items)
+    return dn.donor_letter_pdf(cfg, org=org, donor_lines=lines, today=today,
+                               kind=kind, sample=sample, watermark=watermark,
+                               doc_title=f"Year-end giving statement {number}", middle=mk,
+                               closing=texts["closing"].replace(TABLE_MARK, ""), signature=signature)
+
+
+def _statement_middle(cfg, texts: dict, vals: dict, org: dict, donor_name: str, year: int, number: str,
+                      kind_note: str, rows: list[dict], total_cents: int, goods: list[tuple[int, str]],
+                      items: list[str]) -> list:
     st = dn._styles(cfg)
     size, base = st["size"], st["base"]
     table = _donation_table(rows, total_cents, cfg, st)
@@ -272,12 +287,7 @@ def statement_pdf(cfg, *, org: dict, donor_name: str, donor_address: list[str], 
         ack += [Spacer(1, size * 0.4), Paragraph(escape(dn.items_note_text(cfg, {k: v for k, v in vals.items()
                                                                                  if k != "DONATION_TABLE"})), base)]
     middle.append(KeepTogether(ack))
-    lines = dn.addressee_lines(cfg, {k: v for k, v in vals.items() if k != "DONATION_TABLE"}, donor_name,
-                               donor_address)
-    return dn.donor_letter_pdf(cfg, org=org, donor_lines=lines, today=today,
-                               kind=kind, sample=sample, watermark=watermark,
-                               doc_title=f"Year-end giving statement {number}", middle=middle,
-                               closing=texts["closing"].replace(TABLE_MARK, ""), signature=signature)
+    return middle
 
 
 def sample_pdf(db: Session, ctx, data: dict | None, km=None) -> bytes:

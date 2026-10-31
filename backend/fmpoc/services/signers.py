@@ -176,7 +176,8 @@ def flowables(b: SignatureBlock, style, bold_font: str, size: float, extra_title
         img.hAlign = "LEFT"
         out += [Spacer(1, size * 0.4), img]
     elif b.mode == "SPACE":
-        out.append(Spacer(1, size * 2.6))
+        from .letter_fit import FixedSpacer          # room to sign by hand never shrinks (2.3.0 polish)
+        out.append(FixedSpacer(1, size * 2.6))
     else:
         out.append(Spacer(1, size * 0.6))
     lines = [f"<font name='{bold_font}'>{escape(b.name)}</font>"]

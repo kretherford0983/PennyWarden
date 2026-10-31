@@ -152,6 +152,23 @@ could not otherwise be corrected. Scope and safeguards:
   restore (#319) restores them with the data (`partial_restore.DATA_TABLES`).
 - Tests: `backend/tests/test_v230_history_included.py` (5) and the E2E step "#414".
 
+**2.3.0 polish — Letters that run onto a second page (decided with Kyle 2026-10-31).**
+A signature pushed alone onto page 2 looked odd. `services/letter_fit.py` lays out donation receipts, year-end
+statements and payment cover letters:
+- Fit when close: a letter laid out on two letter pages is tried again with spacing between sections at 60%, then
+  0.5 pt and 1 pt smaller type (not below 8 pt); the first that fits one page is used. Three or more pages are not
+  squeezed. `FixedSpacer` keeps the window-envelope offset, pre-printed letterhead margin and the room to sign by
+  hand at full height.
+- Keep with the last paragraph: the letter's last paragraph (the last paragraph inside the acknowledgment block, or
+  a cover letter's last closing paragraph) is kept together with the closing/sign-off and signature. Tables are
+  never pulled along. The acknowledgment table itself stays one block, as before.
+- Continuation: when more than one letter page remains, later pages carry "<organization> · <document> · Page N of
+  M" at the top left (clear of the DUPLICATE/CORRECTED mark) and page 1 "Continued on page 2" at the bottom. The
+  address-only page of a double-window layout isn't counted. Fold marks on the back are added after the layout.
+- Receipts and statements build their middle from the settings (`_receipt_middle`, `_statement_middle`) so the
+  smaller type can be tried. Nothing in the settings or data changes; no migration.
+- Tests: `backend/tests/test_v230_letter_page_breaks.py` (7).
+
 **2.3.0 build 14 — Push builds skip the repeated test suite (#420, Kyle 2026-10-30).**
 - `build.yml`: the `tests` job runs only on `workflow_dispatch`; `package`, `windows-exe`, `macos-app`, `assemble`,
   `publish` and `site` use `!failure() && !cancelled()` (a skipped job otherwise skips everything that depends on it,

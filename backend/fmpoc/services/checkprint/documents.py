@@ -23,6 +23,8 @@ from reportlab.lib.units import inch
 from reportlab.lib.utils import ImageReader
 from reportlab.platypus import Image, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
+from .. import letter_fit
+from ..letter_fit import FixedSpacer
 from . import fonts, patterns
 from .config import FEED_OFFSET_MAX
 
@@ -304,8 +306,22 @@ def letter_pdf(cfg: LetterConfig, data: LetterData, title: str = "Cover letter",
                test: bool = False, fold: str | None = None) -> bytes:
     """`logo` (#176): the template's PNG logo; `test` (#177): the window outlines and labeled fold marks are drawn
     (test print and preview only, never on a real letter). `fold` (2.1.0, #247): NONE / FRONT / BACK for this letter
-    (default: the template's fold_marks) - small unlabeled ticks on the first sheet, front or back."""
+    (default: the template's fold_marks) - small unlabeled ticks on the first sheet, front or back. 2.3.0 polish
+    (letter_fit): fitted to one page when close; the signature never alone; a continuation header on later pages."""
     fold = fold or cfg.fold_marks
+    skip = 1 if cfg.window == "ADDRESS_PAGE" else 0
+
+    def build(spacing: float, size: float, total: int) -> tuple[bytes, int]:
+        c = cfg if size == cfg.size else cfg.model_copy(update={"size": size})
+        return _letter_once(c, data, title, logo, test, fold, spacing, total, skip)
+    pdf = letter_fit.fit(build, cfg.size, skip)
+    if fold == "BACK":
+        return _with_back_pages(pdf, cfg, title)
+    return pdf
+
+
+def _letter_once(cfg: LetterConfig, data: LetterData, title: str, logo: bytes | None, test: bool, fold: str,
+                 spacing: float, total: int, skip: int) -> tuple[bytes, int]:
     texts, _empty = letter_texts(cfg, data)
     reg, bold = fonts.ps_name(cfg.font), fonts.ps_name(cfg.font, True)
     size = cfg.size
@@ -316,8 +332,15 @@ def letter_pdf(cfg: LetterConfig, data: LetterData, title: str = "Cover letter",
     head_b = ParagraphStyle("head_b", parent=strong, alignment=1 if centred else 0)
     windowed = cfg.window != "NONE"
     blocks = window_blocks(cfg, texts, data.payee_lines) if windowed else []
+    org = data.values.get("ORG", "")
+    check_no = data.values.get("CHECK_NUMBER", "")
+    label = " · ".join(x for x in (org, title, f"Check {check_no}" if check_no else "") if x)
 
-    def first_page(c, _doc):
+    def later_page(c, doc):
+        letter_fit.draw_continuation(c, doc.page, total, label, reg, skip)          # 2.3.0 polish
+
+    def first_page(c, doc):
+        later_page(c, doc)
         if fold == "FRONT":
             fold_ticks(c, cfg)
         if not windowed and not test:
@@ -358,11 +381,11 @@ def letter_pdf(cfg: LetterConfig, data: LetterData, title: str = "Cover letter",
                             author="", subject="", invariant=1)
     story = []
     if cfg.window == "ADDRESS_PAGE":
-        story += [Spacer(1, 1), PageBreak()]           # page 1: only the addresses, for the windows
+        story += [FixedSpacer(1, 1), PageBreak()]      # page 1: only the addresses, for the windows
     if cfg.window == "LETTER":
-        story.append(Spacer(1, (FOLD_LINES[0] + 0.15 - 1) * inch))   # the body starts below the address panel
+        story.append(FixedSpacer(1, (FOLD_LINES[0] + 0.15 - 1) * inch))   # the body starts below the address panel
     elif cfg.preprinted:
-        story.append(Spacer(1, (cfg.preprinted_margin - 1) * inch))  # the paper's own letterhead is above
+        story.append(FixedSpacer(1, (cfg.preprinted_margin - 1) * inch))  # the paper's own letterhead is above
     else:
         if logo is not None:
             w, h = _logo_size(logo)
@@ -406,9 +429,9 @@ def letter_pdf(cfg: LetterConfig, data: LetterData, title: str = "Cover letter",
         for para in texts["closing"].split("\n\n"):
             story.append(Paragraph(_para_text(para), base))
             story.append(Spacer(1, size * 0.7))
-    story.append(Spacer(1, size * 0.5))
+    block: list = []                   # 2.3.0 polish: sign-off and signature kept together with the last paragraph
     if texts["signoff"].strip():
-        story.append(Paragraph(escape(texts["signoff"]), base))
+        block.append(Paragraph(escape(texts["signoff"]), base))
     lines = []
     if texts["signer_name"].strip():
         lines.append(f"<font name='{bold}'>{escape(texts['signer_name'])}</font>")
@@ -425,14 +448,15 @@ def letter_pdf(cfg: LetterConfig, data: LetterData, title: str = "Cover letter",
             k = min(IMAGE_BOX[0] / w, IMAGE_BOX[1] / h)
             img = _RLImage(io.BytesIO(data.signature_image), width=w * k, height=h * k)
             img.hAlign = "LEFT"
-            story += [Spacer(1, size * 0.3), img]
+            block += [Spacer(1, size * 0.3), img]
         elif data.signature_mode == "SPACE":
-            story.append(Spacer(1, size * 2.6))
-        story.append(Paragraph("<br/>".join(lines), base))
-    doc.build(story, onFirstPage=first_page)
-    if fold == "BACK":
-        return _with_back_pages(buf.getvalue(), cfg, title)
-    return buf.getvalue()
+            block.append(FixedSpacer(1, size * 2.6))                 # room to sign never shrinks
+        block.append(Paragraph("<br/>".join(lines), base))
+    if block:
+        story = letter_fit.with_tail(story, [Spacer(1, size * 0.5)] + block)
+    story = letter_fit.scale_spacers(story, spacing)
+    doc.build(story, onFirstPage=first_page, onLaterPages=later_page)
+    return buf.getvalue(), doc.page
 
 
 # ------------------------------------------------------------------ envelope
