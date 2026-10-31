@@ -43,7 +43,7 @@ export default function FundraiserSeries() {
   if (!list) return <><ErrorBox error={err} />{err ? null : <Loading />}</>;
   return (
     <div>
-      <p><Link to="/fundraisers">← Fundraisers</Link></p>
+      <p><Link to="/fundraisers">← Events &amp; Fundraisers</Link></p>
       <div className="page-head"><h1>Event and fundraiser series</h1><button onClick={() => setStarting(true)}>Start a series…</button></div>
       <p className="hint">A series is the same event across years. It is created when a fundraiser <b>continues from</b> an earlier one (set on the fundraiser), or here with <b>Start a series…</b> when the event's earlier years are all from before PennyWarden. Results of years before PennyWarden are entered on a series with <b>Enter a prior year…</b>; they show as <i>Entered</i> in the Fiscal Year fundraising report and in year over year.</p>
       <p className="hint" data-testid="series-twice-hint"><b>An event held more than once a year</b> (for example a spring and a fall breakfast): “Continues from” links only to an earlier Fiscal Year, so in the event's first year in PennyWarden use <b>Start a series…</b> on one of them, then <b>Start a series…</b> → <i>Add to an existing series</i> for the other. Both count in the same year.</p>
