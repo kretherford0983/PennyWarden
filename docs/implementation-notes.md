@@ -128,6 +128,25 @@ could not otherwise be corrected. Scope and safeguards:
   with a link; the variable picker completes dotted names.
 - Tests: `backend/tests/test_v210_organization.py` (6, including the data migration) and the E2E #126 and #312 steps.
 
+**2.3.0 polish — The signer chosen when printing (#395 follow-up, decided with Kyle 2026-10-31).**
+A letter's signer can be left to the Register User when printing, for donation receipts, year-end statements and
+payment cover letters.
+- Settings: donation receipts `signer_choice` FIXED | AT_PRINT; statements `statement_signer_choice` (None = the
+  receipt's); cover letters a third `signer_source`, AT_PRINT. The setting's signer is the default and stays
+  required while a signature is printed.
+- The print screen asks only when more than one active signer is tagged for the area; with one, that one signs.
+  `signers.signing_out` gives each screen `{choice, ask, signers, default_id}`; `signers.chosen` checks the pick
+  (tagged for the area, active, in the workspace - BR-078/BR-099). A pick while the setting is Fixed, or for a letter
+  printed without a signature, is refused (BR-098).
+- Where the choice starts: a reprinted receipt or statement starts from the signer of the copy it reprints (Kyle);
+  Print all statements takes one signer for the batch; a cover letter starts from the check's signer when that one is
+  tagged for cover letters, else the template's default. API fields: `signer_id` on the receipt/statement print and
+  preview bodies, `letter_signer_id` on the cover letter print (`signer_id` there stays the check's signer).
+- Migration `0069` adds `signer_id` (plain integer, like `printed_by_user_id`) to `donation_receipt` and
+  `donation_statement`; the printed audit events record it. A different signer does not make a new receipt number:
+  the signature is not part of the content compared for Duplicate/Corrected.
+- Tests: `backend/tests/test_v230_signer_at_print.py` (7).
+
 **2.3.0 build 15 — Budget History: years included in another budget (#414, decided with Kyle 2026-10-30).**
 - Kyle: any budget of the same type at any level; years before **and** in PennyWarden; shown only on the marked
   budget; not counted in Avg; #415's automatic *history on parent* stays where nothing is marked.

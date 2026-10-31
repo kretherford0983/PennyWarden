@@ -1268,6 +1268,8 @@ class DonationReceipt(Base):
     attachment_id: Mapped[int | None] = mapped_column(ForeignKey("attachment.id"), nullable=True)
     printed_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
     printed_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 2.3.0 polish (0069): who signed it (empty: no signature, or printed before 2.3.0)
+    signer_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
 class DonationStatement(Base):
@@ -1294,3 +1296,5 @@ class DonationStatement(Base):
     attachment_id: Mapped[int | None] = mapped_column(ForeignKey("attachment.id"), nullable=True)
     printed_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
     printed_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 2.3.0 polish (0069): who signed it (empty: no signature, or printed before 2.3.0)
+    signer_id: Mapped[int | None] = mapped_column(Integer, nullable=True)

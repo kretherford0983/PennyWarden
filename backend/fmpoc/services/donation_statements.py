@@ -161,7 +161,9 @@ def summary(db: Session, ctx, year: int, min_cents: int = 0, q: str | None = Non
                      "next_kind": _next_kind(cur, _sha(c)), "printed": len(sts)})
     rows.sort(key=lambda r: r["donor"].lower())
     return {"year": year, "items": rows, "min_cents": min_cents,
-            "setup_missing": dn.missing_setup(db, ctx.workspace_id)}
+            "setup_missing": dn.missing_setup(db, ctx.workspace_id),
+            # 2.3.0 polish: who signs Print all, when chosen when printing (one signer for the whole batch)
+            "signing": dn.signing_out(db, ctx, dn.get_config(db, ctx.workspace_id), "statement")}
 
 
 def detail(db: Session, ctx, year: int, donor_id: int) -> dict:
@@ -170,7 +172,10 @@ def detail(db: Session, ctx, year: int, donor_id: int) -> dict:
     sts = statements_of(db, ctx.workspace_id, e.id, year)
     return {"year": year, "donor": {"id": e.id, "name": e.display_name, "has_address": bool(address_lines(e))},
             "total": dn.money(c["total"]), "rows": [_row_out(r) for r in c["rows"]],
-            "next_kind": _next_kind(_current(sts), _sha(c)), "statements": _statements_out(db, sts)}
+            "next_kind": _next_kind(_current(sts), _sha(c)), "statements": _statements_out(db, sts),
+            # 2.3.0 polish: a reprint starts from the last statement's signer
+            "signing": dn.signing_out(db, ctx, dn.get_config(db, ctx.workspace_id), "statement",
+                                      _current(sts).signer_id if _current(sts) is not None else None)}
 
 
 def _row_out(r: dict) -> dict:
@@ -319,7 +324,7 @@ def _next_seq(db: Session, ws_id: int, year: int) -> int:
     return (cur or 0) + 1
 
 
-def _compose(db: Session, ctx, e: Entity, year: int, seq: int | None = None) -> dict:
+def _compose(db: Session, ctx, e: Entity, year: int, seq: int | None = None, signer_id: int | None = None) -> dict:
     missing = dn.missing_setup(db, ctx.workspace_id)
     if missing:
         raise conflict("SETUP_INCOMPLETE", "An Administrator must enter " + " and ".join(missing) +
@@ -328,6 +333,7 @@ def _compose(db: Session, ctx, e: Entity, year: int, seq: int | None = None) -> 
     if not c["rows"]:
         raise conflict("NO_DONATIONS", f"{e.display_name} has no donation received in {year}.")
     cfg = dn.get_config(db, ctx.workspace_id)
+    sid = dn.chosen_signer(db, ctx, cfg, "statement", signer_id)          # 2.3.0 polish: chosen when printing
     sts = statements_of(db, ctx.workspace_id, e.id, year)
     cur = _current(sts)
     sha = _sha(c)
@@ -344,7 +350,8 @@ def _compose(db: Session, ctx, e: Entity, year: int, seq: int | None = None) -> 
     org = org_svc.values_for(db, ctx.workspace_id)
     addr = address_lines(e)
     vals = statement_values(cfg, org, e.legal_name, addr, year, number, c["total"], dt.date.today(),
-                            entity_vars.values("DONOR", e), dn.signature_for(db, ctx.workspace_id, None, cfg, "statement"))
+                            entity_vars.values("DONOR", e),
+                            dn.signature_for(db, ctx.workspace_id, None, cfg, "statement", signer_id=sid))
     _t, empty = statement_texts(cfg, vals)
     warnings = []
     if empty:
@@ -360,7 +367,8 @@ def _compose(db: Session, ctx, e: Entity, year: int, seq: int | None = None) -> 
                                  replaces=cur.number))
     return {"cfg": cfg, "c": c, "e": e, "org": org, "addr": addr, "kind": kind, "number": number, "seq": seq,
             "cur": cur, "sha": sha, "note": note, "warnings": warnings, "year": year,
-            "signature": dn.signature_for(db, ctx.workspace_id, None, cfg, "statement")}   # #395: no image yet
+            "signer_id": sid,
+            "signature": dn.signature_for(db, ctx.workspace_id, None, cfg, "statement", signer_id=sid)}   # no image yet
 
 
 def _pdf(x: dict, watermark: str | None = None) -> bytes:
@@ -373,8 +381,8 @@ def _pdf(x: dict, watermark: str | None = None) -> bytes:
                          signature=x["signature"])
 
 
-def preview(db: Session, ctx, year: int, donor_id: int) -> tuple[bytes, dict]:
-    x = _compose(db, ctx, _donor(db, ctx, donor_id), _year(year))
+def preview(db: Session, ctx, year: int, donor_id: int, signer_id: int | None = None) -> tuple[bytes, dict]:
+    x = _compose(db, ctx, _donor(db, ctx, donor_id), _year(year), signer_id=signer_id)
     if x["kind"] != dn.DUPLICATE:
         x["number"] = PREVIEW_NUMBER
     pdf = _pdf(x, watermark="PREVIEW - NOT A STATEMENT")
@@ -391,7 +399,8 @@ def _keep(db: Session, ctx, settings, x: dict, pdf: bytes) -> tuple[DonationStat
                           replaces_id=x["cur"].id if x["cur"] is not None else None, total_cents=c["total"],
                           goods_cents=c["goods"], gifts=c["gifts"], items=len(c["items"]),
                           line_ids=",".join(str(r["line_id"]) for r in c["rows"]), content_sha=x["sha"],
-                          printed_by_user_id=ctx.user.id, printed_at=utcnow())
+                          printed_by_user_id=ctx.user.id, printed_at=utcnow(),
+                          signer_id=x["signer_id"] if x["signature"].name else None)          # 2.3.0 polish
     db.add(s)
     db.flush()
     key, path = att_svc._write_file(settings, pdf)
@@ -408,7 +417,8 @@ def _keep(db: Session, ctx, settings, x: dict, pdf: bytes) -> tuple[DonationStat
     audit.record(db, ctx, "DONATION_STATEMENT_PRINTED", "donation_statement", s.id, None,
                  {"statement_id": s.id, "number": s.number, "kind": s.kind, "year": s.year, "donor_entity_id": e.id,
                   "total_cents": s.total_cents, "goods_cents": s.goods_cents, "gifts": s.gifts, "items": s.items,
-                  "replaces": x["cur"].number if x["cur"] is not None and s.kind != dn.ORIGINAL else None})
+                  "replaces": x["cur"].number if x["cur"] is not None and s.kind != dn.ORIGINAL else None,
+                  "signer_id": s.signer_id})                                                    # 2.3.0 polish
     return s, path
 
 
@@ -429,15 +439,15 @@ def _printed(db: Session, ctx, x: dict, km) -> bytes | None:
     """2.3.0 (#395): the printed copy with the signature image (None: same as the record copy)."""
     if km is None:
         return None
-    sig = dn.signature_for(db, ctx.workspace_id, km, x["cfg"], "statement", with_image=True)
+    sig = dn.signature_for(db, ctx.workspace_id, km, x["cfg"], "statement", with_image=True, signer_id=x["signer_id"])
     if not sig.image:
         return None
     return _pdf({**x, "signature": sig})
 
 
 def print_one(db: Session, ctx, settings, year: int, donor_id: int, confirmations: list[str],
-              km=None) -> tuple[bytes, DonationStatement]:
-    x = _compose(db, ctx, _donor(db, ctx, donor_id), _year(year))
+              km=None, signer_id: int | None = None) -> tuple[bytes, DonationStatement]:
+    x = _compose(db, ctx, _donor(db, ctx, donor_id), _year(year), signer_id=signer_id)
     require_confirmations(x["warnings"], confirmations)
     pdf = _pdf(x)                                   # kept with the record: never the signature image (#395)
     s, path = _keep(db, ctx, settings, x, pdf)
@@ -446,7 +456,7 @@ def print_one(db: Session, ctx, settings, year: int, donor_id: int, confirmation
 
 
 def print_all(db: Session, ctx, settings, year: int, min_cents: int, confirmations: list[str],
-              km=None) -> tuple[bytes, list[DonationStatement]]:
+              km=None, signer_id: int | None = None) -> tuple[bytes, list[DonationStatement]]:
     """All donors with donations received in the year (and at least `min_cents` of money), one statement each,
     as one combined PDF. Each is kept and numbered on its own; asks once for what needs confirming."""
     year = _year(year)
@@ -457,7 +467,7 @@ def print_all(db: Session, ctx, settings, year: int, min_cents: int, confirmatio
     seq = _next_seq(db, ctx.workspace_id, year)
     composed = []
     for donor_id in donors:
-        x = _compose(db, ctx, db.get(Entity, donor_id), year, seq)
+        x = _compose(db, ctx, db.get(Entity, donor_id), year, seq, signer_id=signer_id)
         if x["kind"] != dn.DUPLICATE:
             seq += 1
         composed.append(x)
@@ -490,7 +500,8 @@ def print_all(db: Session, ctx, settings, year: int, min_cents: int, confirmatio
     buf = io.BytesIO()
     writer.write(buf)
     audit.record(db, ctx, "DONATION_STATEMENTS_PRINTED_ALL", "donation_statement", None, None,
-                 {"year": year, "min_cents": min_cents, "count": len(out), "numbers": [s.number for s in out]})
+                 {"year": year, "min_cents": min_cents, "count": len(out), "numbers": [s.number for s in out],
+                  "signer_id": composed[0]["signer_id"] if composed else None})
     _commit(db, paths)
     return buf.getvalue(), out
 

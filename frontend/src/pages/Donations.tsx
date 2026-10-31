@@ -5,7 +5,7 @@
  *   per donor; Budget Managers, Budget Users and Auditors see the donation lines and receipts. */
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../api";
-import { ErrorBox, Field, Loading, Modal, useConfirmable } from "../components";
+import { ErrorBox, Field, Loading, Modal, useConfirmable, SignerPicker, type Signing } from "../components";
 import { useMe } from "../App";
 import { Link } from "../router";
 import { LivePreview, PatternInput, PdfViewer, PinToggle, Section, SetupLayout, usePdf, usePin } from "./checkShared";
@@ -149,6 +149,9 @@ export default function DonationSetup() {
                 {s.signature_modes.map((m: any) => <option key={m.id} value={m.id}>{m.label}</option>)}
               </select></Field>
             </div>
+            <label className="check"><input type="checkbox" data-testid="rc-signer-at-print" checked={cfg.signer_choice === "AT_PRINT"} disabled={cfg.signature_mode === "NONE"}
+              onChange={(e) => set("signer_choice", e.target.checked ? "AT_PRINT" : "FIXED")} /> Chosen when printing – the Register User picks the signer (the one above is the
+              default); asked only when more than one signer is tagged for donation letters</label>
             {!s.signers.length ? <p className="hint">No signers are tagged for donation letters yet: add or tag one on the <Link to="/signers">Signers</Link> page.</p> : null}
             <p className="hint">The signature prints under the closing. A signature image prints only on the copy you print or download – the copy
               kept with the donation shows the printed name instead. Put <code>{"{DETAILS}"}</code> where a write-up for each donation should go
@@ -194,6 +197,12 @@ export default function DonationSetup() {
                 <option value="">Same as the receipt</option>
                 {s.signature_modes.map((m: any) => <option key={m.id} value={m.id}>{m.label}</option>)}
               </select></Field>
+              {/* 2.3.0 polish: the statement's signer fixed, or chosen when printing (one signer for Print all) */}
+              <Field label="Statement signer chosen"><select data-testid="st-signer-choice" value={cfg.statement_signer_choice ?? ""} onChange={(e) => set("statement_signer_choice", e.target.value || null)}>
+                <option value="">Same as the receipt</option>
+                <option value="FIXED">Always the statement signer</option>
+                <option value="AT_PRINT">When printing (statement signer is the default)</option>
+              </select></Field>
             </div>
             <div className="row">
               <button type="button" onClick={statementTest}>Test print the statement (sample data)</button>
@@ -226,7 +235,7 @@ export default function DonationSetup() {
           <div className="actions left">
             <button className="primary" onClick={save} disabled={!dirty}>Save</button>
             <button onClick={testPrint}>Test print (sample data)</button>
-            <button onClick={() => { setCfg({ ...s.defaults, signer_id: cfg.signer_id, signature_mode: cfg.signature_mode, statement_signer_id: cfg.statement_signer_id, statement_signature_mode: cfg.statement_signature_mode }); setSaved(false); }}>Default wording</button>
+            <button onClick={() => { setCfg({ ...s.defaults, signer_id: cfg.signer_id, signature_mode: cfg.signature_mode, statement_signer_id: cfg.statement_signer_id, statement_signature_mode: cfg.statement_signature_mode, signer_choice: cfg.signer_choice, statement_signer_choice: cfg.statement_signer_choice }); setSaved(false); }}>Default wording</button>
             {saved && !dirty ? <span className="hint" role="status">Saved.</span> : dirty ? <span className="hint">Unsaved changes</span> : null}
           </div>
       </SetupLayout>
@@ -263,6 +272,16 @@ export function DonationReceiptDialog({ txn, onClose, onChanged }: { txn: any; o
   const [envFor, setEnvFor] = useState<number | null>(null);   // 2.2.0 (#325): the donor whose envelope can be printed now
   const { run, dialog } = useConfirmable();
   const ein = useEinOverride();   // 2.3.0 (#393)
+  // 2.3.0 polish: the signer chosen per donor when printing (receipts set to "chosen when printing")
+  const [signerFor, setSignerFor] = useState<Record<number, number>>({});
+  const signingOf = (g: any): Signing | undefined => g.saved?.signing || d?.signing;
+  const signerOf = (g: any): number | null => {
+    const sg = signingOf(g);
+    if (!sg?.ask) return null;
+    const v = signerFor[g.entity_id];
+    return v != null && sg.signers.some((x) => x.id === v) ? v : sg.default_id;
+  };
+  const signerBody = (g: any) => { const v = signerOf(g); return v != null ? { signer_id: v } : {}; };
   const take = (x: any) => {
     setD(x);
     setLines(x.lines.map((l: any) => ({ allocation_id: l.allocation_id, donor: l.donor, donor_entity_id: l.donor_entity_id, donor_is_organization: !!l.donor_is_organization, description: l.description, amount: l.amount, amount_cents: l.amount_cents,
@@ -339,7 +358,7 @@ export function DonationReceiptDialog({ txn, onClose, onChanged }: { txn: any; o
     const p = payload();
     if (!p) return;
     try {
-      const blob = await api.postBlob(`/api/donations/transactions/${txn.id}/receipts/preview`, { donor_entity_id: donor.entity_id, ...(dirty ? p : {}) });
+      const blob = await api.postBlob(`/api/donations/transactions/${txn.id}/receipts/preview`, { donor_entity_id: donor.entity_id, ...(dirty ? p : {}), ...signerBody(donor) });
       setPdf(blob, "receipt-preview.pdf"); setViewing(`Preview – ${donor.name}`);
     } catch (x) { setErr(x); }
   };
@@ -348,7 +367,7 @@ export function DonationReceiptDialog({ txn, onClose, onChanged }: { txn: any; o
     setErr(null);
     if (dirty && !(await save())) return;
     try {
-      const blob = await run((c) => api.postBlob(`/api/donations/transactions/${txn.id}/receipts`, { donor_entity_id: donor.entity_id, confirmations: c }));
+      const blob = await run((c) => api.postBlob(`/api/donations/transactions/${txn.id}/receipts`, { donor_entity_id: donor.entity_id, confirmations: c, ...signerBody(donor) }));
       if (!blob) return;
       setPdf(blob, "donation-receipt.pdf"); setViewing(`Donation receipt – ${donor.name}`); setEnvFor(donor.entity_id); onChanged(); load();
     } catch (x) { setErr(x); }
@@ -436,6 +455,8 @@ export function DonationReceiptDialog({ txn, onClose, onChanged }: { txn: any; o
                       <PatternInput id={`details-${g.entity_id}`} label={`Details for ${g.name} (optional)`} value={details[g.entity_id] || ""}
                                     variables={d.variables} multiline maxLength={2000} hint={false} onChange={(v) => setDetail(g.entity_id, v)} />
                     ) : g.saved?.details ? <p className="pre"><span className="muted">Details: </span>{g.saved.details}</p> : null) : null}
+                    {canPrintNow ? <SignerPicker signing={signingOf(g)} value={signerOf(g)} testId={`receipt-signer-${g.entity_id}`}
+                      label={groups.length > 1 ? `Signed by (${g.name})` : "Signed by"} onChange={(v) => setSignerFor({ ...signerFor, [g.entity_id]: v })} /> : null}
                     {groups.length > 1 && canPrintNow ? (
                       <div className="actions left">
                         <button onClick={() => preview(g)}>Preview</button>
