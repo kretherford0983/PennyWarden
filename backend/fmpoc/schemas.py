@@ -80,7 +80,7 @@ class ChangePasswordIn(In):
 
 
 class DashboardSectionIn(In):
-    key: Literal["notifications", "fiscal_year", "budget", "review", "bank", "attention", "charts"]
+    key: Literal["notifications", "fiscal_year", "budget", "review", "bank", "attention", "invoices", "charts"]   # 2.4.0 (#255): invoices
     visible: bool
 
 
