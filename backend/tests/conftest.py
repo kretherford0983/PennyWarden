@@ -261,7 +261,11 @@ def today() -> str:
 # years, closed years, report pages) with one-budget setups, so the new rule is relaxed for them only; it is tested in
 # test_v240_events.py and stays in force for every other module.
 _BEFORE_REQUIRED_BUDGETS = {"test_v160_fundraisers", "test_v161_fundraiser_manage", "test_v162_fundraiser_report",
-                            "test_v171_report_fundraiser_pages", "test_v210_fundraiser_series"}
+                            "test_v164_cancel_count_sheet", "test_v171_report_fundraiser_pages",
+                            "test_v210_attachment_order", "test_v210_budget_prep", "test_v210_fundraiser_series",
+                            "test_v210_fy_report_many_years", "test_v210_report_without_history",
+                            "test_v210_start_fundraiser_series", "test_v220_fundraiser_series", "test_v220_year_end",
+                            "test_v230_estimated_years"}
 
 
 @pytest.fixture(autouse=True)
