@@ -224,8 +224,11 @@ def test_overdue_card_and_invoice_manager_reminder(env, rb, monkeypatch):
     """AC-INV-RPT-009: the card for every invoice viewer; the reminder for Invoice Managers from due date + N (set by
     the Administrator, default 0, audited)."""
     monkeypatch.setattr(rep_svc, "today", lambda: dt.date(2026, 10, 3))
-    lay = [{"key": "invoices", "visible": True}, {"key": "bank", "visible": False}]       # the section can be saved
-    assert env.bu.put("/api/me/preferences", {"dashboard_layout": lay}).json()["dashboard_layout"][:2] == lay
+    from fmpoc.services.dashboard_layout import SECTIONS     # a full layout with the new section can be saved
+    lay = [{"key": k, "visible": k != "bank"} for k in ["invoices"] + [k for k in SECTIONS if k != "invoices"]]
+    r = env.bu.put("/api/me/preferences", {"dashboard_layout": lay})
+    assert r.status_code == 200, r.text
+    assert r.json()["dashboard_layout"] == lay
     o = env.bu.get("/api/invoices/overdue").json()
     assert o["count"] == 2 and o["open"] == "170.00" and o["reminders"] == []      # not an Invoice Manager
     assert [x["days"] for x in o["items"]] == [33, 2]
