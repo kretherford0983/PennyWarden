@@ -85,8 +85,10 @@ function columns(data: any): Col[] {
     head: y.entered ? <>{y.display_name}<div className="muted small">entered</div></> : y.display_name,
     cells: (r: any) => {
       const c = r.history[i];
-      // 2.2.0: "history on parent" only in years the parent held one amount of its own (else the sub-budget had none)
-      if (!c) return [r.history_notes?.[i] ? <i className="muted" title="The parent had no sub-budgets that year: its amount includes this one">history on parent</i> : <span className="muted" title="No linked budget that year">—</span>, null, null];
+      // 2.2.0: "history on parent" only in years the parent held one amount of its own (else the sub-budget had none);
+      // 2.3.0 (#414): or "included in …" where a Budget Manager marked the year on the budget's History
+      const hn: string | null | undefined = r.history_notes?.[i];
+      if (!c) return [hn ? <i className="muted" title={hn === "history on parent" ? "The parent had no sub-budgets that year: its amount includes this one" : "Its money was included in another budget that year (marked on its History); not counted in Avg"}>{hn}</i> : <span className="muted" title="No linked budget that year">—</span>, null, null];
       // 2.2.0 (#284): a year before PennyWarden, entered from earlier records
       const entered = c.source === "ENTERED" ? (c.from_sub_budgets ? "entered · sum of sub-budgets" : "entered") : null;
       const mismatch = c.mismatch ? `sub-budgets: ${money(c.mismatch.budgeted)} / ${money(c.mismatch.actual)}` : null;

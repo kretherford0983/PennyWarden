@@ -747,6 +747,30 @@ class BudgetHistoryEntry(Base):
     updated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
 
+
+class BudgetInclusion(Base):
+    """2.3.0 (#414): a year in which a budget's money was **included in another budget** (it had no figures of its
+    own): marked by a Budget Manager on the budget's History, shown in the Budget Review as *included in ...*. On the
+    earliest budget of the marked budget's line (as the #381 link). A year before PennyWarden (`year` +
+    `fiscal_year_label`, included in a budget from before PennyWarden) or a Fiscal Year in PennyWarden
+    (`fiscal_year_id`, included in a budget of that year). Reporting only (BR-048): no amounts. Retired, never
+    deleted (BR-001)."""
+    __tablename__ = "budget_inclusion"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
+    budget_id: Mapped[int] = mapped_column(ForeignKey("budget.id"), index=True)
+    year: Mapped[int] = mapped_column(Integer)
+    fiscal_year_label: Mapped[str] = mapped_column(String(40))
+    fiscal_year_id: Mapped[int | None] = mapped_column(ForeignKey("fiscal_year.id"), nullable=True)
+    included_former_budget_id: Mapped[int | None] = mapped_column(ForeignKey("former_budget.id"), nullable=True)
+    included_budget_id: Mapped[int | None] = mapped_column(ForeignKey("budget.id"), nullable=True)
+    note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    retired_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    retired_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    retire_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
 class TestingState(Base):
     """2.2.0 (#231): what a testing-mode Administrator moved that is otherwise taken from the audit log (which can't be
     changed): the time of the last successful backup, and when the reinitialize cooldown was cleared. Read only while

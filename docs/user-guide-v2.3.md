@@ -55,6 +55,17 @@ tick **Estimated** if the figure is an estimate — the note then has to say why
 History and the Budget Review, with a footnote *\* Estimated: <your note>*. In a CSV file, put *yes* in the
 optional **estimated** column.
 
+### A year whose money was in another budget
+Sometimes a budget is new on its own, but its money was already there inside another budget. For example, *Kiwanis*
+became its own sub-budget this year, but last year its money was recorded in *102 Fundraisers*. Open the budget's
+**History**, choose **Add an earlier year**, then **Its money was included in another budget that year**. Pick the
+year, the budget it was included in (a budget of the same type: Income or Expense), and add a note if you like. You
+don't enter amounts.
+
+The Budget Review then shows *included in 102 Fundraisers* in that year instead of —. That year doesn't count toward
+the budget's **Avg**, because it has no figures of its own. The other budget's numbers are not changed. To take a mark
+back, choose **Retire** on its row in the History and give a reason; it stays in the list of retired marks.
+
 ## Fundraisers
 
 ### A goal for a fundraiser

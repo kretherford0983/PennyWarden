@@ -41,7 +41,7 @@ from pathlib import Path
 from ..security import crypto
 
 DATA_TABLES = (
-    "fiscal_year", "budget", "former_budget", "budget_history_entry", "budget_projection_choice", "entity", "bank_account",
+    "fiscal_year", "budget", "former_budget", "budget_history_entry", "budget_inclusion", "budget_projection_choice", "entity", "bank_account",
     "bank_account_balance", "fiscal_year_balance_change", "register_transaction", "transaction_allocation", "fiscal_year_review", "attachment",
     "check_number_acknowledgement", "request_key", "check_account",
     "fundraiser", "fundraiser_budget", "fundraiser_series", "fundraiser_series_result", "fundraiser_fy_report_note",
