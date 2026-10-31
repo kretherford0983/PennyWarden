@@ -128,6 +128,27 @@ could not otherwise be corrected. Scope and safeguards:
   with a link; the variable picker completes dotted names.
 - Tests: `backend/tests/test_v210_organization.py` (6, including the data migration) and the E2E #126 and #312 steps.
 
+**2.4.0 build 11 — Invoice PDF template (#253 part 3).** Completes #253 ("PDF template built on the 2.0.0
+cover-letter editor: logo and letterhead, {VARIABLES}, live preview, line-table column picker").
+- `invoice_settings.template_json`, `logo_png`, `logo_sha256` (migration `0080`; empty = the built-in default
+  layout). Settings, so kept by Reinitialize and restored with *settings.general*.
+- `services/invoice_template.py`: `TemplateConfig` (font from the cover-letter fonts, size 8-12, accent color,
+  logo LEFT/RIGHT/NONE, letterhead and Bill to lines (up to 6, several-line variables split), title, Bill to heading,
+  columns picked and ordered from DESCRIPTION, CODE, UNIT, QUANTITY, UNIT_PRICE, AMOUNT, DISCOUNT, NET with
+  headings (Description and Amount or Net required), invoice fields/terms/notes on or off, footer). Texts are
+  `checkprint.patterns` with the new INVOICE context: `{ORG.*}`, `{CUSTOMER.*}` (the entity variables),
+  `{INVOICE.NUMBER|DATE|DUE_DATE|TOTAL|BALANCE|TERMS}`, `{TODAY}`; unknown names are refused with a suggestion.
+- Administrator (`invoice.setup`): `GET/PUT /api/invoices/setup/template`, `POST .../preview` (PDF) and
+  `.../preview-image` (PNG; 501 where pictures can't be drawn - the editor falls back to the PDF) of unsaved settings
+  with sample data only (BR-003), logo upload/remove (PNG/JPEG, 1 MB, checked and re-encoded by the cover-letter
+  `normalize_logo`). Audited `INVOICE_TEMPLATE_UPDATED`, `INVOICE_LOGO_SET/REMOVED` (fingerprint only).
+- Every invoice PDF (preview, mark as sent, batch PDF, email) is drawn by the template; a partly paid or paid
+  invoice's PDF adds *Paid* and *Balance due*. PDFs already kept for sent versions are not redrawn.
+- New rules: **BR-INV-TPL-001** one template per organization, set by the Administrator, previews and test prints
+  with sample data only; **-002** template texts use only listed variables (a table lookup, BR-102); **-003** a
+  template change never alters PDFs already kept for sent versions. ACs **AC-INV-TPL-001..004**. Tests:
+  `backend/tests/test_v240_invoice_template.py` (4).
+
 **2.4.0 build 10 — Email invoices and statements (#249, decided 2026-10-30; remaining details proposed).**
 - `email_settings` (one row: on/off, host, port, STARTTLS/SSL/none, user name, `password_enc`, sender address and
   name, reply-to) and `email_log` (migration `0079`). The mail server is in the database (Kyle): System/About →
@@ -253,8 +274,7 @@ build follows these proposals (posted on the issue for Kyle to confirm):
   asked for or required, and its stored values are kept unchanged. Values are part of the audit snapshot, the sent
   revision snapshot, and (when *show on PDF*) the PDF (invoice fields under Bill to, line fields after the
   description). The sample test print shows a sample field.
-- Still to come: the PDF **template editor** on the cover-letter editor (#253's last part) - tracked for a later
-  2.4.0 build; the invoice PDF uses the plain layout until then.
+- The PDF **template editor** came with build 11 (below).
 - New rules: **BR-INV-FLD-001** custom fields are defined by the Administrator only and retired, never deleted;
   **-002** values validated server-side by type, required and choices; **-003** show-on-PDF controls printing. ACs
   **AC-INV-FLD-001..004**. Tests: `backend/tests/test_v240_invoice_fields.py` (3).

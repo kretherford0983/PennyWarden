@@ -28,6 +28,11 @@ PennyWarden 2.4.0 (in progress).
   (*Write-off pending* until then; *self-approved* when one person holds both roles). Void and write-off change no
   budget or balance. Everything is in the audit log. Register Users, Budget Managers, Budget Users and Auditors can
   view invoices.
+- **Invoice PDF template (#253).** **Invoices Setup → Invoice PDF**: the Administrator chooses the font, an accent
+  color, the logo and where it goes, the letterhead and *Bill to* lines, the title, which columns the line table shows
+  (and their order and headings), whether invoice fields, terms and notes print, and a footer - with {VARIABLES} for
+  the organization, the customer and the invoice (e.g. `{INVOICE.BALANCE}`). A live preview with sample data shows
+  each change. Paid amounts and the balance due print on partly paid invoices.
 - **Email invoices and statements (#249).** An Administrator sets the outgoing mail server under System/About →
   Settings → **Email** (server, port, security, user name, password, sender) and sends a test email. The password is
   stored encrypted and never shown again (leave the field empty to keep it). Invoice Managers then use **Email…** on a
