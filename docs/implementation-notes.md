@@ -171,6 +171,23 @@ payment cover letters.
   restore (#319) restores them with the data (`partial_restore.DATA_TABLES`).
 - Tests: `backend/tests/test_v230_history_included.py` (5) and the E2E step "#414".
 
+**2.3.0 polish — Letters that run onto a second page (decided with Kyle 2026-10-31).**
+A signature pushed alone onto page 2 looked odd. `services/letter_fit.py` lays out donation receipts, year-end
+statements and payment cover letters:
+- Fit when close: a letter laid out on two letter pages is tried again with spacing between sections at 60%, then
+  0.5 pt and 1 pt smaller type (not below 8 pt); the first that fits one page is used. Three or more pages are not
+  squeezed. `FixedSpacer` keeps the window-envelope offset, pre-printed letterhead margin and the room to sign by
+  hand at full height.
+- Keep with the last paragraph: the letter's last paragraph (the last paragraph inside the acknowledgment block, or
+  a cover letter's last closing paragraph) is kept together with the closing/sign-off and signature. Tables are
+  never pulled along. The acknowledgment table itself stays one block, as before.
+- Continuation: when more than one letter page remains, later pages carry "<organization> · <document> · Page N of
+  M" at the top left (clear of the DUPLICATE/CORRECTED mark) and page 1 "Continued on page 2" at the bottom. The
+  address-only page of a double-window layout isn't counted. Fold marks on the back are added after the layout.
+- Receipts and statements build their middle from the settings (`_receipt_middle`, `_statement_middle`) so the
+  smaller type can be tried. Nothing in the settings or data changes; no migration.
+- Tests: `backend/tests/test_v230_letter_page_breaks.py` (7).
+
 **2.3.0 build 14 — Push builds skip the repeated test suite (#420, Kyle 2026-10-30).**
 - `build.yml`: the `tests` job runs only on `workflow_dispatch`; `package`, `windows-exe`, `macos-app`, `assemble`,
   `publish` and `site` use `!failure() && !cancelled()` (a skipped job otherwise skips everything that depends on it,
@@ -181,12 +198,36 @@ payment cover letters.
   nothing is lost there.
 - No spec impact (CI only).
 
+**2.3.0 polish — Quarterly / Annual report fixes (#373 follow-up, Kyle 2026-10-31).**
+- Over / under: income received above its budget prints "+$X above budget" (green in the PDF, as reports.py's
+  CR-019 cell), not a negative amount; an expense over budget stays negative. The note under the tables says so
+  (`period_report_output.ou_text`, `_ou_cell`, `OU_NOTE`). The data (`remaining`) is unchanged.
+- Starting balance: `period_report._balance` returned "no data" for the day before a register account's Opening
+  Balance Date, so an opening balance dated on the Fiscal Year's first day showed a dash. The opening balance is the
+  balance at the start of its date (the end of the day before), as `bank.available_cents` and the Register's
+  starting balance already treat it (BR-043); only days before that are "no data".
+- Tests: two more in `backend/tests/test_v230_period_report.py`.
+
 **2.3.0 build 13 — Users: filters and sortable columns (#409, Kyle 2026-10-29).**
 - Client-side on the already-loaded list (`pages/Users.tsx`): Roles (multi-select, OR), Security domain, Status
   (`ACTIVE` / `DISABLED` / `LOCKED` = active with `locked_until` in the future), combined with the search (AND).
   Sortable headings as in the register (`aria-sort`, a button per heading); default Last name ascending; empty values
   last either way; ties by last name, first name, username. Not remembered between visits. No API or data change.
 - Test: E2E "#134" extended (roles OR, domain, status, clear, sort and reverse).
+
+**2.3.0 polish — Budget Review PDF: every column on one page; letter or legal (Kyle, 2026-10-31).**
+- Avg and the current year always print. Prior years + Projected + Next year's budget may add up to
+  `budget_planning.pdf_max_added(paper)` = 6 on landscape letter and 9 on landscape legal. That number comes from the
+  page geometry: (frame width − 0.95 in label) // 1.0 in minimum column − 2 fixed columns.
+- A PDF over the limit is refused (`check_pdf_fits`, 422 on `years`) before anything is generated or audited. The
+  JSON gives `added_columns` and `pdf_max_added` for the screen, and the audit summary records `paper`.
+- `years` is 0–9 (`REVIEW_MAX_YEARS`); `-1` ("every linked year") was removed. The screen offers prior years up to
+  the paper's limit, less Projected and Next year. A saved option from Recently run is clamped: "all" becomes the
+  most that fits.
+- The Planning Sheet's appended review (3 years + Projected + Next) stays on letter.
+- The banding code ("Columns 1 of 2") remains for a review produced internally, but the API never reaches it.
+- Tests: `backend/tests/test_v230_review_pdf_columns.py`. `years=-1` in the 2.1.0 tests became `years=9`. The E2E
+  #382 step checks the options and runs on legal with 9 years.
 
 **2.3.0 build 12 — Report settings: configurable report grouping (#376).**
 - New business rule (recorded here; spec docs aren't changed in the repo): **report grouping is workspace
