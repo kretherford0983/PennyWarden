@@ -59,7 +59,7 @@ pydantic-core==2.50.1
     # via pydantic
 pyotp==2.10.0
     # via -r requirements.in
-pypdf==6.21.2
+pypdf==6.21.4
     # via -r requirements.in
 pypdfium2==5.14.0
     # via -r requirements.in

@@ -19,7 +19,7 @@ cryptography==50.0.2
 python-multipart==0.0.32
 pillow==13.0.0
 reportlab==5.1.0
-pypdf==6.21.2
+pypdf==6.21.4
 pyotp==2.10.0
 segno==1.6.6
 # v1.6.0 CR-033: linear-time regular expressions for the fundraiser filter (no catastrophic backtracking)
