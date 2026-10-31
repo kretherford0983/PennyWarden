@@ -28,6 +28,20 @@ A **Discount** item is built in. Nothing is deleted: inactivate what you no long
 When a new Fiscal Year starts, copy or continue the Invoiced Income budgets so products follow them; a product shows
 **Needs budget** until its budget is continued (or you choose a new one).
 
+### Invoices
+**Invoices → New invoice**: choose the customer, the date, and lines from the catalog (enter the quantity; the price
+comes from the catalog). Add a discount to a line or to the whole invoice - a fixed amount or a percentage, with a
+reason that prints on the invoice - and the sales tax if it applies. The draft gets its number right away.
+
+- **Preview PDF**, then **Mark as sent** when you send or print it; the PDF is kept with the invoice.
+- To change a sent invoice, **Revise…** (say why). It becomes a draft again with the same number and -R1 (-R2…), and
+  you mark it as sent again. Every version's PDF stays listed under *Sent versions*.
+- **Void…** an invoice entered by mistake (with a reason). Its number is never used again.
+- **Request write-off…** for an amount you won't collect; a Budget Manager approves or rejects it.
+
+An Administrator sets the number pattern, the payment terms and default notes in **Invoices Setup**, and can make a
+**Test print** with sample data.
+
 ## Invoiced Income budgets
 Money collected on invoices should go to budgets set aside for it. A Budget Manager marks an Income budget with
 **Mark as Invoiced Income** in the budget's row menu (Budgets page); its sub-budgets carry the mark too, and it shows

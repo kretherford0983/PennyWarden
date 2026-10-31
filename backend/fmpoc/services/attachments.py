@@ -411,6 +411,11 @@ def list_for(db: Session, ctx, owner_type: str, owner_id: int, include_removed: 
 
 def get(db: Session, ctx, att_id: int) -> Attachment:
     a = get_scoped(db, Attachment, att_id, ctx, "Attachment")
+    if a.invoice_id:                                          # 2.4.0 (#253): a sent invoice's PDF
+        from . import invoices as inv_svc
+        inv_svc.require_module(db, ctx)
+        ctx.require("invoice.view")
+        return a
     if not (a.transaction_id or a.allocation_id):             # 2.4.0 (#251)
         _register_only_scope(ctx, "other")
     if a.fundraiser_id:  # v1.6.1 CR-034: fundraiser documents follow the module switch and its viewers

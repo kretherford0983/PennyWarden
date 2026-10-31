@@ -50,6 +50,7 @@ def overview(ctx) -> dict:
 
 
 def setup(db: Session, ctx) -> dict:
-    """The Administrator's setup page (numbering, terms, custom fields, PDF template, reminder days and a dummy-data
-    test print arrive with the Invoices build, #253). Never shows real invoices or products (BR-003)."""
-    return {"module": module_enabled(db, ctx.workspace_id), "settings": {}, "pending": True}
+    """The Administrator's setup page: numbering and terms (#253); custom fields and the PDF template come next.
+    Never shows real invoices or products (BR-003)."""
+    from .invoice_docs import setup_out
+    return setup_out(db, ctx)
