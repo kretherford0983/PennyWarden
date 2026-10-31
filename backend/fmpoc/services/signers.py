@@ -137,6 +137,47 @@ def check_can_retire(db: Session, ctx, s: CheckSigner) -> None:
                                         "another signer there first.")
 
 
+# ------------------------------------------------------------------ 2.3.0 polish: the signer chosen when printing
+# (Kyle, 2026-10-31) A letter's settings can leave the signer to be chosen when printing (AT_PRINT), with the
+# setting's signer as the default. The Register User is asked only when more than one active signer is tagged for
+# the area; with one, that one signs. Applies to donation receipts, year-end statements and payment cover letters.
+FIXED, AT_PRINT = "FIXED", "AT_PRINT"
+
+
+def signing_out(db: Session, ctx, area: str, choice: str, default_id: int | None, mode: str,
+                last_id: int | None = None) -> dict:
+    """What a print screen needs: whether to ask, the signers to offer and the one to start from (`last_id`, the
+    signer of the copy being reprinted, when still usable; else the setting's default; else the first)."""
+    if choice != AT_PRINT or mode == "NONE":
+        return {"choice": choice if mode != "NONE" else FIXED, "ask": False, "signers": [], "default_id": None}
+    opts = tagged(db, ctx, area)
+    ids = [s.id for s in opts]
+    pick = next((x for x in (last_id, default_id) if x in ids), ids[0] if ids else None)
+    return {"choice": AT_PRINT, "ask": len(opts) > 1, "default_id": pick,
+            "signers": [{"id": s.id, "name": s.name, "title": s.title or ""} for s in opts]}
+
+
+def chosen(db: Session, ctx, area: str, choice: str, default_id: int | None, signer_id: int | None,
+           field: str = "signer_id") -> int | None:
+    """The signer for this print. FIXED: the setting's signer (a different one is refused - BR-098/BR-099).
+    AT_PRINT: the chosen signer (tagged for the area, active), else the default, else the only tagged signer."""
+    if choice != AT_PRINT:
+        if signer_id is not None and signer_id != default_id:
+            raise validation("The signer for this letter is set in its settings and can't be changed when printing.",
+                             field)
+        return default_id
+    if signer_id is not None:
+        return require_tagged(db, ctx, signer_id, area, field).id
+    ids = [s.id for s in tagged(db, ctx, area)]
+    if default_id in ids:
+        return default_id
+    if len(ids) == 1:
+        return ids[0]
+    if not ids:
+        return None
+    raise validation("Choose who signs this letter.", field)
+
+
 # ------------------------------------------------------------------ the signature on a letter
 @dataclass
 class SignatureBlock:

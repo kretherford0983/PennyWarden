@@ -118,6 +118,10 @@ PennyWarden 2.3.0 (in progress).
   signer and one of: *None*, *Printed name and title*, *Signature image and printed name*, or *Printed name with
   space to sign by hand*. The year-end statement can use its own signer or follow the receipt. Cover letters can
   still follow the check's signer (*Same as the check*, the default).
+- **The signer chosen when printing.** A receipt, year-end statement or cover letter can leave the signer to the
+  Register User when printing (the one in the settings is the default). The print screen asks only when more than one
+  signer is tagged for that kind of letter. A reprint starts from whoever signed the copy it reprints; *Print all*
+  year-end statements uses one signer for the whole batch; a cover letter starts from the check's signer.
 - The signature image prints only on the copy you print or download; the copy kept with the payment or donation shows
   the printed name instead, as a check's record copy does. A signer without an image falls back to space to sign
   (Donations Setup warns).
@@ -182,6 +186,8 @@ PennyWarden 2.3.0 (in progress).
   settings and defaults to on, so no data changes.
 - Migration `0062` adds `estimated` to `fundraiser_series_result` and `budget_history_entry` (off for every existing
   entry).
+- Migration `0069` adds `signer_id` to `donation_receipt` and `donation_statement` (empty for receipts and
+  statements printed before): who signed each one.
 - Migration `0068` adds the table `budget_inclusion` (empty): the years marked as included in another budget.
 - Migration `0067` adds the table `report_grouping` (empty = grouped by Purpose, as in 2.3.0's catalog).
 - Migration `0066` adds `app_user.report_prefs` (empty): the Reports screen's Recently run and last options.

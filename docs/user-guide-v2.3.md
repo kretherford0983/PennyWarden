@@ -112,6 +112,12 @@ Cover letters (**Payments Setup → cover letter → Signed by**) can follow the
 one signer tagged for cover letters, with the same choice of how the signature shows. After the upgrade everything
 prints as it did: your existing signers are tagged for checks, and the typed donation signer became a signer.
 
+**Choosing the signer when printing.** Tick **Chosen when printing** under the signer (receipts and cover letters),
+or set **Statement signer chosen** to *When printing* for year-end statements. The signer you picked becomes the
+default, and whoever prints chooses from the signers tagged for that kind of letter – the choice appears only when
+more than one is tagged. A reprint starts from whoever signed the earlier copy; *Print all* statements uses one signer
+for all of them; a cover letter starts from the check's signer when that person signs letters too.
+
 ## Bank accounts
 
 ### Fix a wrong balance in the history
