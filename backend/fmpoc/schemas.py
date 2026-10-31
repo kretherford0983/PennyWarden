@@ -91,7 +91,7 @@ class PreferencesIn(In):
     dashboard_charts: list[Literal["income_pie", "monthly", "expense_vs_budget", "balances", "expense_pie",
                                    "cumulative_net"]] | None = Field(None, max_length=6)
     # v1.5.0 CR-031: dashboard sections in display order with visibility; reset_dashboard_layout -> default
-    dashboard_layout: list[DashboardSectionIn] | None = Field(None, max_length=7)
+    dashboard_layout: list[DashboardSectionIn] | None = Field(None, max_length=8)   # 2.4.0 (#255): 8 sections
     reset_dashboard_layout: bool | None = None
     # 2.1.0 (#262): the register's sort, remembered per user; reset_register_sort -> Date, oldest first
     register_sort: Literal["transaction_date:asc", "transaction_date:desc", "clear_date:asc", "clear_date:desc"] | None = None
