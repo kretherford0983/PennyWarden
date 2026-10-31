@@ -7,7 +7,8 @@ from sqlalchemy.orm import Session
 from ..deps import Ctx, get_db, require
 from ..errors import AppError
 from ..models import BankAccount
-from ..schemas import BankAccountCreateIn, BankAccountUpdateIn, CloseAccountIn, ManualBalanceIn, MoveAccountIn
+from ..schemas import (BalanceCorrectIn, BalanceRetireIn, BankAccountCreateIn, BankAccountUpdateIn, CloseAccountIn,
+                       ManualBalanceIn, MoveAccountIn)
 from ..services import bank_accounts as svc
 
 router = APIRouter(prefix="/api/bank-accounts", tags=["bank-accounts"])
@@ -69,9 +70,29 @@ def move(account_id: int, body: MoveAccountIn, db: Session = Depends(get_db),
 def manual_balance(account_id: int, body: ManualBalanceIn, db: Session = Depends(get_db),
                    ctx: Ctx = Depends(require("bank_account.manage"))):
     a = svc.update_manual_balance(db, ctx, svc.get(db, ctx, account_id), body.current_balance, body.reason,
-                                  body.as_of_date)
+                                  body.as_of_date, body.confirmations)
     db.commit()
     return svc.out(db, a)
+
+
+@router.post("/{account_id}/balance-history/{entry_id}/correct")
+def correct_balance(account_id: int, entry_id: int, body: BalanceCorrectIn, db: Session = Depends(get_db),
+                    ctx: Ctx = Depends(require("bank_account.manage"))):
+    """2.3.0 (#391): correct a balance entry's amount and/or date (reason required)."""
+    a = svc.get(db, ctx, account_id)
+    svc.correct_balance(db, ctx, a, entry_id, body.balance, body.as_of_date, body.reason, body.confirmations)
+    db.commit()
+    return {"account": svc.out(db, a), "history": svc.balance_history(db, a)}
+
+
+@router.post("/{account_id}/balance-history/{entry_id}/retire")
+def retire_balance(account_id: int, entry_id: int, body: BalanceRetireIn, db: Session = Depends(get_db),
+                   ctx: Ctx = Depends(require("bank_account.manage"))):
+    """2.3.0 (#391): retire a wrong balance entry (reason required); it stays listed as retired."""
+    a = svc.get(db, ctx, account_id)
+    svc.retire_balance(db, ctx, a, entry_id, body.reason, body.confirmations)
+    db.commit()
+    return {"account": svc.out(db, a), "history": svc.balance_history(db, a)}
 
 
 @router.get("/{account_id}/balance-history")

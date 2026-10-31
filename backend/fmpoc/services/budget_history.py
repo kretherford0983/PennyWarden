@@ -46,7 +46,7 @@ from .fundraiser_series import fy_year, label_year
 MAX_CSV_ROWS = 2000
 MAX_CSV_BYTES = 512 * 1024
 CSV_COLUMNS = ["budget code", "budget name (ignored)", "type", "former code", "former name", "year", "budgeted",
-               "actual", "note", "line"]
+               "actual", "note", "line", "estimated"]
 REQUIRED_COLUMNS = ["year", "budgeted", "actual"]
 _TYPES = {"income": "INCOME", "expense": "EXPENSE", "i": "INCOME", "e": "EXPENSE"}
 
@@ -199,6 +199,7 @@ def entry_out(e: BudgetHistoryEntry, f: FormerBudget | None = None) -> dict:
     out = {"id": e.id, "former_budget_id": e.former_budget_id, "budget_id": e.budget_id,
            "fiscal_year_label": e.fiscal_year_label, "year": e.year, "code": e.code, "name": e.name,
            "budgeted": fmt(e.budgeted_cents), "actual": fmt(e.actual_cents), "note": e.note,
+           "estimated": bool(e.estimated),
            "retired": e.retired_at is not None,
            "retired_at": e.retired_at.isoformat(timespec="seconds") + "Z" if e.retired_at else None,
            "retire_reason": e.retire_reason}
@@ -225,6 +226,9 @@ def figures(db: Session, b: Budget, first: int | None) -> dict[int, dict]:
                 s = subs.setdefault(e.year, {"budgeted": 0, "actual": 0, "labels": []})
                 s["budgeted"] += e.budgeted_cents
                 s["actual"] += e.actual_cents
+                if e.estimated:                # 2.3.0 (#390): a sum with an estimated part is estimated
+                    s["estimated"] = True
+                    s.setdefault("estimate_notes", []).append(e.note or "")
                 s["labels"].append(e.fiscal_year_label)
     out: dict[int, dict] = {}
     for y in set(own) | set(subs):
@@ -236,22 +240,27 @@ def figures(db: Session, b: Budget, first: int | None) -> dict[int, dict]:
                         if s and (s["budgeted"] != e.budgeted_cents or s["actual"] != e.actual_cents) else None)
             out[y] = {"label": e.fiscal_year_label, "budgeted": e.budgeted_cents, "actual": e.actual_cents,
                       "source": "own", "entry_id": e.id, "note": e.note, "mismatch": mismatch,
+                      "estimated": bool(e.estimated),
                       "code": e.code or f.code, "name": e.name or f.name}
         else:
             s = subs[y]
             out[y] = {"label": s["labels"][0], "budgeted": s["budgeted"], "actual": s["actual"], "source": "subs",
-                      "entry_id": None, "note": None, "mismatch": None, "code": None, "name": None}
+                      "entry_id": None, "note": None, "mismatch": None, "code": None, "name": None,
+                      "estimated": s.get("estimated", False), "estimate_notes": s.get("estimate_notes", [])}
     return out
 
 
-def year_labels(db: Session, ws_id: int, first: int | None) -> dict[int, str]:
+def year_labels(db: Session, ws_id: int, first: int | None, all_formers: bool = False) -> dict[int, str]:
     """year -> column heading for every entered year before the first Fiscal Year (the label most often used), of the
-    former budgets a budget continues (one nothing continues adds no empty column to a Fiscal Year's review)."""
+    former budgets a budget continues (one nothing continues adds no empty column to a Fiscal Year's review).
+    2.3.0 (#382): `all_formers` - every former budget, for the review that also lists budgets not in the chosen year."""
     linked = select(Budget.continues_former_budget_id).where(Budget.workspace_id == ws_id, Budget.status != "DELETED",
                                                              Budget.continues_former_budget_id.is_not(None))
     q = (select(BudgetHistoryEntry).join(FormerBudget, FormerBudget.id == BudgetHistoryEntry.former_budget_id)
          .where(BudgetHistoryEntry.workspace_id == ws_id, BudgetHistoryEntry.retired_at.is_(None),
-                FormerBudget.retired_at.is_(None), FormerBudget.id.in_(linked)))
+                FormerBudget.retired_at.is_(None)))
+    if not all_formers:
+        q = q.where(FormerBudget.id.in_(linked))
     counts: dict[int, dict[str, int]] = {}
     for e in db.scalars(q):
         if first is not None and e.year >= first:
@@ -296,7 +305,9 @@ def view(db: Session, ctx, b: Budget) -> dict:
                          "retired": False, "retired_at": None, "retire_reason": None, "source": "ENTERED",
                          "from_sub_budgets": True, "counted": True, "mismatch": None})
     rows.sort(key=lambda r: (r["year"], r["from_sub_budgets"], r["id"] or 0))
+    from . import budget_inclusions as incl            # 2.3.0 (#414)
     return {"first_year": first, "can_enter": not b.is_budget_zero and b.status != "DELETED", "entries": rows,
+            "inclusions": incl.for_view(db, b, first),
             "former": former_out(db, f, first) if f is not None else None,
             "holder": budget_brief(db, holder), "is_holder": holder.id == b.id}
 
@@ -505,22 +516,31 @@ def _year_name(f: FormerBudget, code: str | None, name: str | None) -> tuple[str
 
 
 def add(db: Session, ctx, b: Budget, label: str, budgeted, actual, note: str | None, code: str | None = None,
-        name: str | None = None, via: str = "single") -> BudgetHistoryEntry:
+        name: str | None = None, via: str = "single", estimated: bool = False) -> BudgetHistoryEntry:
     """*Add an earlier year* on a budget's History: to the former budget its line continues, created and linked (from
     the earliest budget of the line, under its code and name) when there is none yet."""
     _check_budget(b)
+    _estimate_check(estimated, note)
     f = former_of(db, b)
     if f is None:
         holder = link_holder(db, b)
         brief = budget_brief(db, holder)
         f = _create_former(db, ctx, brief["code"], holder.name, holder.budget_type, via=via)
         set_link(db, ctx, holder, f.id, via=via)
-    return add_entry(db, ctx, f, label, budgeted, actual, note, code, name, via=via, entered_on=b.id)
+    return add_entry(db, ctx, f, label, budgeted, actual, note, code, name, via=via, entered_on=b.id,
+                     estimated=estimated)
+
+
+def _estimate_check(estimated: bool, note: str | None) -> None:
+    """2.3.0 (#390, BR-094): an estimated year needs a note saying why (the report footnote)."""
+    if estimated and not (note or "").strip():
+        raise validation("An estimated year needs a note saying why it is estimated.", "note")
 
 
 def add_entry(db: Session, ctx, f: FormerBudget, label: str, budgeted, actual, note: str | None,
               code: str | None = None, name: str | None = None, via: str = "single",
-              entered_on: int | None = None) -> BudgetHistoryEntry:
+              entered_on: int | None = None, estimated: bool = False) -> BudgetHistoryEntry:
+    _estimate_check(estimated, note)
     if f.retired_at is not None:
         raise conflict("ALREADY_RETIRED", "This budget from before PennyWarden is retired.")
     label = label.strip()
@@ -532,7 +552,7 @@ def add_entry(db: Session, ctx, f: FormerBudget, label: str, budgeted, actual, n
     e = BudgetHistoryEntry(workspace_id=ctx.workspace_id, former_budget_id=f.id, code=ycode, name=yname,
                            fiscal_year_label=label, year=year, budgeted_cents=_cents(budgeted, "budgeted", False),
                            actual_cents=_cents(actual, "actual", True), note=_clean(note, 500),
-                           created_by_user_id=ctx.user.id)
+                           estimated=bool(estimated), created_by_user_id=ctx.user.id)
     db.add(e)
     db.flush()
     audit.record(db, ctx, "BUDGET_HISTORY_ENTERED", "former_budget", f.id, None,
@@ -571,6 +591,9 @@ def correct(db: Session, ctx, entry_id: int, body) -> BudgetHistoryEntry:
         e.actual_cents = _cents(body.actual, "actual", True)
     if body.note is not None:
         e.note = _clean(body.note, 500)
+    if getattr(body, "estimated", None) is not None:      # 2.3.0 (#390)
+        e.estimated = bool(body.estimated)
+    _estimate_check(bool(e.estimated), e.note)
     if f is not None and ("code" in fields or "name" in fields):
         code = body.code if "code" in fields else (e.code or f.code)
         name = body.name if "name" in fields else (e.name or f.name)
@@ -632,12 +655,22 @@ def template_csv(db: Session, fy: FiscalYear) -> str:
         rows.append((code, b.name, b.budget_type.capitalize(), fcode, fname))
     rows.sort(key=lambda r: (r[2] != "Income", _sort_code(r[0])))
     for code, name, t, fcode, fname in rows:
-        w.writerow([_cell_safe(code), _cell_safe(name), t, _cell_safe(fcode), _cell_safe(fname), "", "", "", "", ""])
+        w.writerow([_cell_safe(code), _cell_safe(name), t, _cell_safe(fcode), _cell_safe(fname), "", "", "", "", "", ""])
     return buf.getvalue()
 
 
 def _norm_head(h: str) -> str:
     return re.sub(r"\s+", " ", (h or "").strip().lower().lstrip("﻿"))
+
+
+def _yes_no(v: str) -> bool | None:
+    """2.3.0 (#390): the optional estimated column - empty/no/n/false/0 = no, yes/y/true/1/x = yes, else None."""
+    v = (v or "").strip().lower()
+    if v in ("", "no", "n", "false", "0"):
+        return False
+    if v in ("yes", "y", "true", "1", "x"):
+        return True
+    return None
 
 
 def _row_type(v: str) -> str | None:
@@ -677,14 +710,15 @@ def preview(db: Session, ctx, fy: FiscalYear, text: str) -> dict:
 
         v = {c: cell(c) for c in CSV_COLUMNS}
         # a blank row, or a template row left as it is (only the budget's code, name and type)
-        if not any(v[c] for c in ("year", "budgeted", "actual", "former code", "former name", "note", "line")):
+        if not any(v[c] for c in ("year", "budgeted", "actual", "former code", "former name", "note", "line", "estimated")):
             continue
         if len(rows) >= MAX_CSV_ROWS:
             raise validation(f"Too many rows (at most {MAX_CSV_ROWS}).", "csv")
         r = {"line": n, "year_label": v["year"][:40], "code": v["budget code"][:20], "former_code": v["former code"][:20],
              "former_name": v["former name"][:120], "type": None, "budgeted": v["budgeted"], "actual": v["actual"],
              "note": cell("note", size=500) or None, "line_key": v["line"][:60], "status": "MATCHED", "reason": None,
-             "budget_id": None, "budget_name": None, "year": None, "group": None}
+             "budget_id": None, "budget_name": None, "year": None, "group": None,
+             "estimated": _yes_no(v["estimated"])}
         b = codes.get(r["code"].upper()) if r["code"] else None
         t = _row_type(v["type"])
         year = label_year(r["year_label"])
@@ -705,6 +739,10 @@ def preview(db: Session, ctx, fy: FiscalYear, text: str) -> dict:
             reason = f"Type {t.capitalize()} doesn't match budget {r['code']} ({b.budget_type.capitalize()})."
         elif b is None and t is None:
             reason = "Type (Income or Expense) is needed when no budget code is given."
+        elif r["estimated"] is None:          # 2.3.0 (#390)
+            reason = "Estimated must be yes or no (or left empty)."
+        elif r["estimated"] and not r["note"]:
+            reason = "An estimated year needs a note saying why it is estimated."
         else:
             try:
                 bc = _cents(r["budgeted"], "budgeted", False)
@@ -853,7 +891,7 @@ def import_csv(db: Session, ctx, fy: FiscalYear, text: str) -> dict:
             linked += 1
         for r in rows:
             add_entry(db, ctx, f, r["year_label"], r["budgeted"], r["actual"], r["note"],
-                      r["former_code"] or None, r["former_name"] or None, via="csv")
+                      r["former_code"] or None, r["former_name"] or None, via="csv", estimated=bool(r["estimated"]))
             saved += 1
     if not saved:
         raise validation("Nothing to import: no row matched.", "csv")

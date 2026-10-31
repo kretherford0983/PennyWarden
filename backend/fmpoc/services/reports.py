@@ -78,7 +78,9 @@ class _Styles(dict):
         base = dict.__getitem__(self, k)
         role = self.THEMED.get(k)
         if role is None:
-            return base
+            if not branding.current().dark:
+                return base
+            role = "on_surface"          # 2.3.0 (#386): a dark theme's text is its light on-surface color
         hx = branding.hex_of(role)
         st = self._cache.get((k, hx))
         if st is None:
@@ -237,10 +239,10 @@ class _SignLine(Flowable):
 
     def draw(self):
         c = self.canv
-        c.setStrokeColor(colors.black)
+        c.setStrokeColor(branding.pick("#000000", "on_surface"))     # 2.3.0 (#386)
         c.setLineWidth(0.8)
         c.line(0, 0.2 * inch, self.lw, 0.2 * inch)
-        c.setFillColor(colors.black)
+        c.setFillColor(branding.pick("#000000", "on_surface"))
         c.setFont(_FONT, 10.5)
         c.drawString(0, 0.02 * inch, self.caption[:90])
 
@@ -332,12 +334,20 @@ def _stamp_and_write(reader_bytes: bytes, doc: _AuditDoc, path: str, title: str)
     theme = branding.current()
     for i, page in enumerate(writer.pages):
         w, h = float(page.mediabox.width), float(page.mediabox.height)
+        if theme.dark:     # 2.3.0 (#386): a dark theme's pages are filled with its dark surface, under the content
+            bg = io.BytesIO()
+            bc = rl_canvas.Canvas(bg, pagesize=(w, h))
+            bc.setFillColor(colors.HexColor(theme.page))
+            bc.rect(0, 0, w, h, stroke=0, fill=1)
+            bc.save()
+            bg.seek(0)
+            page.merge_page(PdfReader(bg).pages[0], over=False)
         buf = io.BytesIO()
         c = rl_canvas.Canvas(buf, pagesize=(w, h))
         _brand_page(c, theme, w, h, first=i == 0)
         left = 18 + (_MARK_H * 1.1 * _aspect(theme.logo_mark_size) + 6 if theme.logo_mark else 0)
         c.setFont(_FONT, 7)
-        c.setFillColor(colors.HexColor("#444444"))
+        c.setFillColor(branding.pick("#444444", "on_surface_variant"))
         c.drawString(left, 10, f"{title}  ·  {doc.page_labels.get(i + 1, '')}"[:160])
         c.drawRightString(w - 18, 10, f"Page {i + 1} of {total}")
         if theme.footer_text:
@@ -346,7 +356,7 @@ def _stamp_and_write(reader_bytes: bytes, doc: _AuditDoc, path: str, title: str)
             c.drawRightString(w - 18, 20, in_section[i + 1][:120])
         for x, y, lines in notes.get(i + 1, []):
             c.setFont(_FONT, 10)
-            c.setFillColor(colors.black)
+            c.setFillColor(branding.pick("#000000", "on_surface"))
             for k, line in enumerate(lines):
                 c.drawString(x, y + _SectionNote.HEIGHT - 12 - 14 * k, line)
         c.save()
@@ -472,9 +482,9 @@ def _meta_table(rows: list[tuple[str, object]]) -> Table:
     data = [[PM(f"<b>{escape(k)}</b>", "metak"), P(v, "metav")] for k, v in rows]
     t = Table(data, colWidths=[w1, FRAME_W - 12 - w1])
     t.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"),
-                           ("BOX", (0, 0), (-1, -1), 0.6, colors.HexColor("#6b7682")),
-                           ("LINEBELOW", (0, 0), (-1, -2), 0.25, colors.HexColor("#c3c9d0")),
-                           ("BACKGROUND", (0, 0), (0, -1), colors.HexColor("#eef1f5")),
+                           ("BOX", (0, 0), (-1, -1), 0.6, branding.pick("#6b7682", "outline")),
+                           ("LINEBELOW", (0, 0), (-1, -2), 0.25, branding.pick("#c3c9d0", "outline_variant")),
+                           ("BACKGROUND", (0, 0), (0, -1), branding.pick("#eef1f5", "surface_variant")),
                            ("LEFTPADDING", (0, 0), (-1, -1), 5), ("RIGHTPADDING", (0, 0), (-1, -1), 5),
                            ("TOPPADDING", (0, 0), (-1, -1), 3), ("BOTTOMPADDING", (0, 0), (-1, -1), 3)]))
     return t
@@ -487,13 +497,19 @@ def _remaining_cell(x: dict, bold: bool = False):
     return PM(f"<b>{escape(money(x['remaining']))}</b>", "cellr") if bold else P(money(x["remaining"]), "cellr")
 
 
+def gross_note():
+    """2.3.0 (#371, BR-109): the small italic gross-budget footnote placed directly beneath a budget table or chart."""
+    from .common import GROSS_BUDGET_NOTE
+    return PM(f"<i>{escape(GROSS_BUDGET_NOTE)}</i>", "small")
+
+
 def _budget_section(tree: dict) -> list:
     f: list = [PM("Fiscal Year Budgets", "h1")]
     qn = [q["name"] for q in tree["quarters"]]
     for label, rows, summ in (("Income", tree["income"], tree["income_summary"]),
                               ("Expense", tree["expense"], tree["expense_summary"])):
         f.append(PM(f"{label} budgets", "h2"))
-        data = [[PM("<b>Budget</b>", "cell"), PM("<b>Status</b>", "cell"), PM("<b>Amount</b>", "cellr"),
+        data = [[PM("<b>Budget</b>", "cell"), PM("<b>Status</b>", "cell"), PM("<b>Gross amount</b>", "cellr"),
                  *[PM(f"<b>{q}</b>", "cellr") for q in qn], PM("<b>Actual</b>", "cellr"), PM("<b>Remaining</b>", "cellr")]]
         for r in rows:
             for x, indent in [(r, ""), *[(c, "    ") for c in r["children"]]]:
@@ -506,6 +522,7 @@ def _budget_section(tree: dict) -> list:
         if len(data) == 2:
             data.insert(1, [P(f"No {label.lower()} budgets.", "cell")] + [""] * (len(qn) + 4))
         f.append(_grid(data, [1.95 * inch, 1.0 * inch, 0.75 * inch] + [0.52 * inch] * len(qn) + [0.7 * inch, 0.72 * inch]))
+        f.append(gross_note())   # 2.3.0 (#371): directly beneath each budget table, so it travels with the page
         f.append(Spacer(1, 8))
     if tree["budget_zero"]:
         b0 = tree["budget_zero"]
@@ -635,6 +652,19 @@ def build_audit_report(db: Session, ctx, settings, fy: FiscalYear, account_id: i
         items = ([f"Blocker: {b['message']}" for b in check["blockers"]]
                  + [f"Warning: {w['message']}" for w in check["warnings"]])
     f += [P("• " + x, "body") for x in (items or ["No blockers or warnings."])]
+    changed = bank.changes_after_close(db, fy)          # 2.3.0 (#391)
+    if changed:
+        f += [Spacer(1, 6), PM("Balance changed after close", "h2"),
+              P("These non-register account balances were changed by a Budget Admin after the Fiscal Year was closed "
+                "(it was closed with the earlier balance).", "small")]
+        word = {"ADD": "Added", "CORRECT": "Corrected", "RETIRE": "Retired"}
+        for c in changed:
+            b, a = c["before"] or {}, c["after"] or {}
+            what = (f"{money(a.get('balance'))} as of {a.get('as_of_date')}" if c["action"] == "ADD" else
+                    f"{money(b.get('balance'))} as of {b.get('as_of_date')}" + (
+                        f" → {money(a.get('balance'))} as of {a.get('as_of_date')}" if c["action"] == "CORRECT" else ""))
+            f.append(P(f"• {c['changed_at'][:16].replace('T', ' ')} UTC by {c['changed_by'] or '?'} — {c['account']}: "
+                       f"{word.get(c['action'], c['action'])} {what}. Reason: {c['reason']}", "body"))
     f += [Spacer(1, 8), PM("Documentation review", "h2"),
           P("A transaction is documented when it has an attachment or is marked 'no attachment will be provided' with a "
             "reason. When the transaction itself has neither, every allocation (child) must have an attachment or its "

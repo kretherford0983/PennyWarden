@@ -236,6 +236,39 @@ export function Field({ label, children, hint }: { label: string; children: Reac
   );
 }
 
+// ------------------------------------------------------------------ 2.3.0 (#371, BR-109): budgets are gross
+/** The same sentence is GROSS_BUDGET_NOTE in backend/fmpoc/services/common.py (a test keeps the two identical). */
+export const GROSS_BUDGET_NOTE =
+  "Budget amounts are gross. Offsetting income or expense recorded in a budget of the opposite type, such as a reimbursement, is not subtracted.";
+
+/** The disclaimer line shown with a budget table (Budgets, Fiscal Year, Budget Review). */
+export function GrossBudgetNote() {
+  return <p className="hint gross-note" data-testid="gross-budget-note">{GROSS_BUDGET_NOTE}</p>;
+}
+
+let infoTipSeq = 0;
+/** A small ⓘ button that opens a popup with a short explanation (Escape, a click elsewhere or the button closes it). */
+export function InfoTip({ label, text }: { label: string; text: string }) {
+  const [open, setOpen] = useState(false);
+  const [id] = useState(() => `info-tip-${++infoTipSeq}`);
+  const box = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: Event) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", away);
+    document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("mousedown", away); document.removeEventListener("keydown", esc); };
+  }, [open]);
+  return (
+    <span className="info-tip" ref={box}>
+      <button type="button" className="info-tip-btn" aria-label={label} title={label} aria-expanded={open}
+              aria-controls={open ? id : undefined} onClick={() => setOpen(!open)}>ⓘ</button>
+      {open ? <span id={id} role="note" className="info-tip-pop">{text}</span> : null}
+    </span>
+  );
+}
+
 export function Loading() {
   return <p className="muted" aria-live="polite">Loading…</p>;
 }

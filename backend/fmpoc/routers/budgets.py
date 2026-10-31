@@ -7,9 +7,11 @@ from sqlalchemy.orm import Session
 
 from ..deps import Ctx, get_db, require
 from ..models import Budget, FiscalYear
-from ..schemas import (BudgetCreateIn, BudgetHistoryCorrectIn, BudgetHistoryCsvIn, BudgetHistoryIn, BudgetUpdateIn,
+from ..schemas import (BudgetCreateIn, BudgetHistoryCorrectIn, BudgetHistoryCsvIn, BudgetHistoryIn, BudgetInclusionIn,
+                       BudgetUpdateIn,
                        FormerBudgetIn, FormerBudgetUpdateIn, FormerLinkIn, ReasonIn)
 from ..services import budget_history as hist
+from ..services import budget_inclusions as incl
 from ..services import budgets as svc
 from ..services.common import get_scoped
 
@@ -107,9 +109,34 @@ def history_entered(budget_id: int, db: Session = Depends(get_db), ctx: Ctx = De
 def history_add(budget_id: int, body: BudgetHistoryIn, db: Session = Depends(get_db),
                 ctx: Ctx = Depends(require("budget.manage"))):
     b = get_scoped(db, Budget, budget_id, ctx, "Budget")
-    e = hist.add(db, ctx, b, body.fiscal_year_label, body.budgeted, body.actual, body.note, body.code, body.name)
+    e = hist.add(db, ctx, b, body.fiscal_year_label, body.budgeted, body.actual, body.note, body.code, body.name,
+                 estimated=body.estimated)
     db.commit()
     return hist.entry_out(e, hist.former_of_entry(db, e))
+
+
+# ------------------------------------------------------------------ 2.3.0 (#414) included in another budget
+@router.get("/{budget_id}/history/inclusion-options")
+def inclusion_options(budget_id: int, db: Session = Depends(get_db), ctx: Ctx = Depends(require("budget.manage"))):
+    """The earlier Fiscal Years (with their budgets of the same type) and budgets from before PennyWarden a year of
+    this budget's line can be marked as included in."""
+    return incl.options(db, ctx, get_scoped(db, Budget, budget_id, ctx, "Budget"))
+
+
+@router.post("/{budget_id}/history/inclusions", status_code=201)
+def inclusion_mark(budget_id: int, body: BudgetInclusionIn, db: Session = Depends(get_db),
+                   ctx: Ctx = Depends(require("budget.manage"))):
+    m = incl.mark(db, ctx, get_scoped(db, Budget, budget_id, ctx, "Budget"), body)
+    db.commit()
+    return incl.out(db, m)
+
+
+@router.post("/history-inclusions/{mark_id}/retire")
+def inclusion_retire(mark_id: int, body: ReasonIn, db: Session = Depends(get_db),
+                     ctx: Ctx = Depends(require("budget.manage"))):
+    m = incl.retire(db, ctx, mark_id, body.reason)
+    db.commit()
+    return incl.out(db, m)
 
 
 # ------------------------------------------------------------------ 2.2.0 (#381) budgets from before PennyWarden
@@ -158,7 +185,8 @@ def former_retire(former_id: int, body: ReasonIn, db: Session = Depends(get_db),
 def former_add_entry(former_id: int, body: BudgetHistoryIn, db: Session = Depends(get_db),
                      ctx: Ctx = Depends(require("budget.manage"))):
     f = hist.get_former(db, ctx, former_id)
-    e = hist.add_entry(db, ctx, f, body.fiscal_year_label, body.budgeted, body.actual, body.note, body.code, body.name)
+    e = hist.add_entry(db, ctx, f, body.fiscal_year_label, body.budgeted, body.actual, body.note, body.code, body.name,
+                       estimated=body.estimated)
     db.commit()
     return hist.entry_out(e, f)
 

@@ -57,6 +57,8 @@ PERMISSIONS: dict[str, set[str]] = {
     "reminder.org_resolve": {BUDGET_MANAGER, REGISTER_USER},
     # 1.7.3 (#52): delete (status Deleted) a budget of a Fiscal Year that is not approved
     "budget.delete": {BUDGET_ADMIN},
+    # 2.3.0 (#391): add, correct or retire a non-register balance inside a Closed Fiscal Year (confirmed, with a reason)
+    "bank_account.closed_year": {BUDGET_ADMIN},
     # 1.7.3 (#53): delete (status Deleted) an uncleared transaction instead of voiding it
     "transaction.delete": {REGISTER_ADMIN},
     # 2.0.0 (#156): Payments module (optional). Administrators set up check styles, signers and limits and test

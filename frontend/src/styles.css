@@ -451,20 +451,22 @@ label.button { display: inline-block; padding: 3px 10px; border-radius: 6px; bor
 .collapse-btn { background: none; border: none; padding: 0; font: inherit; font-weight: 700; color: inherit; cursor: pointer; display: inline-flex; gap: 6px; align-items: center; }
 .collapse-btn .chev { width: 1em; display: inline-block; }
 .collapsible.open > .collapsible-head { margin-bottom: 8px; }
+@media (max-width: 1199.98px) {   /* 2.3.0 (#394): Keep at the top is for narrow screens; wide ones lock the preview column */
 .collapsible.pinned { position: sticky; top: 0; z-index: 6; box-shadow: 0 4px 12px rgba(0,0,0,.18); }
 .collapsible.pinned { padding-top: 8px; padding-bottom: 8px; }
 .collapsible.pinned .check-preview { max-height: 30vh; width: auto !important; margin: 4px auto; }
 .collapsible.pinned .hint, .collapsible.pinned .alert { display: none; }
+.collapsible.pinned .live-preview-frame { height: 34vh; aspect-ratio: auto !important; margin: 4px auto; }
+.collapsible.pinned .live-preview-image { width: auto; max-width: 100%; height: 34vh; object-fit: contain; margin: 4px auto; }
+}
 /* #186: live preview of a cover letter or envelope template */
 .live-preview-frame { display: block; width: 100%; border: 1px solid var(--border); border-radius: 6px; background: #525659; margin: 8px 0; }
 .doc-preview.letter .live-preview-frame { max-width: 640px; margin-left: auto; margin-right: auto; }
 .doc-preview.envelope .live-preview-frame { max-width: 900px; }
-.collapsible.pinned .live-preview-frame { height: 34vh; aspect-ratio: auto !important; margin: 4px auto; }
 /* build 11 (#217): the preview is a picture of the printed page (Safari shows inline PDFs blank) */
 .live-preview-image { display: block; width: 100%; height: auto; border: 1px solid var(--border); border-radius: 6px; background: #dcdee2; margin: 8px 0; }
 .doc-preview.letter .live-preview-image { max-width: 640px; margin-left: auto; margin-right: auto; }
 .doc-preview.envelope .live-preview-image { max-width: 900px; }
-.collapsible.pinned .live-preview-image { width: auto; max-width: 100%; height: 34vh; object-fit: contain; margin: 4px auto; }
 .form-row { align-items: flex-start; }   /* the form-row rules are now general: see "#214 form rows" at the end */
 
 /* 2.0.0 (#165, #166): letters, envelopes, handwritten checks */
@@ -601,9 +603,21 @@ label.check.small { font-size: 12px; }
 .fr-bucket-row { flex-wrap: wrap; }
 .fr-bucket-row .fr-who { flex-basis: 100%; }
 
-/* 2.1.0 (#312): Donations Setup - the settings beside the live preview on wide screens */
-.donation-setup .setup-grid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; }
-@media (min-width: 1200px) { .donation-setup .setup-grid { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; } }
+/* 2.3.0 (#394): every setup editor - settings left, a locked preview right on wide screens; the preview at the top
+   (with Keep at the top) on narrow ones. The settings stay first in the page order. */
+.setup-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 0 1rem; }
+.setup-layout > .setup-settings { min-width: 0; }
+.setup-layout > .setup-preview { display: contents; }          /* narrow: the sections take part in the page, so Keep at the top can stick */
+.setup-layout > .setup-preview > * { order: -1; }
+@media (min-width: 1200px) {
+  .setup-layout { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
+  .setup-layout > .setup-preview { display: block; position: sticky; top: 0; z-index: 5; max-height: var(--pane-h, calc(100dvh - 140px)); overflow-y: auto; }
+  .setup-layout > .setup-preview > * { order: 0; }
+  .setup-layout .pin-toggle { display: none; }
+  .setup-layout .setup-preview .live-preview-image { width: auto; max-width: 100%; max-height: calc(var(--pane-h, 80vh) - 130px); object-fit: contain; margin-left: auto; margin-right: auto; }
+  .setup-layout .setup-preview .live-preview-frame { max-height: calc(var(--pane-h, 80vh) - 130px); }
+  .setup-layout .setup-preview .check-preview { max-width: 100%; }
+}
 .donation-dialog input.narrow { width: 7em; }
 .donation-dialog td .row { gap: 0.4rem; flex-wrap: nowrap; }
 /* 2.1.0 (#314): the organization profile fields wrap two or three to a line */
@@ -691,3 +705,53 @@ details.year-name summary { cursor: pointer; color: var(--muted); }
 .brand-preview .bp-foot { display: flex; gap: 8px; align-items: center; justify-content: space-between; border-top: 1px solid; margin-top: 10px; padding-top: 4px; font-size: 10px; }
 .brand-preview .bp-foot img { height: 14px; }
 .brand-preview .bp-foot span:first-of-type { flex: 1; }
+
+/* 2.3.0 (#371): gross-budget disclaimer line and the ⓘ popup */
+.gross-note { margin: 4px 0 12px; font-style: italic; }
+.info-tip { position: relative; display: inline-block; margin-left: 4px; }
+.info-tip-btn { background: none; border: 0; padding: 0 2px; min-height: 0; font-size: 14px; line-height: 1; color: var(--muted, inherit); cursor: pointer; }
+.info-tip-btn:focus-visible { outline: 2px solid var(--focus); border-radius: 50%; }
+.info-tip-pop { position: absolute; z-index: 30; top: 100%; left: 0; margin-top: 4px; width: 280px; max-width: 80vw; padding: 8px 10px;
+  background: var(--surface); color: var(--text, inherit); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 4px 14px rgba(0,0,0,.18);
+  font-size: 13px; font-weight: 400; line-height: 1.35; white-space: normal; }
+
+/* 2.3.0 (#375): Reports - the catalog home and a page per report with a compact grouped list */
+.reports-home .page-head { align-items: flex-end; }
+.reports-home .page-head .field { flex: 0 1 320px; }
+.report-recent h2, .report-group h2 { font-size: 15px; margin: 14px 0 8px; }
+.report-recent .row { flex-wrap: wrap; gap: 8px; }
+.recent-run { display: flex; flex-direction: column; gap: 2px; padding: 8px 12px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; text-decoration: none; color: var(--text); min-width: 190px; }
+.recent-run .recent-name { font-weight: 600; }
+.recent-run .recent-again { font-size: 12px; color: var(--link); }
+.report-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.report-card { display: flex; flex-direction: column; gap: 6px; padding: 14px 16px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; text-decoration: none; color: var(--text); }
+.report-card:hover, .report-card:focus-visible { border-color: var(--primary); }
+.report-card-head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.report-card-name { font-weight: 650; font-size: 15px; }
+.report-card-out { font-size: 11px; font-weight: 600; color: var(--primary); white-space: nowrap; }
+.report-card-purpose { font-size: 13px; line-height: 1.4; }
+.reports-page { display: flex; flex-wrap: wrap; gap: 20px; align-items: flex-start; }
+.report-side { flex: 1 1 200px; max-width: 230px; display: flex; flex-direction: column; gap: 10px; }
+.report-side input[type="search"] { height: var(--control-h-sm); }
+.report-side-group { display: flex; flex-direction: column; gap: 1px; }
+.report-side-h { font-size: 11px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); padding: 0 6px 2px; }
+.report-side-group a { padding: 4px 6px; border-radius: 5px; text-decoration: none; color: var(--text); font-size: 13px; }
+.report-side-group a.current { background: var(--info-bg); color: var(--primary); font-weight: 600; }
+.report-main { flex: 999 1 460px; min-width: 0; }
+.report-head h1 { margin: 0; }
+.report-title { align-items: center; gap: 10px; flex-wrap: wrap; }
+.report-purpose { margin: 6px 0 2px; }
+.output-badge { font-size: 11px; font-weight: 700; }
+@media print { .report-side, .report-head .hint { display: none; } }
+/* 2.3.0 (#376): Report settings */
+.rs-categories { list-style: none; padding: 0; margin: 8px 0; display: flex; flex-direction: column; gap: 10px; }
+.rs-category { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; background: var(--surface); }
+.rs-reports { list-style: none; padding: 0; margin: 6px 0 0; display: flex; flex-direction: column; gap: 4px; }
+.rs-reports li { align-items: center; gap: 6px; }
+.rs-reports select { max-width: 220px; }
+/* 2.3.0: Users - the roles filter (pick any number) */
+.user-filter-row { align-items: center; gap: 12px; margin: 4px 0 10px; }
+.multi-filter { position: relative; }
+.multi-filter > summary { cursor: pointer; display: inline-flex; align-items: center; height: var(--control-h); padding: 0 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); list-style: none; }
+.multi-filter > summary::after { content: "▾"; margin-left: 8px; color: var(--muted); }
+.multi-filter[open] > fieldset { position: absolute; z-index: 8; top: calc(100% + 4px); left: 0; min-width: 220px; margin: 0; padding: 8px 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 4px 14px rgba(0,0,0,.15); display: flex; flex-direction: column; gap: 4px; }

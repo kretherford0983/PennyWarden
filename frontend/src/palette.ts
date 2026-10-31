@@ -12,11 +12,13 @@ export type Palette = { colors: Record<Role, string>; series: string[] };
 
 export const isHex = (v: string) => /^#[0-9a-fA-F]{6}$/.test(v);
 
-export function generate(primary: string, secondary: string): Palette {
+/** 2.3.0 (#386): `dark` - the Material 3 dark scheme from the same two colors, with chart tones for a dark background
+ * (the dark ready-made palettes in services/branding.py were generated the same way). */
+export function generate(primary: string, secondary: string, dark = false): Palette {
   const pi = argbFromHex(primary), si = argbFromHex(secondary);
-  const base = new SchemeTonalSpot(Hct.fromInt(pi), false, 0);
+  const base = new SchemeTonalSpot(Hct.fromInt(pi), dark, 0);
   const s = new DynamicScheme({
-    sourceColorHct: Hct.fromInt(pi), variant: Variant.TONAL_SPOT, contrastLevel: 0, isDark: false,
+    sourceColorHct: Hct.fromInt(pi), variant: Variant.TONAL_SPOT, contrastLevel: 0, isDark: dark,
     primaryPalette: TonalPalette.fromInt(pi), secondaryPalette: TonalPalette.fromInt(si), tertiaryPalette: base.tertiaryPalette,
     neutralPalette: base.neutralPalette, neutralVariantPalette: base.neutralVariantPalette, errorPalette: base.errorPalette,
   });
@@ -29,7 +31,8 @@ export function generate(primary: string, secondary: string): Palette {
       surface: h(s.surface), on_surface: h(s.onSurface), surface_variant: h(s.surfaceVariant), on_surface_variant: h(s.onSurfaceVariant),
       outline: h(s.outline), outline_variant: h(s.outlineVariant),
     },
-    series: [P.tone(40), S.tone(60), T.tone(40), P.tone(70), S.tone(35), T.tone(70), N.tone(50), P.tone(25)].map(h),
+    series: (dark ? [P.tone(80), S.tone(70), T.tone(80), P.tone(60), S.tone(90), T.tone(60), N.tone(70), P.tone(45)]
+      : [P.tone(40), S.tone(60), T.tone(40), P.tone(70), S.tone(35), T.tone(70), N.tone(50), P.tone(25)]).map(h),
   };
 }
 
