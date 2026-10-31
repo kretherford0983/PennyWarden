@@ -8,13 +8,14 @@ const ROLES: Record<string, [string, string][]> = {
   ADMINISTRATOR: [["ADMINISTRATOR", "Administrator"]],
   FINANCIAL: [["BUDGET_MANAGER", "Budget Manager"], ["BUDGET_USER", "Budget User"], ["REGISTER_USER", "Register User"],
               ["BUDGET_ADMIN", "Budget Admin (with Budget Manager: may delete budgets of a Fiscal Year that is not approved)"],
-              ["REGISTER_ADMIN", "Register Admin (with Register User: may delete uncleared transactions)"]],
+              ["REGISTER_ADMIN", "Register Admin (with Register User: may delete uncleared transactions)"],
+              ["INVOICE_MANAGER", "Invoice Manager (Invoices module: decides what is billed; sees the Register read-only)"]],
   AUDITOR: [["AUDITOR", "Auditor"]],
 };
 
 // 2.3.0: the Users filters - short role names, the domains, and the statuses
 const ROLE_SHORT: Record<string, string> = { ADMINISTRATOR: "Administrator", BUDGET_MANAGER: "Budget Manager", BUDGET_USER: "Budget User",
-  REGISTER_USER: "Register User", BUDGET_ADMIN: "Budget Admin", REGISTER_ADMIN: "Register Admin", AUDITOR: "Auditor" };
+  REGISTER_USER: "Register User", BUDGET_ADMIN: "Budget Admin", REGISTER_ADMIN: "Register Admin", INVOICE_MANAGER: "Invoice Manager", AUDITOR: "Auditor" };
 const DOMAIN_LABEL: Record<string, string> = { ADMINISTRATOR: "Administrator", FINANCIAL: "Financial", AUDITOR: "Auditor", COMBINED: "Combined (local install)" };
 const isLocked = (u: any) => !!u.locked_until && new Date(u.locked_until).getTime() > Date.now();
 const statusOf = (u: any) => (!u.active ? "DISABLED" : isLocked(u) ? "LOCKED" : "ACTIVE");

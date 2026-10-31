@@ -10,6 +10,9 @@ AUDITOR = "AUDITOR"
 BUDGET_ADMIN = "BUDGET_ADMIN"
 REGISTER_ADMIN = "REGISTER_ADMIN"
 REQUIRES = {BUDGET_ADMIN: BUDGET_MANAGER, REGISTER_ADMIN: REGISTER_USER}
+# 2.4.0 (#251): Invoices module - decides what is billed and for how much (separation of duties: the Budget Manager
+# decides budgets, the Register User receives the money, the Auditor reviews). Combinable with the Financial roles.
+INVOICE_MANAGER = "INVOICE_MANAGER"
 
 ROLE_DEFS = [
     (ADMINISTRATOR, "Administrator", "ADMINISTRATOR"),
@@ -18,14 +21,16 @@ ROLE_DEFS = [
     (REGISTER_USER, "Register User", "FINANCIAL"),
     (BUDGET_ADMIN, "Budget Admin", "FINANCIAL"),
     (REGISTER_ADMIN, "Register Admin", "FINANCIAL"),
+    (INVOICE_MANAGER, "Invoice Manager", "FINANCIAL"),
     (AUDITOR, "Auditor", "AUDITOR"),
 ]
 ROLE_DOMAIN = {code: domain for code, _n, domain in ROLE_DEFS}
-FINANCIAL_ROLES = {BUDGET_MANAGER, BUDGET_USER, REGISTER_USER, BUDGET_ADMIN, REGISTER_ADMIN}
+FINANCIAL_ROLES = {BUDGET_MANAGER, BUDGET_USER, REGISTER_USER, BUDGET_ADMIN, REGISTER_ADMIN, INVOICE_MANAGER}
 # 1.9.0 (#54): on a local install one person may hold roles of several domains; such a user's security domain is
 # COMBINED. The first user of a local install gets these roles (Budget User adds nothing to Budget Manager).
 COMBINED = "COMBINED"
-LOCAL_FIRST_USER_ROLES = [ADMINISTRATOR, BUDGET_MANAGER, BUDGET_ADMIN, REGISTER_USER, REGISTER_ADMIN, AUDITOR]
+LOCAL_FIRST_USER_ROLES = [ADMINISTRATOR, BUDGET_MANAGER, BUDGET_ADMIN, REGISTER_USER, REGISTER_ADMIN, INVOICE_MANAGER,
+                          AUDITOR]
 
 PERMISSIONS: dict[str, set[str]] = {
     "users.view": {ADMINISTRATOR, AUDITOR},
@@ -33,12 +38,15 @@ PERMISSIONS: dict[str, set[str]] = {
     "audit.view": {ADMINISTRATOR, AUDITOR},
     "audit.view_financial_snapshots": {AUDITOR},
     "financial.view": {BUDGET_MANAGER, BUDGET_USER, REGISTER_USER, AUDITOR},
+    # 2.4.0 (#251): the Register read-only (and what its screen needs: accounts, entities, Fiscal Year filter) - the
+    # financial viewers plus the Invoice Manager, who has no budget or Fiscal Year screens
+    "register.view": {BUDGET_MANAGER, BUDGET_USER, REGISTER_USER, AUDITOR, INVOICE_MANAGER},
     "fiscal_year.manage": {BUDGET_MANAGER},
     "budget.manage": {BUDGET_MANAGER},
     "bank_account.manage": {BUDGET_MANAGER},
     "bank_account.reveal": {BUDGET_MANAGER},
     "transaction.manage": {REGISTER_USER},
-    "entity.manage": {BUDGET_MANAGER, REGISTER_USER},
+    "entity.manage": {BUDGET_MANAGER, REGISTER_USER, INVOICE_MANAGER},   # 2.4.0 (#251): customers (not FIs)
     "entity.create_financial_institution": {BUDGET_MANAGER, REGISTER_USER},
     "entity.manage_financial_institution": {BUDGET_MANAGER},
     "entity.review_names": {BUDGET_MANAGER},          # 2.2.0 (#316): Names to review after the first/last split
@@ -78,7 +86,12 @@ PERMISSIONS: dict[str, set[str]] = {
     "system.manage": {ADMINISTRATOR},
     # 2.2.0 (#349): the read-only System/About (version, update-check result, organization details, module status) -
     # every signed-in role. Editing stays system.manage / modules.manage (Administrators).
-    "system.about": {ADMINISTRATOR, AUDITOR, BUDGET_MANAGER, BUDGET_USER, REGISTER_USER},
+    "system.about": {ADMINISTRATOR, AUDITOR, BUDGET_MANAGER, BUDGET_USER, REGISTER_USER, INVOICE_MANAGER},
+    # 2.4.0 (#251): Invoices module (optional). Administrators set it up (numbering, terms, template) with dummy data
+    # only (BR-003); Invoice Managers create invoices; the other financial roles and Auditors view them.
+    "invoice.setup": {ADMINISTRATOR},
+    "invoice.manage": {INVOICE_MANAGER},
+    "invoice.view": {INVOICE_MANAGER, REGISTER_USER, BUDGET_MANAGER, BUDGET_USER, AUDITOR},
 }
 
 

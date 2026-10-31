@@ -126,7 +126,7 @@ function ModulesPanel() {
   const [err, setErr] = useState<unknown>(null);
   const [saved, setSaved] = useState(false);
   useEffect(() => { api.get("/api/system/modules").then(setM, setErr); }, []);
-  const toggle = async (key: "fundraisers" | "checks" | "donations", on: boolean) => {
+  const toggle = async (key: "fundraisers" | "checks" | "donations" | "invoices", on: boolean) => {
     setErr(null);
     setSaved(false);
     const before = m;
@@ -153,6 +153,11 @@ function ModulesPanel() {
           <p className="hint">Donation receipt letters. Adds <b>Donations Setup</b> to the Administrator's menu (EIN, mailing address, receipt letter, test
             print), and a <b>Donation receipt</b> action on deposits in the register: Register Users mark donations and print receipts; Budget Managers,
             Budget Users and Auditors see them. Works with the Payments module on or off. Turning it off hides the module; receipts and settings are kept.</p>
+          {/* 2.4.0 (#251) */}
+          <label className="check"><input type="checkbox" checked={!!m.invoices} onChange={(e) => toggle("invoices", e.target.checked)} /> Invoices module</label>
+          <p className="hint">Invoices for customers, paid into Invoiced Income budgets. Adds <b>Invoices</b> to the menu of Invoice Managers, Register Users, Budget Managers,
+            Budget Users and Auditors, and <b>Invoices Setup</b> to the Administrator's menu. Give the <b>Invoice Manager</b> role under Users. Works with the other modules on
+            or off. Turning it off hides the module; what was set up is kept.</p>
           {saved ? <p className="hint" role="status">Saved.</p> : null}
         </>
       ) : null}

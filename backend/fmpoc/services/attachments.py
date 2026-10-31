@@ -391,7 +391,15 @@ def out(a: Attachment) -> dict:
             "content_url": f"/api/attachments/{a.id}/content"}
 
 
+def _register_only_scope(ctx, owner_type: str) -> None:
+    """2.4.0 (#251): a role that sees only the Register (the Invoice Manager) sees transaction and line documents,
+    not Fiscal Year or fundraiser documents."""
+    if owner_type not in ("transaction", "allocation") and not ctx.has("financial.view"):
+        raise forbidden("This document is not available to your role.")
+
+
 def list_for(db: Session, ctx, owner_type: str, owner_id: int, include_removed: bool) -> list[Attachment]:
+    _register_only_scope(ctx, owner_type)
     owner, _t, _f = _resolve_owner(db, ctx, owner_type, owner_id)
     col = getattr(Attachment, OWNER_COLUMN[owner_type])
     # removed ones (history) after the active ones, each in display order (#259)
@@ -403,6 +411,8 @@ def list_for(db: Session, ctx, owner_type: str, owner_id: int, include_removed: 
 
 def get(db: Session, ctx, att_id: int) -> Attachment:
     a = get_scoped(db, Attachment, att_id, ctx, "Attachment")
+    if not (a.transaction_id or a.allocation_id):             # 2.4.0 (#251)
+        _register_only_scope(ctx, "other")
     if a.fundraiser_id:  # v1.6.1 CR-034: fundraiser documents follow the module switch and its viewers
         from . import fundraisers as fsvc
         fsvc.require_module(db, ctx)

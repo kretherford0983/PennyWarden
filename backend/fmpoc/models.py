@@ -58,6 +58,8 @@ class Workspace(Base):
     checks_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
     # 2.1.0 (#312): the Donations module (optional; donation receipt letters)
     donations_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
+    # 2.4.0 (#251): the Invoices module (optional)
+    invoices_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
     # 2.0.0 (#126): Administrators are warned after this many days without a backup (0 = off)
     backup_warning_days: Mapped[int] = mapped_column(Integer, default=7, server_default="7", nullable=False)
     # 2.0.0 (#130): maintenance mode - on while a message is set (from maintenance_starts_at, if given): everyone but

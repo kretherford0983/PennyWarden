@@ -6,6 +6,16 @@ Versions are `Breaking.Major.Minor` from 1.6.0 (docs/branching.md).
 PennyWarden 2.4.0 (in progress).
 
 ### Invoices
+- **The Invoices module and the Invoice Manager role (#251).** An Administrator turns on **Invoices** under
+  System/About → General (off by default; audited). A new Financial role, **Invoice Manager**, decides what is billed;
+  give it under Users, alone or with the other Financial roles (never with Administrator or Auditor). The invoice
+  pages themselves arrive with the next 2.4.0 test builds; for now **Invoices** explains who does what, and
+  **Invoices Setup** (Administrator) is a placeholder.
+- **Separation of duties:** the Budget Manager decides budgets, the Invoice Manager what is billed, the Register User
+  receives the money, the Auditor reviews. One person may hold several roles; System/About → **Security** lists any
+  account holding Budget Manager + Invoice Manager + Register User (information only).
+- An **Invoice Manager** sees the Register read-only (and its transaction documents), and creates and edits customer
+  entities - not Financial Institutions, budgets, Fiscal Years, the Dashboard or reports.
 - **Invoiced Income budgets (#250).** A Budget Manager can mark an Income budget as **Invoiced Income** (budget row
   menu → *Mark as Invoiced Income*); its sub-budgets and Other carry it. It is shown with a 🧾 *Invoiced income* label
   on the budget lists and in the Audit / Close report, and copying the budget into a new Fiscal Year keeps it. On an

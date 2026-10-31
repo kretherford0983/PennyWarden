@@ -2,6 +2,19 @@
 
 *2.4.0 is in progress. The full list is in the [changelog](../CHANGELOG.md).*
 
+## Invoices module and the Invoice Manager
+An Administrator turns on **Invoices** under System/About → General, and gives the new **Invoice Manager** role
+under Users. The invoice pages arrive in the next test builds. Who does what:
+
+- **Budget Manager** — the budgets, and which Income budgets are *Invoiced Income*;
+- **Invoice Manager** — what is billed and for how much;
+- **Register User** — receives and records the money;
+- **Auditor** — reviews everything.
+
+A small organization can give one person several roles; the Security page lists anyone holding Budget Manager,
+Invoice Manager and Register User together, just so it is known. An Invoice Manager on their own sees the Register
+(read-only), Entities (customers) and Invoices.
+
 ## Invoiced Income budgets
 Money collected on invoices should go to budgets set aside for it. A Budget Manager marks an Income budget with
 **Mark as Invoiced Income** in the budget's row menu (Budgets page); its sub-budgets carry the mark too, and it shows
