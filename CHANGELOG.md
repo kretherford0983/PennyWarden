@@ -5,6 +5,25 @@ Versions are `Breaking.Major.Minor` from 1.6.0 (docs/branching.md).
 ## 2.4.0 — unreleased
 PennyWarden 2.4.0 (in progress).
 
+### Events & Fundraisers
+- **The Fundraisers module is now Events & Fundraisers (#429).** The menu item is **Events**; the module setting and
+  the pages read *Events & Fundraisers*, and the setting lists examples (fundraisers, a Summer Cookout, an annual
+  picnic…). Nothing moves: every fundraiser, its buckets, reports and history stay where they were.
+- **Each record is a Fundraiser or an Event.** Choose the **Type** when you create or edit it. An Event (for example
+  a cookout that isn't meant to raise money) shows income, expenses and net, without the goal or donation receipts. A
+  Fundraiser works as before. Every existing record is a Fundraiser after the upgrade.
+- **Changing the type** keeps the goal and receipt settings (hidden while it is an Event) and is recorded in the audit
+  log. A series holds one type: *Continues from* lists only the same type, and an event linked with others is taken
+  out of its series before its type changes.
+- **Required budgets.** Once budgets are chosen, a **Fundraiser** needs an Income and an Expense budget, and an
+  **Event** an Expense budget (Income optional), in each Fiscal Year it uses. A record with no budgets yet can still be
+  saved. Results can't be marked final while a required budget is missing; a record from before the upgrade that
+  misses one shows a warning until it is added (or the type is changed).
+- An event using two Fiscal Years shows **one Income and one Expense budget figure** (combined).
+- **Reports:** the stakeholder report and presentation work for both (an Event's report says "event" and has no goal);
+  the Fiscal Year fundraising report and presentation list Events in a **separate section**, not in the fundraising
+  totals; the Quarterly/Annual report shows no goal for an Event.
+
 ### Attachments
 - **Identical files are stored once (#425).** When you attach a file that is already stored anywhere in PennyWarden,
   the file is not saved to disk again: the new attachment is linked to the stored copy. Nothing changes on screen —

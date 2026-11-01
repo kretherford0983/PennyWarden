@@ -89,12 +89,31 @@ def _link_snapshot(f: Fundraiser) -> dict:
     return {"series_id": f.series_id, "continues_from_id": f.continues_from_id}
 
 
-def continue_options(db: Session, ctx, start_date: dt.date, exclude_id: int | None = None) -> list[dict]:
+def series_type(db: Session, series_id: int | None, exclude_id: int | None = None) -> str | None:
+    """2.4.0 (#429): a series holds one type - the type of its events (None when it has none besides exclude_id)."""
+    if series_id is None:
+        return None
+    q = select(Fundraiser.event_type).where(Fundraiser.series_id == series_id)
+    if exclude_id is not None:
+        q = q.where(Fundraiser.id != exclude_id)
+    return db.scalar(q.limit(1))
+
+
+def _same_type_or_refuse(f: Fundraiser, other_type: str | None) -> None:
+    if other_type is not None and other_type != (f.event_type or "FUNDRAISER"):
+        mine, theirs = fsvc.TYPE_LABEL[f.event_type or "FUNDRAISER"], fsvc.TYPE_LABEL[other_type]
+        raise AppError(409, "SERIES_TYPE", f"A series holds only one type: this is a{'n' if mine == 'Event' else ''} "
+                       f"{mine}, the series holds {theirs}s. Change the type first, or choose another.")
+
+
+def continue_options(db: Session, ctx, start_date: dt.date, exclude_id: int | None = None,
+                     event_type: str | None = None) -> list[dict]:
     """The latest fundraiser of each series plus fundraisers in no series, from earlier Fiscal Years (so a skipped
-    year still links), newest first."""
+    year still links), newest first. 2.4.0 (#429): only events of the same type when a type is given."""
     year = date_year(db, ctx.workspace_id, start_date)
     cands = [f for f in db.scalars(select(Fundraiser).where(Fundraiser.workspace_id == ctx.workspace_id))
-             if f.id != exclude_id and fundraiser_year(db, f) < year]
+             if f.id != exclude_id and fundraiser_year(db, f) < year
+             and (event_type is None or (f.event_type or "FUNDRAISER") == event_type)]
     latest: dict[object, Fundraiser] = {}
     for f in cands:
         key = ("s", f.series_id) if f.series_id else ("f", f.id)
@@ -117,6 +136,7 @@ def set_link(db: Session, ctx, f: Fundraiser, previous_id: int | None, *, record
         prev = fsvc.get(db, ctx, previous_id)
         if prev.id == f.id or fundraiser_year(db, prev) >= fundraiser_year(db, f):
             raise validation("Choose a fundraiser of an earlier Fiscal Year.", "continues_from_id")
+        _same_type_or_refuse(f, prev.event_type or "FUNDRAISER")        # 2.4.0 (#429)
         if prev.series_id is None:
             s = FundraiserSeries(workspace_id=ctx.workspace_id, name=series_name_for(prev.name), created_by_user_id=ctx.user.id)
             db.add(s)
@@ -223,8 +243,11 @@ def add_options(db: Session, ctx, f: Fundraiser) -> list[dict]:
         entered = db.scalar(select(FundraiserSeriesResult).where(FundraiserSeriesResult.series_id == s.id,
                                                                  FundraiserSeriesResult.year == year,
                                                                  FundraiserSeriesResult.retired_at.is_(None)))
-        out.append({"id": s.id, "name": s.name, "allowed": entered is None,
-                    "reason": None if entered is None else f"{entered.fiscal_year_label} is entered on this series"})
+        st = series_type(db, s.id)
+        wrong = st is not None and st != (f.event_type or "FUNDRAISER")      # 2.4.0 (#429)
+        out.append({"id": s.id, "name": s.name, "allowed": entered is None and not wrong,
+                    "reason": (f"holds {fsvc.TYPE_LABEL[st]}s" if wrong else
+                               None if entered is None else f"{entered.fiscal_year_label} is entered on this series")})
     return out
 
 
@@ -236,6 +259,7 @@ def add_to_series(db: Session, ctx, f: Fundraiser, series_id: int) -> Fundraiser
         raise AppError(409, "ALREADY_IN_SERIES", "This fundraiser is already in a series. To combine two series, "
                        "use Merge into… on Fundraiser series.")
     s = _series(db, ctx, series_id)
+    _same_type_or_refuse(f, series_type(db, s.id))                     # 2.4.0 (#429)
     year = fundraiser_year(db, f)
     entered = db.scalar(select(FundraiserSeriesResult).where(FundraiserSeriesResult.series_id == s.id,
                                                              FundraiserSeriesResult.year == year,
@@ -343,6 +367,10 @@ def merge(db: Session, ctx, s: FundraiserSeries, into: FundraiserSeries) -> None
         raise validation("Choose another series to merge into.", "into_series_id")
     active = lambda x: {r.year for r in db.scalars(select(FundraiserSeriesResult).where(  # noqa: E731
         FundraiserSeriesResult.series_id == x.id, FundraiserSeriesResult.retired_at.is_(None)))}
+    ta, tb = series_type(db, s.id), series_type(db, into.id)
+    if ta is not None and tb is not None and ta != tb:                  # 2.4.0 (#429)
+        raise AppError(409, "SERIES_TYPE", f"A series holds only one type: {s.name} holds {fsvc.TYPE_LABEL[ta]}s and "
+                       f"{into.name} holds {fsvc.TYPE_LABEL[tb]}s.")
     both = active(s) & active(into)
     if both:
         raise AppError(409, "ENTERED_RESULT_CONFLICT", "Both series have an entered result for "
@@ -452,6 +480,7 @@ def next_year_draft(db: Session, ctx, f: Fundraiser) -> dict:
     return {"name": next_name(f.name), "description": f.description, "start_date": plus_year(f.start_date).isoformat(),
             "end_date": plus_year(f.end_date).isoformat(), "filter_text": f.filter_text, "filter_regex": bool(f.filter_regex),
             "budget_ids": budget_ids, "continues_from_id": f.id, "copy_buckets_from_id": f.id,
+            "event_type": f.event_type or "FUNDRAISER",          # 2.4.0 (#429): a series holds one type
             "buckets": [b.name for b in fsvc.ordered_buckets(db, f)],
             "categories": [c.name for c in fsvc.ordered_categories(db, f)]}
 
@@ -520,8 +549,15 @@ def fy_report(db: Session, ctx, fy: FiscalYear, ids: list[int], *, years: int = 
         f = fsvc.get(db, ctx, fid)
         selected.append(f)
     if not selected:
-        raise validation("Choose at least one fundraiser.", "ids")
-    all_f = list(db.scalars(select(Fundraiser).where(Fundraiser.workspace_id == ctx.workspace_id)))
+        raise validation("Choose at least one fundraiser or event.", "ids")
+    # 2.4.0 (#429): Events are listed in a section of their own; the fundraising figures, history and shares are the
+    # Fundraisers' only (a series holds one type, so an Event series never mixes in)
+    selected_events = [f for f in selected if fsvc.is_event(f)]
+    selected = [f for f in selected if not fsvc.is_event(f)]
+    all_f = [f for f in db.scalars(select(Fundraiser).where(Fundraiser.workspace_id == ctx.workspace_id))
+             if not fsvc.is_event(f)]
+    event_series = {f.series_id for f in db.scalars(select(Fundraiser).where(
+        Fundraiser.workspace_id == ctx.workspace_id, Fundraiser.event_type == "EVENT")) if f.series_id}
     series = {s.id: s for s in db.scalars(select(FundraiserSeries).where(FundraiserSeries.workspace_id == ctx.workspace_id))}
 
     def root(sid):  # follow merges
@@ -576,7 +612,8 @@ def fy_report(db: Session, ctx, fy: FiscalYear, ids: list[int], *, years: int = 
             add(key_of(f), yr, int(round(float(figures(f)["net_proceeds"]) * 100)), "Recorded")
     entered_any = False
     for r in db.scalars(select(FundraiserSeriesResult).where(FundraiserSeriesResult.retired_at.is_(None))):
-        if root(r.series_id) in series and series[root(r.series_id)].workspace_id == ctx.workspace_id and r.year < Y:
+        if (root(r.series_id) in series and series[root(r.series_id)].workspace_id == ctx.workspace_id and r.year < Y
+                and root(r.series_id) not in {root(s) for s in event_series}):
             add(("s", root(r.series_id)), r.year, r.net_cents, "Entered", r.note, bool(r.estimated))
             entered_any = True
     # only the series of the selected fundraisers and those with history are relevant; every series with any year
@@ -672,7 +709,15 @@ def fy_report(db: Session, ctx, fy: FiscalYear, ids: list[int], *, years: int = 
     if other_members:
         foot.append("Other combines series marked Group as Other and series under 5% of the period total: "
                     + ", ".join(sorted(other_members)) + ".")
+    events, events_net = [], 0                       # 2.4.0 (#429)
+    for f in sorted(selected_events, key=lambda x: (x.start_date, x.name)):
+        t = figures(f)
+        events_net += int(round(float(t["net_proceeds"]) * 100))
+        events.append({"id": f.id, "name": f.name, "start_date": f.start_date.isoformat(),
+                       "end_date": f.end_date.isoformat(), "status": report_status(db, f)["text"],
+                       "income": t["net_revenue"], "expenses": t["expenses"], "net": t["net_proceeds"]})
     return {
+        "events": events, "events_net": fmt(events_net),
         "fiscal_year": fy_brief(fy), "year": Y, "period": period, "years_option": years, "targeted": targeted,
         "avg_years": avg_years, "linked_history": linked_history, "fy_ended": fy_ended,
         "this_year": [{k: v for k, v in r.items() if not k.startswith("_") and k != "key"} for r in rows],
@@ -688,7 +733,7 @@ def fy_report(db: Session, ctx, fy: FiscalYear, ids: list[int], *, years: int = 
         "share": share, "averages": [{k: v for k, v in p.items() if not k.startswith("_")} for p in per_series],
         "history": history_rows, "notes": notes, "footnotes": foot, "year_over_year": yoy if linked_history else [],
         "generated_at": utcnow().isoformat(timespec="seconds") + "Z",
-        "selected_ids": [f.id for f in selected],
+        "selected_ids": [f.id for f in selected] + [f.id for f in selected_events],
     }
 
 

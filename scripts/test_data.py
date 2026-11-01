@@ -395,7 +395,9 @@ def main(base: str, start_month: int = 7, backup: str | None = None, summary: st
         if fy is prev1:   # a fundraiser that did not happen
             wash = tr.post("/api/fundraisers", {"name": f"Summer Car Wash {fy.date(11, 1).year}",
                                                 "start_date": fy.date(11, 20).isoformat(),
-                                                "budget_ids": [budget_ids[fy.label]["4220"]], "filter_text": "car wash"})
+                                                # 2.4.0 (#429): a Fundraiser needs Income and Expense
+                                                "budget_ids": [budget_ids[fy.label]["4220"], budget_ids[fy.label]["5420"]],
+                                                "filter_text": "car wash"})
             tr.post(f"/api/fundraisers/{wash['id']}/cancel", {"reason": "Rained out twice; not rescheduled"})
             counts["fundraisers"] += 1
 
