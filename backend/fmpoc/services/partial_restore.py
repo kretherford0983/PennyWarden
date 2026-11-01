@@ -49,9 +49,11 @@ DATA_TABLES = (
     "fundraiser_line_contributor", "fundraiser_bucket_line",
     "donation", "donation_line", "donation_detail", "donation_receipt", "donation_statement",
     "invoice_unit_type", "invoice_product_category", "invoice_product", "invoice_tax_rate",   # 2.4.0 (#252)
+    "invoice", "invoice_line", "invoice_revision",                                        # 2.4.0 (#253)
 )
 SETTINGS_SECTIONS = {
-    "settings.general": {"tables": ("signature_template", "report_grouping"),     # 2.3.0 (#376): report grouping
+    "settings.general": {"tables": ("signature_template", "report_grouping",     # 2.3.0 (#376): report grouping
+                                    "invoice_settings"),                         # 2.4.0 (#253): Invoices Setup
                          "workspace": ("name", "fundraisers_enabled", "checks_enabled", "donations_enabled", "invoices_enabled"),
                          "label": "General (organization profile, optional modules)"},
     "settings.backups": {"tables": ("backup_schedule", "backup_run"), "workspace": ("backup_warning_days",),

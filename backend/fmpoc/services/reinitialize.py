@@ -37,7 +37,8 @@ from ..models import (Donation, Attachment, AuditEvent, BankAccount, BankAccount
                       FundraiserFyReportNote, FundraiserSeries, FundraiserSeriesResult,
                       FundraiserClassification, FundraiserExclusion, FundraiserLineContributor, RegisterTransaction, Reminder,
                       RequestKey,
-                      TransactionAllocation, User, Workspace, utcnow, InvoiceProduct, InvoiceProductCategory, InvoiceTaxRate, InvoiceUnitType)
+                      TransactionAllocation, User, Workspace, utcnow, InvoiceProduct, InvoiceProductCategory, InvoiceTaxRate, InvoiceUnitType,
+                      Invoice, InvoiceLine, InvoiceRevision)
 from . import backup as bk
 from . import server_recovery
 
@@ -50,6 +51,7 @@ WIPE = (DonationStatement, DonationReceipt, DonationDetail, DonationLine, Donati
         TransactionAllocation, RegisterTransaction, CheckNumberAcknowledgement, CheckAccount, CheckPrinterSetting,
         FiscalYearBalanceChange, BankAccountBalance, BankAccount, FundraiserBucket, FundraiserBucketCategory, FundraiserBudget, Fundraiser, FundraiserSeriesResult,
         FundraiserSeries, FundraiserFyReportNote, BudgetProjectionChoice, BudgetInclusion, BudgetHistoryEntry, FormerBudget,
+        InvoiceRevision, InvoiceLine, Invoice,                                       # 2.4.0 (#253): invoices
         InvoiceProduct, InvoiceTaxRate, InvoiceProductCategory, InvoiceUnitType,     # 2.4.0 (#252): the catalog
         Budget, FiscalYear,
         CheckDocument, CheckSigner, CheckStyle, DonationSettings, RequestKey)   # 2.1.0 (#312): donations
@@ -142,7 +144,10 @@ def wipe(db: Session, ws_id: int, ctx, by: str, backup_name: str, via: str, befo
     fr_ids = select(Fundraiser.id).where(Fundraiser.workspace_id == ws_id)
     bucket_ids = select(FundraiserBucket.id).where(FundraiserBucket.fundraiser_id.in_(fr_ids))
     style_ids = select(CheckStyle.id).where(CheckStyle.workspace_id == ws_id)
+    inv_ids = select(Invoice.id).where(Invoice.workspace_id == ws_id)          # 2.4.0 (#253)
     scoped = {
+        InvoiceLine: InvoiceLine.invoice_id.in_(inv_ids),
+        InvoiceRevision: InvoiceRevision.invoice_id.in_(inv_ids),
         FundraiserBucketLine: FundraiserBucketLine.bucket_id.in_(bucket_ids),
         FundraiserClassification: FundraiserClassification.fundraiser_id.in_(fr_ids),
         FundraiserLineContributor: FundraiserLineContributor.fundraiser_id.in_(fr_ids),

@@ -1,6 +1,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { api, money } from "../api";
-import { ErrorBox, Field, GuardedForm, Loading, Modal } from "../components";
+import { EntityPicker, ErrorBox, Field, GuardedForm, Loading, Modal } from "../components";
+import { Link, useRouter } from "../router";
 import { useMe } from "../App";
 
 // 2.4.0 (#251): the Invoices module. Its sections (invoices, products, payments, reports) arrive with the later 2.4.0
@@ -23,8 +24,9 @@ export default function Invoices() {
           <li><b>Auditors</b> review everything.</li>
         </ul>
         <p className="hint">One person may hold several of these roles in a small organization; keeping them apart lets someone else check each step.</p>
-        <p className="muted" data-testid="inv-coming">Invoices, payments and invoice reports appear here as they are added in this release.</p>
+        <p className="muted" data-testid="inv-coming">Payments and invoice reports appear here as they are added in this release.</p>
       </section>
+      <InvoiceList manage={can("invoice.manage")} />
       {/* 2.4.0 (#252): Invoice Managers keep it; Budget Managers, Budget Users and Auditors see it */}
       {can("invoice.catalog_view") ? <Catalog manage={can("invoice.catalog_manage")} /> : null}
     </div>
@@ -164,16 +166,239 @@ function CatalogForm({ tab, row, onClose, onSaved }: { tab: Tab; row: any; onClo
 // build, #253). Administrators never see real invoices or products (BR-003).
 export function InvoiceSetup() {
   const [o, setO] = useState<any>(null);
+  const [v, setV] = useState<any>(null);
+  const [saved, setSaved] = useState(false);
   const [err, setErr] = useState<unknown>(null);
-  useEffect(() => { api.get("/api/invoices/setup").then(setO, setErr); }, []);
-  if (!o) return <><ErrorBox error={err} />{err ? null : <Loading />}</>;
+  useEffect(() => { api.get("/api/invoices/setup").then((x) => { setO(x); setV({ number_pattern: x.number_pattern, terms_days: String(x.terms_days), terms_text: x.terms_text || "", default_notes: x.default_notes || "" }); }, setErr); }, []);
+  if (!o || !v) return <><ErrorBox error={err} />{err ? null : <Loading />}</>;
+  const set = (k: string) => (e: any) => { setSaved(false); setV({ ...v, [k]: e.target.value }); };
+  const save = async (e: FormEvent) => {
+    e.preventDefault();
+    setErr(null);
+    try { const x = await api.put("/api/invoices/setup", { ...v, terms_days: Number(v.terms_days) }); setO(x); setSaved(true); } catch (x) { setErr(x); }
+  };
   return (
     <div>
-      <div className="page-head"><h1>Invoices Setup</h1></div>
+      <div className="page-head"><h1>Invoices Setup</h1><a className="button" href="/api/invoices/setup/test-print" target="_blank" rel="noreferrer">Test print (sample data)</a></div>
       <section className="card">
-        <p>Invoice numbering, payment terms, custom fields, the invoice PDF template, overdue-reminder days and a test print with sample data will be set up here.</p>
-        <p className="muted">Nothing to set up yet in this test build.</p>
+        <GuardedForm onSubmit={save}>
+          <ErrorBox error={err} />
+          <Field label="Invoice number pattern" hint="{YYYY} or {YY} = the invoice date's year, {SEQ} = the number (one sequence that never restarts; {SEQ:4} pads to 4 digits).">
+            <input required maxLength={40} value={v.number_pattern} onChange={set("number_pattern")} />
+          </Field>
+          <p className="hint">Next invoice: <b data-testid="inv-next-number">{o.next_number_example}</b></p>
+          <div className="row fields">
+            <Field label="Payment terms (days)"><input type="number" min={0} max={365} value={v.terms_days} onChange={set("terms_days")} /></Field>
+            <Field label="Terms text" hint="Printed on the invoice, e.g. Net 30."><input maxLength={200} value={v.terms_text} onChange={set("terms_text")} /></Field>
+          </div>
+          <Field label="Default notes" hint="Printed at the bottom of new invoices (can be changed per invoice)."><textarea rows={3} maxLength={2000} value={v.default_notes} onChange={set("default_notes")} /></Field>
+          <div className="actions"><button className="primary" type="submit">Save</button>{saved ? <span role="status" className="muted">Saved.</span> : null}</div>
+        </GuardedForm>
+        <p className="muted">Custom fields and the invoice PDF template come in a later test build.</p>
       </section>
     </div>
+  );
+}
+
+// ------------------------------------------------------------------ 2.4.0 (#253): invoices
+const STATUSES: [string, string][] = [["", "All"], ["OPEN", "Open (sent, partly paid)"], ["DRAFT", "Draft"], ["SENT", "Sent"], ["PARTLY_PAID", "Partly paid"],
+  ["PAID", "Paid"], ["VOID", "Void"], ["WRITTEN_OFF", "Written off"]];
+
+function InvoiceList({ manage }: { manage: boolean }) {
+  const { navigate } = useRouter();
+  const [rows, setRows] = useState<any[] | null>(null);
+  const [status, setStatus] = useState("");
+  const [search, setSearch] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [err, setErr] = useState<unknown>(null);
+  useEffect(() => {
+    const h = setTimeout(() => {
+      const p = new URLSearchParams();
+      if (status) p.set("status", status);
+      if (search.trim()) p.set("search", search.trim());
+      api.get(`/api/invoices?${p.toString()}`).then(setRows, setErr);
+    }, 200);
+    return () => clearTimeout(h);
+  }, [status, search]);
+  return (
+    <section className="card" aria-labelledby="inv-list-h">
+      <div className="charts-head">
+        <h2 id="inv-list-h">Invoices</h2>
+        <div className="row">
+          <Field label="Status"><select aria-label="Invoice status filter" value={status} onChange={(e) => setStatus(e.target.value)}>{STATUSES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Field>
+          <Field label="Search"><input aria-label="Search invoices" maxLength={100} value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Number or customer" /></Field>
+          {manage ? <button className="primary" onClick={() => setCreating(true)}>New invoice</button> : null}
+        </div>
+      </div>
+      <ErrorBox error={err} />
+      {!rows ? <Loading /> : !rows.length ? <p className="muted">No invoices.</p> : (
+        <table className="table" data-testid="invoice-list">
+          <thead><tr><th>Number</th><th>Customer</th><th>Date</th><th>Due</th><th>Status</th><th className="num">Total</th></tr></thead>
+          <tbody>{rows.map((r) => (
+            <tr key={r.id}>
+              <td><Link to={`/invoices/${r.id}`}>{r.number}</Link></td><td>{r.customer?.name}</td><td>{r.invoice_date}</td>
+              <td>{r.due_date}{r.overdue ? <span className="badge red">Overdue</span> : null}</td>
+              <td>{r.status_label}{r.write_off_status === "PENDING" ? <span className="badge yellow">Write-off pending</span> : null}</td>
+              <td className="num">{money(r.total)}</td>
+            </tr>
+          ))}</tbody>
+        </table>
+      )}
+      {creating ? <InvoiceForm onClose={() => setCreating(false)} onSaved={(i) => navigate(`/invoices/${i.id}`)} /> : null}
+    </section>
+  );
+}
+
+export function InvoiceDetail({ id }: { id: number }) {
+  const { can } = useMe();
+  const [i, setI] = useState<any>(null);
+  const [err, setErr] = useState<unknown>(null);
+  const [editing, setEditing] = useState(false);
+  const [ask, setAsk] = useState<null | { title: string; label: string; url: string; body?: (t: string) => any; optional?: boolean }>(null);
+  const load = () => api.get(`/api/invoices/${id}`).then(setI, setErr);
+  useEffect(() => { load(); }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!i) return <><ErrorBox error={err} />{err ? null : <Loading />}</>;
+  const manage = can("invoice.manage");
+  const act = async (url: string, body?: any) => { setErr(null); try { setI(await api.post(url, body)); } catch (x) { setErr(x); } };
+  return (
+    <div>
+      <p><Link to="/invoices">← Invoices</Link></p>
+      <div className="page-head">
+        <h1>Invoice {i.number} <span className="badge grey" data-testid="inv-status">{i.status_label}</span>{i.write_off?.status === "PENDING" ? <span className="badge yellow">Write-off pending</span> : null}</h1>
+        <a className="button" href={`/api/invoices/${i.id}/pdf`} target="_blank" rel="noreferrer">{i.status === "DRAFT" ? "Preview PDF" : "PDF"}</a>
+        {manage ? <div className="row">
+          {i.can.edit ? <button onClick={() => setEditing(true)}>Edit</button> : null}
+          {i.can.send ? <button className="primary" onClick={() => act(`/api/invoices/${i.id}/send`)}>Mark as sent</button> : null}
+          {i.can.revise ? <button onClick={() => setAsk({ title: "Revise invoice", label: "Why is it revised?", url: `/api/invoices/${i.id}/revise` })}>Revise…</button> : null}
+          {i.can.write_off ? <button onClick={() => setAsk({ title: "Request a write-off", label: "Reason", url: `/api/invoices/${i.id}/write-off` })}>Request write-off…</button> : null}
+          {i.can.void ? <button className="danger" onClick={() => setAsk({ title: "Void invoice", label: "Reason (the number is not reused)", url: `/api/invoices/${i.id}/void` })}>Void…</button> : null}
+        </div> : null}
+        {can("invoice.write_off_decide") && i.can.decide_write_off ? <div className="row">
+          <button className="primary" onClick={() => act(`/api/invoices/${i.id}/write-off/decision`, { approve: true })}>Approve write-off</button>
+          <button onClick={() => setAsk({ title: "Reject write-off", label: "Why is it rejected?", url: `/api/invoices/${i.id}/write-off/decision`, body: (t) => ({ approve: false, note: t }) })}>Reject…</button>
+        </div> : null}
+      </div>
+      <ErrorBox error={err} />
+      {i.write_off ? <div className={`alert ${i.write_off.status === "REJECTED" ? "info" : "warn"}`} role="note">Write-off {i.write_off.status.toLowerCase()}: {i.write_off.reason}{i.write_off.note ? ` — ${i.write_off.note}` : ""}{i.write_off.self_approved ? " (self-approved)" : ""}</div> : null}
+      {i.void_reason ? <div className="alert info" role="note">Void: {i.void_reason}</div> : null}
+      <dl className="dl">
+        <dt>Customer</dt><dd>{i.customer?.name}</dd>
+        <dt>Invoice date</dt><dd>{i.invoice_date}</dd>
+        <dt>Due</dt><dd>{i.due_date}{i.overdue ? <span className="badge red">Overdue</span> : null}</dd>
+        {i.terms_text ? <><dt>Terms</dt><dd>{i.terms_text}</dd></> : null}
+        {i.notes ? <><dt>Notes</dt><dd className="pre-wrap">{i.notes}</dd></> : null}
+      </dl>
+      <table className="table" data-testid="inv-lines">
+        <thead><tr><th>Description</th><th className="num">Qty</th><th className="num">Unit price</th><th className="num">Amount</th><th className="num">Net</th><th>Budget</th></tr></thead>
+        <tbody>{i.lines.map((l: any) => (
+          <tr key={l.id}>
+            <td>{l.description}{l.unit_type ? <span className="muted"> ({l.unit_type})</span> : null}{l.taxable ? <span className="badge grey">Taxable</span> : null}
+              {l.discount ? <div className="muted">Discount {l.discount.kind === "PERCENT" ? `${l.discount.value} %` : money(l.discount.value)} — {l.discount.reason} (−{money(l.discount.amount)})</div> : null}</td>
+            <td className="num">{l.quantity}</td><td className="num">{money(l.unit_price)}</td><td className="num">{money(l.gross)}</td><td className="num">{money(l.net)}</td>
+            <td>{l.budget?.label}</td>
+          </tr>
+        ))}</tbody>
+      </table>
+      <dl className="dl" data-testid="inv-totals">
+        <dt>Subtotal</dt><dd>{money(i.totals.subtotal)}</dd>
+        {Number(i.totals.line_discounts) ? <><dt>Line discounts</dt><dd>−{money(i.totals.line_discounts)}</dd></> : null}
+        {i.discount ? <><dt>Invoice discount</dt><dd>−{money(i.totals.invoice_discount)} ({i.discount.kind === "PERCENT" ? `${i.discount.value} %` : "fixed"} — {i.discount.reason})</dd></> : null}
+        {i.tax ? <><dt>{i.tax.name} ({i.tax.rate} %)</dt><dd>{money(i.totals.tax)}</dd></> : null}
+        <dt><b>Total</b></dt><dd><b>{money(i.totals.total)}</b></dd>
+      </dl>
+      {i.versions.length ? (
+        <section className="card"><h2>Sent versions</h2>
+          <ul>{i.versions.map((v: any) => <li key={v.revision}><a href={v.pdf_url} target="_blank" rel="noreferrer">{v.number}</a> — {money(v.total)}, sent {String(v.sent_at).slice(0, 10)}{v.reason ? <span className="muted"> · revised: {v.reason}</span> : null}</li>)}</ul>
+        </section>
+      ) : null}
+      {editing ? <InvoiceForm current={i} onClose={() => setEditing(false)} onSaved={(x) => { setEditing(false); setI(x); }} /> : null}
+      {ask ? <AskText {...ask} onClose={() => setAsk(null)} onDone={async (t) => { await act(ask.url, ask.body ? ask.body(t) : { reason: t }); setAsk(null); }} /> : null}
+    </div>
+  );
+}
+
+function AskText({ title, label, onClose, onDone }: { title: string; label: string; onClose: () => void; onDone: (t: string) => void }) {
+  const [t, setT] = useState("");
+  return (
+    <Modal title={title} onClose={onClose}>
+      <form onSubmit={(e) => { e.preventDefault(); if (t.trim()) onDone(t.trim()); }}>
+        <Field label={label}><textarea required rows={3} maxLength={500} value={t} onChange={(e) => setT(e.target.value)} /></Field>
+        <div className="actions"><button type="button" onClick={onClose}>Cancel</button><button className="primary" type="submit" disabled={!t.trim()}>OK</button></div>
+      </form>
+    </Modal>
+  );
+}
+
+type LineV = { id?: number; product_id: string; quantity: string; discount_kind: string; discount_value: string; discount_reason: string };
+
+function InvoiceForm({ current, onClose, onSaved }: { current?: any; onClose: () => void; onSaved: (i: any) => void }) {
+  const [products, setProducts] = useState<any[]>([]);
+  const [taxes, setTaxes] = useState<any[]>([]);
+  const [entities, setEntities] = useState<any[]>([]);
+  const [err, setErr] = useState<unknown>(null);
+  const [v, setV] = useState({ customer: current?.customer ? String(current.customer.id) : "", invoice_date: current?.invoice_date || new Date().toISOString().slice(0, 10),
+    due_date: current?.due_date || "", tax_rate_id: current?.tax ? String(current.tax.id) : "", notes: current?.notes ?? "", terms_text: current?.terms_text ?? "",
+    discount_kind: current?.discount?.kind || "", discount_value: current?.discount?.value || "", discount_reason: current?.discount?.reason || "" });
+  const [lines, setLines] = useState<LineV[]>(current ? current.lines.map((l: any) => ({ id: l.id, product_id: String(l.product_id), quantity: l.quantity,
+    discount_kind: l.discount?.kind || "", discount_value: l.discount?.value || "", discount_reason: l.discount?.reason || "" })) : [{ product_id: "", quantity: "1", discount_kind: "", discount_value: "", discount_reason: "" }]);
+  useEffect(() => {
+    api.get("/api/invoices/catalog/products").then((p) => setProducts(p.filter((x: any) => !x.is_system)), () => setProducts([]));
+    api.get("/api/invoices/catalog/tax-rates").then(setTaxes, () => setTaxes([]));
+    api.get("/api/entities").then(setEntities, setErr);
+  }, []);
+  const set = (k: string) => (e: any) => setV({ ...v, [k]: e.target.value });
+  const setLine = (k: number, patch: Partial<LineV>) => setLines(lines.map((l, i) => (i === k ? { ...l, ...patch } : l)));
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setErr(null);
+    const body: any = { customer_entity_id: Number(v.customer), invoice_date: v.invoice_date, due_date: v.due_date || null,
+      tax_rate_id: v.tax_rate_id ? Number(v.tax_rate_id) : null, notes: v.notes, terms_text: v.terms_text,
+      discount: v.discount_kind ? { kind: v.discount_kind, value: v.discount_value, reason: v.discount_reason } : null,
+      lines: lines.map((l) => ({ ...(l.id ? { id: l.id } : {}), product_id: Number(l.product_id), quantity: l.quantity,
+        discount_kind: l.discount_kind || null, discount_value: l.discount_kind ? l.discount_value : null, discount_reason: l.discount_kind ? l.discount_reason : null })) };
+    if (!current) { delete body.notes; delete body.terms_text; if (!v.notes) body.notes = null; }
+    try { onSaved(current ? await api.put(`/api/invoices/${current.id}`, body) : await api.post("/api/invoices", body)); } catch (x) { setErr(x); }
+  };
+  return (
+    <Modal title={current ? `Edit invoice ${current.number}` : "New invoice"} onClose={onClose} wide>
+      <GuardedForm onSubmit={submit}>
+        <ErrorBox error={err} />
+        <EntityPicker label="Customer" entities={entities} value={v.customer} onChange={(id) => setV({ ...v, customer: id })} />
+        <div className="row fields">
+          <Field label="Invoice date"><input type="date" required value={v.invoice_date} onChange={set("invoice_date")} /></Field>
+          <Field label="Due date" hint="Empty = from the terms."><input type="date" value={v.due_date} onChange={set("due_date")} /></Field>
+          <Field label="Sales tax"><select value={v.tax_rate_id} onChange={set("tax_rate_id")}><option value="">— none —</option>{taxes.map((t) => <option key={t.id} value={t.id}>{t.name} ({t.rate} %)</option>)}</select></Field>
+        </div>
+        <fieldset><legend>Lines (from the catalog)</legend>
+          {lines.map((l, k) => (
+            <div key={k} className="row fields inv-line">
+              <Field label={`Line ${k + 1} product`}><select required value={l.product_id} onChange={(e) => setLine(k, { product_id: e.target.value, id: undefined })}>
+                <option value="">— choose —</option>{products.map((p) => <option key={p.id} value={p.id} disabled={p.needs_budget}>{p.name} — {money(p.unit_price)}{p.unit_type ? ` / ${p.unit_type}` : ""}{p.needs_budget ? " (needs budget)" : ""}</option>)}</select></Field>
+              <Field label={`Line ${k + 1} quantity`}><input required inputMode="decimal" maxLength={14} value={l.quantity} onChange={(e) => setLine(k, { quantity: e.target.value })} /></Field>
+              <Field label={`Line ${k + 1} discount`}><select value={l.discount_kind} onChange={(e) => setLine(k, { discount_kind: e.target.value })}><option value="">— none —</option><option value="AMOUNT">Amount ($)</option><option value="PERCENT">Percent (%)</option></select></Field>
+              {l.discount_kind ? <>
+                <Field label={`Line ${k + 1} discount value`}><input required inputMode="decimal" maxLength={20} value={l.discount_value} onChange={(e) => setLine(k, { discount_value: e.target.value })} /></Field>
+                <Field label={`Line ${k + 1} discount reason`}><input required maxLength={200} value={l.discount_reason} onChange={(e) => setLine(k, { discount_reason: e.target.value })} /></Field>
+              </> : null}
+              {lines.length > 1 ? <button type="button" className="small" onClick={() => setLines(lines.filter((_x, i) => i !== k))}>Remove</button> : null}
+            </div>
+          ))}
+          <button type="button" className="small" onClick={() => setLines([...lines, { product_id: "", quantity: "1", discount_kind: "", discount_value: "", discount_reason: "" }])}>+ Line</button>
+          {!products.length ? <p className="muted">No products yet — add them in the Product catalog.</p> : null}
+        </fieldset>
+        <div className="row fields">
+          <Field label="Invoice discount"><select value={v.discount_kind} onChange={set("discount_kind")}><option value="">— none —</option><option value="AMOUNT">Amount ($)</option><option value="PERCENT">Percent (%)</option></select></Field>
+          {v.discount_kind ? <>
+            <Field label="Invoice discount value"><input required inputMode="decimal" maxLength={20} value={v.discount_value} onChange={set("discount_value")} /></Field>
+            <Field label="Invoice discount reason" hint="Printed on the invoice."><input required maxLength={200} value={v.discount_reason} onChange={set("discount_reason")} /></Field>
+          </> : null}
+        </div>
+        {current ? <>
+          <Field label="Terms"><input maxLength={200} value={v.terms_text} onChange={set("terms_text")} /></Field>
+          <Field label="Notes"><textarea rows={2} maxLength={2000} value={v.notes} onChange={set("notes")} /></Field>
+        </> : null}
+        <div className="actions"><button type="button" onClick={onClose}>Cancel</button><button className="primary" type="submit">{current ? "Save" : "Create draft"}</button></div>
+      </GuardedForm>
+    </Modal>
   );
 }

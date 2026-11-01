@@ -544,6 +544,44 @@ class InvoiceTaxRateIn(In):                  # 2.4.0 (#252)
     budget_id: int | None = None
 
 
+class InvoiceDiscountIn(In):                 # 2.4.0 (#253)
+    kind: Literal["AMOUNT", "PERCENT"]
+    value: Str(20)
+    reason: Str(200)
+
+
+class InvoiceLineIn(In):                     # 2.4.0 (#253): every line comes from the catalog
+    id: int | None = None
+    product_id: int
+    quantity: Str(14)
+    discount_kind: Literal["AMOUNT", "PERCENT"] | None = None
+    discount_value: OptStr(20) = None
+    discount_reason: OptStr(200) = None
+
+
+class InvoiceIn(In):                         # 2.4.0 (#253)
+    customer_entity_id: int
+    invoice_date: Date
+    due_date: OptDate = None
+    terms_text: OptStr(200) = None
+    notes: OptStr(2000) = None
+    tax_rate_id: int | None = None
+    discount: InvoiceDiscountIn | None = None
+    lines: list[InvoiceLineIn] = Field(default_factory=list, max_length=200)
+
+
+class InvoiceSetupIn(In):                    # 2.4.0 (#253): the Administrator's setup
+    number_pattern: Str(40)
+    terms_days: int = 30
+    terms_text: OptStr(200) = None
+    default_notes: OptStr(2000) = None
+
+
+class InvoiceWriteOffDecisionIn(In):          # 2.4.0 (#253)
+    approve: bool
+    note: OptStr(500) = None
+
+
 class InvoicedIncomeIn(In):                   # 2.4.0 (#250)
     invoiced_income: bool
 

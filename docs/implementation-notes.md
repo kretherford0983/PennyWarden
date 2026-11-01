@@ -128,6 +128,48 @@ could not otherwise be corrected. Scope and safeguards:
   with a link; the variable picker completes dotted names.
 - Tests: `backend/tests/test_v210_organization.py` (6, including the data migration) and the E2E #126 and #312 steps.
 
+**2.4.0 build 6 — Invoices (#253, decided 2026-10-16; part 1 of 2).** Kyle's plan allows splitting a build; #253 is
+split: this build has drafts, lines, discounts, tax, numbering, sending (PDF), revisions, void and write-off; the
+**custom fields** and the **PDF template editor** (on the cover-letter editor) follow as build 6b.
+- Tables (migration `0074`): `invoice_settings` (pattern, `next_seq`, terms days/text, default notes - in the
+  selective-restore *settings.general* section), `invoice`, `invoice_line`, `invoice_revision`, and
+  `attachment.invoice_id` (each sent version's PDF). Invoices, lines and revisions are in Reinitialize `WIPE` and
+  `DATA_TABLES`; the settings are kept by Reinitialize so the sequence never restarts.
+- Calculation (`invoice_docs.compute`, cents / thousandths, half up): line gross = qty x price; line discount fixed
+  or %, never above the line; whole-invoice discount fixed or % of the nets, never above them, spread in proportion
+  to the nets (floor, leftover cents to the largest lines) so every line stays >= 0 on its budget; tax = one rate per
+  invoice on the taxable lines' final nets, rounded once per invoice; total = nets + tax.
+- Lines copy the product's name/description, price, unit, taxable flag and its Invoiced Income budget **for the
+  invoice date's Fiscal Year** (via the #89 continuation; none -> 422 `NEEDS_BUDGET`). The tax rate's name, rate and
+  budget are copied too. The Discount item isn't a line: discounts are fields on a line / the invoice, printed as
+  "Discount — <reason>" lines on the PDF.
+- Numbering: pattern with `{YYYY}`/`{YY}` (invoice date) and one `{SEQ}`/`{SEQ:n}`; validated (only safe characters,
+  <= 40). The number is taken when the draft is created; the next number is `max(next_seq, highest used + 1)`, so a
+  restore can never cause a reuse.
+- Lifecycle: DRAFT -> SENT (Mark as sent: PDF made and attached via `attachments.new_record`, `invoice_revision`
+  row with the snapshot) -> PARTLY_PAID / PAID (#254). Revise (SENT/PARTLY_PAID, reason) -> DRAFT with
+  `revision+1`, shown `-R<n>` (the issue's proposed format); earlier versions and PDFs stay. Void: DRAFT or SENT with
+  no payments (proposed rule; payments arrive with #254). Write-off: IM requests (reason; SENT/PARTLY_PAID) ->
+  *Write-off pending* -> BM approves (WRITTEN_OFF; `self_approved` when the approver requested it) or rejects (with
+  a reason). No budget or balance effect. Audited: `INVOICE_CREATED/UPDATED/SENT/REVISION_STARTED/VOIDED`,
+  `INVOICE_WRITE_OFF_REQUESTED/APPROVED/REJECTED`, `INVOICE_SETUP_UPDATED`.
+- Permissions: `invoice.manage` (IM: create, edit drafts, send, revise, void, request write-off),
+  `invoice.write_off_decide` (BM), `invoice.view` (IM, RU, BM, BU, Auditor); Administrator: setup and the sample
+  test print only (`GET /api/invoices/setup/test-print`, sample data, BR-003). A sent PDF is read through
+  `/api/attachments/{id}/content` with `invoice.view` and the module on.
+- PDF: a plain reportlab layout (organization, number, dates, bill-to with the mailing address, lines, discount
+  lines, subtotal, tax, total, terms, notes); drafts are watermarked DRAFT.
+- Not yet (later builds): custom fields and the template editor (6b), payments and the open balance (#254), the
+  "revision can't go below the amount paid" rule (#254), reports (#255), batch (#248), email (#249). The proposed
+  register label change (*Vendor invoice #* / *Customer invoice*) is left for Kyle to confirm.
+- New rules (spec docs unchanged): **BR-INV-DOC-001** catalog-only lines with copied prices; **-002** discount and
+  tax calculation as above; **-003** numbers from the pattern, never reused; **-004** revisions keep the number with
+  -R<n> and every sent PDF; **-005** void with a reason, no payments; **-006** write-off requested by IM, decided by
+  BM, self-approval marked; **-007** Administrator setup with a sample-data test print only. ACs
+  **AC-INV-DOC-001..009** (totals; copied prices and discount limits; numbering; send/revise/PDFs; test print;
+  void/write-off; roles; needs budget; list filters).
+- Tests: `backend/tests/test_v240_invoices.py` (9).
+
 **2.4.0 build 5 — Product catalog (#252, decided 2026-10-16).**
 - Tables (migration `0073`): `invoice_unit_type`, `invoice_product_category`, `invoice_product` (name, code, description,
   unit price, unit type, category, taxable, `budget_id`, `is_system`, active), `invoice_tax_rate` (name,

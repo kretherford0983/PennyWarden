@@ -506,6 +506,8 @@ class Attachment(Base):
     donation_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     # 2.2.0 (#256): a year-end giving statement's kept copy (and its envelope)
     donation_statement_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    # 2.4.0 (#253): a sent invoice's PDF (every revision's stays)
+    invoice_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     removed_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     removed_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("app_user.id"), nullable=True)
@@ -1370,3 +1372,101 @@ class InvoiceTaxRate(Base):
     created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
     updated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+# ---------------------------------------------------------------- 2.4.0 (#253): Invoices
+class InvoiceSettings(Base):
+    """The Administrator's module setup: numbering, default terms and notes (one row per workspace)."""
+    __tablename__ = "invoice_settings"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), unique=True)
+    number_pattern: Mapped[str] = mapped_column(String(60), default="INV-{YYYY}-{SEQ:4}")
+    next_seq: Mapped[int] = mapped_column(Integer, default=1)          # one sequence, never restarts or reused
+    terms_days: Mapped[int] = mapped_column(Integer, default=30)
+    terms_text: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    default_notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    updated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class Invoice(Base):
+    """A customer invoice. Its number is taken when the draft is created and never reused (BR-001); a sent invoice
+    is changed by a revision (same number, -R<n>). Void and write-off have no financial or budget effect."""
+    __tablename__ = "invoice"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
+    number: Mapped[str] = mapped_column(String(60))
+    seq: Mapped[int] = mapped_column(Integer)
+    revision: Mapped[int] = mapped_column(Integer, default=0)
+    customer_entity_id: Mapped[int] = mapped_column(ForeignKey("entity.id"), index=True)
+    invoice_date: Mapped[dt.date] = mapped_column(Date)
+    due_date: Mapped[dt.date] = mapped_column(Date)
+    terms_text: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    tax_rate_id: Mapped[int | None] = mapped_column(ForeignKey("invoice_tax_rate.id"), nullable=True)
+    tax_name: Mapped[str | None] = mapped_column(String(80), nullable=True)          # copied, like line prices
+    tax_rate_milli_pct: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    tax_budget_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    discount_kind: Mapped[str | None] = mapped_column(String(10), nullable=True)    # AMOUNT | PERCENT (whole invoice)
+    discount_value: Mapped[int | None] = mapped_column(BigInteger, nullable=True)  # cents | thousandths of a percent
+    discount_reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    status: Mapped[str] = mapped_column(String(14), default="DRAFT", index=True)  # DRAFT|SENT|PARTLY_PAID|PAID|VOID|WRITTEN_OFF
+    sent_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    sent_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    void_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    voided_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    voided_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    write_off_status: Mapped[str | None] = mapped_column(String(10), nullable=True)   # PENDING|APPROVED|REJECTED
+    write_off_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    write_off_requested_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    write_off_requested_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    write_off_decided_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    write_off_decided_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    write_off_note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    write_off_self_approved: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    updated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    lines: Mapped[list["InvoiceLine"]] = relationship(
+        back_populates="invoice", lazy="selectin", cascade="all, delete-orphan", order_by="InvoiceLine.position")
+
+    __table_args__ = (UniqueConstraint("workspace_id", "seq", name="uq_invoice_ws_seq"),)
+
+
+class InvoiceLine(Base):
+    """A line from the catalog: the product's description, price, unit, taxable flag and budget are copied when it is
+    added (a catalog change never alters an issued invoice); the Invoice Manager enters the quantity and an optional
+    line discount with its reason."""
+    __tablename__ = "invoice_line"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    invoice_id: Mapped[int] = mapped_column(ForeignKey("invoice.id"), index=True)
+    position: Mapped[int] = mapped_column(Integer)
+    product_id: Mapped[int] = mapped_column(ForeignKey("invoice_product.id"))
+    description: Mapped[str] = mapped_column(String(1000))
+    unit_type: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    unit_price_cents: Mapped[int] = mapped_column(BigInteger)
+    quantity_milli: Mapped[int] = mapped_column(BigInteger)                  # quantity x 1000 (0.5 hour = 500)
+    taxable: Mapped[bool] = mapped_column(Boolean, default=False)
+    budget_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    discount_kind: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    discount_value: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    discount_reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
+
+    invoice: Mapped["Invoice"] = relationship(back_populates="lines")
+
+
+class InvoiceRevision(Base):
+    """A sent version of an invoice: the snapshot that was sent and its PDF (kept as the invoice's attachment)."""
+    __tablename__ = "invoice_revision"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    invoice_id: Mapped[int] = mapped_column(ForeignKey("invoice.id"), index=True)
+    revision: Mapped[int] = mapped_column(Integer)
+    number: Mapped[str] = mapped_column(String(70))
+    total_cents: Mapped[int] = mapped_column(BigInteger)
+    snapshot: Mapped[str] = mapped_column(Text)
+    attachment_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    reason: Mapped[str | None] = mapped_column(String(500), nullable=True)   # why the next revision was made
+    sent_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    sent_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)

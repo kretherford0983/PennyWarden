@@ -96,6 +96,8 @@ PERMISSIONS: dict[str, set[str]] = {
     # by Budget Managers, Budget Users and Auditors; never the Administrator (BR-003)
     "invoice.catalog_manage": {INVOICE_MANAGER},
     "invoice.catalog_view": {INVOICE_MANAGER, BUDGET_MANAGER, BUDGET_USER, AUDITOR},
+    # 2.4.0 (#253): a write-off is requested by an Invoice Manager and approved or rejected by a Budget Manager
+    "invoice.write_off_decide": {BUDGET_MANAGER},
 }
 
 
