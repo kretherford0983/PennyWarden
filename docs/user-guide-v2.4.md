@@ -39,8 +39,9 @@ reason that prints on the invoice - and the sales tax if it applies. The draft g
 - **Void…** an invoice entered by mistake (with a reason). Its number is never used again.
 - **Request write-off…** for an amount you won't collect; a Budget Manager approves or rejects it.
 
-An Administrator sets the number pattern, the payment terms and default notes in **Invoices Setup**, and can make a
-**Test print** with sample data.
+An Administrator sets the number pattern, the payment terms and default notes in **Invoices Setup**, adds
+**custom fields** (on the invoice or on each line: text, number, date or a pick-list; required or not; on the PDF or
+not), and can make a **Test print** with sample data.
 
 ## Invoiced Income budgets
 Money collected on invoices should go to budgets set aside for it. A Budget Manager marks an Income budget with

@@ -53,7 +53,7 @@ DATA_TABLES = (
 )
 SETTINGS_SECTIONS = {
     "settings.general": {"tables": ("signature_template", "report_grouping",     # 2.3.0 (#376): report grouping
-                                    "invoice_settings"),                         # 2.4.0 (#253): Invoices Setup
+                                    "invoice_settings", "invoice_custom_field"),  # 2.4.0 (#253): Invoices Setup
                          "workspace": ("name", "fundraisers_enabled", "checks_enabled", "donations_enabled", "invoices_enabled"),
                          "label": "General (organization profile, optional modules)"},
     "settings.backups": {"tables": ("backup_schedule", "backup_run"), "workspace": ("backup_warning_days",),

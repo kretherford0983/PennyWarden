@@ -134,7 +134,7 @@ def simple_active(kind: Simple, oid: int, action: Literal["inactivate", "restore
 from fastapi import Query, Request  # noqa: E402
 from fastapi.responses import Response  # noqa: E402
 
-from ..schemas import InvoiceIn, InvoiceSetupIn, InvoiceWriteOffDecisionIn, ReasonIn  # noqa: E402
+from ..schemas import InvoiceFieldIn, InvoiceIn, InvoiceSetupIn, InvoiceWriteOffDecisionIn, ReasonIn  # noqa: E402
 from ..services import invoice_docs as docs  # noqa: E402
 
 
@@ -152,6 +152,35 @@ def setup_test_print(db: Session = Depends(get_db), ctx: Ctx = Depends(require("
     pdf = docs.invoice_pdf(db, ctx.workspace_id, None, sample=True, watermark="SAMPLE")
     return Response(pdf, media_type="application/pdf",
                     headers={"Content-Disposition": 'inline; filename="invoice-sample.pdf"', "Cache-Control": "no-store"})
+
+
+@router.get("/fields")
+def invoice_fields(db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.view"))):
+    """2.4.0 (#253 part 2): the active custom fields, for the invoice form."""
+    svc.require_module(db, ctx)
+    return [docs.field_out(f) for f in docs.fields_of(db, ctx.workspace_id)]
+
+
+@router.post("/setup/fields", status_code=201)
+def create_field(body: InvoiceFieldIn, db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.setup"))):
+    out = docs.save_field(db, ctx, None, body)
+    db.commit()
+    return out
+
+
+@router.put("/setup/fields/{fid}")
+def update_field(fid: int, body: InvoiceFieldIn, db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.setup"))):
+    out = docs.save_field(db, ctx, fid, body)
+    db.commit()
+    return out
+
+
+@router.post("/setup/fields/{fid}/{action}")
+def field_active(fid: int, action: Literal["retire", "restore"], db: Session = Depends(get_db),
+                 ctx: Ctx = Depends(require("invoice.setup"))):
+    out = docs.set_field_active(db, ctx, fid, action == "restore")
+    db.commit()
+    return out
 
 
 @router.get("")

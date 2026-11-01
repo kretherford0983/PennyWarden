@@ -128,6 +128,24 @@ could not otherwise be corrected. Scope and safeguards:
   with a link; the variable picker completes dotted names.
 - Tests: `backend/tests/test_v210_organization.py` (6, including the data migration) and the E2E #126 and #312 steps.
 
+**2.4.0 build 6b — Invoice custom fields (#253 part 2).**
+- `invoice_custom_field` (level INVOICE/LINE, type TEXT/NUMBER/DATE/PICKLIST with options, required, show on PDF,
+  position, active) and `custom_values` JSON on `invoice` and `invoice_line` (migration `0075`). Fields are setup:
+  kept by Reinitialize, restored with *settings.general* in a selective restore.
+- Administrator (`invoice.setup`): `POST/PUT /api/invoices/setup/fields[/{id}]`, `.../{id}/retire|restore`; level and
+  type are fixed once created (entered values keep their meaning); names unique per level; audited
+  `INVOICE_FIELD_CREATED/UPDATED/RETIRED/RESTORED`. Viewers read the active fields at `GET /api/invoices/fields`.
+- Values are checked server-side on every save: unknown field ids refused; active required fields must have a value;
+  TEXT <= 200, NUMBER `-?\d{1,12}(\.\d{1,4})?`, DATE ISO, PICKLIST one of the choices. A retired field is no longer
+  asked for or required, and its stored values are kept unchanged. Values are part of the audit snapshot, the sent
+  revision snapshot, and (when *show on PDF*) the PDF (invoice fields under Bill to, line fields after the
+  description). The sample test print shows a sample field.
+- Still to come: the PDF **template editor** on the cover-letter editor (#253's last part) - tracked for a later
+  2.4.0 build; the invoice PDF uses the plain layout until then.
+- New rules: **BR-INV-FLD-001** custom fields are defined by the Administrator only and retired, never deleted;
+  **-002** values validated server-side by type, required and choices; **-003** show-on-PDF controls printing. ACs
+  **AC-INV-FLD-001..004**. Tests: `backend/tests/test_v240_invoice_fields.py` (3).
+
 **2.4.0 build 6 — Invoices (#253, decided 2026-10-16; part 1 of 2).** Kyle's plan allows splitting a build; #253 is
 split: this build has drafts, lines, discounts, tax, numbering, sending (PDF), revisions, void and write-off; the
 **custom fields** and the **PDF template editor** (on the cover-letter editor) follow as build 6b.

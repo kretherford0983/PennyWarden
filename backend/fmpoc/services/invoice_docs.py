@@ -173,7 +173,8 @@ def setup_out(db: Session, ctx) -> dict:
     return {"module": inv.module_enabled(db, ctx.workspace_id), "number_pattern": s.number_pattern,
             "next_number_example": format_number(s.number_pattern, dt.date.today(), _next_seq(db, ctx.workspace_id, s)),
             "terms_days": s.terms_days, "terms_text": s.terms_text, "default_notes": s.default_notes,
-            "pending": ["custom fields", "PDF template"]}
+            "fields": [field_out(f) for f in fields_of(db, ctx.workspace_id, include_inactive=True)],
+            "pending": ["PDF template"]}
 
 
 def save_setup(db: Session, ctx, body) -> dict:
@@ -228,7 +229,9 @@ def snapshot(i: Invoice) -> dict:
                        "discount": None if not ln.discount_kind else {"kind": ln.discount_kind, "value": ln.discount_value,
                                                                       "reason": ln.discount_reason}}
                       for ln in i.lines],
-            "total": fmt(t["total"]), "tax": fmt(t["tax"])}
+            "total": fmt(t["total"]), "tax": fmt(t["tax"]),
+            "custom_values": json.loads(i.custom_values) if i.custom_values else {},
+            "line_custom_values": [json.loads(ln.custom_values) if ln.custom_values else {} for ln in i.lines]}
 
 
 def _disc_out(kind, value) -> str | None:
@@ -263,7 +266,11 @@ def out(db: Session, ctx, i: Invoice, brief: bool = False) -> dict:
                        "discount": None if not r["line"].discount_kind else {
                            "kind": r["line"].discount_kind, "value": _disc_out(r["line"].discount_kind, r["line"].discount_value),
                            "reason": r["line"].discount_reason, "amount": fmt(r["line_discount"])},
-                       "invoice_discount_share": fmt(r["share"]), "net": fmt(r["final"])} for r in t["rows"]],
+                       "invoice_discount_share": fmt(r["share"]), "net": fmt(r["final"]),
+                       "custom_values": json.loads(r["line"].custom_values) if r["line"].custom_values else {},
+                       "fields": values_out(db, i.workspace_id, "LINE", r["line"].custom_values)} for r in t["rows"]],
+            "custom_values": json.loads(i.custom_values) if i.custom_values else {},
+            "fields": values_out(db, i.workspace_id, "INVOICE", i.custom_values),
             "totals": {"subtotal": fmt(t["subtotal"]), "line_discounts": fmt(t["line_discounts"]),
                        "invoice_discount": fmt(t["invoice_discount"]), "taxable": fmt(t["taxable_base"]),
                        "tax": fmt(t["tax"]), "total": fmt(t["total"])},
@@ -397,6 +404,12 @@ def _apply(db: Session, ctx, i: Invoice, body, creating: bool) -> None:
             i.lines.append(ln)
     i.lines.sort(key=lambda x: x.position)
     compute(list(i.lines), i.discount_kind, i.discount_value, i.tax_rate_milli_pct)   # validates the discounts
+    # 2.4.0 (#253 part 2): custom fields
+    i.custom_values = custom_values(db, ctx.workspace_id, "INVOICE", getattr(body, "custom_values", None),
+                                    i.custom_values)
+    for ln, lb in zip(new_lines, body.lines):
+        ln.custom_values = custom_values(db, ctx.workspace_id, "LINE", getattr(lb, "custom_values", None),
+                                         ln.custom_values)
     i.updated_by_user_id = ctx.user.id
 
 
@@ -586,6 +599,8 @@ def invoice_pdf(db: Session, ws_id: int, i: Invoice | None, sample: bool = False
     head.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
     f = [head, Spacer(1, 14), Paragraph("<b>Bill to</b>", body)]
     f += [Paragraph(escape(x), body) for x in data["bill_to"]]
+    for name, value in data.get("fields") or []:          # 2.4.0 (#253 part 2): invoice custom fields
+        f.append(Paragraph(f"<b>{escape(name)}:</b> {escape(value)}", body))
     f.append(Spacer(1, 12))
     rows = [[Paragraph("<b>Description</b>", body), Paragraph("<b>Qty</b>", right), Paragraph("<b>Unit price</b>", right),
              Paragraph("<b>Amount</b>", right)]]
@@ -631,7 +646,10 @@ def _pdf_data(db: Session, i: Invoice) -> dict:
     lines = []
     for r in t["rows"]:
         ln = r["line"]
-        lines.append({"description": ln.description, "unit": ln.unit_type or "", "qty": qty_text(ln.quantity_milli),
+        extra = "; ".join(f"{x['name']}: {x['value']}" for x in values_out(db, i.workspace_id, "LINE", ln.custom_values,
+                                                                           pdf_only=True))
+        lines.append({"description": ln.description + (f" ({extra})" if extra else ""), "unit": ln.unit_type or "",
+                      "qty": qty_text(ln.quantity_milli),
                       "price": _money(ln.unit_price_cents), "amount": _money(r["gross"]),
                       "discount": _money(r["line_discount"]) if r["line_discount"] else None,
                       "discount_reason": ln.discount_reason or ""})
@@ -643,7 +661,9 @@ def _pdf_data(db: Session, i: Invoice) -> dict:
             "invoice_discount_reason": i.discount_reason or "",
             "tax": _money(t["tax"]) if i.tax_rate_milli_pct else None,
             "tax_label": f"{i.tax_name} ({cat.rate_text(i.tax_rate_milli_pct)} %)" if i.tax_rate_milli_pct else "",
-            "total": _money(t["total"]), "terms": i.terms_text, "notes": i.notes}
+            "total": _money(t["total"]), "terms": i.terms_text, "notes": i.notes,
+            "fields": [(x["name"], x["value"]) for x in values_out(db, i.workspace_id, "INVOICE", i.custom_values,
+                                                                  pdf_only=True)]}
 
 
 def _sample_data() -> dict:
@@ -655,7 +675,144 @@ def _sample_data() -> dict:
                        "amount": "$100.00", "discount": "$10.00", "discount_reason": "Sample discount"}],
             "subtotal": "$210.00", "invoice_discount": None, "invoice_discount_reason": "",
             "tax": "$15.23", "tax_label": "Sample tax (7.25 %)", "total": "$225.23", "terms": "Net 30",
-            "notes": "This is a test print with sample data."}
+            "notes": "This is a test print with sample data.", "fields": [("Purchase order", "SAMPLE-PO-1")]}
 
 
 __all__ = ["Attachment"]
+
+
+# ------------------------------------------------------------------ 2.4.0 (#253 part 2): custom fields
+FIELD_TYPES = ("TEXT", "NUMBER", "DATE", "PICKLIST")
+FIELD_LEVELS = ("INVOICE", "LINE")
+TEXT_MAX = 200
+
+
+def field_out(f) -> dict:
+    return {"id": f.id, "level": f.level, "name": f.name, "field_type": f.field_type,
+            "options": json.loads(f.options) if f.options else [], "required": bool(f.required),
+            "show_on_pdf": bool(f.show_on_pdf), "position": f.position, "active": bool(f.active)}
+
+
+def fields_of(db: Session, ws_id: int, include_inactive: bool = False) -> list:
+    from ..models import InvoiceCustomField
+    q = select(InvoiceCustomField).where(InvoiceCustomField.workspace_id == ws_id).order_by(
+        InvoiceCustomField.level, InvoiceCustomField.position, InvoiceCustomField.id)
+    if not include_inactive:
+        q = q.where(InvoiceCustomField.active.is_(True))
+    return list(db.scalars(q))
+
+
+def save_field(db: Session, ctx, fid: int | None, body) -> dict:
+    """Administrator (invoice.setup). The level and type are fixed once created (values already entered keep their
+    meaning); name, options, required, show-on-PDF and order can change."""
+    from ..models import InvoiceCustomField
+    inv.require_module(db, ctx)
+    name = (body.name or "").strip()
+    if not name:
+        raise validation("Enter a name.", "name")
+    opts = [o.strip() for o in (body.options or []) if o and o.strip()]
+    if len(set(o.lower() for o in opts)) != len(opts):
+        raise validation("The choices must be different.", "options")
+    if any(len(o) > 80 for o in opts) or len(opts) > 50:
+        raise validation("At most 50 choices of 80 characters.", "options")
+    if fid is None:
+        if body.level not in FIELD_LEVELS or body.field_type not in FIELD_TYPES:
+            raise validation("Choose the level and the type.", "field_type")
+        f = InvoiceCustomField(workspace_id=ctx.workspace_id, level=body.level, field_type=body.field_type,
+                               created_by_user_id=ctx.user.id,
+                               position=1 + (db.scalar(select(func.max(InvoiceCustomField.position)).where(
+                                   InvoiceCustomField.workspace_id == ctx.workspace_id)) or 0))
+        db.add(f)
+        before = None
+    else:
+        f = db.get(InvoiceCustomField, fid)
+        if f is None or f.workspace_id != ctx.workspace_id:
+            raise not_found("Field")
+        if (body.level and body.level != f.level) or (body.field_type and body.field_type != f.field_type):
+            raise validation("A field's level and type can't change; retire it and add a new one.", "field_type")
+        before = field_out(f)
+    if f.field_type == "PICKLIST" and not opts:
+        raise validation("A pick-list needs at least one choice.", "options")
+    dup = db.scalar(select(InvoiceCustomField.id).where(
+        InvoiceCustomField.workspace_id == ctx.workspace_id, InvoiceCustomField.level == f.level,
+        func.lower(InvoiceCustomField.name) == name.lower(), InvoiceCustomField.id != (f.id or -1)))
+    if dup is not None:
+        raise conflict("DUPLICATE_NAME", f"A field named \"{name}\" already exists (it may be retired).")
+    f.name, f.options = name[:60], json.dumps(opts) if f.field_type == "PICKLIST" else None
+    f.required, f.show_on_pdf, f.updated_by_user_id = bool(body.required), bool(body.show_on_pdf), ctx.user.id
+    db.flush()
+    after = field_out(f)
+    if before is None:
+        audit.record(db, ctx, "INVOICE_FIELD_CREATED", "invoice_custom_field", f.id, None, after)
+    elif after != before:
+        audit.record(db, ctx, "INVOICE_FIELD_UPDATED", "invoice_custom_field", f.id, before, after)
+    return after
+
+
+def set_field_active(db: Session, ctx, fid: int, active: bool) -> dict:
+    from ..models import InvoiceCustomField
+    inv.require_module(db, ctx)
+    f = db.get(InvoiceCustomField, fid) if isinstance(fid, int) else None
+    if f is None or f.workspace_id != ctx.workspace_id:
+        raise not_found("Field")
+    if bool(f.active) != active:
+        before = field_out(f)
+        f.active, f.updated_by_user_id = active, ctx.user.id
+        db.flush()
+        audit.record(db, ctx, "INVOICE_FIELD_RESTORED" if active else "INVOICE_FIELD_RETIRED", "invoice_custom_field",
+                     f.id, before, field_out(f))
+    return field_out(f)
+
+
+def _check_value(f, raw):
+    """A value for an active field, as stored (string); None for empty."""
+    if raw is None or (isinstance(raw, str) and not raw.strip()):
+        if f.required:
+            raise validation(f"\"{f.name}\" is required.", f"field_{f.id}")
+        return None
+    v = str(raw).strip()
+    if f.field_type == "TEXT":
+        if len(v) > TEXT_MAX:
+            raise validation(f"\"{f.name}\": at most {TEXT_MAX} characters.", f"field_{f.id}")
+    elif f.field_type == "NUMBER":
+        if not re.fullmatch(r"-?\d{1,12}(\.\d{1,4})?", v):
+            raise validation(f"\"{f.name}\" must be a number.", f"field_{f.id}")
+    elif f.field_type == "DATE":
+        try:
+            dt.date.fromisoformat(v)
+        except ValueError:
+            raise validation(f"\"{f.name}\" must be a date.", f"field_{f.id}") from None
+    else:
+        if v not in (json.loads(f.options) if f.options else []):
+            raise validation(f"\"{f.name}\": choose one of the listed choices.", f"field_{f.id}")
+    return v
+
+
+def custom_values(db: Session, ws_id: int, level: str, given: dict | None, old_json: str | None) -> str | None:
+    """Validates the values for the level's active fields; values of retired fields are kept as they were."""
+    given = {str(k): v for k, v in (given or {}).items()}
+    old = json.loads(old_json) if old_json else {}
+    fields = {str(f.id): f for f in fields_of(db, ws_id, include_inactive=True) if f.level == level}
+    unknown = set(given) - set(fields)
+    if unknown:
+        raise validation("Unknown field.", "custom_values")
+    out = {}
+    for fid, f in fields.items():
+        if not f.active:
+            if fid in old:
+                out[fid] = old[fid]
+            continue
+        v = _check_value(f, given.get(fid))
+        if v is not None:
+            out[fid] = v
+    return json.dumps(out, sort_keys=True) if out else None
+
+
+def values_out(db: Session, ws_id: int, level: str, raw: str | None, pdf_only: bool = False) -> list[dict]:
+    vals = json.loads(raw) if raw else {}
+    rows = []
+    for f in fields_of(db, ws_id, include_inactive=True):
+        if f.level != level or str(f.id) not in vals or (pdf_only and not f.show_on_pdf):
+            continue
+        rows.append({"field_id": f.id, "name": f.name, "value": vals[str(f.id)], "retired": not f.active})
+    return rows

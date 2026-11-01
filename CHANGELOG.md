@@ -19,6 +19,9 @@ PennyWarden 2.4.0 (in progress).
 - **Numbers** follow the pattern set in **Invoices Setup** (for example `INV-{YYYY}-{SEQ:4}` → INV-2027-0042); one
   sequence that never restarts, and a number is never reused - not even after a void. Setup also holds the default
   terms (due date) and notes, and a test print with sample data.
+- **Custom fields** (Invoices Setup): the Administrator adds fields to invoices or to their lines - text, number,
+  date or a pick-list - each required or not and shown on the PDF or not. A field no longer needed is retired; values
+  already entered stay.
 - **Mark as sent** keeps the invoice's PDF with it. A sent invoice is changed by **Revise**: the same number with
   -R1, -R2…, and every earlier PDF stays attached. **Void** (with a reason) is for an invoice with no payments.
   A **write-off** is requested by the Invoice Manager with a reason and approved or rejected by a Budget Manager
