@@ -24,6 +24,7 @@ from ..services.dashboard_layout import encode as encode_layout
 from ..services.dashboard_layout import is_customized, layout_for
 from ..services.checkprint.service import module_enabled as checks_enabled
 from ..services.donations import module_enabled as donations_enabled
+from ..services.invoices import module_enabled as invoices_enabled   # 2.4.0 (#251)
 from ..services.fundraisers import module_enabled
 from ..services.register import DEFAULT_REGISTER_SORT
 
@@ -81,7 +82,8 @@ def me_payload(ctx: Ctx) -> dict:
             "fundraiser_series_sort": u.fundraiser_series_sort or "desc",  # 2.2.0 (#351)
             "modules": {"fundraisers": module_enabled(object_session(u), u.workspace_id),  # v1.6.0 CR-033
                         "checks": checks_enabled(object_session(u), u.workspace_id),  # 2.0.0 (#156)
-                        "donations": donations_enabled(object_session(u), u.workspace_id)},  # 2.1.0 (#312)
+                        "donations": donations_enabled(object_session(u), u.workspace_id),  # 2.1.0 (#312)
+                        "invoices": invoices_enabled(object_session(u), u.workspace_id)},  # 2.4.0 (#251)
             "sign_in_notices": recovery.sign_in_notices(u),  # 1.8.0 (#113)
             "first_name": u.first_name, "last_name": u.last_name,   # 2.0.0 (#134)
             # 2.0.0 (#134): an Administrator completes the missing names before continuing

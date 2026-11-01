@@ -104,7 +104,8 @@ class PreferencesIn(In):
 
 Domain = Literal["ADMINISTRATOR", "FINANCIAL", "AUDITOR", "COMBINED"]  # 1.9.0 (#54): COMBINED on local installs
 RoleCode = Literal["ADMINISTRATOR", "BUDGET_MANAGER", "BUDGET_USER", "REGISTER_USER", "AUDITOR",
-                   "BUDGET_ADMIN", "REGISTER_ADMIN"]  # 1.7.3 (#52, #53)
+                   "BUDGET_ADMIN", "REGISTER_ADMIN",  # 1.7.3 (#52, #53)
+                   "INVOICE_MANAGER"]  # 2.4.0 (#251)
 
 
 class UserCreateIn(In):
@@ -636,6 +637,7 @@ class ModulesIn(In):
     fundraisers: bool | None = None
     checks: bool | None = None   # 2.0.0 (#156): Check Printing
     donations: bool | None = None   # 2.1.0 (#312): Donations (receipt letters)
+    invoices: bool | None = None    # 2.4.0 (#251): Invoices
 
 
 # ------------------------------------------------------------------ v1.6.1 CR-034 fundraiser management

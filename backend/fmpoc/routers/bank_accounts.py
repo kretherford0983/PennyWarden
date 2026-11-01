@@ -22,7 +22,7 @@ def _key(request: Request):
 
 
 @router.get("")
-def list_accounts(include_closed: bool = True, db: Session = Depends(get_db), ctx: Ctx = Depends(require("financial.view"))):
+def list_accounts(include_closed: bool = True, db: Session = Depends(get_db), ctx: Ctx = Depends(require("register.view"))):
     q = select(BankAccount).where(BankAccount.workspace_id == ctx.workspace_id)
     if not include_closed:
         q = q.where(BankAccount.status == "ACTIVE")
@@ -30,7 +30,7 @@ def list_accounts(include_closed: bool = True, db: Session = Depends(get_db), ct
 
 
 @router.get("/{account_id}")
-def get_account(account_id: int, db: Session = Depends(get_db), ctx: Ctx = Depends(require("financial.view"))):
+def get_account(account_id: int, db: Session = Depends(get_db), ctx: Ctx = Depends(require("register.view"))):
     return svc.out(db, svc.get(db, ctx, account_id))
 
 

@@ -18,7 +18,7 @@ Owner = Literal["fiscal_year", "transaction", "allocation", "fundraiser"]
 
 @router.get("/attachments")
 def list_attachments(owner_type: Owner, owner_id: int, include_removed: bool = False, db: Session = Depends(get_db),
-                     ctx: Ctx = Depends(require("financial.view"))):
+                     ctx: Ctx = Depends(require("register.view"))):
     return [svc.out(a) for a in svc.list_for(db, ctx, owner_type, owner_id, include_removed)]
 
 
@@ -42,13 +42,13 @@ def reorder(body: AttachmentOrderIn, db: Session = Depends(get_db), ctx: Ctx = D
 
 
 @router.get("/attachments/{att_id}")
-def get_attachment(att_id: int, db: Session = Depends(get_db), ctx: Ctx = Depends(require("financial.view"))):
+def get_attachment(att_id: int, db: Session = Depends(get_db), ctx: Ctx = Depends(require("register.view"))):
     return svc.out(svc.get(db, ctx, att_id))
 
 
 @router.get("/attachments/{att_id}/content")
 def content(att_id: int, request: Request, download: bool = False, db: Session = Depends(get_db),
-            ctx: Ctx = Depends(require("financial.view"))):
+            ctx: Ctx = Depends(require("register.view"))):
     a = svc.get(db, ctx, att_id)
     path = svc.path_for(request.app.state.settings, a)
     if not path.is_file():

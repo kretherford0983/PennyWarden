@@ -51,7 +51,7 @@ DATA_TABLES = (
 )
 SETTINGS_SECTIONS = {
     "settings.general": {"tables": ("signature_template", "report_grouping"),     # 2.3.0 (#376): report grouping
-                         "workspace": ("name", "fundraisers_enabled", "checks_enabled", "donations_enabled"),
+                         "workspace": ("name", "fundraisers_enabled", "checks_enabled", "donations_enabled", "invoices_enabled"),
                          "label": "General (organization profile, optional modules)"},
     "settings.backups": {"tables": ("backup_schedule", "backup_run"), "workspace": ("backup_warning_days",),
                          "label": "Backups (backup reminder, scheduled backups)"},

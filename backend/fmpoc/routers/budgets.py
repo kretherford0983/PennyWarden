@@ -34,7 +34,7 @@ def selectable(fiscal_year_id: int = Query(...), transaction_type: Literal["DEPO
 
 @router.get("/filter-options")
 def filter_options(fiscal_year_id: int | None = None, db: Session = Depends(get_db),
-                   ctx: Ctx = Depends(require("financial.view"))):
+                   ctx: Ctx = Depends(require("register.view"))):
     """1.7.3 (#104): the Register's Budget filter - one Fiscal Year's budgets, or every year's."""
     fy = get_scoped(db, FiscalYear, fiscal_year_id, ctx, "Fiscal Year") if fiscal_year_id else None
     return svc.filter_options(db, ctx.workspace_id, fy)

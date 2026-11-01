@@ -66,4 +66,11 @@ def overview(db: Session, settings, ws_id: int, request_https: bool) -> dict:
         _item("disabled", "Disabled accounts", str(len(disabled)), None,
               "Disabled accounts can't sign in; their history is kept."),
     ]
+    # 2.4.0 (#251): separation of duties - informational, never a warning or a block
+    whole = [u for u in active if {"BUDGET_MANAGER", "INVOICE_MANAGER", "REGISTER_USER"} <= set(u.role_codes)]
+    items.append(_item("whole_cycle", "Whole invoice cycle in one account", str(len(whole)), None,
+                       "No one holds Budget Manager, Invoice Manager and Register User together." if not whole else
+                       "Budget Manager + Invoice Manager + Register User: " + ", ".join(u.username for u in whole)
+                       + ". This is allowed (a small organization may need it); with more people, splitting these "
+                       "roles lets someone else check each step."))
     return {"mode": settings.mode, "items": items, "attention": sum(1 for i in items if i["status"] == "attention")}

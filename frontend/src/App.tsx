@@ -36,11 +36,13 @@ import { TestingBanner } from "./pages/Testing";
 import { DemoBanner } from "./pages/Demo";
 import { ReinitializedBanner } from "./pages/Reinitialize";
 import NamesGate from "./pages/NamesGate";
+import Invoices, { InvoiceSetup } from "./pages/Invoices";
 
 export const ROLE_NAMES: Record<string, string> = {
   ADMINISTRATOR: "Administrator", BUDGET_MANAGER: "Budget Manager", BUDGET_USER: "Budget User",
   REGISTER_USER: "Register User", AUDITOR: "Auditor",
   BUDGET_ADMIN: "Budget Admin", REGISTER_ADMIN: "Register Admin", // 1.7.3 (#52, #53)
+  INVOICE_MANAGER: "Invoice Manager", // 2.4.0 (#251)
 };
 
 export interface Me {
@@ -57,7 +59,7 @@ export interface Me {
   dashboard_layout?: { key: string; visible: boolean }[]; // v1.5.0 CR-031
   dashboard_layout_customized?: boolean;
   register_sort?: string; // 2.1.0 (#262): "transaction_date:asc" | "transaction_date:desc" | "clear_date:asc" | "clear_date:desc"
-  modules?: { fundraisers?: boolean; checks?: boolean; donations?: boolean };
+  modules?: { fundraisers?: boolean; checks?: boolean; donations?: boolean; invoices?: boolean };   // 2.4.0 (#251): invoices
   fundraiser_series_sort?: "asc" | "desc"; // 2.2.0 (#351): Fundraiser series years (default newest first)
   name_order?: string;   // 2.2.0 (#316) // v1.6.0 CR-033; 2.0.0 (#156) Check Printing; 2.1.0 (#312) Donations
   mfa_pending?: "VERIFY" | "ENROLL" | "PASSWORD" | "QUESTIONS" | null; // v1.4.1 CR-018; 1.8.0 (#113) setup steps
@@ -188,11 +190,18 @@ function navFor(me: Me) {
     const after = Math.max(fin.findIndex((n) => n[0] === "/payments"), fin.findIndex((n) => n[0] === "/register"));
     fin.splice(after + 1, 0, ["/donations", "Donations"]);
   }
+  // 2.4.0 (#251): Invoices for the roles that use it when the module is on, after Donations/Payments/Register
+  if (me.modules?.invoices && me.permissions.includes("invoice.view")) {
+    const after = Math.max(fin.findIndex((n) => n[0] === "/donations"), fin.findIndex((n) => n[0] === "/payments"), fin.findIndex((n) => n[0] === "/register"));
+    fin.splice(after + 1, 0, ["/invoices", "Invoices"]);
+  }
   // 2.0.0 (#156): Payments Setup (check printing) for Administrators when the Payments module is on
   const checkSetup = me.modules?.checks && me.permissions.includes("checks.setup") ? [["/check-setup", "Payments Setup"]] : [];
   // 2.1.0 (#312): Donations Setup (receipt letters) for Administrators when the Donations module is on
   if (me.modules?.donations && me.permissions.includes("donation.setup")) checkSetup.push(["/donation-setup", "Donations Setup"]);
   // 2.2.0 (#325): the shared envelope library, when a feature that uses envelopes is on
+  // 2.4.0 (#251): Invoices Setup for Administrators when the Invoices module is on
+  if (me.modules?.invoices && me.permissions.includes("invoice.setup")) checkSetup.push(["/invoice-setup", "Invoices Setup"]);
   if (checkSetup.length) checkSetup.push(["/envelopes", "Envelopes"]);
   // 2.3.0 (#395): the shared signer list (checks, cover letters, donation letters), beside Envelopes
   if (checkSetup.length) checkSetup.push(["/signers", "Signers"]);
@@ -204,8 +213,12 @@ function navFor(me: Me) {
     return [...(has("financial.view") ? fin : [["/", "Dashboard"]]), ...(has("users.view") ? [["/users", "Users"]] : []),
       ...(has("audit.view") ? [["/audit-log", "Audit Log"]] : []), ...checkSetup, ...(has("users.manage") || has("system.view") || has("system.about") ? [["/about", "System/About"]] : [])];
   }
+  // 2.4.0 (#251): an Invoice Manager without the other financial roles sees the Register (read-only), Entities and
+  // Invoices - no Dashboard, budget, Fiscal Year, account or report screens
+  const shown = me.permissions.includes("financial.view") ? fin
+    : fin.filter((n) => ["/register", "/entities", "/invoices"].includes(n[0]));
   // 2.2.0 (#349): financial users see System/About read-only (About and General)
-  return me.permissions.includes("system.about") ? [...fin, ["/about", "System/About"]] : fin;
+  return me.permissions.includes("system.about") ? [...shown, ["/about", "System/About"]] : shown;
 }
 
 function Shell({ workspace, warning, mode, testing, demo, onLogout }: { workspace: string; warning: boolean; mode: string; testing?: boolean; demo?: boolean; onLogout: () => void }) {
@@ -237,7 +250,8 @@ function Shell({ workspace, warning, mode, testing, demo, onLogout }: { workspac
   let page: JSX.Element;
   let m: Record<string, string> | null;
   const guard = (base: string, el: JSX.Element) => (allowed.has(base) ? el : <NotAuthorized />);
-  if (path === "/") page = <Dashboard />;
+  // 2.4.0 (#251): a user without the Dashboard (an Invoice Manager only) starts on Invoices or the Register
+  if (path === "/") page = allowed.has("/") ? <Dashboard /> : allowed.has("/invoices") ? <Invoices /> : allowed.has("/register") ? <Register /> : <Dashboard />;
   else if (path === "/account") page = <Account updates={mode === "local" ? updates : null} />;
   else if (path === "/users") page = guard("/users", <Users />);
   else if (path === "/audit-log") page = guard("/audit-log", <AuditLog />);
@@ -259,6 +273,8 @@ function Shell({ workspace, warning, mode, testing, demo, onLogout }: { workspac
   else if (path === "/signers") page = guard("/signers", <SignersPage />);
   else if (path === "/payments") page = guard("/payments", <Payments />);
   else if (path === "/donations") page = guard("/donations", <DonationsPage />);
+  else if (path === "/invoices") page = guard("/invoices", <Invoices />);           // 2.4.0 (#251)
+  else if (path === "/invoice-setup") page = guard("/invoice-setup", <InvoiceSetup />);
   else if ((m = match("/fundraisers/:id", path))) page = guard("/fundraisers", <FundraiserDetail id={Number(m.id)} />);
   else page = <p>Page not found.</p>;
 

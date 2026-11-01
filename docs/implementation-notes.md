@@ -128,6 +128,31 @@ could not otherwise be corrected. Scope and safeguards:
   with a link; the variable picker completes dotted names.
 - Tests: `backend/tests/test_v210_organization.py` (6, including the data migration) and the E2E #126 and #312 steps.
 
+**2.4.0 build 4 — Invoices module switch and the Invoice Manager role (#251, decided 2026-10-16).**
+- `workspace.invoices_enabled` and the role `INVOICE_MANAGER` (Financial; migration `0072`; seeded for new installs
+  from `ROLE_DEFS`; a new local install's first user gets it too). `services/invoices.py`: switch (audited
+  `MODULE_ENABLED`/`MODULE_DISABLED`, SECURITY), `require_module` (404 `MODULE_DISABLED`), overview and setup
+  placeholders; `routers/invoices.py`: `GET /api/invoices/overview` (`invoice.view`), `GET /api/invoices/setup`
+  (`invoice.setup`, Administrator; no real invoices or products, BR-003). Module status lists it.
+- Permissions: `invoice.manage` (IM), `invoice.view` (IM, RU, BM, BU, Auditor), `invoice.setup` (Administrator);
+  `entity.manage` adds IM (not `entity.create_financial_institution` / `_manage_financial_institution`);
+  `system.about` adds IM.
+- **`register.view`** (new) = the financial viewers + IM: used by the Register list, a transaction, the bank-account
+  list/detail (selector), the entity list/detail, the Fiscal Year list and `natural` (the Register's year filter) and
+  the budget filter options. Everything else stays `financial.view` (Fiscal Year detail, budgets, balance history,
+  reports, dashboard - the dashboard now refuses a Financial user without `financial.view`). Attachments: list/get/
+  content use `register.view`, but a register-only role sees transaction and line documents only (403 otherwise).
+- UI: Users role checkbox; Invoices nav after Donations/Payments/Register; Invoices Setup in the Administrator's menu
+  when the module is on; an IM-only user's menu is Register, Entities, Invoices (+ System/About) and `/` opens
+  Invoices. Security overview item *Whole invoice cycle in one account* (info, never attention).
+- New rules (spec docs unchanged; docs/04 changes are listed in the issue): **BR-INV-MOD-001** optional module,
+  hidden and refused when off; **-002** Invoice Manager is a Financial role combinable only with Financial roles;
+  **-003** separation of duties (BM budgets / IM billing / RU receiving / Auditor review), the whole cycle in one
+  account is shown, not blocked; **-004** IM sees the Register read-only and maintains normal entities only. ACs
+  **AC-INV-MOD-001..006** (switch + refusal; role combinations; IM access matrix incl. negative API tests;
+  attachment scope; security overview; setup page).
+- Tests: `backend/tests/test_v240_invoices_module.py` (5).
+
 **2.4.0 build 3 — Invoiced Income budgets (#250, decided 2026-10-16).**
 - `budget.invoiced_income` (migration `0071`, off). Set on an Income **parent** with
   `PUT /api/budgets/{id}/invoiced-income` (`budget.manage`); stored on the whole family like `locked` (sub-budgets and

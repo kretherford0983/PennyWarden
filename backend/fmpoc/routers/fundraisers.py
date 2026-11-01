@@ -26,6 +26,7 @@ from ..services import fundraiser_series as series
 from ..services import fundraisers as svc
 from ..services.checkprint import service as checks_svc
 from ..services import donations as donations_svc
+from ..services import invoices as invoices_svc
 from ..services.common import get_scoped
 from ..models import FiscalYear
 from ..permissions import PERMISSIONS
@@ -35,7 +36,8 @@ router = APIRouter(prefix="/api", tags=["fundraisers"])
 
 def _modules(db: Session, ws_id: int) -> dict:
     return {"fundraisers": svc.module_enabled(db, ws_id), "checks": checks_svc.module_enabled(db, ws_id),
-            "donations": donations_svc.module_enabled(db, ws_id)}
+            "donations": donations_svc.module_enabled(db, ws_id),
+            "invoices": invoices_svc.module_enabled(db, ws_id)}   # 2.4.0 (#251)
 
 
 @router.get("/system/modules")
@@ -46,9 +48,10 @@ def modules(db: Session = Depends(get_db), ctx: Ctx = Depends(require("modules.m
 # 2.2.0 (#349): every module, on or off, and who uses it - read-only for every role on System/About → General
 MODULES = (("fundraisers", "Fundraisers", ("fundraiser.view",), None),
            ("checks", "Payments", ("checks.print",), "checks.setup"),
-           ("donations", "Donations", ("donation.view", "donation.print"), "donation.setup"))
+           ("donations", "Donations", ("donation.view", "donation.print"), "donation.setup"),
+           ("invoices", "Invoices", ("invoice.view", "invoice.manage"), "invoice.setup"))     # 2.4.0 (#251)
 ROLE_PLURALS = (("BUDGET_MANAGER", "Budget Managers"), ("BUDGET_USER", "Budget Users"),
-                ("REGISTER_USER", "Register Users"), ("AUDITOR", "Auditors"))
+                ("REGISTER_USER", "Register Users"), ("INVOICE_MANAGER", "Invoice Managers"), ("AUDITOR", "Auditors"))
 
 
 @router.get("/system/modules/status")
@@ -73,6 +76,8 @@ def set_modules(body: ModulesIn, db: Session = Depends(get_db), ctx: Ctx = Depen
         checks_svc.set_module(db, ctx, body.checks)
     if body.donations is not None:   # 2.1.0 (#312)
         donations_svc.set_module(db, ctx, body.donations)
+    if body.invoices is not None:    # 2.4.0 (#251)
+        invoices_svc.set_module(db, ctx, body.invoices)
     db.commit()
     return _modules(db, ctx.workspace_id)
 

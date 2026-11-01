@@ -35,7 +35,7 @@ def register_view(
     budget_id: int | None = None,  # 1.7.3 (#104): only transactions with an allocation to this budget (or its sub-budgets)
     sort: Literal["transaction_date", "entry_timestamp", "amount", "check_number", "clear_date"] = "transaction_date",
     direction: Literal["asc", "desc"] = "asc",
-    db: Session = Depends(get_db), ctx: Ctx = Depends(require("financial.view")),
+    db: Session = Depends(get_db), ctx: Ctx = Depends(require("register.view")),   # 2.4.0 (#251): + Invoice Manager
 ):
     if status == "deleted" and "AUDITOR" not in ctx.roles:  # 1.7.3 (#53): only Auditors list deleted transactions
         raise AppError(422, "VALIDATION_ERROR", "The request is invalid.",
@@ -69,7 +69,7 @@ def register_view(
 
 
 @router.get("/transactions/{txn_id}")
-def get_txn(txn_id: int, db: Session = Depends(get_db), ctx: Ctx = Depends(require("financial.view"))):
+def get_txn(txn_id: int, db: Session = Depends(get_db), ctx: Ctx = Depends(require("register.view"))):
     return svc.out(db, svc.get(db, ctx, txn_id))
 
 
