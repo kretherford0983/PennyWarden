@@ -3,7 +3,8 @@
 // Both use the same projection rule and the same per-user, per-budget projection choices.
 import { Fragment, useEffect, useState } from "react";
 import { api, money, qs } from "../api";
-import { BudgetState, ErrorBox, Field, Loading, Modal } from "../components";
+import { BudgetState, ErrorBox, Field, GrossBudgetNote, Loading } from "../components";
+import type { ActionsFn, RunFn } from "./reports/common";
 
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -17,6 +18,10 @@ export function diffText(d: string | null | undefined, p: string | null | undefi
   if (Number(d) === 0) return "on budget";
   return `${money(d.replace("-", ""))} ${d.startsWith("-") ? "under" : "over"} (${pctText(p)})`;
 }
+
+/** 2.3.0 polish: added columns (prior years + Projected + Next year's budget) the PDF fits on one landscape page;
+ * the same numbers as budget_planning.pdf_max_added. */
+const PAPER_MAX: Record<string, number> = { LETTER: 6, LEGAL: 9 };
 
 /** The budgets that can be projected or left unprojected (a budget without sub-budgets, or each sub-budget). */
 export function ProjectionChoices({ fyId, onSaved }: { fyId: string | number; onSaved?: () => void }) {
@@ -84,13 +89,17 @@ function columns(data: any): Col[] {
     head: y.entered ? <>{y.display_name}<div className="muted small">entered</div></> : y.display_name,
     cells: (r: any) => {
       const c = r.history[i];
-      // 2.2.0: "history on parent" only in years the parent held one amount of its own (else the sub-budget had none)
-      if (!c) return [r.history_notes?.[i] ? <i className="muted" title="The parent had no sub-budgets that year: its amount includes this one">history on parent</i> : <span className="muted" title="No linked budget that year">—</span>, null, null];
+      // 2.2.0: "history on parent" only in years the parent held one amount of its own (else the sub-budget had none);
+      // 2.3.0 (#414): or "included in …" where a Budget Manager marked the year on the budget's History
+      const hn: string | null | undefined = r.history_notes?.[i];
+      if (!c) return [hn ? <i className="muted" title={hn === "history on parent" ? "The parent had no sub-budgets that year: its amount includes this one" : "Its money was included in another budget that year (marked on its History); not counted in Avg"}>{hn}</i> : <span className="muted" title="No linked budget that year">—</span>, null, null];
       // 2.2.0 (#284): a year before PennyWarden, entered from earlier records
       const entered = c.source === "ENTERED" ? (c.from_sub_budgets ? "entered · sum of sub-budgets" : "entered") : null;
       const mismatch = c.mismatch ? `sub-budgets: ${money(c.mismatch.budgeted)} / ${money(c.mismatch.actual)}` : null;
       const note = [entered, mismatch, c.renumbered ? c.code : null, c.entered_as ? `as ${c.entered_as}` : null, c.status && c.status !== "APPROVED" ? status(c.status) : null].filter(Boolean).join(" · ");
-      return [<>{money(c.budgeted)}{note ? <div className="muted small">{note}</div> : null}</>, money(c.actual), diffText(c.difference, c.difference_pct)];
+      // 2.3.0 (#390): an estimated year is marked * (the footnote under the table gives the note)
+      const star = c.estimated ? <span title={`Estimated: ${c.estimate_note || ""}`}>*</span> : null;
+      return [<>{money(c.budgeted)}{star}{note ? <div className="muted small">{note}</div> : null}</>, <>{money(c.actual)}{star}</>, diffText(c.difference, c.difference_pct)];
     },
   }));
   if (data.years.length) {
@@ -98,12 +107,13 @@ function columns(data: any): Col[] {
       cells: (r: any) => r.average ? [money(r.average.budgeted), money(r.average.actual), diffText(r.average.difference, r.average.difference_pct)] : [<span className="muted">—</span>, null, null] });
   }
   cols.push({ key: "cur", head: <>{data.fiscal_year.display_name}<div className="muted small">YTD {data.as_of}</div></>,
-    cells: (r: any) => [money(r.current.budgeted), money(r.current.actual), diffText(r.current.difference, r.current.difference_pct)] });
+    cells: (r: any) => !r.current ? [<span className="muted" title={`No budget in ${data.fiscal_year.display_name}`}>—</span>, null, null]   // 2.3.0 (#382)
+      : [money(r.current.budgeted), money(r.current.actual), diffText(r.current.difference, r.current.difference_pct)] });
   if (data.projected) {
     cols.push({ key: "proj", head: <>Projected<div className="muted small">to {data.fiscal_year.end_date}</div></>,
       cells: (r: any) => {
         const p = r.projection;
-        if (!p) return [null, null, null];
+        if (!p) return [r.current ? null : <span className="muted">—</span>, null, null];
         if (p.state === "NOT_PROJECTED") return [money(r.current.budgeted), <i>Complete: no projection</i>, null];
         if (p.state === "TOO_EARLY") return [money(r.current.budgeted), <i>too early to project</i>, null];
         const word = p.state === "ROLLUP" ? "sum of sub-budgets" : p.state === "YEAR_ENDED" ? "year ended: actual" : "projected";
@@ -122,10 +132,26 @@ function columns(data: any): Col[] {
   return cols;
 }
 
-export default function BudgetReview({ fys }: { fys: any[] }) {
+export default function BudgetReview({ fys, initial = {}, onRun }: { fys: any[]; initial?: Record<string, any>; onRun?: RunFn }) {
   const t = today();
   const cur = fys.find((f) => f.start_date <= t && f.end_date >= t) || fys[fys.length - 1];
-  const [f, setF] = useState({ fiscal_year_id: cur ? String(cur.id) : "", years: "3", projected: false, include_next: false, budget: "", as_of: t });
+  // 2.3.0 (#375): the user's last Fiscal Year, prior years and budgets are filled in; the optional columns and as-of
+  // start as usual
+  // 2.3.0 polish (Kyle, 2026-10-31): the PDF keeps every column on one page - prior years + Projected + Next year's
+  // budget add up to 6 columns on letter, 9 on legal (landscape); the Prior years list follows the paper chosen
+  const startPaper = initial.paper === "LEGAL" ? "LEGAL" : "LETTER";
+  const [f, setF] = useState({ fiscal_year_id: String(initial.fiscal_year_id || (cur ? cur.id : "")),
+    // a saved "All linked years" (before 2.3.0 polish) becomes the most that fits; others are capped to it
+    years: String(Number(initial.years ?? 3) < 0 || Number.isNaN(Number(initial.years ?? 3)) ? PAPER_MAX[startPaper] : Math.min(Number(initial.years ?? 3), PAPER_MAX[startPaper])),
+    projected: false, include_next: false, budget: String(initial.budget || ""), as_of: t, paper: startPaper });
+  const extras = (f.projected ? 1 : 0) + (f.include_next ? 1 : 0);
+  const maxYears = PAPER_MAX[f.paper] - extras;
+  /** a change of paper or columns: prior years come down to what still fits */
+  const upd = (patch: Partial<typeof f>) => setF((x) => {
+    const n = { ...x, ...patch };
+    const cap = PAPER_MAX[n.paper] - (n.projected ? 1 : 0) - (n.include_next ? 1 : 0);
+    return Number(n.years) > cap ? { ...n, years: String(cap) } : n;
+  });
   const [data, setData] = useState<any>(null);
   const [opts, setOpts] = useState<any[]>([]);
   const [err, setErr] = useState<unknown>(null);
@@ -140,26 +166,36 @@ export default function BudgetReview({ fys }: { fys: any[] }) {
     fiscal_year_id: f.fiscal_year_id, years: f.years, projected: f.projected || null, include_next: f.include_next || null,
     budget_id: kind === "b" ? id : null, parent_budget_id: kind === "p" ? id : null, as_of: f.as_of || null,
     format: format === "json" ? null : format, download: download || null,
+    paper: format === "pdf" && f.paper !== "LETTER" ? f.paper : null,
   });
   const url = (format: string, download = false) => `/api/reports/budget-review${qs(params(format, download))}`;
   const run = async () => {
     setBusy(true); setErr(null);
-    try { setData(await api.get(url("json"))); } catch (e) { setErr(e); } finally { setBusy(false); }
+    try {
+      setData(await api.get(url("json")));
+      const y = fys.find((x) => String(x.id) === f.fiscal_year_id);
+      onRun?.({ fiscal_year_id: f.fiscal_year_id, years: f.years, budget: f.budget, paper: f.paper },
+        `${y?.display_name || ""} · ${f.years === "-1" ? "all" : f.years} prior year${f.years === "1" ? "" : "s"}`);
+    } catch (e) { setErr(e); } finally { setBusy(false); }
   };
   return (
-    <section className="card">
-      <h2 className="no-print">Budget Review</h2>
-      <p className="no-print">Each budget of the Fiscal Year with its history over earlier years (following the budget continuation links, so a renumbered budget stays on one line), budgeted against actual, the year-to-date actual and, optionally, a projection to the year end and next year's continuing budget. For Budget Managers.</p>
+    <>
+      <p className="no-print">Each budget of the Fiscal Year with its history over earlier years (following the budget continuation links, so a renumbered budget stays on one line) — and the budgets of those years that are not in this Fiscal Year, marked <i>Not in</i> — budgeted against actual, the year-to-date actual and, optionally, a projection to the year end and next year's continuing budget.</p>
       <div className="report-options no-print">
         <Field label="Fiscal Year">
           <select aria-label="Budget Review Fiscal Year" value={f.fiscal_year_id} onChange={(e) => setF({ ...f, fiscal_year_id: e.target.value, budget: "" })}>
             {fys.map((y) => <option key={y.id} value={y.id}>{y.label}</option>)}
           </select>
         </Field>
+        <Field label="Paper (PDF)">
+          <select aria-label="PDF paper" value={f.paper} onChange={(e) => upd({ paper: e.target.value })}>
+            <option value="LETTER">Letter, landscape</option>
+            <option value="LEGAL">Legal, landscape</option>
+          </select>
+        </Field>
         <Field label="Prior years">
-          <select value={f.years} onChange={(e) => setF({ ...f, years: e.target.value })}>
-            {[0, 1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}
-            <option value="-1">All linked years</option>
+          <select aria-label="Prior years" value={f.years} onChange={(e) => upd({ years: e.target.value })}>
+            {Array.from({ length: maxYears + 1 }, (_x, n) => <option key={n} value={n}>{n}</option>)}
           </select>
         </Field>
         <Field label="Budgets">
@@ -170,29 +206,48 @@ export default function BudgetReview({ fys }: { fys: any[] }) {
           </select>
         </Field>
         <Field label="Actuals as of"><input type="date" value={f.as_of} onChange={(e) => setF({ ...f, as_of: e.target.value })} /></Field>
-        <label className="check"><input type="checkbox" checked={f.projected} onChange={(e) => setF({ ...f, projected: e.target.checked })} /> Projected column</label>
-        <label className="check"><input type="checkbox" checked={f.include_next} onChange={(e) => setF({ ...f, include_next: e.target.checked })} /> Next year's budget</label>
+        <label className="check"><input type="checkbox" checked={f.projected} onChange={(e) => upd({ projected: e.target.checked })} /> Projected column</label>
+        <label className="check"><input type="checkbox" checked={f.include_next} onChange={(e) => upd({ include_next: e.target.checked })} /> Next year's budget</label>
         <button className="primary" onClick={run} disabled={!f.fiscal_year_id || busy}>{busy ? "Running…" : "Run report"}</button>
       </div>
+      <p className="hint no-print" data-testid="review-columns-hint">Prior years, Projected and Next year's budget add up to {PAPER_MAX[f.paper]} columns on
+        {f.paper === "LEGAL" ? " legal" : " letter"} paper, so every column of the PDF stays on one page{f.paper === "LETTER" ? ` (legal fits ${PAPER_MAX.LEGAL})` : ""}.</p>
       {f.projected && f.fiscal_year_id ? <ProjectionChoices fyId={f.fiscal_year_id} onSaved={() => data && run()} /> : null}
       <ErrorBox error={err} />
-      {data ? <BudgetReviewTable data={data} url={url} /> : null}
-    </section>
+      {data ? <BudgetReviewTable data={data} url={url} paper={f.paper} /> : null}
+    </>
   );
 }
 
-function BudgetReviewTable({ data, url }: { data: any; url: (format: string, download?: boolean) => string }) {
+function BudgetReviewTable({ data, url, paper }: { data: any; url: (format: string, download?: boolean) => string; paper: string }) {
   const cols = columns(data);
+  // 2.3.0 polish: the PDF keeps every column on one page (the options keep a run within it; this guards a paper
+  // changed after running)
+  const limits = data.pdf_max_added || PAPER_MAX;
+  const fits = data.added_columns <= limits[paper];
+  // 2.3.0 (#390): one footnote line per estimated year
+  const estimates: any[] = [];
+  for (const sec of ["income", "expense"]) for (const r of data[sec]) r.history.forEach((c: any, i: number) => {
+    if (c?.estimated) estimates.push({ label: data.years[i].display_name, code: r.code, name: r.name, note: c.estimate_note });
+  });
   const span = cols.length + 1;
   return (
     <div className="budget-review">
       <h2>Budget Review — {data.fiscal_year.display_name}</h2>
       <p>Actuals year-to-date as of {data.as_of}. Prior years shown: {data.years.length} of {data.available_years}. Difference = actual − budgeted; n/a when nothing was budgeted. Avg = the average of the prior years shown in which the budget existed.{data.entered_years ? " Years marked entered are before PennyWarden, entered by a Budget Manager from earlier records." : ""}{data.projected ? ` Projected = YTD ÷ elapsed months × months in the year (${data.projection_basis.elapsed_months} of ${data.projection_basis.months} months elapsed).` : ""}</p>
       <div className="actions left no-print">
-        <a className="button primary" href={url("pdf")} target="_blank" rel="noopener">Open PDF</a>
-        <a className="button" href={url("pdf", true)}>Download PDF</a>
+        {fits ? <>
+          <a className="button primary" href={url("pdf")} target="_blank" rel="noopener">Open PDF</a>
+          <a className="button" href={url("pdf", true)}>Download PDF</a>
+        </> : <>
+          <button className="primary" disabled>Open PDF</button>
+          <button disabled>Download PDF</button>
+        </>}
         <a className="button" href={url("csv")}>Download CSV</a>
       </div>
+      {!fits ? <div className="alert warn no-print" role="status" data-testid="review-pdf-limit">This report has {data.added_columns} added
+        columns (prior years, Projected and Next year's budget); the PDF fits {limits[paper]} on {paper === "LEGAL" ? "legal" : "letter"} paper so
+        every column stays on one page. Run it again with fewer prior years or columns{paper === "LETTER" && data.added_columns <= limits.LEGAL ? ", or choose legal paper" : ""}.</div> : null}
       <div className="table-scroll">
         <table className="table compact" aria-label="Budget Review">
           <thead><tr><th />{cols.map((c) => <th key={c.key} className="num">{c.head}</th>)}</tr></thead>
@@ -205,7 +260,9 @@ function BudgetReviewTable({ data, url }: { data: any; url: (format: string, dow
                   <Fragment key={r.id}>
                     <tr className={r.level === "parent" ? "budget-head parent-row" : "budget-head"}>
                       <th colSpan={span} scope="rowgroup" className={r.level === "sub" ? "indent" : ""}>
-                        {r.level === "parent" ? <b>{r.code} {r.name}</b> : `${r.code} ${r.name}`} <BudgetState state={r.state} />
+                        {r.level === "parent" ? <b>{r.code} {r.name}</b> : `${r.code} ${r.name}`} {r.state ? <BudgetState state={r.state} /> : null}
+                        {/* 2.3.0 (#382): a budget of the years shown that has no budget in the chosen Fiscal Year */}
+                        {r.not_in_year ? <span className="badge grey" data-testid="not-in-year">Not in {r.not_in_year.fiscal_year}, last {r.not_in_year.last_year}</span> : null}
                       </th>
                     </tr>
                     {(["Budgeted", "Actual", "Difference"] as const).map((word, k) => (
@@ -221,22 +278,28 @@ function BudgetReviewTable({ data, url }: { data: any; url: (format: string, dow
           ) : null)}
         </table>
       </div>
+      {estimates.length ? (
+        <ul className="hint estimate-notes" data-testid="estimate-notes">
+          {estimates.map((e, i) => <li key={i}>* Estimated: {e.label} {e.code} {e.name} — {e.note}</li>)}
+        </ul>
+      ) : null}
+      <GrossBudgetNote />
     </div>
   );
 }
 
-/** #261: the planning sheet for the budget meeting, from the Fiscal Years page (build 3 feedback, 2026-10-20). It
- * works out which year is being planned: a Draft year and the year before it (draft amounts fill Proposed, with a
- * Proposed Revision column), otherwise the current year with a blank Proposed column. */
-export function PlanningSheetDialog({ onClose }: { onClose: () => void }) {
+/** #261: the planning sheet for the budget meeting. It works out which year is being planned: a Draft year and the
+ * year before it (draft amounts fill Proposed, with a Proposed Revision column), otherwise the current year with a
+ * blank Proposed column. 2.3.0 (#375): a report page in Reports; the Fiscal Years page's button is a shortcut to it. */
+export function PlanningSheetReport({ initial, onRun, actions }: { initial: Record<string, any>; onRun: RunFn; actions: ActionsFn }) {
   const [asOf, setAsOf] = useState(today());
-  const [withReview, setWithReview] = useState(false);     // #283: the Budget Review pages after the sheet
+  const [withReview, setWithReview] = useState(initial.include_review === true);     // #283: the Budget Review pages after the sheet
   const [c, setC] = useState<any>(null);
   const [err, setErr] = useState<unknown>(null);
   useEffect(() => { api.get("/api/reports/planning-sheet/context").then(setC, setErr); }, []);
   const href = (download: boolean) => `/api/reports/planning-sheet${qs({ as_of: asOf || null, download: download || null, include_review: withReview || null })}`;
   return (
-    <Modal title="Fiscal Year Planning Sheet" onClose={onClose} wide>
+    <>
       <p>A printed form for the budget planning meeting: this year's budgets with what was budgeted, the actual year-to-date and the projection, and blank columns to write in the proposed amounts, with room for new budgets.</p>
       <ErrorBox error={err} />
       {c ? (
@@ -250,11 +313,7 @@ export function PlanningSheetDialog({ onClose }: { onClose: () => void }) {
       <Field label="Actuals as of"><input type="date" value={asOf} onChange={(e) => setAsOf(e.target.value)} /></Field>
       <label className="check"><input type="checkbox" checked={withReview} onChange={(e) => setWithReview(e.target.checked)} /> Include the Budget Review <span className="muted">(the last 3 years of each budget — budgeted, actual and difference — after the sheet, in the same PDF)</span></label>
       {c ? <ProjectionChoices fyId={c.fiscal_year.id} /> : null}
-      <div className="actions">
-        <button onClick={onClose}>Done</button>
-        <a className="button" href={href(true)}>Download PDF</a>
-        <a className="button primary" href={href(false)} target="_blank" rel="noopener">Open planning sheet PDF</a>
-      </div>
-    </Modal>
+      {actions({ open: href(false), download: href(true), onRun: () => onRun({ include_review: withReview }, c ? `Planning from ${c.fiscal_year.display_name}` : "") })}
+    </>
   );
 }

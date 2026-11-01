@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api, money, todayIso } from "../api";
-import { ErrorBox, Field, Loading, Modal, GuardedForm, RowMenu } from "../components";
+import { ErrorBox, Field, Loading, Modal, GuardedForm, RowMenu, useConfirmable } from "../components";
 import { useMe } from "../App";
 import { EntityForm } from "./Entities";
 
@@ -112,7 +112,7 @@ export default function BankAccounts() {
         );
       })}
       {modal?.kind === "edit" ? <AccountForm account={modal.account} onClose={() => setModal(null)} onSaved={() => { setModal(null); load(); }} /> : null}
-      {modal?.kind === "history" ? <HistoryDialog account={modal.account} onClose={() => setModal(null)} /> : null}
+      {modal?.kind === "history" ? <HistoryDialog account={modal.account} manage={manage && modal.account.status === "ACTIVE"} onClose={() => setModal(null)} onChanged={load} /> : null}
       {modal?.kind === "balance" ? <BalanceForm account={modal.account} onClose={() => setModal(null)} onSaved={() => { setModal(null); load(); }} /> : null}
       {modal?.kind === "close" ? <CloseForm account={modal.account} onClose={() => setModal(null)} onSaved={() => { setModal(null); load(); }} /> : null}
     </div>
@@ -200,9 +200,13 @@ function BalanceForm({ account, onClose, onSaved }: any) {
   const [asOf, setAsOf] = useState(todayIso()); // 1.7.3 (#88): e.g. a month-end statement date
   const [reason, setReason] = useState("");
   const [err, setErr] = useState<unknown>(null);
+  const { run, dialog } = useConfirmable();   // 2.3.0 (#391): a Budget Admin confirms a change in a Closed Fiscal Year
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    try { await api.post(`/api/bank-accounts/${account.id}/balance`, { current_balance: v, reason: reason || null, as_of_date: asOf }); onSaved(); } catch (x) { setErr(x); }
+    try {
+      const r = await run((confirmations) => api.post(`/api/bank-accounts/${account.id}/balance`, { current_balance: v, reason: reason || null, as_of_date: asOf, confirmations }));
+      if (r) onSaved();
+    } catch (x) { setErr(x); }
   };
   return (
     <Modal title={`Update balance: ${account.account_name}`} onClose={onClose}>
@@ -211,9 +215,10 @@ function BalanceForm({ account, onClose, onSaved }: any) {
         <Field label="Balance"><input required value={v} onChange={(e) => setV(e.target.value)} /></Field>
         <Field label="As of" hint="The date of this balance, e.g. the statement date. Today or earlier."><input required type="date" max={todayIso()} value={asOf} onChange={(e) => setAsOf(e.target.value)} /></Field>
         <Field label="Reason"><input value={reason} onChange={(e) => setReason(e.target.value)} /></Field>
-        <p className="hint">Each update is kept in the balance history and audited. To correct a wrong entry, enter the right balance for the same date.</p>
+        <p className="hint">Each update is kept in the balance history and audited. A wrong entry is fixed with <b>Correct</b> or <b>Retire</b> in the History. A date before the first Fiscal Year in PennyWarden is fine (to fill in earlier history). A Closed Fiscal Year can only be changed by a Budget Admin, with a reason.</p>
         <div className="actions"><button type="button" onClick={onClose}>Cancel</button><button className="primary" type="submit">Save</button></div>
       </GuardedForm>
+      {dialog}
     </Modal>
   );
 }
@@ -240,29 +245,91 @@ function CloseForm({ account, onClose, onSaved }: any) {
 
 
 // 1.7.3 (#88): dated balance history of a non-register account (newest first)
-function HistoryDialog({ account, onClose }: { account: any; onClose: () => void }) {
+// 2.3.0 (#391): Correct / Retire each entry (reason required), retired entries listed apart, Entered and Corrected marks
+function HistoryDialog({ account, manage, onClose, onChanged }: { account: any; manage: boolean; onClose: () => void; onChanged: () => void }) {
   const [rows, setRows] = useState<any[] | null>(null);
   const [err, setErr] = useState<unknown>(null);
-  useEffect(() => { api.get(`/api/bank-accounts/${account.id}/balance-history`).then(setRows, setErr); }, [account.id]);
+  const [edit, setEdit] = useState<{ mode: "correct" | "retire"; e: any } | null>(null);
+  const load = () => api.get(`/api/bank-accounts/${account.id}/balance-history`).then(setRows, setErr);
+  useEffect(() => { load(); }, [account.id]);
+  const counted = (rows || []).filter((r) => !r.retired);
+  const retired = (rows || []).filter((r) => r.retired);
   return (
     <Modal title={`Balance history: ${account.account_name}`} onClose={onClose} wide>
       <ErrorBox error={err} />
       {!rows ? <Loading /> : (
-        <table className="table" data-testid="balance-history">
-          <thead><tr><th>As of</th><th className="num">Balance</th><th className="num">Change</th><th>Entered by</th><th>Entered on</th><th>Reason</th></tr></thead>
-          <tbody>
-            {rows.length === 0 ? <tr><td colSpan={6} className="muted">No balance entries.</td></tr> : null}
-            {rows.map((r) => (
-              <tr key={r.id}>
-                <td>{r.as_of_date}</td><td className="num">{money(r.balance)}</td>
-                <td className={`num ${r.change && Number(r.change) < 0 ? "neg" : ""}`}>{r.change === null ? "" : `${Number(r.change) > 0 ? "+" : ""}${money(r.change)}`}</td>
-                <td>{r.entered_by || (r.source === "UPGRADE" ? "(upgrade)" : "")}</td><td>{r.entered_at.slice(0, 10)}</td><td>{r.reason || ""}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+        <>
+          <table className="table" data-testid="balance-history">
+            <thead><tr><th>As of</th><th className="num">Balance</th><th className="num">Change</th><th>Entered by</th><th>Entered on</th><th>Reason</th>{manage ? <th /> : null}</tr></thead>
+            <tbody>
+              {counted.length === 0 ? <tr><td colSpan={manage ? 7 : 6} className="muted">No balance entries.</td></tr> : null}
+              {counted.map((r) => (
+                <tr key={r.id}>
+                  <td>{r.as_of_date}{r.entered ? <> <span className="badge grey" title="Before the first Fiscal Year in PennyWarden">Entered</span></> : null}</td>
+                  <td className="num">{money(r.balance)}{r.corrected ? <> <span className="badge" data-testid="balance-corrected"
+                    title={`Corrected ${r.corrected.at.slice(0, 10)} by ${r.corrected.by || "?"}: was ${money(r.corrected.previous_balance)} as of ${r.corrected.previous_as_of_date}. Reason: ${r.corrected.reason}`}>Corrected</span></> : null}</td>
+                  <td className={`num ${r.change && Number(r.change) < 0 ? "neg" : ""}`}>{r.change === null ? "" : `${Number(r.change) > 0 ? "+" : ""}${money(r.change)}`}</td>
+                  <td>{r.entered_by || (r.source === "UPGRADE" ? "(upgrade)" : "")}</td><td>{r.entered_at.slice(0, 10)}</td><td>{r.reason || ""}</td>
+                  {manage ? <td className="actions-cell"><RowMenu name={`the balance as of ${r.as_of_date}`} actions={[
+                    { label: "Correct…", onClick: () => setEdit({ mode: "correct", e: r }) },
+                    counted.length > 1 ? { label: "Retire…", danger: true, onClick: () => setEdit({ mode: "retire", e: r }) } : null,
+                  ]} /></td> : null}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          {retired.length ? (
+            <details className="retired-entries">
+              <summary>Retired entries ({retired.length})</summary>
+              <table className="table compact" aria-label="Retired balance entries">
+                <thead><tr><th>As of</th><th className="num">Balance</th><th>Retired by</th><th>Retired on</th><th>Reason</th></tr></thead>
+                <tbody>{retired.map((r) => (
+                  <tr key={r.id}><td>{r.as_of_date}</td><td className="num">{money(r.balance)}</td><td>{r.retired.by || ""}</td><td>{r.retired.at.slice(0, 10)}</td><td>{r.retired.reason}</td></tr>
+                ))}</tbody>
+              </table>
+            </details>
+          ) : null}
+        </>
       )}
       <div className="actions"><button type="button" onClick={onClose}>Close</button></div>
+      {edit ? <EntryForm account={account} mode={edit.mode} entry={edit.e} onClose={() => setEdit(null)}
+        onSaved={(h: any[]) => { setRows(h); setEdit(null); onChanged(); }} /> : null}
+    </Modal>
+  );
+}
+
+function EntryForm({ account, mode, entry, onClose, onSaved }: { account: any; mode: "correct" | "retire"; entry: any; onClose: () => void; onSaved: (h: any[]) => void }) {
+  const [bal, setBal] = useState(entry.balance);
+  const [asOf, setAsOf] = useState(entry.as_of_date);
+  const [reason, setReason] = useState("");
+  const [err, setErr] = useState<unknown>(null);
+  const { run, dialog } = useConfirmable();
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setErr(null);
+    const url = `/api/bank-accounts/${account.id}/balance-history/${entry.id}/${mode}`;
+    try {
+      const r: any = await run((confirmations) => api.post(url, mode === "correct"
+        ? { balance: bal, as_of_date: asOf, reason, confirmations } : { reason, confirmations }));
+      if (r) onSaved(r.history);
+    } catch (x) { setErr(x); }
+  };
+  const title = `${mode === "correct" ? "Correct" : "Retire"} the balance of ${money(entry.balance)} as of ${entry.as_of_date}`;
+  return (
+    <Modal title={title} onClose={onClose}>
+      <GuardedForm onSubmit={submit}>
+        <ErrorBox error={err} />
+        {mode === "correct" ? (
+          <>
+            <Field label="Balance"><input required value={bal} onChange={(e) => setBal(e.target.value)} /></Field>
+            <Field label="As of"><input required type="date" max={todayIso()} value={asOf} onChange={(e) => setAsOf(e.target.value)} /></Field>
+          </>
+        ) : <p>The entry no longer counts toward the balance. It stays listed under <i>Retired entries</i> with your reason.</p>}
+        <Field label="Reason (required)"><input required maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} /></Field>
+        <p className="hint">Recorded in the audit log with the values before and after; the account's current balance is recalculated.</p>
+        <div className="actions"><button type="button" onClick={onClose}>Cancel</button><button className={mode === "retire" ? "primary danger" : "primary"} type="submit">{mode === "correct" ? "Correct" : "Retire"}</button></div>
+      </GuardedForm>
+      {dialog}
     </Modal>
   );
 }

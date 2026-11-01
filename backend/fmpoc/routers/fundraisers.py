@@ -15,7 +15,7 @@ from .. import audit
 from ..deps import Ctx, get_db, require
 from ..errors import validation
 from ..schemas import (ReasonIn, FundraiserBucketIn, FundraiserCategoryIn, FundraiserFinalIn, FundraiserFyNotesIn, FundraiserIn,
-                       FundraiserLineIn, FundraiserLinkIn, FundraiserSeriesAddIn, FundraiserSeriesIn, FundraiserSeriesMergeIn, FundraiserSeriesResultIn,
+                       FundraiserLineIn, FundraiserLinkIn, FundraiserSeriesAddIn, FundraiserSeriesIn, FundraiserSeriesMergeIn, FundraiserSeriesResultIn, FundraiserSeriesResultCorrectIn,
                        FundraiserNotesIn, FundraiserOrderIn,
                        FundraiserPreviewIn, ModulesIn)
 from ..services import branding  # 2.2.0 (#280)
@@ -152,7 +152,7 @@ def fy_report(fiscal_year_id: int = Query(...), ids: list[int] = Query(...), yea
         db.rollback()
         return rep
     if format == "pptx":
-        with branding.use(db):        # 2.2.0 (#280)
+        with branding.use(db, output="presentations"):        # 2.2.0 (#280)
             data = fyrep.build_pptx(org, rep)
         audit.record(db, ctx, "REPORT_GENERATED", "fiscal_year", fy.id, None, summary)
         db.commit()
@@ -215,6 +215,15 @@ def update_series(sid: int, body: FundraiserSeriesIn, db: Session = Depends(get_
 @router.post("/fundraiser-series/{sid}/results", status_code=201)
 def add_result(sid: int, body: FundraiserSeriesResultIn, db: Session = Depends(get_db), ctx: Ctx = Depends(manager)):
     series.add_result(db, ctx, series._series(db, ctx, sid), body)
+    db.commit()
+    return series.series_list(db, ctx)
+
+
+@router.post("/fundraiser-series/{sid}/results/{rid}/correct")
+def correct_result(sid: int, rid: int, body: FundraiserSeriesResultCorrectIn, db: Session = Depends(get_db),
+                   ctx: Ctx = Depends(manager)):
+    """2.3.0 (#390): correct an entered result (amounts, note, Estimated) - reason required."""
+    series.correct_result(db, ctx, series._series(db, ctx, sid), rid, body)
     db.commit()
     return series.series_list(db, ctx)
 
@@ -416,7 +425,7 @@ def summary_report(fid: int, format: Literal["pdf", "docx"] = "pdf", itemized: b
     s = fs.summary(db, ctx, f, itemized=itemized, names=names, plain_lines=plain_lines, history=history)
     opts = {"itemized": itemized, "names": names, "plain_lines": plain_lines, "history": history}
     if format == "docx":
-        with branding.use(db):
+        with branding.use(db, output="word"):
             data = fs.build_docx(s)
         audit.record(db, ctx, "REPORT_GENERATED", "fundraiser", f.id, None,
                      {"report": "FUNDRAISER_SUMMARY", "format": "DOCX", "options": opts})
@@ -442,7 +451,7 @@ def presentation(fid: int, itemized: bool = True, names: bool = True, history: b
     history=false (#300) leaves out the year-over-year slide."""
     f = svc.get(db, ctx, fid)
     s = fs.summary(db, ctx, f, itemized=itemized, names=names, history=history)
-    with branding.use(db):
+    with branding.use(db, output="presentations"):
         data = deck.build(s)
     audit.record(db, ctx, "REPORT_GENERATED", "fundraiser", f.id, None,
                  {"report": "FUNDRAISER_PRESENTATION", "format": "PPTX",

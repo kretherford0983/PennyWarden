@@ -2,7 +2,222 @@
 
 Versions are `Breaking.Major.Minor` from 1.6.0 (docs/branching.md).
 
-## 2.2.1 — unreleased
+## 2.3.0 — unreleased
+PennyWarden 2.3.0 (in progress).
+
+### Reports
+- **A new Reports screen (#375).** Reports opens on a **catalog**: every report and presentation you can run, grouped
+  by purpose — *Share with the board and members*, *Audit and year-end close*, *Analyze activity*, *Plan budgets*,
+  *Fundraisers* — each with what it is for, who it is for and what it produces (PDF, PPTX, CSV). A search box filters
+  by name and description, and **Recently run** shows your last 5 runs: one click opens the report with those options.
+- **Each report has its own page and address** (for example `/reports/quarterly`), which can be bookmarked; Back
+  works. Every page has the same header and one action row (**Open** · Download PDF · Download PPTX · Download CSV).
+  A compact list with its own search box on the left switches reports without going back to the catalog.
+- **Reports that lived elsewhere are here too:** the Fiscal Year fundraising report and deck, the Planning Sheet and
+  the cash count sheet. The buttons on Fundraisers, a fundraiser's page and Fiscal Years stay, as shortcuts that open
+  the report here with the year, fundraisers or fundraiser filled in.
+- Each report fills in **your last options** (Fiscal Year, account, period…), remembered on the server so they follow
+  you to another computer. Free text such as commentary or notes is not remembered.
+- Reports you can't run (your role, or a module that is off) are not listed, and their address is refused.
+- **Report settings (#376).** *System/About → Report settings* lets an Administrator choose how the catalog is grouped
+  for the whole organization — by **Purpose** (the default), **Subject** (Fiscal Year · Budgets · Accounts/Register ·
+  Entities · Fundraisers · System) or **Audience** (Board & members · Treasurer/Budget Managers · Auditors) — and
+  within it add, rename, reorder and remove categories and move reports between them. Removing a category asks where
+  its reports go. Each grouping keeps its own changes; *Reset to defaults* puts one back. Grouping is only for finding
+  reports: who can run a report doesn't change. Changes are in the audit log.
+- **Quarterly and Annual financial report (#373).** Reports → **Quarterly / Annual**: choose the Fiscal Year and Q1–Q4
+  or Annual, add optional commentary, and open the PDF report or download a presentation (.pptx) for the board. Both
+  show highlights (total cash, net cash change, budgets over budget, fundraiser net), every account's start and end
+  balance, cash flow by month (money in, money out and net; the deck charts it), the budgets with their sub-budgets
+  (the quarter and the year to date, or Q1–Q4 and the year) and the fundraisers, with last year's figures beside
+  them when there is an earlier Fiscal Year.
+- Everything is as of the end of the period: transactions dated later are left out. A quarter or year still under
+  way can be reported, marked **Preliminary — as of** today (an Annual report for a year that isn't closed is
+  Preliminary too); a period that hasn't started can't be chosen. Earlier quarters count only in the year-to-date
+  figures.
+- A fundraiser belongs to the quarter its event ends in. An earlier quarter's fundraiser with transactions dated in
+  the chosen quarter is listed as **Revised**; activity after the cutoff is noted, not counted. Fundraisers of the
+  quarter get their own page: income and expenses by budget line, seed cash, last year's result in the same series
+  and the goal, when there is one.
+- In the budgets' *Over / under* column, income received above its budget reads **+$X above budget**, as elsewhere in
+  the app (it showed as a negative amount). An account whose opening balance is dated on the Fiscal Year's first day
+  now shows that balance as its starting balance (it showed a dash).
+- Generating either file is recorded in the audit log (Fiscal Year, period, cutoff, Preliminary, whether there was
+  commentary). Requires the financial view permission, like the other reports.
+
+### Budgets
+- **Budget amounts are gross, and PennyWarden says so (#371).** When an expense is reimbursed, the reimbursement is
+  recorded in an income budget, so the expense budget's actual is not reduced. Wherever budget amounts appear,
+  PennyWarden now says this in one sentence: *Budget amounts are gross. Offsetting income or expense recorded in a
+  budget of the opposite type, such as a reimbursement, is not subtracted.* It appears under the budget tables on the
+  Budgets, Fiscal Year and Budget Review pages, behind an ⓘ on the Dashboard's budget tiles and the *Expense budgets:
+  budgeted vs spent* chart, and as a small footnote directly under every budget table in the End of Year Audit and
+  Fiscal Year Close reports, the Budget Review PDF (and its chart) and the Planning Sheet. The budget *Amount* is now
+  labelled **Gross amount** in the budget form and tables. No figure changes.
+- **Budget Review: budgets that are not in the chosen year (#382).** The review now also lists the budgets that had
+  figures in the years shown but have no budget in the chosen Fiscal Year — a PennyWarden budget that was dropped, a
+  sub-budget that was dropped from a parent that continues, and a budget from before PennyWarden that nothing
+  continues. They are mixed in with the Income and Expense budgets in code order, under the line's **most recent**
+  code and name, tagged **Not in FY…, last FY…**, with their years and the average of the years they had figures; the
+  current-year, projection and next-year columns show —. Lines follow the continuation links, never the code, so a
+  reused code is never merged with an unrelated budget. On the screen, in the PDF and the CSV (and so in the review
+  appended to the Planning Sheet). A review of one budget or one parent is unchanged.
+- **Budget Review PDF on one page across.** Choose the PDF paper — letter or legal, both landscape — with the other
+  options. Prior years, *Projected* and *Next year's budget* can add up to 6 columns on letter and 9 on legal, so
+  every column stays on the page (it used to continue the columns on the next page); the Prior years list offers only
+  what fits. Prior years run 0–9 — *All linked years* is gone, and a saved "all" becomes the most that fits.
+- **Estimated years before PennyWarden (#390).** A budget year entered from before PennyWarden (*Add an earlier
+  year*, *Before PennyWarden*, *Correct*) has an **Estimated** box; when it is ticked a note saying why is required.
+  The CSV import takes an optional *estimated* column (yes/no; an estimated row needs a note). The year is marked
+  **\*** in the budget's History and the Budget Review (screen, PDF and CSV), with a footnote *\* Estimated: <the
+  note>*; in the Budget Review chart its bars are lighter and its label carries the \*.
+- **A year whose money was in another budget (#414).** A budget that is new on its own (for example a sub-budget
+  split out of a parent) can say where its money was in earlier years. On the budget's **History**, *Add an earlier
+  year* has a second choice: **Its money was included in another budget that year**. Choose the year (a Fiscal Year
+  in PennyWarden, or an earlier year before PennyWarden), the budget it was included in (any budget of the same type,
+  at any level) and an optional note; no amounts. The Budget Review then shows *included in 102 Fundraisers → 100-00
+  Other* in that year instead of —, on the screen, in the PDF and the CSV. The year has no figures of its own, so it
+  isn't counted in **Avg**; the other budget shows nothing extra. *history on parent* (2.2.0) still shows where the
+  parent held one amount of its own and nothing is marked. A mark is retired with a reason, never deleted.
+
+### Fundraisers
+- **An optional goal for a fundraiser (#372).** *New/Edit fundraiser* has a **Goal (optional)** field. When a goal is
+  set, the fundraiser page shows it beside the totals with the net compared against it: the percentage of the goal
+  reached and how much is still to go (or how far it was exceeded). The goal is informational only — it never blocks
+  anything — and changing it is recorded in the audit log like other fundraiser edits. *Create next year's* does not
+  copy the goal.
+- **Estimated results of earlier years (#390).** *Fundraiser series → Enter a prior year* has an **Estimated** box
+  (a note saying why is then required), and an entered result now has **Correct…** (amounts, note and Estimated, with
+  a reason; recorded in the audit log with before and after values). An estimated year is marked **\*** — e.g.
+  *2022\** — in the stakeholder report (PDF and Word), its presentation, the Fiscal Year fundraising report and
+  presentation (tables, chart labels and speaker notes), with the footnote *\* Estimated: <the note>* under the
+  table, slide or chart. In the charts an estimated year's bar is also lighter; the \* and the footnote carry the
+  meaning, never the color alone.
+
+### Donations
+- **Include EIN on receipts (#393).** Donations Setup → Organization has an **Include EIN on receipts** option, on by
+  default (also for existing setups, so nothing changes). Off: receipts and year-end statements leave out the EIN row,
+  `{ORG.EIN}` prints blank in the letter text, and Donations Setup warns if the text still uses it. On but no EIN
+  entered: Donations Setup, the receipt dialog and Donation Statements say so, and printing stays blocked until the
+  EIN is entered in System/About or the option is turned off. With the option off a Register User can still put
+  `{ORG.EIN}` in one donor's *Details for the receipt* (for example for a non-cash gift over $500 and Form 8283): saving
+  asks for a confirmation and a reason, printing asks once more, and both are in the audit log with the reason.
+- The receipt dialog's "setup missing" message now points to System/About → Organization, where the EIN and address
+  are entered.
+
+### Letters that run onto a second page
+- **The signature no longer ends up alone on page 2.** Donation receipts, year-end statements and payment cover
+  letters that only just run over are fitted onto one page (tighter spacing, then up to 1 pt smaller type). When a
+  letter really needs two pages, its last paragraph moves to page 2 with the closing and signature.
+- Page 2 onward is headed with the organization, the document and its number, and *Page 2 of 2*; page 1 ends with
+  *Continued on page 2*. The window-envelope layout, pre-printed letterhead and the room to sign by hand never shrink.
+
+### Setup pages (#394)
+- **One layout for every setup editor.** Donations Setup, check styles, the payment cover letter and the envelope
+  editors (Payments, Donations and the Envelopes page) now put the settings on the left and the live preview on the
+  right on wide screens. The preview is locked: it stays in the window while you scroll through the settings and
+  watch the result (a preview taller than the window scrolls inside its column).
+- On narrow screens the preview sits at the top of the page, with **Keep at the top** to lock it there (remembered
+  per page while the app is open).
+- Check Setup's **Feed modes** table now fits the settings column at in-between window widths (it used to run into
+  the preview): the details stack and the text boxes shrink, and at the narrowest it scrolls inside its section.
+- Donations Setup's preview switches between the **Receipt** and the **Year-end statement** (replacing *Show the
+  statement preview*).
+
+### Signers (#395)
+- **One shared Signers page** (Administrators, next to Envelopes, when Payments or Donations is on) replaces the
+  Signers section of Payments Setup and the typed signer name and title of Donations Setup. Each signer has a name,
+  title, optional signature image (still encrypted and never downloadable) and *Used for* tags: Checks, Payment cover
+  letters, Donation receipts and statements. Each area offers only the signers tagged for it, and a signer in use
+  can't be retired or lose that tag until those settings change.
+- **How the signature shows on letters.** Cover letters, donation receipts and year-end statements each choose a
+  signer and one of: *None*, *Printed name and title*, *Signature image and printed name*, or *Printed name with
+  space to sign by hand*. The year-end statement can use its own signer or follow the receipt. Cover letters can
+  still follow the check's signer (*Same as the check*, the default).
+- **The signer chosen when printing.** A receipt, year-end statement or cover letter can leave the signer to the
+  Register User when printing (the one in the settings is the default). The print screen asks only when more than one
+  signer is tagged for that kind of letter. A reprint starts from whoever signed the copy it reprints; *Print all*
+  year-end statements uses one signer for the whole batch; a cover letter starts from the check's signer.
+  An ⓘ beside **Statement signer chosen** explains it: a statement is its own letter, signed once when printed, and
+  *Same as the receipt* follows the receipt letter's setup (not the signers of the donor's receipts).
+- The signature image prints only on the copy you print or download; the copy kept with the payment or donation shows
+  the printed name instead, as a check's record copy does. A signer without an image falls back to space to sign
+  (Donations Setup warns).
+
+### Bank accounts
+- **Correct or retire a balance history entry (#391).** In a non-register account's *History*, each entry's ⋯ menu
+  has **Correct…** (change the amount and/or the *as of* date) and **Retire…** (take a wrong entry out). Both need a
+  reason. Nothing is deleted: a corrected entry is marked *Corrected* (its earlier value in the tooltip), a retired
+  one no longer counts and is listed under *Retired entries* with the reason. The account's current balance is
+  recalculated straight away, and both are in the audit log with before and after values. A wrong *as of* date — which
+  used to stay the current balance for good — can now be fixed.
+- **Fill in balances from before PennyWarden (#391).** Balances dated before the first Fiscal Year in PennyWarden can
+  be added, corrected and retired — even before the account's opening balance date — and are marked *Entered*.
+- **A Closed Fiscal Year (#391).** Budget Managers still can't change balances in a Closed Fiscal Year. A **Budget
+  Admin** can add, correct or retire one there, with a reason and after confirming the change to the closed year. It
+  is recorded as its own audit event, and the Fiscal Year page and its End of Year Audit / Close reports show
+  **Balance changed after close** (when, who, the account, before and after, and the reason).
+
+### Users
+- **Filters and sortable columns on the Users screen (#409).** Beside the search, filter by **Roles** (pick any
+  number: a user with any of them is shown), **Security domain** and **Status** (Active, Disabled, Locked). The list
+  shows *n of m users* and **Clear filters** while a filter is on. The Last name, First name, Username, Display name
+  and Email headings sort the list (click again to reverse), replacing the *Sort by last name* checkbox.
+
+### System/About
+- **Choose which releases the update check looks at (#379).** *System/About → Settings* now lets an Administrator
+  change **Update channel**: *Follow this build* (the default, as before), *Production releases only*, *Test builds
+  and production releases*, or *Off*. It is saved to `config.toml` like the other settings (the previous file kept as
+  `config.toml.bak`) and **takes effect at once** — no restart; the next check runs within about a minute. It is the
+  one setting that can also be changed on a **local install**. Switching a production build to test builds asks for a
+  confirmation first (*test builds are pre-release and not production ready*). Set by `FM_UPDATE_CHANNEL` or the
+  command line, it is shown locked. Every change is in the audit log with before and after values. PennyWarden still
+  never installs updates itself.
+- A test build set to *Production releases only* is now told when the production release of its own version is out.
+- **Dual branding: a light and a dark theme (#386).** *System/About → Branding* now has a **Light theme** and a
+  **Dark theme**, and the Administrator chooses which one each type of output uses: **PDF reports (printed)** and
+  **Presentations (.pptx)** — the fundraiser deck, the Fiscal Year fundraising deck and the Quarterly / Annual deck.
+  A dark presentation has dark slides in the dark palette; a dark PDF report has dark pages. Word documents always
+  use the light theme.
+- The dark palette is one of the ready-made palettes (each has a dark version) or generated from the same primary
+  and secondary colors (Material 3 dark scheme). For **both** themes any color role or chart color can now be
+  changed directly, without choosing *Custom* first; the palette then shows as *Custom*. The same guardrails apply to
+  each theme: text must meet WCAG AA contrast against that theme's background (saving is refused with the reason),
+  chart colors that are too similar ask for a confirmation, and charts keep their labels. *Reset to the PennyWarden
+  palette* resets both palettes.
+- **Logos for dark backgrounds:** tick *Use a separate logo on dark backgrounds* to add a dark-theme full logo and
+  small mark (off by default: the light logos are used on dark slides too). Same rules as the other logos.
+- **New installations** present in the dark theme and print in the light one. **Upgraded installations keep the light
+  theme for everything** until an Administrator turns dark on.
+
+### Under the hood
+- **Faster builds (#420).** The build of develop, test and main no longer runs the whole test suite again: the pull
+  request's checks already ran it, and pull requests must now be up to date with their target before they merge, so
+  what lands is exactly what was tested. A release is published about 20 minutes sooner. Every package is still
+  smoke-tested before it is published, and a build run by hand on a feature branch still runs the tests first.
+
+### Upgrade
+- Migration `0060` adds `fundraiser.goal_amount_cents` (empty = no goal).
+- Migration `0061` adds correction and retirement columns to `bank_account_balance` (empty: nothing changes) and the
+  table `fiscal_year_balance_change` (empty).
+- Migration `0063` adds `donation.ein_override_reason` (empty). Include EIN on receipts lives in the donation setup
+  settings and defaults to on, so no data changes.
+- Migration `0062` adds `estimated` to `fundraiser_series_result` and `budget_history_entry` (off for every existing
+  entry).
+- Migration `0069` adds `signer_id` to `donation_receipt` and `donation_statement` (empty for receipts and
+  statements printed before): who signed each one.
+- Migration `0068` adds the table `budget_inclusion` (empty): the years marked as included in another budget.
+- Migration `0067` adds the table `report_grouping` (empty = grouped by Purpose, as in 2.3.0's catalog).
+- Migration `0066` adds `app_user.report_prefs` (empty): the Reports screen's Recently run and last options.
+- Migration `0065` adds the dark theme, the theme per output type and the dark-background logos to
+  `branding_settings`. Every existing organization stays light for every output type (a branding row is added for an
+  organization that had none, so nothing looks different).
+- Migration `0064` adds `check_signer.areas`: every existing signer is tagged for Checks. The Donations Setup signer
+  name and title become a signer tagged for donation letters, signed with space to sign by hand as before. Cover
+  letters keep signing with the check's signer by printed name; a typed fallback name (without variables) becomes a
+  signer tagged for cover letters. Nothing prints differently.
+
+## 2.2.1 — 2026-10-30
 Security hotfix for 2.2.0. No database migration; going back to 2.2.0 is just reinstalling it.
 - **pypdf 6.21.4 (seven advisories, CVE-2026-119203 to CVE-2026-119209).** A specially crafted PDF could make pypdf
   loop forever or use a very large amount of memory or time. PennyWarden opens PDFs that users attach (to include

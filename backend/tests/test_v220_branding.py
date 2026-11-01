@@ -53,7 +53,7 @@ def test_presets_meet_contrast_and_default_is_pennywarden(env, base):
         assert all(x["ok"] for x in br.contrast_report(p["colors"])), k
         assert len(p["series"]) == br.SERIES_COUNT and not br.similar_series(p["series"]), k
     v = env.admin.get(URL).json()
-    assert v["preset"] == "pennywarden" and v["logos"] == {"full": None, "mark": None} and v["footer_text"] is None
+    assert v["preset"] == "pennywarden" and v["logos"] == {"full": None, "mark": None, "dark_full": None, "dark_mark": None} and v["footer_text"] is None
     assert [p["id"] for p in v["presets"]] == ["pennywarden", "forest", "ocean", "plum", "ember"]
 
 
@@ -150,7 +150,9 @@ def test_pdf_reports_use_the_branding(env, base):
 def test_deck_uses_the_branding(env, base, buckets):  # noqa: F811
     g = buckets
     adm = env.admin
-    assert adm.put(URL, {"preset": "plum", "footer_text": "Plum footer"}).status_code == 200
+    # 2.3.0 (#386): a new setup's presentations use the dark theme; this test is about the light one
+    assert adm.put(URL, {"preset": "plum", "footer_text": "Plum footer",
+                         "themes": {"presentations": "LIGHT"}}).status_code == 200
     assert _upload(adm, "full", _png()).status_code == 200
     assert _upload(adm, "mark", _png(64, 64)).status_code == 200
     r = env.bu.get(f"/api/fundraisers/{g['id']}/presentation")

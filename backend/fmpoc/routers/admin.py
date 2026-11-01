@@ -46,6 +46,7 @@ def settings_save(body: SettingsIn, request: Request, db: Session = Depends(get_
     out = adm.save(db, ctx, request.app.state.settings, body.changes, body.confirmations,
                    lambda: _check_password(request, db, ctx, body.password or "", "SERVER_SETTINGS"))
     db.commit()
+    adm.apply_live(request.app, out.pop("live", {}))     # 2.3.0 (#379): the update channel applies at once
     return {**out, **adm.effective(request.app.state.settings, True)}
 
 

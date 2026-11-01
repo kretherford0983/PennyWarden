@@ -16,6 +16,12 @@ Set by an Administrator (System/About -> Branding): a color palette following Ma
   PennyWarden palette is used.
 * Settings and logos are organization settings (BR-003): in backups, their own partial-restore section
   (`settings.branding`), kept through a reinitialize.
+* 2.3.0 (#386) **dual branding**: a light and a dark theme (each a ready-made palette - DARK_PRESETS are the dark
+  versions - or custom colors, generated in the browser from the same two source colors with the Material 3 dark
+  scheme and adjusted), the theme each type of output uses (OUTPUTS; new setups: presentations dark, reports light;
+  upgraded installations keep both light), and optional logos for dark backgrounds (off: the light logos are used on
+  dark slides too). Word documents always use the light theme (they print on white paper). Both themes pass the same
+  guardrails: WCAG AA text contrast against that theme's background, a confirmation for similar chart colors.
 """
 from __future__ import annotations
 
@@ -96,6 +102,47 @@ PRESETS: dict[str, dict[str, Any]] = {
 }
 CUSTOM = "custom"
 
+# 2.3.0 (#386): the dark version of each ready-made palette - generated with material-color-utilities 0.4.0 from the
+# same two source colors (Material 3 dark scheme; chart series tones 80/70/80/60/90/60/70/45 for a dark background).
+DARK_PRESETS: dict[str, dict[str, Any]] = {
+    "pennywarden": {"colors": {
+        "primary": "#aec8f4", "on_primary": "#143155", "primary_container": "#2d476d", "on_primary_container": "#d5e3ff",
+        "secondary": "#f6be39", "on_secondary": "#402d00", "secondary_container": "#5c4300", "on_secondary_container": "#ffdfa0",
+        "surface": "#111318", "on_surface": "#e1e2e9", "surface_variant": "#43474e", "on_surface_variant": "#c4c6cf",
+        "outline": "#8e9199", "outline_variant": "#43474e"},
+        "series": ["#aec8f4", "#d7a31b", "#dbbde2", "#7892bc", "#ffdfa0", "#a387aa", "#aaabb1", "#526c93"]},
+    "forest": {"colors": {
+        "primary": "#88d982", "on_primary": "#003909", "primary_container": "#005312", "on_primary_container": "#a3f69c",
+        "secondary": "#ffb86a", "on_secondary": "#492900", "secondary_container": "#683d00", "on_secondary_container": "#ffdcbc",
+        "surface": "#10140f", "on_surface": "#e0e4db", "surface_variant": "#424940", "on_surface_variant": "#c2c9bd",
+        "outline": "#8c9388", "outline_variant": "#424940"},
+        "series": ["#88d982", "#ea9a38", "#a0cfd4", "#53a252", "#ffdcbc", "#6b989d", "#a9aca4", "#2a7a2f"]},
+    "ocean": {"colors": {
+        "primary": "#88cefe", "on_primary": "#00344c", "primary_container": "#004c6d", "on_primary_container": "#c7e7ff",
+        "secondary": "#febb2a", "on_secondary": "#422d00", "secondary_container": "#5e4200", "on_secondary_container": "#ffdea8",
+        "surface": "#101417", "on_surface": "#dfe3e7", "surface_variant": "#41484d", "on_surface_variant": "#c1c7ce",
+        "outline": "#8b9198", "outline_variant": "#41484d"},
+        "series": ["#88cefe", "#dfa000", "#cdc0e9", "#4f98c5", "#ffdea8", "#968bb1", "#a8acb0", "#1e719c"]},
+    "plum": {"colors": {
+        "primary": "#dcb8ff", "on_primary": "#451374", "primary_container": "#5c2f8c", "on_primary_container": "#efdbff",
+        "secondary": "#6fd8c8", "on_secondary": "#003731", "secondary_container": "#005048", "on_secondary_container": "#8cf5e4",
+        "surface": "#151218", "on_surface": "#e8e0e8", "surface_variant": "#4a454e", "on_surface_variant": "#ccc4cf",
+        "outline": "#968e98", "outline_variant": "#4a454e"},
+        "series": ["#dcb8ff", "#51bcad", "#f3b7bf", "#ab7cdd", "#8cf5e4", "#b8838a", "#b0a9b1", "#8255b3"]},
+    "ember": {"colors": {
+        "primary": "#ffb5a0", "on_primary": "#601500", "primary_container": "#872100", "on_primary_container": "#ffdbd1",
+        "secondary": "#a5c9fa", "on_secondary": "#00325a", "secondary_container": "#214872", "on_secondary_container": "#d2e4ff",
+        "surface": "#1a110f", "on_surface": "#f1dfda", "surface_variant": "#53433f", "on_surface_variant": "#d8c2bc",
+        "outline": "#a08c87", "outline_variant": "#53433f"},
+        "series": ["#ffb5a0", "#8aaedd", "#d9c58d", "#eb6943", "#d2e4ff", "#a1905c", "#b8a8a4", "#b94422"]},
+}
+
+# 2.3.0 (#386): dark theme - the "page" is the dark surface (no white paper), so the white-paper pairs become surface
+DARK_CONTRAST_PAIRS = tuple(p for p in CONTRAST_PAIRS if p[1] != "white") + (("primary", "surface"),)
+LIGHT, DARK = "LIGHT", "DARK"
+OUTPUTS = {"reports": "PDF reports (printed)", "presentations": "Presentations (.pptx)"}
+DEFAULT_OUTPUT_THEMES = {"reports": LIGHT, "presentations": DARK}     # new setups (upgrades keep both light: 0065)
+
 
 # ------------------------------------------------------------------ color math
 def _rgb(h: str) -> tuple[int, int, int]:
@@ -141,10 +188,10 @@ def _hex(v: Any, field: str) -> str:
     return v.strip().lower()
 
 
-def contrast_report(colors: dict[str, str]) -> list[dict]:
+def contrast_report(colors: dict[str, str], dark: bool = False) -> list[dict]:
     """Every text/background pair with its contrast ratio and whether it meets WCAG AA (4.5:1)."""
     out = []
-    for fg, bg in CONTRAST_PAIRS:
+    for fg, bg in (DARK_CONTRAST_PAIRS if dark else CONTRAST_PAIRS):
         b = "#ffffff" if bg == "white" else colors[bg]
         r = contrast(colors[fg], b)
         out.append({"text": fg, "background": bg, "ratio": round(r, 2), "ok": r >= AA})
@@ -180,11 +227,48 @@ def palette_of(b: BrandingSettings | None) -> dict:
             "colors": colors, "series": series}
 
 
+def dark_palette_of(b: BrandingSettings | None) -> dict:
+    """The dark theme's palette: the chosen ready-made one, custom colors, or (nothing chosen) the dark version of the
+    light palette - PennyWarden's when the light one is custom and no dark colors were saved with it."""
+    def ready(pid: str) -> dict:
+        p, d = PRESETS[pid], DARK_PRESETS[pid]
+        return {"preset": pid, "label": p["label"], "source_primary": p["source_primary"],
+                "source_secondary": p["source_secondary"], "colors": dict(d["colors"]), "series": list(d["series"])}
+    if b is None:
+        return ready(DEFAULT)
+    if b.dark_preset == CUSTOM and b.dark_colors_json:
+        stored = json.loads(b.dark_colors_json)
+        base = DARK_PRESETS[DEFAULT]
+        colors = {r: stored.get("colors", {}).get(r, base["colors"][r]) for r in ROLES}
+        series = (stored.get("series") or [])[:SERIES_COUNT]
+        series += base["series"][len(series):]
+        return {"preset": CUSTOM, "label": "Custom", "source_primary": b.source_primary,
+                "source_secondary": b.source_secondary, "colors": colors, "series": series}
+    if b.dark_preset in DARK_PRESETS:
+        return ready(b.dark_preset)
+    return ready(b.preset if b.preset in DARK_PRESETS else DEFAULT)
+
+
+def output_themes(b: BrandingSettings | None) -> dict[str, str]:
+    if b is None:
+        return dict(DEFAULT_OUTPUT_THEMES)
+    return {"reports": b.theme_reports or LIGHT, "presentations": b.theme_presentations or LIGHT}
+
+
 def view(db: Session, ctx) -> dict:
     b = _row(db, ctx.workspace_id)
     pal = palette_of(b)
+    dk = dark_palette_of(b)
     return {**pal, "footer_text": b.footer_text if b else None,
-            "logos": {slot: _logo_info(b, slot) for slot in ("full", "mark")},
+            "logos": {slot: _logo_info(b, slot) for slot in SLOTS},
+            # 2.3.0 (#386)
+            "dark": {**dk, "contrast": contrast_report(dk["colors"], dark=True),
+                     "similar_series": [list(p) for p in similar_series(dk["series"])]},
+            "dark_presets": [{"id": k, "label": PRESETS[k]["label"], "colors": v["colors"], "series": v["series"]}
+                             for k, v in DARK_PRESETS.items()],
+            "dark_contrast_pairs": [list(p) for p in DARK_CONTRAST_PAIRS],
+            "themes": output_themes(b), "outputs": [{"id": k, "label": v} for k, v in OUTPUTS.items()],
+            "dark_logos": bool(b.dark_logos) if b else False,
             "contrast": contrast_report(pal["colors"]),
             "similar_series": [list(p) for p in similar_series(pal["series"])],
             "presets": [{"id": k, "label": v["label"], "source_primary": v["source_primary"],
@@ -213,9 +297,35 @@ def _ensure(db: Session, ws_id: int) -> BrandingSettings:
 
 
 def _snapshot(b: BrandingSettings) -> dict:
-    pal = palette_of(b)
+    pal, dk = palette_of(b), dark_palette_of(b)
     return {"preset": pal["preset"], "source_primary": pal["source_primary"], "source_secondary": pal["source_secondary"],
-            "colors": pal["colors"], "series": pal["series"], "footer_text": b.footer_text}
+            "colors": pal["colors"], "series": pal["series"], "footer_text": b.footer_text,
+            "dark_preset": dk["preset"], "dark_colors": dk["colors"], "dark_series": dk["series"],
+            "themes": output_themes(b), "dark_logos": bool(b.dark_logos)}
+
+
+def _custom_colors(colors_in: dict | None, series_in: list | None, prefix: str) -> tuple[dict, list]:
+    colors_in = colors_in or {}
+    missing = [r for r in ROLES if r not in colors_in]
+    if missing:
+        raise validation(f"Every color role is needed ({', '.join(missing)} missing).", f"{prefix}colors")
+    unknown = [k for k in colors_in if k not in ROLES]
+    if unknown:
+        raise validation(f"Unknown color role: {unknown[0]}.", f"{prefix}colors")
+    colors = {r: _hex(colors_in[r], f"{prefix}colors.{r}") for r in ROLES}
+    series = [_hex(c, f"{prefix}series.{i}") for i, c in enumerate(series_in or [])]
+    if len(series) != SERIES_COUNT:
+        raise validation(f"A palette has {SERIES_COUNT} chart series colors.", f"{prefix}series")
+    return colors, series
+
+
+def _contrast_gate(colors: dict, dark: bool, prefix: str) -> None:
+    bad = [p for p in contrast_report(colors, dark) if not p["ok"]]
+    if bad:
+        p = bad[0]
+        where = ROLE_LABELS.get(p["background"], "white paper")
+        raise validation(f"{'Dark theme: ' if dark else ''}{ROLE_LABELS[p['text']]} on {where} has a contrast of "
+                         f"{p['ratio']}:1; text needs at least {AA}:1 (WCAG AA).", f"{prefix}colors.{p['text']}")
 
 
 def save(db: Session, ctx, data) -> dict:
@@ -234,37 +344,59 @@ def save(db: Session, ctx, data) -> dict:
     sp = ss = None
     if preset == CUSTOM:
         sp, ss = _hex(data.source_primary, "source_primary"), _hex(data.source_secondary, "source_secondary")
-        colors_in = data.colors or {}
-        missing = [r for r in ROLES if r not in colors_in]
-        if missing:
-            raise validation(f"Every color role is needed ({', '.join(missing)} missing).", "colors")
-        unknown = [k for k in colors_in if k not in ROLES]
-        if unknown:
-            raise validation(f"Unknown color role: {unknown[0]}.", "colors")
-        colors = {r: _hex(colors_in[r], f"colors.{r}") for r in ROLES}
-        series = [_hex(c, f"series.{i}") for i, c in enumerate(data.series or [])]
-        if len(series) != SERIES_COUNT:
-            raise validation(f"A palette has {SERIES_COUNT} chart series colors.", "series")
+        colors, series = _custom_colors(data.colors, data.series, "")
         stored = {"colors": colors, "series": series}
     else:
         colors, series = PRESETS[preset]["colors"], PRESETS[preset]["series"]
-    bad = [p for p in contrast_report(colors) if not p["ok"]]
-    if bad:
-        p = bad[0]
-        raise validation(f"{ROLE_LABELS[p['text']]} on {ROLE_LABELS.get(p['background'], 'white paper')} has a "
-                         f"contrast of {p['ratio']}:1; text needs at least {AA}:1 (WCAG AA).", f"colors.{p['text']}")
+    _contrast_gate(colors, False, "")
+    # 2.3.0 (#386): the dark theme (None = unchanged), the theme per output type, dark-background logos
+    b = _ensure(db, ctx.workspace_id)
+    dark_preset = getattr(data, "dark_preset", None)
+    dark_stored = None
+    if dark_preset is not None:
+        dark_preset = dark_preset.strip().lower()
+        if dark_preset != CUSTOM and dark_preset not in DARK_PRESETS:
+            raise validation("Choose one of the dark palettes, or Custom.", "dark_preset")
+        if dark_preset == CUSTOM:
+            dcolors, dseries = _custom_colors(data.dark_colors, data.dark_series, "dark_")
+            dark_stored = {"colors": dcolors, "series": dseries}
+        else:
+            dcolors, dseries = DARK_PRESETS[dark_preset]["colors"], DARK_PRESETS[dark_preset]["series"]
+    else:
+        dk = dark_palette_of(b)
+        dcolors, dseries = dk["colors"], dk["series"]
+    _contrast_gate(dcolors, True, "dark_")
+    themes = dict(output_themes(b))
+    for k in OUTPUTS:
+        v = (getattr(data, "themes", None) or {}).get(k)
+        if v is not None:
+            if v not in (LIGHT, DARK):
+                raise validation("Choose Light or Dark.", f"themes.{k}")
+            themes[k] = v
+    unknown = [k for k in (getattr(data, "themes", None) or {}) if k not in OUTPUTS]
+    if unknown:
+        raise validation(f"Unknown output type: {unknown[0]}.", "themes")
     close = similar_series(series)
-    if close:
-        names = ", ".join(f"{i + 1} and {j + 1}" for i, j in close[:4])
+    dclose = similar_series(dseries) if dark_preset is not None else []
+    if close or dclose:
+        def pairs(x):
+            return ", ".join(f"{i + 1} and {j + 1}" for i, j in x[:4])
+        names = "; ".join(([("light theme " if dclose else "") + pairs(close)] if close else [])
+                          + ([f"dark theme {pairs(dclose)}"] if dclose else []))
         require_confirmations([Warning_("SIMILAR_SERIES_COLORS",
                                         f"Chart series colors {names} are hard to tell apart. Charts keep their labels "
-                                        "and legends, so they stay readable; save anyway?", pairs=close)],
+                                        "and legends, so they stay readable; save anyway?", pairs=close, dark_pairs=dclose)],
                               data.confirmations)
-    b = _ensure(db, ctx.workspace_id)
     before = _snapshot(b)
     b.preset, b.source_primary, b.source_secondary = preset, sp, ss
     b.colors_json = json.dumps(stored, sort_keys=True) if stored else None
     b.footer_text = footer
+    if dark_preset is not None:
+        b.dark_preset = dark_preset
+        b.dark_colors_json = json.dumps(dark_stored, sort_keys=True) if dark_stored else None
+    b.theme_reports, b.theme_presentations = themes["reports"], themes["presentations"]
+    if getattr(data, "dark_logos", None) is not None:
+        b.dark_logos = bool(data.dark_logos)
     b.updated_at, b.updated_by_user_id = utcnow(), ctx.user.id
     db.flush()
     after = _snapshot(b)
@@ -274,12 +406,14 @@ def save(db: Session, ctx, data) -> dict:
 
 
 def reset_palette(db: Session, ctx) -> dict:
-    """*Reset to the PennyWarden palette* - the logos and footer text stay."""
+    """*Reset to the PennyWarden palette* (light and dark, #386) - the logos, footer text and the theme of each output
+    type stay."""
     b = _row(db, ctx.workspace_id)
-    if b is None or b.preset == DEFAULT:
+    if b is None or (b.preset == DEFAULT and b.dark_preset in (None, DEFAULT)):
         return view(db, ctx)
     before = _snapshot(b)
     b.preset, b.source_primary, b.source_secondary, b.colors_json = DEFAULT, None, None, None
+    b.dark_preset, b.dark_colors_json = None, None
     b.updated_at, b.updated_by_user_id = utcnow(), ctx.user.id
     db.flush()
     audit.record(db, ctx, "BRANDING_UPDATED", "branding_settings", b.id, before, {**_snapshot(b), "reset": True})
@@ -287,14 +421,14 @@ def reset_palette(db: Session, ctx) -> dict:
 
 
 MAX_LOGO_BYTES = 2 * 1024 * 1024
-SLOTS = ("full", "mark")
+SLOTS = ("full", "mark", "dark_full", "dark_mark")     # 2.3.0 (#386): logos for dark backgrounds
 
 
 def set_logo(db: Session, ctx, slot: str, data: bytes | None) -> dict:
     """Sets (data) or removes (None) the full logo or the small mark: PNG or JPEG by content, at most 2 MB,
     re-encoded as PNG without metadata (BR-100/BR-101). Audited with the image's fingerprint, never the image."""
     if slot not in SLOTS:
-        raise validation("Choose the full logo or the small mark.", "slot")
+        raise validation("Choose the full logo or the small mark (light or dark).", "slot")
     from .checkprint.service import normalize_logo
     b = _ensure(db, ctx.workspace_id)
     before = {"slot": slot, "sha256": getattr(b, f"logo_{slot}_sha256")}
@@ -328,29 +462,49 @@ def logo_png(db: Session, ctx, slot: str) -> bytes | None:
 class Theme:
     def __init__(self, pal: dict, footer_text: str | None = None, logo_full: bytes | None = None,
                  logo_mark: bytes | None = None, logo_full_size: tuple[int, int] | None = None,
-                 logo_mark_size: tuple[int, int] | None = None):
+                 logo_mark_size: tuple[int, int] | None = None, dark: bool = False):
         self.preset, self.colors, self.series = pal["preset"], pal["colors"], pal["series"]
+        self.dark = dark                                       # 2.3.0 (#386): drawn on the dark surface
         self.footer_text, self.logo_full, self.logo_mark = footer_text, logo_full, logo_mark
         self.logo_full_size, self.logo_mark_size = logo_full_size, logo_mark_size
 
     @property
     def key(self) -> str:
-        return json.dumps([self.colors, self.series], sort_keys=True)
+        return json.dumps([self.colors, self.series, self.dark], sort_keys=True)
+
+    @property
+    def page(self) -> str:
+        """The page / slide background: white paper, or the dark surface."""
+        return self.colors["surface"] if self.dark else "#ffffff"
 
 
 _DEFAULT_THEME = Theme(palette_of(None))
 _CURRENT: contextvars.ContextVar[Theme] = contextvars.ContextVar("pennywarden_branding", default=_DEFAULT_THEME)
 
 
-def load(db: Session, ws_id: int | None = None) -> Theme:
+def theme_for(b: BrandingSettings | None, output: str = "reports") -> str:
+    """LIGHT or DARK for an output type ("reports", "presentations"; "word": always light)."""
+    if output not in OUTPUTS:
+        return LIGHT
+    return output_themes(b)[output]
+
+
+def load(db: Session, ws_id: int | None = None, output: str = "reports") -> Theme:
     if ws_id is None:
         ws_id = db.scalar(select(Workspace.id).order_by(Workspace.id).limit(1))
     b = _row(db, ws_id) if ws_id is not None else None
+    dark = theme_for(b, output) == DARK
     if b is None:
-        return _DEFAULT_THEME
-    return Theme(palette_of(b), b.footer_text, b.logo_full_png, b.logo_mark_png,
-                 (b.logo_full_width, b.logo_full_height) if b.logo_full_png else None,
-                 (b.logo_mark_width, b.logo_mark_height) if b.logo_mark_png else None)
+        return _DEFAULT_THEME if not dark else Theme(dark_palette_of(None), dark=True)
+
+    def logo(slot: str):
+        if dark and b.dark_logos and getattr(b, f"logo_dark_{slot}_png") is not None:
+            slot = f"dark_{slot}"        # off, or no dark version of this logo: the light one is used
+        png = getattr(b, f"logo_{slot}_png")
+        return png, ((getattr(b, f"logo_{slot}_width"), getattr(b, f"logo_{slot}_height")) if png else None)
+    (full, full_size), (mark, mark_size) = logo("full"), logo("mark")
+    return Theme(dark_palette_of(b) if dark else palette_of(b), b.footer_text, full, mark, full_size, mark_size,
+                 dark=dark)
 
 
 def current() -> Theme:
@@ -358,11 +512,11 @@ def current() -> Theme:
 
 
 def themed(fn):
-    """Decorator for a document builder whose first argument is the database session: the organization's branding
-    applies while it runs (and to nothing else)."""
+    """Decorator for a (PDF report) builder whose first argument is the database session: the organization's branding
+    for reports applies while it runs (and to nothing else)."""
     @functools.wraps(fn)
     def wrapper(db, *a, **kw):
-        token = _CURRENT.set(load(db))
+        token = _CURRENT.set(load(db, output="reports"))
         try:
             return fn(db, *a, **kw)
         finally:
@@ -371,9 +525,10 @@ def themed(fn):
 
 
 @contextlib.contextmanager
-def use(db: Session):
-    """The organization's branding while a document is built (for builders that don't take the session)."""
-    token = _CURRENT.set(load(db))
+def use(db: Session, output: str = "reports"):
+    """The organization's branding while a document is built (for builders that don't take the session). output:
+    "reports" (PDF), "presentations" (.pptx) or "word" (always light) - #386."""
+    token = _CURRENT.set(load(db, output=output))
     try:
         yield _CURRENT.get()
     finally:
@@ -401,3 +556,10 @@ def rgb(role: str):
 
 def series_hex() -> list[str]:
     return list(current().series)
+
+
+def pick(light_hex: str, dark_role: str):
+    """2.3.0 (#386): a fixed color of the light design (lines, shading) or, on a dark theme, a palette role - so the light
+    reports keep their exact look and dark ones stay readable."""
+    from reportlab.lib import colors as rl
+    return rl.HexColor(light_hex) if not current().dark else color(dark_role)

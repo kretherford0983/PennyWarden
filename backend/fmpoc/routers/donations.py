@@ -48,6 +48,11 @@ class LinesIn(In):
 class ReceiptIn(In):
     donor_entity_id: int
     confirmations: list[str] = Field(default_factory=list, max_length=10)
+    signer_id: int | None = None          # 2.3.0 polish: the signer chosen when printing
+
+
+class SignerChoiceIn(In):
+    signer_id: int | None = None          # 2.3.0 polish: the signer chosen when printing
 
 
 def setup_ctx(db: Session = Depends(get_db), ctx: Ctx = Depends(require("donation.setup"))) -> Ctx:
@@ -78,24 +83,26 @@ def save_setup(body: SetupIn, db: Session = Depends(get_db), ctx: Ctx = Depends(
 
 
 @router.post("/setup/preview")
-def setup_preview(body: PreviewIn, db: Session = Depends(get_db), ctx: Ctx = Depends(setup_ctx)):
-    """The live preview with sample data (unsaved settings). Nothing is printed or stored, so not audited."""
-    return _pdf(ctx, svc.sample_pdf(db, ctx, body.config), "receipt-preview.pdf")
+def setup_preview(body: PreviewIn, request: Request, db: Session = Depends(get_db), ctx: Ctx = Depends(setup_ctx)):
+    """The live preview with sample data (unsaved settings). Nothing is printed or stored, so not audited. 2.3.0
+    (#395): the Administrator's preview shows the real signature for Signature image + printed."""
+    return _pdf(ctx, svc.sample_pdf(db, ctx, body.config, request.app.state.key), "receipt-preview.pdf")
 
 
 @router.post("/setup/preview-image")
-def setup_preview_image(body: PreviewIn, db: Session = Depends(get_db), ctx: Ctx = Depends(setup_ctx)):
+def setup_preview_image(body: PreviewIn, request: Request, db: Session = Depends(get_db),
+                        ctx: Ctx = Depends(setup_ctx)):
     if not raster.available():
         raise AppError(501, "PREVIEW_UNAVAILABLE", "The picture preview is not available on this server.")
-    png, pages = raster.pdf_to_png(svc.sample_pdf(db, ctx, body.config))
+    png, pages = raster.pdf_to_png(svc.sample_pdf(db, ctx, body.config, request.app.state.key))
     return Response(png, media_type="image/png",
                     headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
                              "X-Page-Count": str(pages)})
 
 
 @router.post("/setup/test-print")
-def setup_test_print(body: PreviewIn, db: Session = Depends(get_db), ctx: Ctx = Depends(setup_ctx)):
-    pdf = svc.sample_pdf(db, ctx, body.config)
+def setup_test_print(body: PreviewIn, request: Request, db: Session = Depends(get_db), ctx: Ctx = Depends(setup_ctx)):
+    pdf = svc.sample_pdf(db, ctx, body.config, request.app.state.key)
     audit.record(db, ctx, "DONATION_RECEIPT_TEST", "donation_settings", None, None,
                  {"unsaved_settings": body.config is not None})
     db.commit()
@@ -120,13 +127,14 @@ class PreviewReceiptIn(In):
     donor_entity_id: int
     lines: list[svc.LineIn] = Field(default_factory=list, max_length=200)     # unsaved lines on screen (optional)
     donors: list[svc.DonorIn] = Field(default_factory=list, max_length=200)   # unsaved details on screen (optional)
+    signer_id: int | None = None          # 2.3.0 polish: the signer chosen when printing
 
 
 @router.post("/transactions/{txn_id}/receipts/preview")
 def preview_receipt(txn_id: int, body: PreviewReceiptIn, db: Session = Depends(get_db), ctx: Ctx = Depends(print_ctx)):
     """2.1.0: the receipt as it would print, from the unsaved screen, watermarked; nothing is saved or attached."""
     t = svc.get_deposit(db, ctx, txn_id)
-    pdf, info = svc.preview_receipt(db, ctx, t, body.donor_entity_id, body.lines, body.donors)
+    pdf, info = svc.preview_receipt(db, ctx, t, body.donor_entity_id, body.lines, body.donors, body.signer_id)
     resp = _pdf(ctx, pdf, "receipt-preview.pdf")
     resp.headers["X-Receipt-Kind"] = info["kind"]
     if info["replaces"]:
@@ -138,7 +146,8 @@ def preview_receipt(txn_id: int, body: PreviewReceiptIn, db: Session = Depends(g
 def print_receipt(txn_id: int, body: ReceiptIn, request: Request, db: Session = Depends(get_db),
                   ctx: Ctx = Depends(print_ctx)):
     t = svc.get_deposit(db, ctx, txn_id)
-    pdf, r = svc.print_receipt(db, ctx, request.app.state.settings, t, body.donor_entity_id, body.confirmations)
+    pdf, r = svc.print_receipt(db, ctx, request.app.state.settings, t, body.donor_entity_id, body.confirmations,
+                               km=request.app.state.key, signer_id=body.signer_id)
     resp = _pdf(ctx, pdf, f"receipt-{r.number}{'-duplicate' if r.kind == svc.DUPLICATE else ''}.pdf")
     resp.headers["X-Receipt-Number"] = r.number
     resp.headers["X-Receipt-Kind"] = r.kind
@@ -152,6 +161,7 @@ class CancelIn(In):
 
 class DonationPrintIn(In):
     confirmations: list[str] = Field(default_factory=list, max_length=10)
+    signer_id: int | None = None          # 2.3.0 polish: the signer chosen when printing
 
 
 class CreateTransactionIn(In):
@@ -183,32 +193,37 @@ def awaiting_lines(db: Session = Depends(get_db), ctx: Ctx = Depends(print_ctx))
 # ------------------------------------------------------------------ 2.2.0 (#256): year-end statements, donor report
 class StatementPrintIn(In):
     confirmations: list[str] = Field(default_factory=list, max_length=10)
+    signer_id: int | None = None          # 2.3.0 polish: the signer chosen when printing
 
 
 class PrintAllIn(In):
     min_cents: int = Field(default=0, ge=0, le=10**13)
     confirmations: list[str] = Field(default_factory=list, max_length=10)
+    signer_id: int | None = None          # 2.3.0 polish: the signer chosen when printing
 
 
 @router.post("/setup/statement-preview")
-def setup_statement_preview(body: PreviewIn, db: Session = Depends(get_db), ctx: Ctx = Depends(setup_ctx)):
+def setup_statement_preview(body: PreviewIn, request: Request, db: Session = Depends(get_db),
+                            ctx: Ctx = Depends(setup_ctx)):
     """The year-end statement's live preview with sample data (unsaved settings); not audited."""
-    return _pdf(ctx, stm.sample_pdf(db, ctx, body.config), "statement-preview.pdf")
+    return _pdf(ctx, stm.sample_pdf(db, ctx, body.config, request.app.state.key), "statement-preview.pdf")
 
 
 @router.post("/setup/statement-preview-image")
-def setup_statement_preview_image(body: PreviewIn, db: Session = Depends(get_db), ctx: Ctx = Depends(setup_ctx)):
+def setup_statement_preview_image(body: PreviewIn, request: Request, db: Session = Depends(get_db),
+                                  ctx: Ctx = Depends(setup_ctx)):
     if not raster.available():
         raise AppError(501, "PREVIEW_UNAVAILABLE", "The picture preview is not available on this server.")
-    png, pages = raster.pdf_to_png(stm.sample_pdf(db, ctx, body.config))
+    png, pages = raster.pdf_to_png(stm.sample_pdf(db, ctx, body.config, request.app.state.key))
     return Response(png, media_type="image/png",
                     headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
                              "X-Page-Count": str(pages)})
 
 
 @router.post("/setup/statement-test-print")
-def setup_statement_test_print(body: PreviewIn, db: Session = Depends(get_db), ctx: Ctx = Depends(setup_ctx)):
-    pdf = stm.sample_pdf(db, ctx, body.config)
+def setup_statement_test_print(body: PreviewIn, request: Request, db: Session = Depends(get_db),
+                               ctx: Ctx = Depends(setup_ctx)):
+    pdf = stm.sample_pdf(db, ctx, body.config, request.app.state.key)
     audit.record(db, ctx, "DONATION_STATEMENT_TEST", "donation_settings", None, None,
                  {"unsaved_settings": body.config is not None})
     db.commit()
@@ -227,8 +242,9 @@ def statement_detail(year: int, donor_id: int, db: Session = Depends(get_db), ct
 
 
 @router.post("/statements/{year}/donors/{donor_id}/preview")
-def statement_preview(year: int, donor_id: int, db: Session = Depends(get_db), ctx: Ctx = Depends(print_ctx)):
-    pdf, info = stm.preview(db, ctx, year, donor_id)
+def statement_preview(year: int, donor_id: int, body: SignerChoiceIn | None = None, db: Session = Depends(get_db),
+                      ctx: Ctx = Depends(print_ctx)):
+    pdf, info = stm.preview(db, ctx, year, donor_id, body.signer_id if body else None)
     resp = _pdf(ctx, pdf, "statement-preview.pdf")
     resp.headers["X-Statement-Kind"] = info["kind"]
     return resp
@@ -237,7 +253,8 @@ def statement_preview(year: int, donor_id: int, db: Session = Depends(get_db), c
 @router.post("/statements/{year}/donors/{donor_id}")
 def print_statement(year: int, donor_id: int, body: StatementPrintIn, request: Request,
                     db: Session = Depends(get_db), ctx: Ctx = Depends(print_ctx)):
-    pdf, s = stm.print_one(db, ctx, request.app.state.settings, year, donor_id, body.confirmations)
+    pdf, s = stm.print_one(db, ctx, request.app.state.settings, year, donor_id, body.confirmations,
+                           km=request.app.state.key, signer_id=body.signer_id)
     resp = _pdf(ctx, pdf, f"statement-{s.number}{'-duplicate' if s.kind == svc.DUPLICATE else ''}.pdf")
     resp.headers["X-Statement-Number"] = s.number
     resp.headers["X-Statement-Kind"] = s.kind
@@ -248,7 +265,8 @@ def print_statement(year: int, donor_id: int, body: StatementPrintIn, request: R
 @router.post("/statements/{year}/print-all")
 def print_all_statements(year: int, body: PrintAllIn, request: Request, db: Session = Depends(get_db),
                          ctx: Ctx = Depends(print_ctx)):
-    pdf, made = stm.print_all(db, ctx, request.app.state.settings, year, body.min_cents, body.confirmations)
+    pdf, made = stm.print_all(db, ctx, request.app.state.settings, year, body.min_cents, body.confirmations,
+                              km=request.app.state.key, signer_id=body.signer_id)
     resp = _pdf(ctx, pdf, f"statements-{year}.pdf")
     resp.headers["X-Statement-Count"] = str(len(made))
     return resp
@@ -361,8 +379,9 @@ def cancel_donation(donation_id: int, body: CancelIn, db: Session = Depends(get_
 
 
 @router.post("/{donation_id}/receipts/preview")
-def preview_donation(donation_id: int, db: Session = Depends(get_db), ctx: Ctx = Depends(print_ctx)):
-    pdf, info = svc.preview_donation(db, ctx, svc.get_donation(db, ctx, donation_id))
+def preview_donation(donation_id: int, body: SignerChoiceIn | None = None, db: Session = Depends(get_db),
+                     ctx: Ctx = Depends(print_ctx)):
+    pdf, info = svc.preview_donation(db, ctx, svc.get_donation(db, ctx, donation_id), body.signer_id if body else None)
     resp = _pdf(ctx, pdf, "receipt-preview.pdf")
     resp.headers["X-Receipt-Kind"] = info["kind"]
     if info["replaces"]:
@@ -374,7 +393,8 @@ def preview_donation(donation_id: int, db: Session = Depends(get_db), ctx: Ctx =
 def print_donation(donation_id: int, body: DonationPrintIn, request: Request, db: Session = Depends(get_db),
                    ctx: Ctx = Depends(print_ctx)):
     d = svc.get_donation(db, ctx, donation_id)
-    pdf, r = svc.print_donation(db, ctx, request.app.state.settings, d, body.confirmations)
+    pdf, r = svc.print_donation(db, ctx, request.app.state.settings, d, body.confirmations, km=request.app.state.key,
+                                signer_id=body.signer_id)
     resp = _pdf(ctx, pdf, f"receipt-{r.number}{'-duplicate' if r.kind == svc.DUPLICATE else ''}.pdf")
     resp.headers["X-Receipt-Number"] = r.number
     resp.headers["X-Receipt-Kind"] = r.kind

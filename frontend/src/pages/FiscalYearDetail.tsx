@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, money } from "../api";
-import { Attachments, ErrorBox, Field, FyStatus, Loading, Modal } from "../components";
+import { Attachments, ErrorBox, Field, FyStatus, GrossBudgetNote, Loading, Modal } from "../components";
 import { useMe } from "../App";
 import { Link } from "../router";
 import { BudgetSection } from "./BudgetTable";
@@ -37,8 +37,25 @@ export default function FiscalYearDetail({ id }: { id: number }) {
         <dt>Closed</dt><dd>{d.closed_at ? d.closed_at.replace("T", " ").slice(0, 16) : "—"}</dd>
         {d.exception_confirmed ? <><dt>Confirmed exceptions</dt><dd>{d.exception_confirmed}</dd></> : null}
       </dl>
+      {d.balance_changes_after_close?.length ? (
+        <section className="alert warn" data-testid="balance-changed-after-close">
+          <strong>Balance changed after close</strong>
+          <p className="hint">These non-register account balances were changed by a Budget Admin after this Fiscal Year was closed (it was closed with the earlier balance).</p>
+          <ul>
+            {d.balance_changes_after_close.map((c: any) => (
+              <li key={c.id}>
+                {c.changed_at.slice(0, 16).replace("T", " ")} UTC by {c.changed_by || "?"} — {c.account}:{" "}
+                {c.action === "ADD" ? <>added {money(c.after?.balance)} as of {c.after?.as_of_date}</>
+                  : c.action === "CORRECT" ? <>corrected {money(c.before?.balance)} as of {c.before?.as_of_date} → {money(c.after?.balance)} as of {c.after?.as_of_date}</>
+                  : <>retired {money(c.before?.balance)} as of {c.before?.as_of_date}</>}. Reason: {c.reason}
+              </li>
+            ))}
+          </ul>
+        </section>
+      ) : null}
       <BudgetSection title="Income" rows={b.income} summary={b.income_summary} fyStatus="CLOSED" showOutside={showOutside} />
       <BudgetSection title="Expense" rows={b.expense} summary={b.expense_summary} fyStatus="CLOSED" showOutside={showOutside} />
+      <GrossBudgetNote />
       {d.status !== "CLOSED" ? <Closure c={d.closure} /> : null}
       <DocumentationReview fyId={d.id} />
       <FyDocuments fy={d} manage={manage} onChanged={load} />
