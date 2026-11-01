@@ -1386,6 +1386,9 @@ class InvoiceSettings(Base):
     terms_text: Mapped[str | None] = mapped_column(String(200), nullable=True)
     default_notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
     overdue_reminder_days: Mapped[int] = mapped_column(Integer, default=0, server_default="0")   # 2.4.0 (#255)
+    template_json: Mapped[str | None] = mapped_column(Text, nullable=True)        # 2.4.0 (#253 part 3): PDF template
+    logo_png: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    logo_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
     updated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 

@@ -22,11 +22,9 @@ from __future__ import annotations
 
 import datetime as dt
 import hashlib
-import io
 import json
 import re
 from decimal import ROUND_HALF_UP, Decimal
-from xml.sax.saxutils import escape
 
 from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
@@ -175,7 +173,7 @@ def setup_out(db: Session, ctx) -> dict:
             "terms_days": s.terms_days, "terms_text": s.terms_text, "default_notes": s.default_notes,
             "overdue_reminder_days": s.overdue_reminder_days or 0,
             "fields": [field_out(f) for f in fields_of(db, ctx.workspace_id, include_inactive=True)],
-            "pending": ["PDF template"]}
+            "pending": []}
 
 
 def save_setup(db: Session, ctx, body) -> dict:
@@ -578,84 +576,31 @@ def decide_write_off(db: Session, ctx, i: Invoice, approve: bool, note: str | No
 
 
 # ------------------------------------------------------------------ PDF
-def invoice_pdf(db: Session, ws_id: int, i: Invoice | None, sample: bool = False, watermark: str | None = None) -> bytes:
-    """The invoice PDF (a plain layout; the template editor comes with the next build). `sample` renders dummy data
-    for the Administrator's test print (BR-003): no real invoice, customer or product is read."""
-    from reportlab.lib import colors
-    from reportlab.lib.pagesizes import letter
-    from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
-    from reportlab.lib.units import inch
-    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
-
+def invoice_pdf(db: Session, ws_id: int, i: Invoice | None, sample: bool = False, watermark: str | None = None,
+                template: dict | None = None) -> bytes:
+    """The invoice PDF, laid out by the organization's template (2.4.0, #253 part 3). `sample` renders dummy data for
+    the Administrator's test print and the template preview (BR-003): no real invoice, customer or product is read.
+    `template` previews unsaved template settings."""
+    from . import entity_vars
+    from . import invoice_template as tpl
     from . import organization as org_svc
     ws = db.get(Workspace, ws_id)
-    org = org_svc.get(db, ws_id)
-    org_name = (org.organization_name if org else None) or (ws.name if ws else "")
-    org_lines = org_svc.address_lines(org)
+    s = settings_of(db, ws_id)
+    cfg = tpl.parse(template) if template is not None else tpl.stored(s)
+    org_vals = org_svc.values_for(db, ws_id)
     if sample:
         data = _sample_data()
+        cust = entity_vars.sample("CUSTOMER", "Sample Customer", ["123 Example Street", "Springfield, ST 00000"])
+        cust["CUSTOMER.EMAIL"] = "customer@example.org"
     else:
         data = _pdf_data(db, i)
-    ss = getSampleStyleSheet()
-    body = ParagraphStyle("b", parent=ss["Normal"], fontSize=9.5, leading=12)
-    small = ParagraphStyle("s", parent=body, fontSize=8, leading=10, textColor=colors.HexColor("#555555"))
-    right = ParagraphStyle("r", parent=body, alignment=2)
-    title = ParagraphStyle("t", parent=ss["Title"], fontSize=20, alignment=2, spaceAfter=2)
-    buf = io.BytesIO()
-
-    def mark(canvas, _doc):
-        if watermark:
-            canvas.saveState()
-            canvas.setFont("Helvetica-Bold", 48)
-            canvas.setFillColor(colors.Color(0.85, 0.85, 0.85, alpha=0.5))
-            canvas.translate(letter[0] / 2, letter[1] / 2)
-            canvas.rotate(35)
-            canvas.drawCentredString(0, 0, watermark)
-            canvas.restoreState()
-    doc = SimpleDocTemplate(buf, pagesize=letter, leftMargin=0.75 * inch, rightMargin=0.75 * inch,
-                            topMargin=0.7 * inch, bottomMargin=0.7 * inch, title=f"Invoice {data['number']}",
-                            author=org_name)
-    head = Table([[[Paragraph(f"<b>{escape(org_name)}</b>", body)] + [Paragraph(escape(x), body) for x in org_lines],
-                   [Paragraph("INVOICE", title), Paragraph(f"<b>{escape(data['number'])}</b>", right),
-                    Paragraph(f"Date {escape(data['date'])}", right), Paragraph(f"Due {escape(data['due'])}", right)]]],
-                 colWidths=[3.6 * inch, 3.4 * inch])
-    head.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP")]))
-    f = [head, Spacer(1, 14), Paragraph("<b>Bill to</b>", body)]
-    f += [Paragraph(escape(x), body) for x in data["bill_to"]]
-    for name, value in data.get("fields") or []:          # 2.4.0 (#253 part 2): invoice custom fields
-        f.append(Paragraph(f"<b>{escape(name)}:</b> {escape(value)}", body))
-    f.append(Spacer(1, 12))
-    rows = [[Paragraph("<b>Description</b>", body), Paragraph("<b>Qty</b>", right), Paragraph("<b>Unit price</b>", right),
-             Paragraph("<b>Amount</b>", right)]]
-    for ln in data["lines"]:
-        rows.append([Paragraph(escape(ln["description"]) + (f" <font size=8>({escape(ln['unit'])})</font>" if ln["unit"] else ""), body),
-                     Paragraph(escape(ln["qty"]), right), Paragraph(escape(ln["price"]), right),
-                     Paragraph(escape(ln["amount"]), right)])
-        if ln.get("discount"):
-            rows.append([Paragraph(f"&nbsp;&nbsp;Discount — {escape(ln['discount_reason'])}", small), "", "",
-                         Paragraph(f"-{escape(ln['discount'])}", right)])
-    t = Table(rows, colWidths=[4.1 * inch, 0.7 * inch, 1.1 * inch, 1.1 * inch], repeatRows=1)
-    t.setStyle(TableStyle([("LINEBELOW", (0, 0), (-1, 0), 0.6, colors.HexColor("#888888")),
-                           ("VALIGN", (0, 0), (-1, -1), "TOP"), ("BOTTOMPADDING", (0, 0), (-1, -1), 3)]))
-    f.append(t)
-    f.append(Spacer(1, 8))
-    tot = [["Subtotal", data["subtotal"]]]
-    if data.get("invoice_discount"):
-        tot.append([f"Discount — {data['invoice_discount_reason']}", f"-{data['invoice_discount']}"])
-    if data.get("tax"):
-        tot.append([data["tax_label"], data["tax"]])
-    tot.append(["Total due", data["total"]])
-    tt = Table([[Paragraph(escape(a), right if k < len(tot) - 1 else ParagraphStyle("tb", parent=right, fontName="Helvetica-Bold")),
-                 Paragraph(escape(b), right if k < len(tot) - 1 else ParagraphStyle("tb2", parent=right, fontName="Helvetica-Bold"))]
-                for k, (a, b) in enumerate(tot)], colWidths=[5.9 * inch, 1.1 * inch])
-    tt.setStyle(TableStyle([("LINEABOVE", (0, len(tot) - 1), (-1, len(tot) - 1), 0.6, colors.HexColor("#888888"))]))
-    f.append(tt)
-    if data.get("terms"):
-        f += [Spacer(1, 14), Paragraph(f"<b>Terms:</b> {escape(data['terms'])}", body)]
-    if data.get("notes"):
-        f += [Spacer(1, 6), Paragraph(escape(data["notes"]).replace("\n", "<br/>"), body)]
-    doc.build(f, onFirstPage=mark, onLaterPages=mark)
-    return buf.getvalue()
+        cust = entity_vars.values("CUSTOMER", db.get(Entity, i.customer_entity_id))
+    values = {**org_vals, **cust, "TODAY": dt.date.today().strftime("%m/%d/%Y"),
+              "INVOICE.NUMBER": data["number"], "INVOICE.DATE": data["date"], "INVOICE.DUE_DATE": data["due"],
+              "INVOICE.TOTAL": data["total"].lstrip("$"), "INVOICE.BALANCE": (data.get("balance") or data["total"]).lstrip("$"),
+              "INVOICE.TERMS": data.get("terms") or ""}
+    author = org_vals.get("ORG") or (ws.name if ws else "")
+    return tpl.render(cfg, data, values, s.logo_png, watermark, author)
 
 
 def _money(cents: int) -> str:
@@ -671,11 +616,12 @@ def _pdf_data(db: Session, i: Invoice) -> dict:
         ln = r["line"]
         extra = "; ".join(f"{x['name']}: {x['value']}" for x in values_out(db, i.workspace_id, "LINE", ln.custom_values,
                                                                            pdf_only=True))
+        p = db.get(InvoiceProduct, ln.product_id)
         lines.append({"description": ln.description + (f" ({extra})" if extra else ""), "unit": ln.unit_type or "",
-                      "qty": qty_text(ln.quantity_milli),
+                      "code": (p.code if p else None) or "", "qty": qty_text(ln.quantity_milli),
                       "price": _money(ln.unit_price_cents), "amount": _money(r["gross"]),
                       "discount": _money(r["line_discount"]) if r["line_discount"] else None,
-                      "discount_reason": ln.discount_reason or ""})
+                      "net": _money(r["net"]), "discount_reason": ln.discount_reason or ""})
     return {"number": display_number(i), "date": i.invoice_date.strftime("%m/%d/%Y"),
             "due": i.due_date.strftime("%m/%d/%Y"),
             "bill_to": ([e.legal_name] if e else []) + (address_lines(e) if e else []),
@@ -685,17 +631,27 @@ def _pdf_data(db: Session, i: Invoice) -> dict:
             "tax": _money(t["tax"]) if i.tax_rate_milli_pct else None,
             "tax_label": f"{i.tax_name} ({cat.rate_text(i.tax_rate_milli_pct)} %)" if i.tax_rate_milli_pct else "",
             "total": _money(t["total"]), "terms": i.terms_text, "notes": i.notes,
+            **_paid_part(db, i, t["total"]),
             "fields": [(x["name"], x["value"]) for x in values_out(db, i.workspace_id, "INVOICE", i.custom_values,
                                                                   pdf_only=True)]}
+
+
+def _paid_part(db: Session, i: Invoice, total: int) -> dict:
+    """Paid and balance lines on a (partly) paid invoice's PDF - none on a draft or an unpaid one."""
+    from .invoice_payments import figures
+    if i.status not in ("PARTLY_PAID", "PAID"):
+        return {}
+    paid = figures(db, i)["paid"]
+    return {"paid": _money(paid), "balance": _money(max(total - paid, 0))} if paid else {}
 
 
 def _sample_data() -> dict:
     return {"number": "INV-0000-SAMPLE", "date": "01/15/2027", "due": "02/14/2027",
             "bill_to": ["Sample Customer", "123 Example Street", "Springfield, ST 00000"],
-            "lines": [{"description": "Sample product - annual dues", "unit": "Year", "qty": "1", "price": "$120.00",
-                       "amount": "$120.00", "discount": None, "discount_reason": ""},
-                      {"description": "Sample service", "unit": "Hour", "qty": "2.5", "price": "$40.00",
-                       "amount": "$100.00", "discount": "$10.00", "discount_reason": "Sample discount"}],
+            "lines": [{"description": "Sample product - annual dues", "unit": "Year", "code": "SAMPLE-1", "qty": "1",
+                       "price": "$120.00", "amount": "$120.00", "discount": None, "net": "$120.00", "discount_reason": ""},
+                      {"description": "Sample service", "unit": "Hour", "code": "SAMPLE-2", "qty": "2.5", "price": "$40.00",
+                       "amount": "$100.00", "discount": "$10.00", "net": "$90.00", "discount_reason": "Sample discount"}],
             "subtotal": "$210.00", "invoice_discount": None, "invoice_discount_reason": "",
             "tax": "$15.23", "tax_label": "Sample tax (7.25 %)", "total": "$225.23", "terms": "Net 30",
             "notes": "This is a test print with sample data.", "fields": [("Purchase order", "SAMPLE-PO-1")]}

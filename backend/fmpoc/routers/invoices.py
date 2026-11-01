@@ -154,6 +154,82 @@ def setup_test_print(db: Session = Depends(get_db), ctx: Ctx = Depends(require("
                     headers={"Content-Disposition": 'inline; filename="invoice-sample.pdf"', "Cache-Control": "no-store"})
 
 
+# ------------------------------------------------------------------ 2.4.0 (#253 part 3): the PDF template
+from fastapi import Body, File, UploadFile  # noqa: E402
+
+from ..services import invoice_template as tpl  # noqa: E402
+
+
+@router.get("/setup/template")
+def get_template(db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.setup"))):
+    svc.require_module(db, ctx)
+    r = tpl.out(docs.settings_of(db, ctx.workspace_id))
+    db.commit()
+    return r
+
+
+@router.put("/setup/template")
+def save_template(config: dict = Body(...), db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.setup"))):
+    svc.require_module(db, ctx)
+    r = tpl.save(db, ctx, docs.settings_of(db, ctx.workspace_id), config)
+    db.commit()
+    return r
+
+
+@router.post("/setup/template/preview")
+def preview_template(config: dict = Body(...), db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.setup"))):
+    """The unsaved template with sample data (BR-003)."""
+    svc.require_module(db, ctx)
+    pdf = docs.invoice_pdf(db, ctx.workspace_id, None, sample=True, watermark="SAMPLE", template=config)
+    return Response(pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": 'inline; filename="invoice-template-preview.pdf"', "Cache-Control": "no-store"})
+
+
+@router.post("/setup/template/preview-image")
+def preview_template_image(config: dict = Body(...), db: Session = Depends(get_db),
+                           ctx: Ctx = Depends(require("invoice.setup"))):
+    from ..errors import AppError
+    from ..services.checkprint import raster
+    svc.require_module(db, ctx)
+    if not raster.available():
+        raise AppError(501, "PREVIEW_UNAVAILABLE", "The picture preview is not available on this server.")
+    pdf = docs.invoice_pdf(db, ctx.workspace_id, None, sample=True, watermark="SAMPLE", template=config)
+    png, pages = raster.pdf_to_png(pdf)
+    return Response(png, media_type="image/png", headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+                                                          "X-Page-Count": str(pages)})
+
+
+@router.post("/setup/template/logo")
+async def template_logo(file: UploadFile = File(...), db: Session = Depends(get_db),
+                        ctx: Ctx = Depends(require("invoice.setup"))):
+    from ..services.checkprint.service import MAX_LOGO_BYTES
+    svc.require_module(db, ctx)
+    data = await file.read(MAX_LOGO_BYTES + 1)
+    if len(data) > MAX_LOGO_BYTES:
+        raise tpl.logo_error()
+    r = tpl.set_logo(db, ctx, docs.settings_of(db, ctx.workspace_id), data)
+    db.commit()
+    return r
+
+
+@router.post("/setup/template/logo/remove")
+def template_logo_remove(db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.setup"))):
+    svc.require_module(db, ctx)
+    r = tpl.set_logo(db, ctx, docs.settings_of(db, ctx.workspace_id), None)
+    db.commit()
+    return r
+
+
+@router.get("/setup/template/logo")
+def template_logo_image(db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.setup"))):
+    from ..errors import not_found
+    svc.require_module(db, ctx)
+    s = docs.settings_of(db, ctx.workspace_id)
+    if not s.logo_png:
+        raise not_found("Logo")
+    return Response(s.logo_png, media_type="image/png", headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
+
+
 @router.get("/fields")
 def invoice_fields(db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.view"))):
     """2.4.0 (#253 part 2): the active custom fields, for the invoice form."""

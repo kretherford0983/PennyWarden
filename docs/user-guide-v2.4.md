@@ -43,6 +43,14 @@ An Administrator sets the number pattern, the payment terms and default notes in
 **custom fields** (on the invoice or on each line: text, number, date or a pick-list; required or not; on the PDF or
 not), and can make a **Test print** with sample data.
 
+### The invoice PDF
+An Administrator designs the invoice in **Invoices Setup → Invoice PDF**. The preview on the right redraws with
+sample data as you change things: font and accent color, the logo (PNG or JPEG, up to 1 MB) and where it goes, the
+letterhead lines, the title, the *Bill to* block, the columns of the line table (tick the ones you want, reorder them
+with the arrows and rename their headings), and a footer such as *Please pay {INVOICE.BALANCE} by
+{INVOICE.DUE_DATE}*. Open **Variables** for the full list. **Save template**: invoices printed from then on use it;
+PDFs already kept for sent invoices stay as they were sent.
+
 ### Payments
 A **Register User** records money received from the invoice itself: **Record payment…** asks for the bank account,
 the amount and the date, and creates the deposit in the Register - spread over the invoice's budgets and the sales

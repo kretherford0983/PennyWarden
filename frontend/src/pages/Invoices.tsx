@@ -5,6 +5,7 @@ import { Link, useRouter } from "../router";
 import { useMe } from "../App";
 import { OverdueInvoices } from "./Dashboard";
 import { EmailLog, SendEmail } from "./Email";
+import { InvoiceTemplateEditor } from "./InvoiceTemplate";
 
 // 2.4.0 (#251): the Invoices module. Its sections (invoices, products, payments, reports) arrive with the later 2.4.0
 // builds (#252-#255); this page says what the module is for and who does what (separation of duties).
@@ -200,8 +201,8 @@ export function InvoiceSetup() {
           </Field>
           <div className="actions"><button className="primary" type="submit">Save</button>{saved ? <span role="status" className="muted">Saved.</span> : null}</div>
         </GuardedForm>
-        <p className="muted">The invoice PDF template comes in a later test build.</p>
       </section>
+      <InvoiceTemplateEditor />
       <FieldSetup fields={o.fields || []} onChanged={() => api.get("/api/invoices/setup").then(setO, setErr)} />
     </div>
   );
