@@ -735,6 +735,9 @@ details.year-name summary { cursor: pointer; color: var(--muted); }
    20px line), so an ⓘ in a field label made that label taller than its neighbours (ui-standards §1) */
 button.info-tip-btn { background: none; border: 0; padding: 0 2px; min-height: 0; height: auto; font-size: 14px; line-height: 1; vertical-align: baseline; color: var(--muted, inherit); cursor: pointer; }
 .field-label .info-tip { line-height: inherit; }
+/* ui-standards §1 (labels are one line): a label with an ⓘ never wraps - in a narrow row its field moves to the next
+   line instead (rows wrap), so labels and controls stay level */
+.field-label:has(> .info-tip) { white-space: nowrap; }
 .info-tip-btn:focus-visible { outline: 2px solid var(--focus); border-radius: 50%; }
 .info-tip-pop { position: absolute; z-index: 30; top: 100%; left: 0; margin-top: 4px; width: 280px; max-width: 80vw; padding: 8px 10px;
   background: var(--surface); color: var(--text, inherit); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 4px 14px rgba(0,0,0,.18);

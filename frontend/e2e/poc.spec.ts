@@ -4103,8 +4103,13 @@ test("#312: Donations module - Administrator sets up the receipt; a Register Use
   // label still names the dropdown (the ⓘ is outside the <label>)
   await expect(page.getByLabel("Statement signer chosen", { exact: true })).toHaveJSProperty("tagName", "SELECT");
   expect(await layoutViolations(page), "donation-setup").toEqual([]);
-  const tops = await Promise.all(["st-signer", "st-signature-mode", "st-signer-choice"].map(async (t) => (await page.getByTestId(t).boundingBox())!.y));
-  expect(Math.max(...tops) - Math.min(...tops)).toBeLessThanOrEqual(1);
+  // each label one line; fields whose labels share a line have their dropdowns level (a narrow row may wrap a field)
+  const boxes = await Promise.all(["st-signer", "st-signature-mode", "st-signer-choice"].map((t) => page.getByTestId(t).evaluate((el) => {
+    const lab = el.closest(".field")!.querySelector(".field-label")!.getBoundingClientRect();
+    return { labelTop: lab.top, labelH: lab.height, top: el.getBoundingClientRect().top };
+  })));
+  for (const b of boxes) expect(b.labelH).toBeLessThanOrEqual(20);
+  for (const a of boxes) for (const b of boxes) if (Math.abs(a.labelTop - b.labelTop) <= 1) expect(Math.abs(a.top - b.top)).toBeLessThanOrEqual(1);
   await expect(page.getByRole("img", { name: "Donation receipt preview" })).toBeVisible();
   // 2.3.0 (#395): the signer comes from the shared Signers page, tagged for donation letters
   await expect(page.getByText("No signers are tagged for donation letters yet")).toBeVisible();
