@@ -214,9 +214,9 @@ function navFor(me: Me) {
       ...(has("audit.view") ? [["/audit-log", "Audit Log"]] : []), ...checkSetup, ...(has("users.manage") || has("system.view") || has("system.about") ? [["/about", "System/About"]] : [])];
   }
   // 2.4.0 (#251): an Invoice Manager without the other financial roles sees the Register (read-only), Entities and
-  // Invoices - no Dashboard, budget, Fiscal Year, account or report screens
+  // Invoices - no Dashboard, budget, Fiscal Year or account screens; Reports shows them the invoice reports only
   const shown = me.permissions.includes("financial.view") ? fin
-    : fin.filter((n) => ["/register", "/entities", "/invoices"].includes(n[0]));
+    : fin.filter((n) => ["/register", "/entities", "/invoices", "/reports"].includes(n[0]));   // 2.4.0 (#255): invoice reports
   // 2.2.0 (#349): financial users see System/About read-only (About and General)
   return me.permissions.includes("system.about") ? [...shown, ["/about", "System/About"]] : shown;
 }

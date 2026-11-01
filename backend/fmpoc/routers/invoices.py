@@ -197,6 +197,48 @@ def create_invoice(body: InvoiceIn, db: Session = Depends(get_db), ctx: Ctx = De
     return docs.out(db, ctx, i)
 
 
+# ------------------------------------------------------------------ 2.4.0 (#255): reports and overdue
+import datetime as _dt  # noqa: E402
+from urllib.parse import quote as _quote  # noqa: E402
+
+from ..services import invoice_reports as rep_svc  # noqa: E402
+
+
+@router.get("/overdue")
+def overdue(db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.view"))):
+    """The dashboard card for invoice viewers; `reminders` for Invoice Managers (due date + N days)."""
+    return rep_svc.overdue(db, ctx)
+
+
+@router.get("/reports/{rid}")
+def invoice_report(rid: Literal["inv-open", "inv-aging", "inv-statement", "inv-sales-tax", "inv-register", "inv-sales",
+                                "inv-activity"],
+                   format: Literal["json", "pdf", "csv"] = "json", download: bool = False,
+                   as_of: _dt.date | None = None, date_from: _dt.date | None = None, date_to: _dt.date | None = None,
+                   customer_entity_id: int | None = None,
+                   status: Literal["DRAFT", "SENT", "PARTLY_PAID", "PAID", "VOID", "WRITTEN_OFF"] | None = None,
+                   by: Literal["product", "category", "budget"] = "product",
+                   db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.view"))):
+    r = rep_svc.run(db, ctx, rid, {"as_of": as_of, "date_from": date_from, "date_to": date_to,
+                                   "customer_entity_id": customer_entity_id, "status": status, "by": by})
+    if format == "json":
+        return rep_svc.as_json(r)
+    if format == "csv":
+        if rid == "inv-statement":
+            from ..errors import validation
+            raise validation("The customer statement is a PDF.", "format")
+        name = rep_svc.filename(r, "csv")
+        return Response(rep_svc.as_csv(r), media_type="text/csv; charset=utf-8",
+                        headers={"Content-Disposition": f"attachment; filename=\"{name}\"; filename*=UTF-8''{_quote(name)}",
+                                 "Cache-Control": "private, no-store"})
+    name = rep_svc.filename(r, "pdf")
+    kind = "attachment" if download else "inline"
+    return Response(rep_svc.as_pdf(db, ctx, r), media_type="application/pdf",
+                    headers={"Content-Disposition": f"{kind}; filename=\"{name}\"; filename*=UTF-8''{_quote(name)}",
+                             "Cache-Control": "private, no-store", "X-Frame-Options": "SAMEORIGIN",
+                             "Content-Security-Policy": "default-src 'none'; frame-ancestors 'self'"})
+
+
 @router.get("/{iid}")
 def get_invoice(iid: int, db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.view"))):
     return docs.out(db, ctx, docs.get(db, ctx, iid))

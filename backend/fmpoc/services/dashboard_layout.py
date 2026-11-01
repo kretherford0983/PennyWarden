@@ -8,7 +8,8 @@ visible, in their default position order.
 from __future__ import annotations
 
 # default order: the 1.4.1 layout, with due reminders on top since v1.6.3 (CR-036; shown only when there are any)
-SECTIONS = ["notifications", "fiscal_year", "budget", "review", "bank", "attention", "charts"]
+# 2.4.0 (#255): "invoices" - the overdue invoices card (shown when the Invoices module is on)
+SECTIONS = ["notifications", "fiscal_year", "budget", "review", "bank", "attention", "invoices", "charts"]
 
 
 def layout_for(user) -> list[dict]:

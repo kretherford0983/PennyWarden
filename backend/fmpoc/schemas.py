@@ -80,7 +80,7 @@ class ChangePasswordIn(In):
 
 
 class DashboardSectionIn(In):
-    key: Literal["notifications", "fiscal_year", "budget", "review", "bank", "attention", "charts"]
+    key: Literal["notifications", "fiscal_year", "budget", "review", "bank", "attention", "invoices", "charts"]   # 2.4.0 (#255): invoices
     visible: bool
 
 
@@ -91,7 +91,7 @@ class PreferencesIn(In):
     dashboard_charts: list[Literal["income_pie", "monthly", "expense_vs_budget", "balances", "expense_pie",
                                    "cumulative_net"]] | None = Field(None, max_length=6)
     # v1.5.0 CR-031: dashboard sections in display order with visibility; reset_dashboard_layout -> default
-    dashboard_layout: list[DashboardSectionIn] | None = Field(None, max_length=7)
+    dashboard_layout: list[DashboardSectionIn] | None = Field(None, max_length=8)   # 2.4.0 (#255): 8 sections
     reset_dashboard_layout: bool | None = None
     # 2.1.0 (#262): the register's sort, remembered per user; reset_register_sort -> Date, oldest first
     register_sort: Literal["transaction_date:asc", "transaction_date:desc", "clear_date:asc", "clear_date:desc"] | None = None
@@ -586,6 +586,7 @@ class InvoiceSetupIn(In):                    # 2.4.0 (#253): the Administrator's
     terms_days: int = 30
     terms_text: OptStr(200) = None
     default_notes: OptStr(2000) = None
+    overdue_reminder_days: int | None = None      # 2.4.0 (#255): reminder to Invoice Managers, due date + N days
 
 
 class InvoiceWriteOffDecisionIn(In):          # 2.4.0 (#253)

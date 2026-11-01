@@ -3,6 +3,7 @@ import { api, money, qs } from "../api";
 import { EntityPicker, ErrorBox, Field, GuardedForm, Loading, Modal, useConfirmable } from "../components";
 import { Link, useRouter } from "../router";
 import { useMe } from "../App";
+import { OverdueInvoices } from "./Dashboard";
 
 // 2.4.0 (#251): the Invoices module. Its sections (invoices, products, payments, reports) arrive with the later 2.4.0
 // builds (#252-#255); this page says what the module is for and who does what (separation of duties).
@@ -24,8 +25,9 @@ export default function Invoices() {
           <li><b>Auditors</b> review everything.</li>
         </ul>
         <p className="hint">One person may hold several of these roles in a small organization; keeping them apart lets someone else check each step.</p>
-        <p className="muted" data-testid="inv-coming">Invoice reports appear here as they are added in this release.</p>
+        <p className="hint">Open invoices, aging, statements and the other invoice reports are under <Link to="/reports">Reports → Invoices</Link>.</p>
       </section>
+      {can("invoice.manage") ? <OverdueInvoices reminders /> : null}
       <InvoiceList manage={can("invoice.manage")} />
       {/* 2.4.0 (#252): Invoice Managers keep it; Budget Managers, Budget Users and Auditors see it */}
       {can("invoice.catalog_view") ? <Catalog manage={can("invoice.catalog_manage")} /> : null}
@@ -169,13 +171,13 @@ export function InvoiceSetup() {
   const [v, setV] = useState<any>(null);
   const [saved, setSaved] = useState(false);
   const [err, setErr] = useState<unknown>(null);
-  useEffect(() => { api.get("/api/invoices/setup").then((x) => { setO(x); setV({ number_pattern: x.number_pattern, terms_days: String(x.terms_days), terms_text: x.terms_text || "", default_notes: x.default_notes || "" }); }, setErr); }, []);
+  useEffect(() => { api.get("/api/invoices/setup").then((x) => { setO(x); setV({ number_pattern: x.number_pattern, terms_days: String(x.terms_days), terms_text: x.terms_text || "", default_notes: x.default_notes || "", overdue_reminder_days: String(x.overdue_reminder_days ?? 0) }); }, setErr); }, []);
   if (!o || !v) return <><ErrorBox error={err} />{err ? null : <Loading />}</>;
   const set = (k: string) => (e: any) => { setSaved(false); setV({ ...v, [k]: e.target.value }); };
   const save = async (e: FormEvent) => {
     e.preventDefault();
     setErr(null);
-    try { const x = await api.put("/api/invoices/setup", { ...v, terms_days: Number(v.terms_days) }); setO(x); setSaved(true); } catch (x) { setErr(x); }
+    try { const x = await api.put("/api/invoices/setup", { ...v, terms_days: Number(v.terms_days), overdue_reminder_days: Number(v.overdue_reminder_days) }); setO(x); setSaved(true); } catch (x) { setErr(x); }
   };
   return (
     <div>
@@ -192,6 +194,9 @@ export function InvoiceSetup() {
             <Field label="Terms text" hint="Printed on the invoice, e.g. Net 30."><input maxLength={200} value={v.terms_text} onChange={set("terms_text")} /></Field>
           </div>
           <Field label="Default notes" hint="Printed at the bottom of new invoices (can be changed per invoice)."><textarea rows={3} maxLength={2000} value={v.default_notes} onChange={set("default_notes")} /></Field>
+          <Field label="Overdue reminder (days after the due date)" hint="Invoice Managers see a reminder for each unpaid invoice from its due date plus this many days (0 = on the due date).">
+            <input type="number" min={0} max={365} value={v.overdue_reminder_days} onChange={set("overdue_reminder_days")} />
+          </Field>
           <div className="actions"><button className="primary" type="submit">Save</button>{saved ? <span role="status" className="muted">Saved.</span> : null}</div>
         </GuardedForm>
         <p className="muted">The invoice PDF template comes in a later test build.</p>

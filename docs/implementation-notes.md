@@ -128,6 +128,34 @@ could not otherwise be corrected. Scope and safeguards:
   with a link; the variable picker completes dotted names.
 - Tests: `backend/tests/test_v210_organization.py` (6, including the data migration) and the E2E #126 and #312 steps.
 
+**2.4.0 build 8 — Invoice reports (#255).**
+- `services/invoice_reports.py`: the seven reports as sections (columns, rows, totals) rendered by one JSON, one CSV
+  (formula-safe, negative amounts left as numbers) and one PDF writer (landscape letter, page footer). Route
+  `GET /api/invoices/reports/{id}?format=json|csv|pdf` (`invoice.view`: IM, RU, BM, BU, Auditor; Administrator 403;
+  404 with the module off). Ids `inv-open`, `inv-aging`, `inv-statement` (PDF only), `inv-sales-tax`,
+  `inv-register`, `inv-sales` (by product, category or Income budget), `inv-activity`; they are in
+  `report_prefs.REPORT_IDS` (Recently run, last options) and an **Invoices** category in every grouping scheme; a
+  scheme customized before 2.4.0 gets an Invoices category added (not Other). Frontend: registry entries +
+  `pages/InvoiceReports.tsx`; the Invoice Manager's navigation now includes Reports (it shows only what they can run).
+- Figures: only ACTIVE register lines linked to the invoice count, on their transaction date; open = total - paid as
+  of the date (drafts, voids and written-off invoices are never open; void/write-off status is the current one).
+  Aging buckets by days past due (current, 1-30, 31-60, 61-90, over 90). Tax collected per payment = the difference
+  of two cumulative apportionments (exactly what Record payment allocated). Sales amounts are after line and invoice
+  discounts, before tax, from issued invoices (not drafts or voids). Payments are one row per register transaction.
+- Overdue: `GET /api/invoices/overdue` - the dashboard section **Overdue invoices** (`dashboard_layout` key
+  `invoices`, shown when the module is on and the user can view invoices) and, for Invoice Managers, the reminders
+  shown on the Invoices page: every open invoice from due date + N days (N = `invoice_settings.overdue_reminder_days`,
+  migration `0077`, default 0, 0-365, set in Invoices Setup, audited with the setup). Computed when viewed: nothing is
+  sent or stored.
+- Close report (not the End of Year Audit): *Open invoices at the year's end* for information; closing is not
+  blocked (BR-013/014 unchanged). Restore re-entry report: invoices created after the backup are listed under "Other
+  records created after the backup".
+- Not done (optional in the issue): the "invoiced, not yet received" figure in budget reports.
+- New rules: **BR-INV-RPT-001** invoice reports are run by invoice viewers only, never the Administrator;
+  **-002** report figures come only from invoices and their linked active register lines; **-003** open invoices
+  never block a Fiscal Year close; **-004** overdue reminders go to Invoice Managers only, from due date + N days.
+  ACs **AC-INV-RPT-001..009**. Tests: `backend/tests/test_v240_invoice_reports.py` (10).
+
 **2.4.0 build 7 — Invoice payments (#254).**
 - `invoice_payment` (migration `0076`): one row per register allocation that pays, overpays or refunds an invoice
   (`kind` PAYMENT / OVERPAYMENT / REFUND), unlinked rows kept with who/when/why. Reinitialize wipes it first (it

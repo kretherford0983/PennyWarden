@@ -15,7 +15,7 @@ def test_defaults_cover_every_report_once():
 def test_catalog_default_is_purpose_and_admin_switches_scheme(env, base):
     g = env.bm.get("/api/reports/grouping").json()
     assert g["scheme"] == "PURPOSE" and not g["customized"]
-    assert [c["id"] for c in g["categories"]] == ["share", "audit", "analyze", "plan", "fundraisers"]
+    assert [c["id"] for c in g["categories"]] == ["share", "audit", "analyze", "plan", "fundraisers", "invoices"]  # 2.4.0 (#255): Invoices
     v = env.admin.put(URL, {"scheme": "AUDIENCE"}).json()
     assert v["scheme"] == "AUDIENCE"
     g = env.auditor.get("/api/reports/grouping").json()
