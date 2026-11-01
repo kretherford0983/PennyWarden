@@ -225,11 +225,26 @@ export function FyStatus({ status }: { status: string }) {
 }
 
 export function Field({ label, children, hint, info }: { label: string; children: ReactNode; hint?: string; info?: string }) {
-  // 2.3.0 polish: `info` adds an ⓘ with a popup explanation beside the label
+  const autoId = React.useId();
+  if (info && React.isValidElement(children)) {
+    // 2.3.0 polish: `info` adds an ⓘ with a popup explanation beside the label. The ⓘ is a button, so it sits outside
+    // the <label> (inside it, it would become the label's control); the label points at the field with htmlFor.
+    const el = children as React.ReactElement<{ id?: string }>;
+    const id = el.props.id || `field-${autoId}`;
+    return (
+      <div className="field">
+        <div className="field-inner">
+          <span className="field-label"><label htmlFor={id}>{label}</label><InfoTip label={`About ${label}`} text={info} /></span>
+          {el.props.id ? el : React.cloneElement(el, { id })}
+        </div>
+        {hint ? <span className="hint">{hint}</span> : null}
+      </div>
+    );
+  }
   return (
     <div className="field">
       <label className="field-inner">
-        <span className="field-label">{label}{info ? <InfoTip label={`About ${label}`} text={info} /> : null}</span>
+        <span className="field-label">{label}</span>
         {children}
       </label>
       {hint ? <span className="hint">{hint}</span> : null}

@@ -4099,6 +4099,12 @@ test("#312: Donations module - Administrator sets up the receipt; a Register Use
   await expect(page.getByRole("note").filter({ hasText: "signed once when it is printed" })).toBeVisible();
   await page.keyboard.press("Escape");
   await expect(page.getByRole("note").filter({ hasText: "signed once when it is printed" })).toHaveCount(0);
+  // ui-standards §1: the ⓘ doesn't make its label taller - the statement row's labels and dropdowns line up - and the
+  // label still names the dropdown (the ⓘ is outside the <label>)
+  await expect(page.getByLabel("Statement signer chosen", { exact: true })).toHaveJSProperty("tagName", "SELECT");
+  expect(await layoutViolations(page), "donation-setup").toEqual([]);
+  const tops = await Promise.all(["st-signer", "st-signature-mode", "st-signer-choice"].map(async (t) => (await page.getByTestId(t).boundingBox())!.y));
+  expect(Math.max(...tops) - Math.min(...tops)).toBeLessThanOrEqual(1);
   await expect(page.getByRole("img", { name: "Donation receipt preview" })).toBeVisible();
   // 2.3.0 (#395): the signer comes from the shared Signers page, tagged for donation letters
   await expect(page.getByText("No signers are tagged for donation letters yet")).toBeVisible();
