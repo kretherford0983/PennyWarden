@@ -92,6 +92,10 @@ PERMISSIONS: dict[str, set[str]] = {
     "invoice.setup": {ADMINISTRATOR},
     "invoice.manage": {INVOICE_MANAGER},
     "invoice.view": {INVOICE_MANAGER, REGISTER_USER, BUDGET_MANAGER, BUDGET_USER, AUDITOR},
+    # 2.4.0 (#252): the product catalog (products, tax rates, unit types, categories) - kept by Invoice Managers, seen
+    # by Budget Managers, Budget Users and Auditors; never the Administrator (BR-003)
+    "invoice.catalog_manage": {INVOICE_MANAGER},
+    "invoice.catalog_view": {INVOICE_MANAGER, BUDGET_MANAGER, BUDGET_USER, AUDITOR},
 }
 
 

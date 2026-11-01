@@ -523,6 +523,27 @@ class FundraiserIn(In):
     event_type: Literal["FUNDRAISER", "EVENT"] | None = None   # 2.4.0 (#429): create default Fundraiser; omitted on edit = unchanged
 
 
+class CatalogNameIn(In):                     # 2.4.0 (#252): a unit type or category
+    name: Str(80)
+
+
+class InvoiceProductIn(In):                  # 2.4.0 (#252)
+    name: Str(120)
+    code: OptStr(30) = None
+    description: OptStr(1000) = None
+    unit_price: Amount
+    unit_type_id: int | None = None
+    category_id: int | None = None
+    taxable: bool = False
+    budget_id: int | None = None
+
+
+class InvoiceTaxRateIn(In):                  # 2.4.0 (#252)
+    name: Str(80)
+    rate: Str(12)
+    budget_id: int | None = None
+
+
 class InvoicedIncomeIn(In):                   # 2.4.0 (#250)
     invoiced_income: bool
 

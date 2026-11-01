@@ -37,7 +37,7 @@ from ..models import (Donation, Attachment, AuditEvent, BankAccount, BankAccount
                       FundraiserFyReportNote, FundraiserSeries, FundraiserSeriesResult,
                       FundraiserClassification, FundraiserExclusion, FundraiserLineContributor, RegisterTransaction, Reminder,
                       RequestKey,
-                      TransactionAllocation, User, Workspace, utcnow)
+                      TransactionAllocation, User, Workspace, utcnow, InvoiceProduct, InvoiceProductCategory, InvoiceTaxRate, InvoiceUnitType)
 from . import backup as bk
 from . import server_recovery
 
@@ -49,7 +49,9 @@ COOLDOWN = dt.timedelta(hours=24)
 WIPE = (DonationStatement, DonationReceipt, DonationDetail, DonationLine, Donation, FundraiserBucketLine, FundraiserLineContributor, FundraiserClassification, FundraiserExclusion, FiscalYearReview, Attachment,
         TransactionAllocation, RegisterTransaction, CheckNumberAcknowledgement, CheckAccount, CheckPrinterSetting,
         FiscalYearBalanceChange, BankAccountBalance, BankAccount, FundraiserBucket, FundraiserBucketCategory, FundraiserBudget, Fundraiser, FundraiserSeriesResult,
-        FundraiserSeries, FundraiserFyReportNote, BudgetProjectionChoice, BudgetInclusion, BudgetHistoryEntry, FormerBudget, Budget, FiscalYear,
+        FundraiserSeries, FundraiserFyReportNote, BudgetProjectionChoice, BudgetInclusion, BudgetHistoryEntry, FormerBudget,
+        InvoiceProduct, InvoiceTaxRate, InvoiceProductCategory, InvoiceUnitType,     # 2.4.0 (#252): the catalog
+        Budget, FiscalYear,
         CheckDocument, CheckSigner, CheckStyle, DonationSettings, RequestKey)   # 2.1.0 (#312): donations
 
 
@@ -177,6 +179,12 @@ def wipe(db: Session, ws_id: int, ctx, by: str, backup_name: str, via: str, befo
         from .bootstrap import MULTIPLE_ENTITY_NUMBER
         db.add(Entity(workspace_id=ws_id, entity_number=MULTIPLE_ENTITY_NUMBER, entity_type="SYSTEM",
                       organization_name="Multiple", is_system=True, active=True, name_key="multiple"))
+    if ws.invoices_enabled:            # 2.4.0 (#252): the catalog's unit types and Discount item come back
+        from types import SimpleNamespace
+        from .invoice_catalog import ensure_seeded
+        ensure_seeded(db, SimpleNamespace(workspace_id=ws_id, user=getattr(ctx, "user", None),
+                                          correlation_id=getattr(ctx, "correlation_id", None),
+                                          ip=getattr(ctx, "ip", None)))
     audit.record(db, ctx, "REINITIALIZE", "workspace", ws_id, {"counts": before},
                  {"by": by, "via": via, "safety_backup": backup_name, "kept": "users, roles, two-step, organization, "
                   "key, modules, preferences, branding, audit log"}, category="SECURITY")

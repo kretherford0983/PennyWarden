@@ -11,6 +11,13 @@ PennyWarden 2.4.0 (in progress).
   give it under Users, alone or with the other Financial roles (never with Administrator or Auditor). The invoice
   pages themselves arrive with the next 2.4.0 test builds; for now **Invoices** explains who does what, and
   **Invoices Setup** (Administrator) is a placeholder.
+- **Product catalog (#252).** On the **Invoices** page Invoice Managers keep the products the organization bills for
+  (name, code, description, unit price, unit type, category, taxable, and the Invoiced Income budget the money goes
+  to), the sales **tax rates** (with their Invoiced Income budget), **unit types** (Each, Hour, Day, Week, Month,
+  Year to start with) and **categories**. A built-in **Discount** item is ready for invoices. The budget list offers
+  only Invoiced Income budgets, by code and name. Nothing is deleted: entries are inactivated and can be restored;
+  every change is in the audit log. Budget Managers, Budget Users and Auditors can see the catalog. A product whose
+  budget isn't continued into the current Fiscal Year shows **Needs budget**.
 - **Separation of duties:** the Budget Manager decides budgets, the Invoice Manager what is billed, the Register User
   receives the money, the Auditor reviews. One person may hold several roles; System/About → **Security** lists any
   account holding Budget Manager + Invoice Manager + Register User (information only).
