@@ -36,7 +36,7 @@ import { TestingBanner } from "./pages/Testing";
 import { DemoBanner } from "./pages/Demo";
 import { ReinitializedBanner } from "./pages/Reinitialize";
 import NamesGate from "./pages/NamesGate";
-import Invoices, { InvoiceDetail, InvoiceSetup } from "./pages/Invoices";
+import Invoices, { InvoiceBatch, InvoiceDetail, InvoiceSetup } from "./pages/Invoices";
 
 export const ROLE_NAMES: Record<string, string> = {
   ADMINISTRATOR: "Administrator", BUDGET_MANAGER: "Budget Manager", BUDGET_USER: "Budget User",
@@ -274,6 +274,7 @@ function Shell({ workspace, warning, mode, testing, demo, onLogout }: { workspac
   else if (path === "/payments") page = guard("/payments", <Payments />);
   else if (path === "/donations") page = guard("/donations", <DonationsPage />);
   else if (path === "/invoices") page = guard("/invoices", <Invoices />);           // 2.4.0 (#251)
+  else if ((m = match("/invoices/batches/:id", path))) page = guard("/invoices", <InvoiceBatch id={Number(m.id)} />);   // 2.4.0 (#248)
   else if ((m = match("/invoices/:id", path))) page = guard("/invoices", <InvoiceDetail id={Number(m.id)} />);   // 2.4.0 (#253)
   else if (path === "/invoice-setup") page = guard("/invoice-setup", <InvoiceSetup />);
   else if ((m = match("/fundraisers/:id", path))) page = guard("/fundraisers", <FundraiserDetail id={Number(m.id)} />);

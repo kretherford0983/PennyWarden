@@ -58,6 +58,15 @@ tax. The invoice shows *Paid*, the *Open balance*, and each payment with a link 
   the invoice (choosing the budget it moves to) if it was linked by mistake.
 - Voiding a payment in the Register (a bounced cheque, say) puts the invoice back to *Sent* or *Partly paid*.
 
+### Many customers at once (batches)
+For invoices that go to many customers - annual dues to every member, say - use **New batch…** on the Invoices page.
+Give the batch a name, tick the customers (type to find them; **Choose all shown** ticks every match), then enter the
+lines, dates and tax once. **Create drafts** makes one draft invoice per customer.
+
+On the batch's page, check the drafts (open any one to change it, or void it if it shouldn't go out), then **Mark all
+drafts as sent** and **Combined PDF** to print or save them all in one file. Afterwards each invoice is paid,
+revised or written off on its own like any other.
+
 ### Invoice reports
 **Reports → Invoices** has seven reports. Each shows on screen first; **Open** gives the PDF and **Download CSV** a
 spreadsheet (the customer statement is a PDF to send to the customer).

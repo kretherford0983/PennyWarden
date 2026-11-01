@@ -216,6 +216,7 @@ function InvoiceList({ manage }: { manage: boolean }) {
   const [status, setStatus] = useState("");
   const [search, setSearch] = useState("");
   const [creating, setCreating] = useState(false);
+  const [batching, setBatching] = useState(false);              // 2.4.0 (#248)
   const [err, setErr] = useState<unknown>(null);
   useEffect(() => {
     const h = setTimeout(() => {
@@ -234,6 +235,7 @@ function InvoiceList({ manage }: { manage: boolean }) {
           <Field label="Status"><select aria-label="Invoice status filter" value={status} onChange={(e) => setStatus(e.target.value)}>{STATUSES.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></Field>
           <Field label="Search"><input aria-label="Search invoices" maxLength={100} value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Number or customer" /></Field>
           {manage ? <button className="primary" onClick={() => setCreating(true)}>New invoice</button> : null}
+          {manage ? <button onClick={() => setBatching(true)}>New batch…</button> : null}
         </div>
       </div>
       <ErrorBox error={err} />
@@ -251,6 +253,8 @@ function InvoiceList({ manage }: { manage: boolean }) {
         </table>
       )}
       {creating ? <InvoiceForm onClose={() => setCreating(false)} onSaved={(i) => navigate(`/invoices/${i.id}`)} /> : null}
+      {batching ? <InvoiceForm batch onClose={() => setBatching(false)} onSaved={(b) => navigate(`/invoices/batches/${b.id}`)} /> : null}
+      <Batches />
     </section>
   );
 }
@@ -289,6 +293,7 @@ export function InvoiceDetail({ id }: { id: number }) {
       {i.void_reason ? <div className="alert info" role="note">Void: {i.void_reason}</div> : null}
       <dl className="dl">
         <dt>Customer</dt><dd>{i.customer?.name}</dd>
+        {i.batch_id ? <><dt>Batch</dt><dd><Link to={`/invoices/batches/${i.batch_id}`}>Open the batch</Link></dd></> : null}
         <dt>Invoice date</dt><dd>{i.invoice_date}</dd>
         <dt>Due</dt><dd>{i.due_date}{i.overdue ? <span className="badge red">Overdue</span> : null}</dd>
         {i.terms_text ? <><dt>Terms</dt><dd>{i.terms_text}</dd></> : null}
@@ -340,7 +345,10 @@ function AskText({ title, label, onClose, onDone }: { title: string; label: stri
 
 type LineV = { id?: number; product_id: string; quantity: string; discount_kind: string; discount_value: string; discount_reason: string; custom?: Record<string, string> };
 
-function InvoiceForm({ current, onClose, onSaved }: { current?: any; onClose: () => void; onSaved: (i: any) => void }) {
+function InvoiceForm({ current, batch, onClose, onSaved }: { current?: any; batch?: boolean; onClose: () => void; onSaved: (i: any) => void }) {
+  const [picked, setPicked] = useState<string[]>([]);               // 2.4.0 (#248): batch customers
+  const [find, setFind] = useState("");
+  const [batchName, setBatchName] = useState("");
   const [products, setProducts] = useState<any[]>([]);
   const [taxes, setTaxes] = useState<any[]>([]);
   const [entities, setEntities] = useState<any[]>([]);
@@ -371,13 +379,19 @@ function InvoiceForm({ current, onClose, onSaved }: { current?: any; onClose: ()
         custom_values: Object.fromEntries(fields.filter((f) => f.level === "LINE").map((f) => [String(f.id), (l.custom || {})[String(f.id)] || null])) })),
       custom_values: Object.fromEntries(fields.filter((f) => f.level === "INVOICE").map((f) => [String(f.id), custom[String(f.id)] || null])) };
     if (!current) { delete body.notes; delete body.terms_text; if (!v.notes) body.notes = null; }
+    if (batch) {
+      delete body.customer_entity_id;
+      try { onSaved(await api.post("/api/invoices/batches", { ...body, name: batchName || null, customer_entity_ids: picked.map(Number) })); } catch (x) { setErr(x); }
+      return;
+    }
     try { onSaved(current ? await api.put(`/api/invoices/${current.id}`, body) : await api.post("/api/invoices", body)); } catch (x) { setErr(x); }
   };
   return (
-    <Modal title={current ? `Edit invoice ${current.number}` : "New invoice"} onClose={onClose} wide>
+    <Modal title={current ? `Edit invoice ${current.number}` : batch ? "New batch of invoices" : "New invoice"} onClose={onClose} wide>
       <GuardedForm onSubmit={submit}>
         <ErrorBox error={err} />
-        <EntityPicker label="Customer" entities={entities} value={v.customer} onChange={(id) => setV({ ...v, customer: id })} />
+        {batch ? <BatchCustomers entities={entities} picked={picked} setPicked={setPicked} find={find} setFind={setFind} name={batchName} setName={setBatchName} />
+          : <EntityPicker label="Customer" entities={entities} value={v.customer} onChange={(id) => setV({ ...v, customer: id })} />}
         <div className="row fields">
           <Field label="Invoice date"><input type="date" required value={v.invoice_date} onChange={set("invoice_date")} /></Field>
           <Field label="Due date" hint="Empty = from the terms."><input type="date" value={v.due_date} onChange={set("due_date")} /></Field>
@@ -415,7 +429,7 @@ function InvoiceForm({ current, onClose, onSaved }: { current?: any; onClose: ()
           <Field label="Terms"><input maxLength={200} value={v.terms_text} onChange={set("terms_text")} /></Field>
           <Field label="Notes"><textarea rows={2} maxLength={2000} value={v.notes} onChange={set("notes")} /></Field>
         </> : null}
-        <div className="actions"><button type="button" onClick={onClose}>Cancel</button><button className="primary" type="submit">{current ? "Save" : "Create draft"}</button></div>
+        <div className="actions"><button type="button" onClick={onClose}>Cancel</button><button className="primary" type="submit" disabled={!!batch && !picked.length}>{current ? "Save" : batch ? `Create ${picked.length} drafts` : "Create draft"}</button></div>
       </GuardedForm>
     </Modal>
   );
@@ -622,5 +636,73 @@ function UnlinkForm({ i, link, onClose, onDone }: { i: any; link: any; onClose: 
         <div className="actions"><button type="button" onClick={onClose}>Cancel</button><button className="primary" type="submit" disabled={!v.budget || !v.reason.trim()}>Unlink</button></div>
       </form>
     </Modal>
+  );
+}
+
+// ------------------------------------------------------------------ 2.4.0 (#248): batches
+function BatchCustomers({ entities, picked, setPicked, find, setFind, name, setName }: {
+  entities: any[]; picked: string[]; setPicked: (x: string[]) => void; find: string; setFind: (x: string) => void; name: string; setName: (x: string) => void;
+}) {
+  const t = find.trim().toLowerCase();
+  const shown = entities.filter((e) => !t || String(e.display_name).toLowerCase().includes(t));
+  const toggle = (id: string, on: boolean) => setPicked(on ? [...picked, id] : picked.filter((x) => x !== id));
+  return (
+    <fieldset data-testid="batch-customers"><legend>Customers ({picked.length} chosen)</legend>
+      <Field label="Batch name" hint="For finding the batch later, e.g. 2027 dues."><input maxLength={120} value={name} onChange={(e) => setName(e.target.value)} /></Field>
+      <div className="row">
+        <Field label="Find customers"><input value={find} onChange={(e) => setFind(e.target.value)} placeholder="Name" /></Field>
+        <button type="button" className="small" onClick={() => setPicked(Array.from(new Set([...picked, ...shown.map((e) => String(e.id))])))}>Choose all shown</button>
+        <button type="button" className="small" disabled={!picked.length} onClick={() => setPicked([])}>Clear</button>
+      </div>
+      <div className="check-list" style={{ maxHeight: "14rem", overflowY: "auto" }}>
+        {shown.map((e) => <label key={e.id} className="check"><input type="checkbox" checked={picked.includes(String(e.id))} onChange={(x) => toggle(String(e.id), x.target.checked)} /> {e.display_name}</label>)}
+      </div>
+      <p className="hint">One draft invoice is created for each customer, with the lines and dates below. Review them, then mark them all as sent and print one PDF.</p>
+    </fieldset>
+  );
+}
+
+function Batches() {
+  const [rows, setRows] = useState<any[] | null>(null);
+  useEffect(() => { api.get("/api/invoices/batches").then(setRows, () => setRows([])); }, []);
+  if (!rows || !rows.length) return null;
+  return (
+    <div data-testid="batch-list"><h3>Batches</h3>
+      <ul>{rows.map((b) => <li key={b.id}><Link to={`/invoices/batches/${b.id}`}>{b.name}</Link> — {b.count} invoices{b.drafts ? `, ${b.drafts} draft${b.drafts === 1 ? "" : "s"}` : ""}</li>)}</ul>
+    </div>
+  );
+}
+
+export function InvoiceBatch({ id }: { id: number }) {
+  const { can } = useMe();
+  const [b, setB] = useState<any>(null);
+  const [err, setErr] = useState<unknown>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { api.get(`/api/invoices/batches/${id}`).then(setB, setErr); }, [id]);
+  if (!b) return <><ErrorBox error={err} />{err ? null : <Loading />}</>;
+  const sendAll = async () => {
+    setErr(null);
+    setBusy(true);
+    try { setB(await api.post(`/api/invoices/batches/${id}/send`)); } catch (x) { setErr(x); } finally { setBusy(false); }
+  };
+  return (
+    <div>
+      <p><Link to="/invoices">← Invoices</Link></p>
+      <div className="page-head">
+        <h1>Batch: {b.name}</h1>
+        <a className="button" href={`/api/invoices/batches/${id}/pdf`} target="_blank" rel="noreferrer">Combined PDF</a>
+        {can("invoice.manage") && b.drafts ? <button className="primary" disabled={busy} onClick={sendAll}>Mark all {b.drafts} drafts as sent</button> : null}
+      </div>
+      <ErrorBox error={err} />
+      {b.result?.failed?.length ? <div className="alert warn" role="note">Not sent: {b.result.failed.map((f: any) => `${f.number} (${f.message})`).join("; ")}</div> : null}
+      {b.result?.sent?.length ? <div className="alert info" role="status">Marked as sent: {b.result.sent.length}.</div> : null}
+      <p className="hint">Each invoice can still be opened, changed (while a draft) or voided on its own. Total (not void): <b>{money(b.total)}</b></p>
+      <table className="table" data-testid="batch-invoices">
+        <thead><tr><th>Number</th><th>Customer</th><th>Date</th><th>Due</th><th>Status</th><th className="num">Total</th></tr></thead>
+        <tbody>{b.invoices.map((r: any) => (
+          <tr key={r.id}><td><Link to={`/invoices/${r.id}`}>{r.number}</Link></td><td>{r.customer?.name}</td><td>{r.invoice_date}</td><td>{r.due_date}</td><td>{r.status_label}</td><td className="num">{money(r.total)}</td></tr>
+        ))}</tbody>
+      </table>
+    </div>
   );
 }

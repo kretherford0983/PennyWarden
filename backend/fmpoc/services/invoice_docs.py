@@ -253,7 +253,8 @@ def out(db: Session, ctx, i: Invoice, brief: bool = False) -> dict:
             "customer": {"id": e.id, "name": e.display_name} if e else None,
             "invoice_date": i.invoice_date.isoformat(), "due_date": i.due_date.isoformat(),
             "overdue": i.status in OPEN and i.due_date < dt.date.today(),
-            "total": fmt(t["total"]), "write_off_status": i.write_off_status}
+            "total": fmt(t["total"]), "write_off_status": i.write_off_status,
+            "batch_id": i.batch_id}                                     # 2.4.0 (#248)
     from .invoice_payments import figures                    # 2.4.0 (#254)
     base["open"] = fmt(figures(db, i)["open"]) if i.status in OPEN + ("DRAFT",) else "0.00"
     if brief:

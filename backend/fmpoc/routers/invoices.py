@@ -239,6 +239,45 @@ def invoice_report(rid: Literal["inv-open", "inv-aging", "inv-statement", "inv-s
                              "Content-Security-Policy": "default-src 'none'; frame-ancestors 'self'"})
 
 
+# ------------------------------------------------------------------ 2.4.0 (#248): batches
+from ..schemas import InvoiceBatchIn  # noqa: E402
+from ..services import invoice_batches as batches  # noqa: E402
+
+
+@router.get("/batches")
+def list_batches(db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.view"))):
+    return batches.listing(db, ctx)
+
+
+@router.post("/batches", status_code=201)
+def create_batch(body: InvoiceBatchIn, db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.manage"))):
+    b = batches.create(db, ctx, body)
+    db.commit()
+    return batches.out(db, ctx, b)
+
+
+@router.get("/batches/{bid}")
+def get_batch(bid: int, db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.view"))):
+    return batches.out(db, ctx, batches.get(db, ctx, bid))
+
+
+@router.post("/batches/{bid}/send")
+def send_batch(bid: int, request: Request, db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.manage"))):
+    b = batches.get(db, ctx, bid)
+    result = batches.send_all(db, ctx, request.app.state.settings, b)
+    return {**batches.out(db, ctx, b), "result": result}
+
+
+@router.get("/batches/{bid}/pdf")
+def batch_pdf(bid: int, download: bool = False, db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.view"))):
+    b = batches.get(db, ctx, bid)
+    pdf = batches.combined_pdf(db, ctx, b)
+    name = f"invoices-batch-{b.id}.pdf"
+    return Response(pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": f'{"attachment" if download else "inline"}; filename="{name}"',
+                             "Cache-Control": "no-store"})
+
+
 @router.get("/{iid}")
 def get_invoice(iid: int, db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.view"))):
     return docs.out(db, ctx, docs.get(db, ctx, iid))
