@@ -4,6 +4,7 @@ import { EntityPicker, ErrorBox, Field, GuardedForm, Loading, Modal, useConfirma
 import { Link, useRouter } from "../router";
 import { useMe } from "../App";
 import { OverdueInvoices } from "./Dashboard";
+import { EmailLog, SendEmail } from "./Email";
 
 // 2.4.0 (#251): the Invoices module. Its sections (invoices, products, payments, reports) arrive with the later 2.4.0
 // builds (#252-#255); this page says what the module is for and who does what (separation of duties).
@@ -265,8 +266,11 @@ export function InvoiceDetail({ id }: { id: number }) {
   const [err, setErr] = useState<unknown>(null);
   const [editing, setEditing] = useState(false);
   const [ask, setAsk] = useState<null | { title: string; label: string; url: string; body?: (t: string) => any; optional?: boolean }>(null);
+  const [mail, setMail] = useState<any>(null);                     // 2.4.0 (#249): the email log and form defaults
+  const [emailing, setEmailing] = useState(false);
   const load = () => api.get(`/api/invoices/${id}`).then(setI, setErr);
-  useEffect(() => { load(); }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
+  const loadMail = () => api.get(`/api/invoices/${id}/email`).then(setMail, () => setMail(null));
+  useEffect(() => { load(); loadMail(); }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!i) return <><ErrorBox error={err} />{err ? null : <Loading />}</>;
   const manage = can("invoice.manage");
   const act = async (url: string, body?: any) => { setErr(null); try { setI(await api.post(url, body)); } catch (x) { setErr(x); } };
@@ -279,6 +283,7 @@ export function InvoiceDetail({ id }: { id: number }) {
         {manage ? <div className="row">
           {i.can.edit ? <button onClick={() => setEditing(true)}>Edit</button> : null}
           {i.can.send ? <button className="primary" onClick={() => act(`/api/invoices/${i.id}/send`)}>Mark as sent</button> : null}
+          {mail?.defaults && ["SENT", "PARTLY_PAID", "PAID"].includes(i.status) ? <button onClick={() => setEmailing(true)}>Email…</button> : null}
           {i.can.revise ? <button onClick={() => setAsk({ title: "Revise invoice", label: "Why is it revised?", url: `/api/invoices/${i.id}/revise` })}>Revise…</button> : null}
           {i.can.write_off ? <button onClick={() => setAsk({ title: "Request a write-off", label: "Reason", url: `/api/invoices/${i.id}/write-off` })}>Request write-off…</button> : null}
           {i.can.void ? <button className="danger" onClick={() => setAsk({ title: "Void invoice", label: "Reason (the number is not reused)", url: `/api/invoices/${i.id}/void` })}>Void…</button> : null}
@@ -325,6 +330,9 @@ export function InvoiceDetail({ id }: { id: number }) {
         </section>
       ) : null}
       {i.payments && i.status !== "DRAFT" ? <Payments i={i} onChanged={setI} /> : null}
+      {mail ? <EmailLog rows={mail.log} /> : null}
+      {emailing && mail?.defaults ? <SendEmail title={`Email invoice ${i.number}`} defaults={mail.defaults} url={`/api/invoices/${i.id}/email`}
+        attachment={`invoice-${i.number}.pdf (the sent version)`} onClose={() => { setEmailing(false); loadMail(); }} onSent={() => { setEmailing(false); loadMail(); }} /> : null}
       {editing ? <InvoiceForm current={i} onClose={() => setEditing(false)} onSaved={(x) => { setEditing(false); setI(x); }} /> : null}
       {ask ? <AskText {...ask} onClose={() => setAsk(null)} onDone={async (t) => { await act(ask.url, ask.body ? ask.body(t) : { reason: t }); setAsk(null); }} /> : null}
     </div>

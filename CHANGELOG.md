@@ -28,6 +28,12 @@ PennyWarden 2.4.0 (in progress).
   (*Write-off pending* until then; *self-approved* when one person holds both roles). Void and write-off change no
   budget or balance. Everything is in the audit log. Register Users, Budget Managers, Budget Users and Auditors can
   view invoices.
+- **Email invoices and statements (#249).** An Administrator sets the outgoing mail server under System/About →
+  Settings → **Email** (server, port, security, user name, password, sender) and sends a test email. The password is
+  stored encrypted and never shown again (leave the field empty to keep it). Invoice Managers then use **Email…** on a
+  sent invoice, or *Email to the customer…* on the Customer statement report: the customer's address, a subject and a
+  message are filled in and can be changed; one click sends one email with the PDF. Nothing is emailed
+  automatically. Every email (and any failure) is listed on the invoice and in the audit log.
 - **Batch invoicing (#248).** **New batch…** on the Invoices page: choose the customers (search, *Choose all shown*)
   and the lines and dates once; one draft invoice is created for each customer. The batch page lists them - open and
   change any one on its own - then **Mark all drafts as sent** and print them as one **Combined PDF**.

@@ -128,6 +128,35 @@ could not otherwise be corrected. Scope and safeguards:
   with a link; the variable picker completes dotted names.
 - Tests: `backend/tests/test_v210_organization.py` (6, including the data migration) and the E2E #126 and #312 steps.
 
+**2.4.0 build 10 — Email invoices and statements (#249, decided 2026-10-30; remaining details proposed).**
+- `email_settings` (one row: on/off, host, port, STARTTLS/SSL/none, user name, `password_enc`, sender address and
+  name, reply-to) and `email_log` (migration `0079`). The mail server is in the database (Kyle): System/About →
+  Settings → **Email**, Administrator only (`email.setup`). The password is encrypted with the application key (AAD
+  `fmpoc:smtp_password:v1`), replace-only - an empty field keeps it, *Remove the saved password* clears it - and is
+  never returned, logged, audited (`password_changed` true/false only) or put in an error (BR-103/104). Kept by
+  Reinitialize; restored with *settings.general*; re-encrypted when a partial restore brings another installation's
+  key.
+- **Test email** (proposed): to an address the Administrator types; subject and text fixed; logged and audited
+  `EMAIL_TEST_SENT`.
+- **Sender** (proposed): the configured sender address and name; optional Reply-To. No per-user sender.
+- Sending (Invoice Managers, `invoice.email`; never automatic): `POST /api/invoices/{id}/email` - only a sent
+  invoice (Sent / Partly paid / Paid), carrying the PDF kept when its current version was marked as sent;
+  `POST /api/invoice-statements/email` - the customer statement PDF for a period. To (pre-filled with the customer
+  entity's email), Cc (each up to 10, validated; no line breaks - no header injection), subject (line breaks removed)
+  and message are editable; one click sends one email. `GET /api/invoices/{id}/email` returns the form's starting
+  values (Invoice Managers) and the invoice's email log (every invoice viewer).
+- **Logged per send** (proposed): kind, invoice/customer, To, Cc, subject, message, attachment name and SHA-256,
+  who, when, SENT/FAILED and a plain-words reason (never the server's password). Audited `INVOICE_EMAILED`,
+  `STATEMENT_EMAILED` or `EMAIL_SEND_FAILED` (without the message text). A failure is kept in the log and returned
+  as 502 `EMAIL_FAILED`. `email_log` is Data (wiped by Reinitialize before invoices; carried by a data restore).
+- Mail goes out through Python's `smtplib` with certificate verification (`ssl.create_default_context()`), 20 s
+  timeout. Not verifiable here (no mail server): tests replace the one send function.
+- New rules: **BR-INV-EML-001** the mail server is set by the Administrator; its password is encrypted, replace
+  only, never shown or logged; **-002** customer emails are sent only by an Invoice Manager's click - nothing
+  automatic; **-003** an invoice email carries the PDF kept for the sent version, never a draft; **-004** every send
+  and failed attempt is logged and audited; **-005** recipients and subject are validated (no header injection).
+  ACs **AC-INV-EML-001..006**. Tests: `backend/tests/test_v240_email.py` (6).
+
 **2.4.0 build 9 — Batch invoicing (#248).** The issue left its rules open ("to be identified when planned"); the
 build follows these proposals (posted on the issue for Kyle to confirm):
 - `invoice_batch` (id, name, created) and `invoice.batch_id` (migration `0078`; Reinitialize wipes batches after

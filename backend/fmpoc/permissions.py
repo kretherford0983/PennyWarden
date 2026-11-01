@@ -102,6 +102,10 @@ PERMISSIONS: dict[str, set[str]] = {
     # Invoice Manager may link a deposit already on an Invoiced Income budget; only Register Users unlink
     "invoice.record_payment": {REGISTER_USER},
     "invoice.link_payment": {REGISTER_USER, INVOICE_MANAGER},
+    # 2.4.0 (#249): the outgoing mail server is set by the Administrator; invoices and statements are emailed to
+    # customers by Invoice Managers, one click per email (never automatically)
+    "email.setup": {ADMINISTRATOR},
+    "invoice.email": {INVOICE_MANAGER},
 }
 
 

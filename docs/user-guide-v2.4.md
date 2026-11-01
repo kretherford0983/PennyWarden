@@ -67,6 +67,17 @@ On the batch's page, check the drafts (open any one to change it, or void it if 
 drafts as sent** and **Combined PDF** to print or save them all in one file. Afterwards each invoice is paid,
 revised or written off on its own like any other.
 
+### Emailing invoices and statements
+First an Administrator enters the organization's mail server under **System/About → Settings → Email** (your email
+provider gives the server name, port and security; use an app password if your provider offers one), turns email on
+and sends a **test email**. The password can't be viewed again - type a new one to replace it.
+
+Then, on a sent invoice, **Email…** opens a short form: *To* is the customer's email from Entities, and the subject
+and message are filled in for you. Change anything, then **Send email**. The invoice PDF that was kept when you
+marked it as sent is attached. A customer statement is emailed from **Reports → Customer statement** (*Email to the
+customer…*). Each invoice lists its emails (sent or failed) under **Emails**. PennyWarden never emails customers on
+its own - overdue reminders stay inside the app for Invoice Managers.
+
 ### Invoice reports
 **Reports → Invoices** has seven reports. Each shows on screen first; **Open** gives the PDF and **Download CSV** a
 spreadsheet (the customer statement is a PDF to send to the customer).

@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { api, qs } from "../api";
 import { EntityPicker, ErrorBox, Field, Loading } from "../components";
 import type { ActionsFn, RunFn } from "./reports/common";
+import { useMe } from "../App";
+import { SendEmail } from "./Email";
 
 type Props = { rid: string; fys: any[]; initial: Record<string, any>; onRun: RunFn; actions: ActionsFn };
 
@@ -19,6 +21,9 @@ export function InvoiceReport({ rid, initial, onRun, actions }: Props) {
     status: initial.status || "", by: initial.by || "product",
   });
   const [data, setData] = useState<any>(null);
+  const canEmail = useMe().can("invoice.email");                 // 2.4.0 (#249)
+  const [mailFor, setMailFor] = useState<any>(null);
+  const [sent, setSent] = useState(false);
   const [entities, setEntities] = useState<any[]>([]);
   useEffect(() => { if (rid === "inv-open" || rid === "inv-statement") api.get("/api/entities?status=all").then(setEntities, () => undefined); }, [rid]);
   const [err, setErr] = useState<unknown>(null);
@@ -36,6 +41,7 @@ export function InvoiceReport({ rid, initial, onRun, actions }: Props) {
     if (!ready) return;
     api.get(url("json")!).then(setData, setErr);
   }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
+  const openMail = () => { setSent(false); api.get(`/api/invoice-statements/email${qs({ customer_entity_id: v.customer_entity_id })}`).then(setMailFor, setErr); };
   const cname = entities.find((e) => String(e.id) === v.customer_entity_id)?.display_name;
   const remember = () => onRun(params, asOf ? `as of ${v.as_of}` : `${v.date_from} to ${v.date_to}${needCustomer && cname ? ` · ${cname}` : ""}`);
   return (
@@ -59,7 +65,12 @@ export function InvoiceReport({ rid, initial, onRun, actions }: Props) {
             <option value="product">Product</option><option value="category">Category</option><option value="budget">Income budget</option></select></Field>
         ) : null}
       </div>
-      {actions({ open: url("pdf"), download: url("pdf", true), csv: needCustomer ? undefined : url("csv", true), onRun: remember })}
+      {actions({ open: url("pdf"), download: url("pdf", true), csv: needCustomer ? undefined : url("csv", true), onRun: remember,
+        note: needCustomer && canEmail && ready ? <button type="button" onClick={openMail}>Email to the customer…</button> : undefined })}
+      {mailFor ? <SendEmail title="Email the statement" defaults={mailFor} url="/api/invoice-statements/email" attachment={`statement-${v.date_to}.pdf`}
+        extra={{ customer_entity_id: Number(v.customer_entity_id), date_from: v.date_from, date_to: v.date_to }}
+        onClose={() => setMailFor(null)} onSent={() => { setMailFor(null); setSent(true); }} /> : null}
+      {sent ? <div className="alert info" role="status">Statement emailed.</div> : null}
       <ErrorBox error={err} />
       {!ready ? <p className="muted">Choose the customer.</p> : !data ? (err ? null : <Loading />) : <ReportTables r={data} />}
     </>
