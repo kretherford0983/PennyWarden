@@ -28,6 +28,15 @@ PennyWarden 2.4.0 (in progress).
   (*Write-off pending* until then; *self-approved* when one person holds both roles). Void and write-off change no
   budget or balance. Everything is in the audit log. Register Users, Budget Managers, Budget Users and Auditors can
   view invoices.
+- **Payments (#254).** A Register User records a payment from the invoice (**Record payment…**): one deposit,
+  spread over the invoice lines' Invoiced Income budgets and the sales tax; the invoice becomes *Partly paid* or
+  *Paid*. An existing deposit on an Invoiced Income budget can be linked instead (**Link a deposit…**, Invoice
+  Manager or Register User); a payment from someone other than the customer asks for confirmation. More than the open
+  balance is an **overpayment** (confirmed first) that a Register User can **refund** - the only withdrawal allowed on
+  an Income budget, and it reduces that income. While the module is on, a deposit on an Invoiced Income budget can't
+  be entered directly in the Register, and a linked line keeps its amount and budget until a Register User unlinks it
+  on the invoice (moving it to another budget). Voiding a payment in the Register re-opens the invoice. A revised
+  invoice can't total less than what has been paid, and an invoice with payments can't be voided.
 - **Product catalog (#252).** On the **Invoices** page Invoice Managers keep the products the organization bills for
   (name, code, description, unit price, unit type, category, taxable, and the Invoiced Income budget the money goes
   to), the sales **tax rates** (with their Invoiced Income budget), **unit types** (Each, Hour, Day, Week, Month,

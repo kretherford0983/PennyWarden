@@ -4,7 +4,7 @@ from __future__ import annotations
 import calendar
 import datetime as dt
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, case, func, select
 from sqlalchemy.orm import Session
 
 from ..errors import not_found
@@ -83,11 +83,20 @@ def entity_brief(e: Entity | None) -> dict | None:
             "is_financial_institution": e.is_financial_institution}
 
 
+def signed_amount():
+    """An allocation's effect on its budget's actual: 2.4.0 (#254) an invoice-overpayment refund is a withdrawal on an
+    Invoiced Income budget (the only BR-050 exception) and reduces that income. Needs Budget and RegisterTransaction
+    joined."""
+    return case((and_(RegisterTransaction.transaction_type == "WITHDRAWAL", Budget.budget_type == "INCOME"),
+                 -TransactionAllocation.amount_cents), else_=TransactionAllocation.amount_cents)
+
+
 def active_allocation_totals(db: Session, budget_ids: list[int] | None = None,
                              date_from: dt.date | None = None, date_to: dt.date | None = None) -> dict[int, int]:
-    """Sum of ACTIVE (non-void) live allocations per budget (BR-048)."""
-    q = (select(TransactionAllocation.budget_id, func.coalesce(func.sum(TransactionAllocation.amount_cents), 0))
+    """Sum of ACTIVE (non-void) live allocations per budget (BR-048); a refund on Invoiced Income counts negative."""
+    q = (select(TransactionAllocation.budget_id, func.coalesce(func.sum(signed_amount()), 0))
          .join(RegisterTransaction, RegisterTransaction.id == TransactionAllocation.transaction_id)
+         .join(Budget, Budget.id == TransactionAllocation.budget_id)
          .where(RegisterTransaction.status == "ACTIVE", TransactionAllocation.removed_at.is_(None)))
     if budget_ids is not None:
         q = q.where(TransactionAllocation.budget_id.in_(budget_ids))

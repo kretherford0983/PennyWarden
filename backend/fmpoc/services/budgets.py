@@ -665,11 +665,15 @@ def _opt(bid, b, parent, fy, totals, amount, label=None):
     return {"id": bid, "label": label or budget_label(b, parent), "budget_type": b.budget_type,
             "fiscal_year_id": fy.id, "fiscal_year_label": f"{fy.display_name} — {fy.status.title()}",
             "status": b.status, "amount": fmt(amount), "remaining": fmt(amount - actual), "is_budget_zero": False,
+            "invoiced_income": bool(b.invoiced_income),
             "above_budget": fmt(actual - amount) if b.budget_type == "INCOME" and actual > amount else None}
 
 
-def resolve_for_allocation(db: Session, ctx, budget_id: int, txn_type: str, unchanged: bool) -> tuple[Budget, list[Warning_]]:
-    """Validate a Budget chosen for an allocation and map a simple parent to its leaf Other."""
+def resolve_for_allocation(db: Session, ctx, budget_id: int, txn_type: str, unchanged: bool,
+                           income_refund: bool = False) -> tuple[Budget, list[Warning_]]:
+    """Validate a Budget chosen for an allocation and map a simple parent to its leaf Other. 2.4.0 (#254):
+    `income_refund` = an invoice-overpayment refund withdrawal on an Invoiced Income budget (the BR-050 exception;
+    only the invoice payment service sets it)."""
     b = get_scoped(db, Budget, budget_id, ctx, "Budget")
     warnings: list[Warning_] = []
     fy = db.get(FiscalYear, b.fiscal_year_id)
@@ -687,6 +691,8 @@ def resolve_for_allocation(db: Session, ctx, budget_id: int, txn_type: str, unch
                                                     "Confirm this is an approved exceptional use."))
         return b, warnings
     expected = {"DEPOSIT": "INCOME", "WITHDRAWAL": "EXPENSE"}[txn_type]
+    if income_refund and txn_type == "WITHDRAWAL" and b.budget_type == "INCOME" and b.invoiced_income:
+        expected = "INCOME"                     # 2.4.0 (#254): BR-050 as amended - invoice overpayment refunds only
     if b.budget_type != expected:
         raise AppError(422, "BUDGET_TYPE_MISMATCH",
                        f"{txn_type.title()} allocations may only reference {expected.title()} budgets.")

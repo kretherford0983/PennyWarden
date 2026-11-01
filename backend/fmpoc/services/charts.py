@@ -18,7 +18,7 @@ from ..models import BankAccount, Budget, FiscalYear, RegisterTransaction, Trans
 from ..money import fmt
 from . import bank_accounts as bank
 from . import budgets as bsvc
-from .common import budget_label, fy_brief
+from .common import budget_label, fy_brief, signed_amount
 
 CHART_KEYS = ["income_pie", "monthly", "expense_vs_budget", "balances", "expense_pie", "cumulative_net"]
 DEFAULT_CHARTS = ["income_pie", "monthly", "expense_vs_budget"]
@@ -66,7 +66,7 @@ def data(db: Session, ctx, fy: FiscalYear) -> dict:
 
     # per allocation: parent budget, type, date, amount (ACTIVE, live, this FY's budgets, not Budget 0)
     q = (select(TransactionAllocation.budget_id, RegisterTransaction.transaction_date,
-                func.sum(TransactionAllocation.amount_cents))
+                func.sum(signed_amount()))
          .join(RegisterTransaction, RegisterTransaction.id == TransactionAllocation.transaction_id)
          .join(Budget, Budget.id == TransactionAllocation.budget_id)
          .where(Budget.fiscal_year_id == fy.id, RegisterTransaction.status == "ACTIVE",

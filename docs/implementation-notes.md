@@ -128,6 +128,42 @@ could not otherwise be corrected. Scope and safeguards:
   with a link; the variable picker completes dotted names.
 - Tests: `backend/tests/test_v210_organization.py` (6, including the data migration) and the E2E #126 and #312 steps.
 
+**2.4.0 build 7 — Invoice payments (#254).**
+- `invoice_payment` (migration `0076`): one row per register allocation that pays, overpays or refunds an invoice
+  (`kind` PAYMENT / OVERPAYMENT / REFUND), unlinked rows kept with who/when/why. Reinitialize wipes it first (it
+  references allocations and invoices); selective restore carries it with the register data.
+- **Record payment** (`POST /api/invoices/{id}/payments`, Register User - `invoice.record_payment`): creates the
+  deposit through the normal register path (`register.create(..., invoice_flow=...)`, so every register rule and
+  warning applies, e.g. the possible-duplicate confirmation) with one allocation per invoice line on the line's
+  Invoiced Income budget (continued into the deposit's Fiscal Year when it differs) plus one for the tax. A partial
+  payment is spread as the difference of two cumulative apportionments (tax in proportion, the rest over the lines in
+  order), so successive payments always add up to the invoice exactly. More than the open balance needs
+  `confirm_overpayment`; the excess is an OVERPAYMENT allocation on the first line's budget.
+- **Link** an existing deposit line (`GET .../link-candidates`, `POST .../links`; Invoice Manager or Register User):
+  only an active deposit line on an Invoiced Income budget (else `NOT_INVOICED_INCOME`: a Register User re-allocates
+  or splits it first), not in a Closed Fiscal Year, not already linked, and not more than the open balance
+  (`OVER_OPEN_BALANCE`). A payer other than the customer is the warning `THIRD_PARTY_PAYER`.
+- **Unlink** (`POST .../links/{id}/unlink`, Register User only): the line moves to a non-Invoiced-Income budget of
+  the same Fiscal Year in the same step, with a reason; audited.
+- **Refund an overpayment** (`POST .../refunds`, Register User): a withdrawal on the Invoiced Income budget, capped
+  at the refundable overpayment (`OVER_REFUNDABLE`). This is the only exception to BR-050 (a withdrawal on an Income
+  budget): `budgets.resolve_for_allocation(..., income_refund=True)` is reachable only from this endpoint. Budget
+  actuals (`common.active_allocation_totals`, the charts) count a withdrawal on an Income budget as negative, so the
+  refund reduces the income.
+- Register guards with the module on: a hand-entered deposit allocation on an Invoiced Income budget is refused
+  (`INVOICE_PAYMENT_REQUIRED`); a linked allocation keeps its budget, amount and type until it is unlinked
+  (`LINKED_TO_INVOICE`; notes, dates and attachments stay editable). Void or delete of a linked transaction refreshes
+  the invoice's status in the same commit (a voided payment re-opens the invoice). With the module off the
+  register behaves as before.
+- Status: Sent → Partly paid → Paid from the linked active payments (`INVOICE_STATUS_CHANGED`). A revision's total
+  can't go below what has been paid; an invoice with payments can't be voided (unlink first); sending a revision
+  re-derives the status.
+- New rules: **BR-INV-PAY-001** payments are recorded by a Register User only, from the invoice; **-002** an
+  Invoiced Income deposit is always linked to an invoice while the module is on; **-003** links are capped at the open
+  balance, overpayment only on explicit confirmation; **-004** refunds only of an overpayment, on Invoiced Income (the
+  BR-050 exception); **-005** void/unlink re-open the invoice atomically; **-006** revision total >= paid, no void
+  with payments. ACs **AC-INV-PAY-001..007**. Tests: `backend/tests/test_v240_invoice_payments.py` (7).
+
 **2.4.0 build 6b — Invoice custom fields (#253 part 2).**
 - `invoice_custom_field` (level INVOICE/LINE, type TEXT/NUMBER/DATE/PICKLIST with options, required, show on PDF,
   position, active) and `custom_values` JSON on `invoice` and `invoice_line` (migration `0075`). Fields are setup:

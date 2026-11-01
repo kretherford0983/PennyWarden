@@ -1492,3 +1492,20 @@ class InvoiceCustomField(Base):
     created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
     updated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class InvoicePayment(Base):
+    """2.4.0 (#254): a deposit allocation that pays an invoice (PAYMENT), its overpayment (OVERPAYMENT), or a refund
+    withdrawal allocation of that overpayment (REFUND). The amount is the allocation's; only ACTIVE transactions
+    count. Unlinking keeps the row (removed_at), never deletes it (BR-001)."""
+    __tablename__ = "invoice_payment"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
+    invoice_id: Mapped[int] = mapped_column(ForeignKey("invoice.id"), index=True)
+    allocation_id: Mapped[int] = mapped_column(ForeignKey("transaction_allocation.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(12))          # PAYMENT | OVERPAYMENT | REFUND
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    removed_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    removed_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    remove_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
