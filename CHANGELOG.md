@@ -138,6 +138,8 @@ PennyWarden 2.3.0 (in progress).
   Register User when printing (the one in the settings is the default). The print screen asks only when more than one
   signer is tagged for that kind of letter. A reprint starts from whoever signed the copy it reprints; *Print all*
   year-end statements uses one signer for the whole batch; a cover letter starts from the check's signer.
+  An ⓘ beside **Statement signer chosen** explains it: a statement is its own letter, signed once when printed, and
+  *Same as the receipt* follows the receipt letter's setup (not the signers of the donor's receipts).
 - The signature image prints only on the copy you print or download; the copy kept with the payment or donation shows
   the printed name instead, as a check's record copy does. A signer without an image falls back to space to sign
   (Donations Setup warns).
