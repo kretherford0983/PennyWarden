@@ -224,11 +224,12 @@ export function FyStatus({ status }: { status: string }) {
   return <span className={`pill pill-${status.toLowerCase()}`}>{status.charAt(0) + status.slice(1).toLowerCase()}</span>;
 }
 
-export function Field({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) {
+export function Field({ label, children, hint, info }: { label: string; children: ReactNode; hint?: string; info?: string }) {
+  // 2.3.0 polish: `info` adds an ⓘ with a popup explanation beside the label
   return (
     <div className="field">
       <label className="field-inner">
-        <span className="field-label">{label}</span>
+        <span className="field-label">{label}{info ? <InfoTip label={`About ${label}`} text={info} /> : null}</span>
         {children}
       </label>
       {hint ? <span className="hint">{hint}</span> : null}
