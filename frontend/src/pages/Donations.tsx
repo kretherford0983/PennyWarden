@@ -48,6 +48,14 @@ const FONTS: [string, string][] = [["CARLITO", "Carlito (Calibri-compatible)"], 
 const KIND_LABEL: Record<string, string> = { ORIGINAL: "Original", DUPLICATE: "Duplicate", CORRECTED: "Corrected" };
 
 // ------------------------------------------------------------------ setup (Administrator)
+/** 2.3.0 polish (Kyle, 2026-10-31): what "Statement signer chosen" means - the statement is its own letter, signed once. */
+const STATEMENT_SIGNER_INFO = "A year-end statement is its own letter, signed once when it is printed — never by the people " +
+  "who signed the donor's receipts during the year. Same as the receipt: the statement follows the receipt letter's " +
+  "setup here (ticking Chosen when printing for receipts makes statements chosen when printing too). Always the " +
+  "statement signer: the Statement signer above signs every statement. When printing: whoever prints picks the signer " +
+  "(asked only when more than one signer is tagged for donation letters); Print all uses one signer for the batch, and " +
+  "a reprint starts from whoever signed that statement before.";
+
 export default function DonationSetup() {
   const [s, setS] = useState<any>(null);
   const [cfg, setCfg] = useState<any>(null);
@@ -198,7 +206,7 @@ export default function DonationSetup() {
                 {s.signature_modes.map((m: any) => <option key={m.id} value={m.id}>{m.label}</option>)}
               </select></Field>
               {/* 2.3.0 polish: the statement's signer fixed, or chosen when printing (one signer for Print all) */}
-              <Field label="Statement signer chosen"><select data-testid="st-signer-choice" value={cfg.statement_signer_choice ?? ""} onChange={(e) => set("statement_signer_choice", e.target.value || null)}>
+              <Field label="Statement signer chosen" info={STATEMENT_SIGNER_INFO}><select data-testid="st-signer-choice" value={cfg.statement_signer_choice ?? ""} onChange={(e) => set("statement_signer_choice", e.target.value || null)}>
                 <option value="">Same as the receipt</option>
                 <option value="FIXED">Always the statement signer</option>
                 <option value="AT_PRINT">When printing (statement signer is the default)</option>

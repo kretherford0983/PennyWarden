@@ -4094,6 +4094,11 @@ test("#312: Donations module - Administrator sets up the receipt; a Register Use
   await expect(page.getByTestId("donation-org")).toContainText("12-3456789");
   await expect(page.getByTestId("donation-org")).toContainText("Sampletown, US 55555");
   await expect(page.getByLabel("Include EIN on receipts")).toBeChecked();   // 2.3.0 (#393): on by default
+  // 2.3.0 polish: an ⓘ explains Statement signer chosen (the statement is signed once, not by the receipts' signers)
+  await page.getByRole("button", { name: "About Statement signer chosen" }).click();
+  await expect(page.getByRole("note").filter({ hasText: "signed once when it is printed" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("note").filter({ hasText: "signed once when it is printed" })).toHaveCount(0);
   await expect(page.getByRole("img", { name: "Donation receipt preview" })).toBeVisible();
   // 2.3.0 (#395): the signer comes from the shared Signers page, tagged for donation letters
   await expect(page.getByText("No signers are tagged for donation letters yet")).toBeVisible();
