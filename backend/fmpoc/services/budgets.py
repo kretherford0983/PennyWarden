@@ -26,6 +26,7 @@ def snapshot(b: Budget) -> dict:
         "is_budget_zero": b.is_budget_zero, "notes": b.notes, "status_reason": b.status_reason,
         "continues_budget_id": b.continues_budget_id,
         "continues_former_budget_id": b.continues_former_budget_id,  # 2.2.0 (#381)
+        "invoiced_income": bool(b.invoiced_income),                  # 2.4.0 (#250)
     }
 
 
@@ -60,6 +61,7 @@ def recalc_other(db: Session, parent: Budget) -> Budget:
     other.amount_cents = parent.amount_cents - total
     other.status = parent.status
     other.locked = parent.locked
+    other.invoiced_income = bool(parent.invoiced_income)       # 2.4.0 (#250): the family carries the flag
     db.flush()
     return other
 
@@ -160,6 +162,7 @@ def create(db: Session, ctx, data) -> Budget:
     b = Budget(workspace_id=ctx.workspace_id, fiscal_year_id=fy.id, parent_budget_id=parent.id,
                parent_code=parent.parent_code, child_code=data.code, name=data.name, budget_type=parent.budget_type,
                amount_cents=amount, status=parent.status, locked=False, notes=data.notes,
+               invoiced_income=bool(parent.invoiced_income),      # 2.4.0 (#250): inherited
                created_by_user_id=ctx.user.id, updated_by_user_id=ctx.user.id)
     db.add(b)
     db.flush()
@@ -411,6 +414,35 @@ def unlock(db: Session, ctx, b: Budget, reason: str) -> Budget:
     return parent
 
 
+def set_invoiced_income(db: Session, ctx, b: Budget, on: bool) -> Budget:
+    """2.4.0 (#250): mark an Income parent budget as Invoiced Income, or clear it. Budget Manager only (router);
+    the whole family carries it (BR-016). An Approved budget must be unlocked first (with a reason, BR-023/024); a
+    closed Fiscal Year refuses it (BR-012). Audited with before and after. It is a flag, not a budget type: the budget
+    still counts as income everywhere. Its rules apply only with the Invoices module (later builds)."""
+    fy = db.get(FiscalYear, b.fiscal_year_id)
+    _fy_editable(fy)
+    if b.parent_budget_id is not None or b.system_managed or b.is_budget_zero:
+        raise validation("Invoiced Income is set on an Income parent budget; its sub-budgets and Other carry it.",
+                         "invoiced_income")
+    if b.budget_type != "INCOME":
+        raise validation("Only an Income budget can be Invoiced Income.", "invoiced_income")
+    if b.status in ("REJECTED", "INACTIVE", "DELETED"):
+        raise conflict("INVALID_STATE", "A rejected, inactive or deleted budget can't be changed.")
+    if b.locked:
+        raise conflict("BUDGET_LOCKED", "The budget is locked. A Budget Manager must unlock it with a reason first.")
+    if bool(b.invoiced_income) == on:
+        return b
+    fam = family(db, b)
+    before = {"invoiced_income": bool(b.invoiced_income), "budget_ids": [x.id for x in fam]}
+    for x in fam:
+        x.invoiced_income = on
+        x.updated_by_user_id = ctx.user.id
+    db.flush()
+    audit.record(db, ctx, "BUDGET_INVOICED_INCOME_SET" if on else "BUDGET_INVOICED_INCOME_CLEARED", "budget", b.id,
+                 before, {"invoiced_income": on, "budget_ids": [x.id for x in fam]})
+    return b
+
+
 def lock(db: Session, ctx, b: Budget) -> Budget:
     fy = db.get(FiscalYear, b.fiscal_year_id)
     _fy_editable(fy)
@@ -446,6 +478,7 @@ def _row(b: Budget, parent: Budget | None, totals: dict, qtotals: list[dict], ou
         "quarters": [fmt(q.get(b.id, 0)) for q in qtotals], "outside_fiscal_year": fmt(outside.get(b.id, 0)),
         "continues_budget_id": b.continues_budget_id, "continues_former_budget_id": b.continues_former_budget_id,
         "status": b.status, "locked": b.locked, "state": state(b), "system_managed": b.system_managed,
+        "invoiced_income": bool(b.invoiced_income),            # 2.4.0 (#250)
         "is_other": b.is_other, "is_budget_zero": b.is_budget_zero, "notes": b.notes,
         "status_reason": b.status_reason,
     }

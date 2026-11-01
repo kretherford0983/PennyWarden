@@ -2,6 +2,13 @@
 
 *2.4.0 is in progress. The full list is in the [changelog](../CHANGELOG.md).*
 
+## Invoiced Income budgets
+Money collected on invoices should go to budgets set aside for it. A Budget Manager marks an Income budget with
+**Mark as Invoiced Income** in the budget's row menu (Budgets page); its sub-budgets carry the mark too, and it shows
+as **🧾 Invoiced income** on the budget. It still counts as income in every total and report. On an approved budget,
+unlock it (with a reason) first. Copying budgets into a new Fiscal Year keeps the mark. For now this only labels the
+budget; it takes effect with the Invoices module, coming later in 2.4.
+
 ## Events & Fundraisers
 
 The Fundraisers module is now **Events & Fundraisers** — **Events** in the menu. Everything you had is where it was.

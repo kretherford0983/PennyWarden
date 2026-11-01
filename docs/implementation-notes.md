@@ -128,6 +128,28 @@ could not otherwise be corrected. Scope and safeguards:
   with a link; the variable picker completes dotted names.
 - Tests: `backend/tests/test_v210_organization.py` (6, including the data migration) and the E2E #126 and #312 steps.
 
+**2.4.0 build 3 — Invoiced Income budgets (#250, decided 2026-10-16).**
+- `budget.invoiced_income` (migration `0071`, off). Set on an Income **parent** with
+  `PUT /api/budgets/{id}/invoiced-income` (`budget.manage`); stored on the whole family like `locked` (sub-budgets and
+  Other), and a sub-budget or Other created later takes the parent's value (BR-016). Expense budgets, sub-budgets,
+  Other, Budget 0, rejected/inactive/deleted budgets and a closed Fiscal Year are refused. Not writable through budget
+  create/edit (`extra="forbid"`).
+- Locked (Approved) budget: refused with `BUDGET_LOCKED` until the existing audited unlock with a reason
+  (BR-023/024) - that is how "set or cleared only through unlock with a reason" is met.
+- Audit: `BUDGET_INVOICED_INCOME_SET` / `_CLEARED` with before/after and the family's budget ids.
+- Shown: budget lists (Budgets page and Fiscal Year detail, 🧾 + text, BR-079), budget API rows/snapshot, and the
+  Audit / Close report budget table ("(Invoiced income)"). Copy forward (BR-027) carries it.
+- Not built yet (they need invoices): every rule that applies "when the Invoices module is on" (invoice-only deposits,
+  refund exception, product/tax pickers) - with the Payments/Invoices builds. The issue's *proposed* items (refuse
+  setting while non-invoice deposits exist / clearing while invoice-linked allocations exist; continuation offers the
+  flag) are left for Kyle to confirm; they can only be enforced once invoices exist.
+- New rules (spec docs unchanged): **BR-INV-INC-001** Invoiced Income is a flag on an Income parent budget, carried
+  by its family, Budget Manager only; **-002** changes on an Approved budget need an unlock with a reason and are
+  audited; **-003** copy carries it; without the Invoices module it has no effect (BR-050 unchanged). ACs
+  **AC-INV-INC-001..005** (set/clear + inheritance + audit; refused for expense/child/Other/roles/mass assignment;
+  unlock first; copy; no register effect).
+- Tests: `backend/tests/test_v240_invoiced_income.py` (5).
+
 **2.4.0 build 2 — Events & Fundraisers (#429, decided with Kyle 2026-10-30).**
 - UI-only rename: nav **Events**; *Events & Fundraisers* on the module setting (with examples), the list page heading
   and back links; "Series" for the series link. Internal names unchanged: tables `fundraiser*`, `/api/fundraisers*`,

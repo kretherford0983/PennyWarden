@@ -9,7 +9,7 @@ from ..deps import Ctx, get_db, require
 from ..models import Budget, FiscalYear
 from ..schemas import (BudgetCreateIn, BudgetHistoryCorrectIn, BudgetHistoryCsvIn, BudgetHistoryIn, BudgetInclusionIn,
                        BudgetUpdateIn,
-                       FormerBudgetIn, FormerBudgetUpdateIn, FormerLinkIn, ReasonIn)
+                       FormerBudgetIn, FormerBudgetUpdateIn, FormerLinkIn, InvoicedIncomeIn, ReasonIn)
 from ..services import budget_history as hist
 from ..services import budget_inclusions as incl
 from ..services import budgets as svc
@@ -254,6 +254,13 @@ def inactivate(budget_id: int, body: ReasonIn, db: Session = Depends(get_db), ct
 @router.post("/{budget_id}/unlock")
 def unlock(budget_id: int, body: ReasonIn, db: Session = Depends(get_db), ctx: Ctx = Depends(require("budget.manage"))):
     return _mut(svc.unlock)(budget_id, db, ctx, body.reason)
+
+
+@router.put("/{budget_id}/invoiced-income")
+def invoiced_income(budget_id: int, body: InvoicedIncomeIn, db: Session = Depends(get_db),
+                    ctx: Ctx = Depends(require("budget.manage"))):
+    """2.4.0 (#250): mark an Income parent budget (and its family) as Invoiced Income, or clear it."""
+    return _mut(svc.set_invoiced_income)(budget_id, db, ctx, body.invoiced_income)
 
 
 @router.post("/{budget_id}/lock")

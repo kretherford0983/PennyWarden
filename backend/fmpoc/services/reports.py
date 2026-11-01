@@ -513,7 +513,8 @@ def _budget_section(tree: dict) -> list:
                  *[PM(f"<b>{q}</b>", "cellr") for q in qn], PM("<b>Actual</b>", "cellr"), PM("<b>Remaining</b>", "cellr")]]
         for r in rows:
             for x, indent in [(r, ""), *[(c, "    ") for c in r["children"]]]:
-                data.append([P(indent + x["label"], "cell"), P(x["state"]["label"], "cell"), P(money(x["amount"]), "cellr"),
+                inv = " (Invoiced income)" if x.get("invoiced_income") and not indent else ""   # 2.4.0 (#250)
+                data.append([P(indent + x["label"] + inv, "cell"), P(x["state"]["label"], "cell"), P(money(x["amount"]), "cellr"),
                              *[P(money(q), "cellr") for q in x["quarters"]], P(money(x["actual"]), "cellr"),
                              _remaining_cell(x)])
         data.append([PM("<b>Total</b>", "cell"), P("", "cell"), PM(f"<b>{money(summ['amount'])}</b>", "cellr"),

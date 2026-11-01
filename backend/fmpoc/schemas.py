@@ -522,6 +522,10 @@ class FundraiserIn(In):
     event_type: Literal["FUNDRAISER", "EVENT"] | None = None   # 2.4.0 (#429): create default Fundraiser; omitted on edit = unchanged
 
 
+class InvoicedIncomeIn(In):                   # 2.4.0 (#250)
+    invoiced_income: bool
+
+
 class FundraiserLinkIn(In):                    # 2.1.0 (#277)
     continues_from_id: int | None = None
 
