@@ -45,6 +45,11 @@ def today() -> dt.date:
     return dt.date.today()
 
 
+def _local_day(ts: dt.datetime) -> dt.date:
+    """The server's local date of a stored (naive UTC) time - the same calendar as the reports' dates and today()."""
+    return ts.replace(tzinfo=dt.timezone.utc).astimezone().date()
+
+
 # ------------------------------------------------------------------ data helpers
 def _invoices(db: Session, ws_id: int, statuses=None, date_from=None, date_to=None, customer_id=None) -> list[Invoice]:
     q = select(Invoice).where(Invoice.workspace_id == ws_id)
@@ -200,9 +205,9 @@ def statement(db: Session, ctx, customer_id: int | None, date_from: dt.date | No
             else:
                 activity.append({"date": t.transaction_date, "what": f"Payment — {num}" + (" (overpayment)" if kind == "OVERPAYMENT" else ""),
                                  "charge": None, "credit": amount, "_k": (t.transaction_date, 1, lid)})
-        if i.status == "WRITTEN_OFF" and i.write_off_decided_at and date_from <= i.write_off_decided_at.date() <= date_to:
-            activity.append({"date": i.write_off_decided_at.date(), "what": f"Written off — {num}", "charge": None,
-                             "credit": max(total - _paid(links[i.id]), 0), "_k": (i.write_off_decided_at.date(), 3, i.id)})
+        if i.status == "WRITTEN_OFF" and i.write_off_decided_at and date_from <= _local_day(i.write_off_decided_at) <= date_to:
+            activity.append({"date": _local_day(i.write_off_decided_at), "what": f"Written off — {num}", "charge": None,
+                             "credit": max(total - _paid(links[i.id]), 0), "_k": (_local_day(i.write_off_decided_at), 3, i.id)})
     activity.sort(key=lambda r: r["_k"])
     open_rows = _open_rows(db, ws, date_to, e.id)
     acols = [("date", "Date", "date"), ("what", "Activity", "text"), ("charge", "Charges", "money"), ("credit", "Payments and credits", "money")]
@@ -344,10 +349,10 @@ def activity(db: Session, ctx, date_from: dt.date | None, date_to: dt.date | Non
             if date_from <= t.transaction_date <= date_to:
                 rows.append({"type": kind_label[kind], "date": t.transaction_date, "number": num, "customer": cust,
                              "amount": -amount if kind == "REFUND" else amount, "detail": f"Register transaction #{t.id}"})
-        if i.status == "WRITTEN_OFF" and i.write_off_decided_at and date_from <= i.write_off_decided_at.date() <= date_to:
+        if i.status == "WRITTEN_OFF" and i.write_off_decided_at and date_from <= _local_day(i.write_off_decided_at) <= date_to:
             amount = max(docs.totals_of(i)["total"] - _paid(links[i.id]), 0)
             rows.append({"type": "Write-off" + (" (self-approved)" if i.write_off_self_approved else ""),
-                         "date": i.write_off_decided_at.date(), "number": num, "customer": cust, "amount": amount,
+                         "date": _local_day(i.write_off_decided_at), "number": num, "customer": cust, "amount": amount,
                          "detail": i.write_off_reason or ""})
         if date_from <= i.invoice_date <= date_to:
             t = docs.totals_of(i)
