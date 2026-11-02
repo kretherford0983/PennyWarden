@@ -1,14 +1,14 @@
 """2.4.0 (#252): the Invoices product catalog - unit types, product categories, products and tax rates (new, empty
 tables; the common unit types and the built-in Discount item are added when the Invoices module is turned on).
 
-Revision ID: 0073_invoice_catalog
-Revises: 0072_invoices_module
+Revision ID: 0074_invoice_catalog
+Revises: 0073_invoices_module
 """
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0073_invoice_catalog"
-down_revision = "0072_invoices_module"
+revision = "0074_invoice_catalog"
+down_revision = "0073_invoices_module"
 branch_labels = None
 depends_on = None
 

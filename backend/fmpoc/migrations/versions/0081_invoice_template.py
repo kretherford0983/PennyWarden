@@ -1,13 +1,13 @@
 """2.4.0 (#253 part 3): the invoice PDF template and logo on invoice_settings (empty: the built-in layout).
 
-Revision ID: 0080_invoice_template
-Revises: 0079_email
+Revision ID: 0081_invoice_template
+Revises: 0080_email
 """
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0080_invoice_template"
-down_revision = "0079_email"
+revision = "0081_invoice_template"
+down_revision = "0080_email"
 branch_labels = None
 depends_on = None
 

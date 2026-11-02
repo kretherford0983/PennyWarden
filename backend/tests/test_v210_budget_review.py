@@ -24,7 +24,7 @@ def test_new_path_and_old_alias_give_the_same_figures(env, base, hist):
 
 
 def test_average_of_the_prior_years_shown(env, base, hist):
-    r = rep(env, base, years=-1)
+    r = rep(env, base, years=9)
     ops = row(r, base["exp"]["id"])
     av = ops["average"]
     assert (av["budgeted"], av["actual"], av["difference"], av["years"]) == ("900.00", "450.00", "-450.00", 1)

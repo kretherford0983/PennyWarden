@@ -189,14 +189,15 @@ def save_projection_choices(body: ProjectionChoicesIn, db: Session = Depends(get
 
 @router.get("/budget-review")
 @router.get("/budget-prep", include_in_schema=False)
-def budget_review(fiscal_year_id: int = Query(...), years: int = Query(3, ge=-1, le=plan.MAX_YEARS),
+def budget_review(fiscal_year_id: int = Query(...), years: int = Query(3, ge=0, le=plan.REVIEW_MAX_YEARS),
                 projected: bool = False, include_next: bool = False, budget_id: int | None = None,
                 parent_budget_id: int | None = None, as_of: dt.date | None = None,
                 format: Literal["json", "pdf", "csv"] = "json", download: bool = False,
+                paper: Literal["LETTER", "LEGAL"] = "LETTER",
                 db: Session = Depends(get_db), ctx: Ctx = Depends(require("budget.manage"))):
     """#257 Budget Review report (named Budget Prep until #283): each budget of the year with its linked history and
-    averages, YTD actuals and (optionally) the projection and the next year's continuing budget. years=-1 shows every
-    linked year."""
+    averages, YTD actuals and (optionally) the projection and the next year's continuing budget. 2.3.0 polish: 0 to 9
+    prior years (the most a one-page legal PDF holds; "every linked year", years=-1, is gone)."""
     fy = get_scoped(db, FiscalYear, fiscal_year_id, ctx, "Fiscal Year")
     rep = plan.budget_review(db, ctx, fy, years=years, projected=projected, include_next=include_next,
                              budget_id=budget_id, parent_budget_id=parent_budget_id, as_of=as_of)
@@ -207,8 +208,9 @@ def budget_review(fiscal_year_id: int = Query(...), years: int = Query(3, ge=-1,
         summary["not_projected"] = [r["id"] for s in ("income", "expense") for r in rep[s]
                                     if (r["projection"] or {}).get("state") == "NOT_PROJECTED"]
     if format == "pdf":
-        path, fname, pages = plan.budget_review_pdf(db, ctx, rep)
-        summary["pages"] = pages
+        plan.check_pdf_fits(rep, paper)           # 2.3.0 polish: every column on one page
+        path, fname, pages = plan.budget_review_pdf(db, ctx, rep, paper)
+        summary["pages"], summary["paper"] = pages, paper
     audit.record(db, ctx, "REPORT_GENERATED", "fiscal_year", fy.id, None, summary)
     db.commit()
     if format == "pdf":

@@ -1,14 +1,14 @@
 """2.4.0 (#253): invoices - Administrator setup (numbering, terms), invoices, their catalog lines and sent
 revisions, and attachment.invoice_id for each sent version's PDF. New, empty tables; nothing existing changes.
 
-Revision ID: 0074_invoices
-Revises: 0073_invoice_catalog
+Revision ID: 0075_invoices
+Revises: 0074_invoice_catalog
 """
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0074_invoices"
-down_revision = "0073_invoice_catalog"
+revision = "0075_invoices"
+down_revision = "0074_invoice_catalog"
 branch_labels = None
 depends_on = None
 

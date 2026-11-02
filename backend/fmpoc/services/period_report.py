@@ -98,7 +98,10 @@ def _balance(db: Session, a: BankAccount, d: dt.date) -> int | None:
         return 0
     if a.register_enabled:
         start = bank.register_start(a)
-        if start is not None and d < start:
+        # 2.3.0 polish (Kyle, 2026-10-31): the opening balance is the balance at the start of its date, i.e. the end
+        # of the day before - so an Opening Balance Date on the Fiscal Year's first day gives the year's starting
+        # balance (BR-043), as the Register shows it; only earlier days have no data
+        if start is not None and d < start - dt.timedelta(days=1):
             return None
         return bank.available_cents(db, a, d)
     return bank.manual_as_of(db, a, d)

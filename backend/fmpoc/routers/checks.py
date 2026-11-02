@@ -566,6 +566,7 @@ class LetterIn(In):
     signer_id: int | None = None
     fold_marks: Literal["NONE", "FRONT", "BACK"] | None = None   # 2.1.0 (#247): this letter only (default: user/template)
     confirmations: list[str] = Field(default_factory=list, max_length=10)
+    letter_signer_id: int | None = None   # 2.3.0 polish: the letter's signer, when its template is chosen when printing
 
 
 class EnvelopeIn(In):
@@ -748,10 +749,13 @@ def document_preview_image(doc_id: int, body: DocTestIn, request: Request, db: S
 
 
 @router.get("/transactions/{txn_id}/documents")
-def transaction_documents(txn_id: int, db: Session = Depends(get_db), ctx: Ctx = Depends(print_ctx)):
-    """Letter and envelope templates for the print screen, with the user's envelope printer settings."""
+def transaction_documents(txn_id: int, check_signer_id: int | None = None, db: Session = Depends(get_db),
+                          ctx: Ctx = Depends(print_ctx)):
+    """Letter and envelope templates for the print screen, with the user's envelope printer settings. 2.3.0 polish:
+    each letter's signer choice (`check_signer_id`, the check's signer, is where a choice starts)."""
     svc.get_printable(db, ctx, txn_id, for_check=False)
-    letters = [{**svc.doc_out(d, full=False), "fold_default": svc.letter_fold_default(db, ctx, d)}
+    letters = [{**svc.doc_out(d, full=False), "fold_default": svc.letter_fold_default(db, ctx, d),
+                "signing": svc.letter_signing(db, ctx, svc.doc_config(d), check_signer_id)}
                for d in svc.list_documents(db, ctx, "LETTER", False)]
     from ..services import envelopes as env_lib
     envs = []
@@ -783,7 +787,7 @@ def print_letter(txn_id: int, body: LetterIn, request: Request, db: Session = De
     t = svc.get_printable(db, ctx, txn_id, for_check=False)
     d = svc.get_document(db, ctx, body.document_id, "LETTER")
     pdf = svc.print_letter(db, ctx, request.app.state.settings, t, d, body.signer_id, body.confirmations,
-                           fold=body.fold_marks, km=request.app.state.key)
+                           fold=body.fold_marks, km=request.app.state.key, letter_signer_id=body.letter_signer_id)
     return _pdf(ctx, pdf, f"letter-{t.check_number or t.id}.pdf")
 
 

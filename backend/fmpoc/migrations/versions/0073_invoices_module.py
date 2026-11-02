@@ -1,14 +1,14 @@
 """2.4.0 (#251): the Invoices module switch (off) and the Invoice Manager role (Financial). Nothing existing changes;
 no user gets the new role.
 
-Revision ID: 0072_invoices_module
-Revises: 0071_invoiced_income
+Revision ID: 0073_invoices_module
+Revises: 0072_invoiced_income
 """
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0072_invoices_module"
-down_revision = "0071_invoiced_income"
+revision = "0073_invoices_module"
+down_revision = "0072_invoiced_income"
 branch_labels = None
 depends_on = None
 

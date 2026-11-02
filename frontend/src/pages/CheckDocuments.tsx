@@ -370,8 +370,8 @@ function LetterEditor({ setup, doc, focus, onClose, onSaved }: EditorProps) {
       <Section id="lsign" scope="pw-letter" title="Signed by">
         <div className="row form-row">
           <Field label="Signer">
-            <select data-testid="letter-signer-source" value={c.signer_source === "FIXED" ? String(c.signer_id ?? "") : "SAME_AS_CHECK"}
-                    onChange={(ev) => e.change((x) => { if (ev.target.value === "SAME_AS_CHECK") { x.signer_source = "SAME_AS_CHECK"; x.signer_id = null; } else { x.signer_source = "FIXED"; x.signer_id = Number(ev.target.value) || null; } })}>
+            <select data-testid="letter-signer-source" value={c.signer_source !== "SAME_AS_CHECK" ? String(c.signer_id ?? "") : "SAME_AS_CHECK"}
+                    onChange={(ev) => e.change((x) => { if (ev.target.value === "SAME_AS_CHECK") { x.signer_source = "SAME_AS_CHECK"; x.signer_id = null; } else { x.signer_source = x.signer_source === "AT_PRINT" ? "AT_PRINT" : "FIXED"; x.signer_id = Number(ev.target.value) || null; } })}>
               <option value="SAME_AS_CHECK">Same as the check</option>
               {(setup.letter_signers || []).map((x: any) => <option key={x.id} value={x.id}>{x.name}{x.title ? ` (${x.title})` : ""}</option>)}
             </select>
@@ -382,6 +382,12 @@ function LetterEditor({ setup, doc, focus, onClose, onSaved }: EditorProps) {
             </select>
           </Field>
         </div>
+        {/* 2.3.0 polish: a chosen signer can be left to the Register User when printing (this one the default) */}
+        {c.signer_source !== "SAME_AS_CHECK" && c.signature_mode !== "NONE" ? (
+          <label className="check"><input type="checkbox" data-testid="letter-signer-at-print" checked={c.signer_source === "AT_PRINT"}
+            onChange={(ev) => e.change((x) => { x.signer_source = ev.target.checked ? "AT_PRINT" : "FIXED"; })} /> Chosen when printing – the Register User picks the
+            signer (the one above is the default); asked only when more than one signer is tagged for payment cover letters</label>
+        ) : null}
         <p className="hint">Signers come from the <Link to="/signers">Signers</Link> page (tagged for payment cover letters). A signature image prints only on the
           printed letter – the copy kept with the payment shows the printed name. With <i>Same as the check</i> and a check printed without a signer, these are used instead:</p>
         <div className="row form-row">

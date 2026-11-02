@@ -1,14 +1,14 @@
 """2.4.0 (#254): invoice payments - links between invoices and the register allocations that pay them (and their
 overpayment and its refund). New, empty table.
 
-Revision ID: 0076_invoice_payments
-Revises: 0075_invoice_custom_fields
+Revision ID: 0077_invoice_payments
+Revises: 0076_invoice_custom_fields
 """
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0076_invoice_payments"
-down_revision = "0075_invoice_custom_fields"
+revision = "0077_invoice_payments"
+down_revision = "0076_invoice_custom_fields"
 branch_labels = None
 depends_on = None
 

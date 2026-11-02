@@ -1,13 +1,13 @@
 """2.4.0 (#248): batch invoicing - the empty table invoice_batch and invoice.batch_id (empty).
 
-Revision ID: 0078_invoice_batches
-Revises: 0077_invoice_overdue_reminder
+Revision ID: 0079_invoice_batches
+Revises: 0078_invoice_overdue_reminder
 """
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0078_invoice_batches"
-down_revision = "0077_invoice_overdue_reminder"
+revision = "0079_invoice_batches"
+down_revision = "0078_invoice_overdue_reminder"
 branch_labels = None
 depends_on = None
 

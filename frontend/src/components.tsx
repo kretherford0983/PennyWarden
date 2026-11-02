@@ -259,7 +259,23 @@ export function FyStatus({ status }: { status: string }) {
   return <span className={`pill pill-${status.toLowerCase()}`}>{status.charAt(0) + status.slice(1).toLowerCase()}</span>;
 }
 
-export function Field({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) {
+export function Field({ label, children, hint, info }: { label: string; children: ReactNode; hint?: string; info?: string }) {
+  const autoId = React.useId();
+  if (info && React.isValidElement(children)) {
+    // 2.3.0 polish: `info` adds an ⓘ with a popup explanation beside the label. The ⓘ is a button, so it sits outside
+    // the <label> (inside it, it would become the label's control); the label points at the field with htmlFor.
+    const el = children as React.ReactElement<{ id?: string }>;
+    const id = el.props.id || `field-${autoId}`;
+    return (
+      <div className="field">
+        <div className="field-inner">
+          <span className="field-label"><label htmlFor={id}>{label}</label><InfoTip label={`About ${label}`} text={info} /></span>
+          {el.props.id ? el : React.cloneElement(el, { id })}
+        </div>
+        {hint ? <span className="hint">{hint}</span> : null}
+      </div>
+    );
+  }
   return (
     <div className="field">
       <label className="field-inner">
@@ -712,5 +728,29 @@ export function RowMenu({ name, actions }: { name: string; actions: (RowAction |
           ))}
         </ul>, document.body) : null}
     </>
+  );
+}
+
+// ------------------------------------------------------------------ 2.3.0 polish: the signer chosen when printing
+/** A letter's signing from the API (`signing`): asked only when its settings say "chosen when printing" and more than
+ * one signer is tagged for it. */
+export type Signing = { choice: string; ask: boolean; default_id: number | null; signers: { id: number; name: string; title: string }[] };
+
+/** The signer chosen for this print: the API's starting signer until the user picks another (null: none to send). */
+export function useSignerChoice(signing: Signing | null | undefined) {
+  const [picked, setPicked] = useState<number | null>(null);
+  const valid = !!signing?.ask && picked != null && signing.signers.some((s) => s.id === picked);
+  const value = signing?.ask ? (valid ? picked : signing.default_id) : null;
+  return { value, set: setPicked, body: value != null ? { signer_id: value } : {} };
+}
+
+export function SignerPicker({ signing, value, onChange, label = "Signed by", testId }: { signing: Signing | null | undefined; value: number | null; onChange: (id: number) => void; label?: string; testId?: string }) {
+  if (!signing?.ask) return null;
+  return (
+    <Field label={label}>
+      <select data-testid={testId} value={value ?? ""} onChange={(e) => onChange(Number(e.target.value))}>
+        {signing.signers.map((s) => <option key={s.id} value={s.id}>{s.name}{s.title ? ` (${s.title})` : ""}</option>)}
+      </select>
+    </Field>
   );
 }
