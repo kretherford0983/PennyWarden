@@ -2,7 +2,7 @@
 
 *2.0.0: the optional Payments module (check printing, payments, cover letters and envelopes), and new tools for the
 people who run PennyWarden: System/About in tabs, maintenance mode, server-side restore and reinitialize, a security
-overview, and a readable audit log you can export. The full Payments guide is [check-printing.md](check-printing.md).*
+overview, and a readable audit log you can export. The full Payments guide is [check-printing.md](../check-printing.md).*
 
 ## Print checks (Payments module)
 PennyWarden can print your checks on printable check stock that already carries the bank numbers: the date, payee,
@@ -30,7 +30,7 @@ amount in numbers and in words, memo and signature — never the check number or
 - A record copy of every printed check is attached to the transaction. If printing is shifted on your printer, the
   **Printer setup assistant** on the print screen adjusts it for you only.
 
-Details: [Check printing](check-printing.md).
+Details: [Check printing](../check-printing.md).
 
 ## Cover letters and envelopes
 Administrators keep **cover letter** and **#10 envelope** templates in Payments Setup — as many as you need (for
@@ -40,7 +40,7 @@ window-envelope letter**). Each editor shows a live preview of the printed page 
 or a copy made with **Duplicate** — is only kept once you click **Save**.
 
 After a check prints, the print screen offers the letter and the envelope; both are attached to the transaction.
-Details: [Check printing](check-printing.md#cover-letters-and-envelopes).
+Details: [Check printing](../check-printing.md#cover-letters-and-envelopes).
 
 ## System/About, for Administrators
 System/About now has tabs, each with its own address you can bookmark:
@@ -49,7 +49,7 @@ System/About now has tabs, each with its own address you can bookmark:
 - **General** — rename the **organization**; turn the optional modules on or off.
 - **Settings** — every setting in effect and where it comes from; on a server, the security and session settings can
   be changed here (they take effect after a restart). Details:
-  [Configuration](configuration.md#changing-settings-in-the-application-200-126).
+  [Configuration](../configuration.md#changing-settings-in-the-application-200-126).
 - **Backups** — Backup / Restore, scheduled backups, and the **backup reminder** (a warning after a set number of
   days without a backup).
 - **Security** — the **security overview** (HTTPS, two-step verification, the last backup, locked accounts — with
@@ -67,7 +67,7 @@ Auditors see About, Settings and Security.
   page.
 - **Reinitialize** (System/About → Advanced → Reinitialize): start again with no financial data but the same users,
   after a safety backup that the server's owner can always restore. The page shows the exact command to undo it.
-  Details: [Backup and restore](backup-restore.md#reinitialize-keeping-the-users-since-200).
+  Details: [Backup and restore](../backup-restore.md#reinitialize-keeping-the-users-since-200).
 
 ## Backups the server can recover
 - A backup made with **Let this server recover the passphrase** (the default) can be restored by the server's owner
@@ -76,9 +76,9 @@ Auditors see About, Settings and Security.
 - **`sudo pennywarden restore --data-dir /var/lib/pennywarden`** restores a backup from a Linux server's command line;
   **`sudo pennywarden restore --list --data-dir /var/lib/pennywarden`** shows the backups it can recover, with their
   full paths. On a server, always add `--data-dir`
-  ([why](backup-restore.md#the-data-folder---data-dir)). On a Windows server:
+  ([why](../backup-restore.md#the-data-folder---data-dir)). On a Windows server:
   `C:\PennyWarden\current\PennyWarden.cmd restore … --data-dir C:\ProgramData\PennyWarden` as Administrator. Details:
-  [Backup and restore](backup-restore.md).
+  [Backup and restore](../backup-restore.md).
 - After a restore, **Reports → Restore re-entry reports** lists what was entered or changed after the backup, so it
   can be entered again.
 
@@ -100,8 +100,8 @@ Auditors see About, Settings and Security.
 ## Running a server
 - **Windows server:** `install-windows-server.ps1` from the release installs or upgrades PennyWarden as a Windows
   service in one step, with HTTPS through Caddy (`-Domain`) or behind your Cloudflare Tunnel. Details:
-  [Windows server guide](install-windows-server.md#the-installer-script-recommended).
+  [Windows server guide](../install-windows-server.md#the-installer-script-recommended).
 - **Linux server:** the installer now adds the `pennywarden` command for the host commands (`sudo pennywarden …`)
   and lets the service write to your scheduled-backup folders — list them in `config.toml`
   (`backup_folders = ["/srv/pennywarden-backups"]`) and run the installer again after changing the list. Details:
-  [Upgrading](upgrade.md#200-after-the-upgrade).
+  [Upgrading](../upgrade.md#200-after-the-upgrade).

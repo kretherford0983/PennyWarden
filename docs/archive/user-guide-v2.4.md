@@ -1,6 +1,6 @@
 # What's new in 2.4 — quick guide
 
-*2.4.0 is in progress. The full list is in the [changelog](../CHANGELOG.md).*
+*2.4.0 is in progress. The full list is in the [changelog](../../CHANGELOG.md).*
 
 ## Invoices module and the Invoice Manager
 An Administrator turns on **Invoices** under System/About → General, and gives the new **Invoice Manager** role

@@ -125,6 +125,17 @@ PennyWarden 2.4.0 (in progress).
   final, not outstanding, so it is now placed by its transaction date instead of with the uncleared items at the top or
   bottom. Uncleared transactions that are not voided still stay together as outstanding.
 
+### Help and the user guide
+- **One user guide (#473).** `docs/user-guide.md` describes the whole app as it works today, one area at a time
+  (Register, Budgets, Fiscal Years, Reports, the optional modules, System/About …), instead of a separate
+  "what's new" note per release. Those notes are kept in `docs/archive/`.
+- **Help in the app.** **Help** at the bottom of the menu opens the guide for every role, and the **?** at the top
+  right opens the section for the page you are on (on a page your roles can't open, the start of the guide). The guide
+  is part of the app, so it matches the version you have installed and works without an internet connection. Links to
+  the check-printing and backup guides open inside Help too.
+- **On pennywarden.org.** The site has a **User guide** page with the current guide and a version list going back to
+  1.10 (each earlier version's "what's new" notes).
+
 ### Check printing
 - **Cover letter logo top right (#466).** A third logo position, **Top right, beside the letterhead**: the logo sits
   level with the organization's name at the right margin, and the letter text is not pushed down. The letterhead and

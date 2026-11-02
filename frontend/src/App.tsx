@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { Suspense, createContext, lazy, useContext, useEffect, useState } from "react";
 import { api, setCsrf } from "./api";
 import { Link, match, useRouter } from "./router";
 import { Loading } from "./components";
@@ -37,6 +37,9 @@ import { DemoBanner } from "./pages/Demo";
 import { ReinitializedBanner } from "./pages/Reinitialize";
 import NamesGate from "./pages/NamesGate";
 import Invoices, { InvoiceBatch, InvoiceDetail, InvoiceSetup } from "./pages/Invoices";
+import { helpFor } from "./help";
+// 2.4.0 (#473): the guide is loaded only when Help opens
+const Help = lazy(() => import("./pages/Help"));
 
 export const ROLE_NAMES: Record<string, string> = {
   ADMINISTRATOR: "Administrator", BUDGET_MANAGER: "Budget Manager", BUDGET_USER: "Budget User",
@@ -232,7 +235,8 @@ function Shell({ workspace, warning, mode, testing, demo, onLogout }: { workspac
     api.put("/api/me/preferences", { nav_collapsed: next }).catch(() => undefined);
   };
   const { path } = useRouter();
-  const nav = navFor(me);
+  // 2.4.0 (#473): Help (the bundled user guide) is the last item for every role
+  const nav = [...navFor(me), ["/help", "Help"]];
   const allowed = new Set(nav.map((n) => n[0]));
   const logout = async () => {
     try {
@@ -252,6 +256,8 @@ function Shell({ workspace, warning, mode, testing, demo, onLogout }: { workspac
   const guard = (base: string, el: JSX.Element) => (allowed.has(base) ? el : <NotAuthorized />);
   // 2.4.0 (#251): a user without the Dashboard (an Invoice Manager only) starts on Invoices or the Register
   if (path === "/") page = allowed.has("/") ? <Dashboard /> : allowed.has("/invoices") ? <Invoices /> : allowed.has("/register") ? <Register /> : <Dashboard />;
+  else if (path === "/help") page = <Suspense fallback={<Loading />}><Help /></Suspense>;   // 2.4.0 (#473): every role
+  else if ((m = match("/help/:doc", path))) page = <Suspense fallback={<Loading />}><Help doc={m.doc} /></Suspense>;
   else if (path === "/account") page = <Account updates={mode === "local" ? updates : null} />;
   else if (path === "/users") page = guard("/users", <Users />);
   else if (path === "/audit-log") page = guard("/audit-log", <AuditLog />);
@@ -294,6 +300,8 @@ function Shell({ workspace, warning, mode, testing, demo, onLogout }: { workspac
             {me.theme === "dark" ? "☀ Light" : "☾ Dark"}
           </button>
           {can("reminder.view") ? <Bell path={path} /> : null}
+          {/* 2.4.0 (#473): help for the page you are on (the guide's start for a page your roles do not open) */}
+          <Link to={helpFor(path, (b) => allowed.has(b))} className="small-link help-link" aria-label="Help for this page" title="Help for this page">?</Link>
           <Link to="/account" className="small-link">My account</Link>
           <button className="small" onClick={logout}>Sign out</button>
         </div>
