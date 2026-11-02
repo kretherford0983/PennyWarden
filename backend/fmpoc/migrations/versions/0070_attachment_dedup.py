@@ -3,13 +3,13 @@ content stored once per workspace), so storage_key is no longer unique; an index
 match. No row changes here: existing duplicates are merged at start-up after the migrations
 (services/attachments.merge_duplicate_files), which verifies each file's hash first.
 
-Revision ID: 0069_attachment_dedup
-Revises: 0068_budget_inclusion
+Revision ID: 0070_attachment_dedup
+Revises: 0069_donation_signer_at_print
 """
 from alembic import op
 
-revision = "0069_attachment_dedup"
-down_revision = "0068_budget_inclusion"
+revision = "0070_attachment_dedup"
+down_revision = "0069_donation_signer_at_print"
 branch_labels = None
 depends_on = None
 

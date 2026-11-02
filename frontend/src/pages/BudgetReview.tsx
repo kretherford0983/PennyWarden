@@ -19,6 +19,10 @@ export function diffText(d: string | null | undefined, p: string | null | undefi
   return `${money(d.replace("-", ""))} ${d.startsWith("-") ? "under" : "over"} (${pctText(p)})`;
 }
 
+/** 2.3.0 polish: added columns (prior years + Projected + Next year's budget) the PDF fits on one landscape page;
+ * the same numbers as budget_planning.pdf_max_added. */
+const PAPER_MAX: Record<string, number> = { LETTER: 6, LEGAL: 9 };
+
 /** The budgets that can be projected or left unprojected (a budget without sub-budgets, or each sub-budget). */
 export function ProjectionChoices({ fyId, onSaved }: { fyId: string | number; onSaved?: () => void }) {
   const [d, setD] = useState<any>(null);
@@ -133,8 +137,21 @@ export default function BudgetReview({ fys, initial = {}, onRun }: { fys: any[];
   const cur = fys.find((f) => f.start_date <= t && f.end_date >= t) || fys[fys.length - 1];
   // 2.3.0 (#375): the user's last Fiscal Year, prior years and budgets are filled in; the optional columns and as-of
   // start as usual
-  const [f, setF] = useState({ fiscal_year_id: String(initial.fiscal_year_id || (cur ? cur.id : "")), years: String(initial.years ?? "3"),
-    projected: false, include_next: false, budget: String(initial.budget || ""), as_of: t });
+  // 2.3.0 polish (Kyle, 2026-10-31): the PDF keeps every column on one page - prior years + Projected + Next year's
+  // budget add up to 6 columns on letter, 9 on legal (landscape); the Prior years list follows the paper chosen
+  const startPaper = initial.paper === "LEGAL" ? "LEGAL" : "LETTER";
+  const [f, setF] = useState({ fiscal_year_id: String(initial.fiscal_year_id || (cur ? cur.id : "")),
+    // a saved "All linked years" (before 2.3.0 polish) becomes the most that fits; others are capped to it
+    years: String(Number(initial.years ?? 3) < 0 || Number.isNaN(Number(initial.years ?? 3)) ? PAPER_MAX[startPaper] : Math.min(Number(initial.years ?? 3), PAPER_MAX[startPaper])),
+    projected: false, include_next: false, budget: String(initial.budget || ""), as_of: t, paper: startPaper });
+  const extras = (f.projected ? 1 : 0) + (f.include_next ? 1 : 0);
+  const maxYears = PAPER_MAX[f.paper] - extras;
+  /** a change of paper or columns: prior years come down to what still fits */
+  const upd = (patch: Partial<typeof f>) => setF((x) => {
+    const n = { ...x, ...patch };
+    const cap = PAPER_MAX[n.paper] - (n.projected ? 1 : 0) - (n.include_next ? 1 : 0);
+    return Number(n.years) > cap ? { ...n, years: String(cap) } : n;
+  });
   const [data, setData] = useState<any>(null);
   const [opts, setOpts] = useState<any[]>([]);
   const [err, setErr] = useState<unknown>(null);
@@ -149,6 +166,7 @@ export default function BudgetReview({ fys, initial = {}, onRun }: { fys: any[];
     fiscal_year_id: f.fiscal_year_id, years: f.years, projected: f.projected || null, include_next: f.include_next || null,
     budget_id: kind === "b" ? id : null, parent_budget_id: kind === "p" ? id : null, as_of: f.as_of || null,
     format: format === "json" ? null : format, download: download || null,
+    paper: format === "pdf" && f.paper !== "LETTER" ? f.paper : null,
   });
   const url = (format: string, download = false) => `/api/reports/budget-review${qs(params(format, download))}`;
   const run = async () => {
@@ -156,7 +174,7 @@ export default function BudgetReview({ fys, initial = {}, onRun }: { fys: any[];
     try {
       setData(await api.get(url("json")));
       const y = fys.find((x) => String(x.id) === f.fiscal_year_id);
-      onRun?.({ fiscal_year_id: f.fiscal_year_id, years: f.years, budget: f.budget },
+      onRun?.({ fiscal_year_id: f.fiscal_year_id, years: f.years, budget: f.budget, paper: f.paper },
         `${y?.display_name || ""} · ${f.years === "-1" ? "all" : f.years} prior year${f.years === "1" ? "" : "s"}`);
     } catch (e) { setErr(e); } finally { setBusy(false); }
   };
@@ -169,10 +187,15 @@ export default function BudgetReview({ fys, initial = {}, onRun }: { fys: any[];
             {fys.map((y) => <option key={y.id} value={y.id}>{y.label}</option>)}
           </select>
         </Field>
+        <Field label="Paper (PDF)">
+          <select aria-label="PDF paper" value={f.paper} onChange={(e) => upd({ paper: e.target.value })}>
+            <option value="LETTER">Letter, landscape</option>
+            <option value="LEGAL">Legal, landscape</option>
+          </select>
+        </Field>
         <Field label="Prior years">
-          <select value={f.years} onChange={(e) => setF({ ...f, years: e.target.value })}>
-            {[0, 1, 2, 3, 4, 5].map((n) => <option key={n} value={n}>{n}</option>)}
-            <option value="-1">All linked years</option>
+          <select aria-label="Prior years" value={f.years} onChange={(e) => upd({ years: e.target.value })}>
+            {Array.from({ length: maxYears + 1 }, (_x, n) => <option key={n} value={n}>{n}</option>)}
           </select>
         </Field>
         <Field label="Budgets">
@@ -183,19 +206,25 @@ export default function BudgetReview({ fys, initial = {}, onRun }: { fys: any[];
           </select>
         </Field>
         <Field label="Actuals as of"><input type="date" value={f.as_of} onChange={(e) => setF({ ...f, as_of: e.target.value })} /></Field>
-        <label className="check"><input type="checkbox" checked={f.projected} onChange={(e) => setF({ ...f, projected: e.target.checked })} /> Projected column</label>
-        <label className="check"><input type="checkbox" checked={f.include_next} onChange={(e) => setF({ ...f, include_next: e.target.checked })} /> Next year's budget</label>
+        <label className="check"><input type="checkbox" checked={f.projected} onChange={(e) => upd({ projected: e.target.checked })} /> Projected column</label>
+        <label className="check"><input type="checkbox" checked={f.include_next} onChange={(e) => upd({ include_next: e.target.checked })} /> Next year's budget</label>
         <button className="primary" onClick={run} disabled={!f.fiscal_year_id || busy}>{busy ? "Running…" : "Run report"}</button>
       </div>
+      <p className="hint no-print" data-testid="review-columns-hint">Prior years, Projected and Next year's budget add up to {PAPER_MAX[f.paper]} columns on
+        {f.paper === "LEGAL" ? " legal" : " letter"} paper, so every column of the PDF stays on one page{f.paper === "LETTER" ? ` (legal fits ${PAPER_MAX.LEGAL})` : ""}.</p>
       {f.projected && f.fiscal_year_id ? <ProjectionChoices fyId={f.fiscal_year_id} onSaved={() => data && run()} /> : null}
       <ErrorBox error={err} />
-      {data ? <BudgetReviewTable data={data} url={url} /> : null}
+      {data ? <BudgetReviewTable data={data} url={url} paper={f.paper} /> : null}
     </>
   );
 }
 
-function BudgetReviewTable({ data, url }: { data: any; url: (format: string, download?: boolean) => string }) {
+function BudgetReviewTable({ data, url, paper }: { data: any; url: (format: string, download?: boolean) => string; paper: string }) {
   const cols = columns(data);
+  // 2.3.0 polish: the PDF keeps every column on one page (the options keep a run within it; this guards a paper
+  // changed after running)
+  const limits = data.pdf_max_added || PAPER_MAX;
+  const fits = data.added_columns <= limits[paper];
   // 2.3.0 (#390): one footnote line per estimated year
   const estimates: any[] = [];
   for (const sec of ["income", "expense"]) for (const r of data[sec]) r.history.forEach((c: any, i: number) => {
@@ -207,10 +236,18 @@ function BudgetReviewTable({ data, url }: { data: any; url: (format: string, dow
       <h2>Budget Review — {data.fiscal_year.display_name}</h2>
       <p>Actuals year-to-date as of {data.as_of}. Prior years shown: {data.years.length} of {data.available_years}. Difference = actual − budgeted; n/a when nothing was budgeted. Avg = the average of the prior years shown in which the budget existed.{data.entered_years ? " Years marked entered are before PennyWarden, entered by a Budget Manager from earlier records." : ""}{data.projected ? ` Projected = YTD ÷ elapsed months × months in the year (${data.projection_basis.elapsed_months} of ${data.projection_basis.months} months elapsed).` : ""}</p>
       <div className="actions left no-print">
-        <a className="button primary" href={url("pdf")} target="_blank" rel="noopener">Open PDF</a>
-        <a className="button" href={url("pdf", true)}>Download PDF</a>
+        {fits ? <>
+          <a className="button primary" href={url("pdf")} target="_blank" rel="noopener">Open PDF</a>
+          <a className="button" href={url("pdf", true)}>Download PDF</a>
+        </> : <>
+          <button className="primary" disabled>Open PDF</button>
+          <button disabled>Download PDF</button>
+        </>}
         <a className="button" href={url("csv")}>Download CSV</a>
       </div>
+      {!fits ? <div className="alert warn no-print" role="status" data-testid="review-pdf-limit">This report has {data.added_columns} added
+        columns (prior years, Projected and Next year's budget); the PDF fits {limits[paper]} on {paper === "LEGAL" ? "legal" : "letter"} paper so
+        every column stays on one page. Run it again with fewer prior years or columns{paper === "LETTER" && data.added_columns <= limits.LEGAL ? ", or choose legal paper" : ""}.</div> : null}
       <div className="table-scroll">
         <table className="table compact" aria-label="Budget Review">
           <thead><tr><th />{cols.map((c) => <th key={c.key} className="num">{c.head}</th>)}</tr></thead>

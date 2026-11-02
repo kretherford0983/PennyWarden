@@ -1,13 +1,13 @@
 """2.4.0 (#253 part 2): invoice custom fields (Administrator-defined, on invoices or lines) and their values.
 
-Revision ID: 0075_invoice_custom_fields
-Revises: 0074_invoices
+Revision ID: 0076_invoice_custom_fields
+Revises: 0075_invoices
 """
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0075_invoice_custom_fields"
-down_revision = "0074_invoices"
+revision = "0076_invoice_custom_fields"
+down_revision = "0075_invoices"
 branch_labels = None
 depends_on = None
 

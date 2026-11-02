@@ -1,14 +1,14 @@
 """2.4.0 (#429): Events & Fundraisers - each event is a Fundraiser or an Event. Every existing record becomes a
 Fundraiser (server default). Nothing else changes; internal names (tables, API paths, audit object types) stay.
 
-Revision ID: 0070_event_type
-Revises: 0069_attachment_dedup
+Revision ID: 0071_event_type
+Revises: 0070_attachment_dedup
 """
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0070_event_type"
-down_revision = "0069_attachment_dedup"
+revision = "0071_event_type"
+down_revision = "0070_attachment_dedup"
 branch_labels = None
 depends_on = None
 

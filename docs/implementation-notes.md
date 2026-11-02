@@ -130,7 +130,7 @@ could not otherwise be corrected. Scope and safeguards:
 
 **2.4.0 build 11 — Invoice PDF template (#253 part 3).** Completes #253 ("PDF template built on the 2.0.0
 cover-letter editor: logo and letterhead, {VARIABLES}, live preview, line-table column picker").
-- `invoice_settings.template_json`, `logo_png`, `logo_sha256` (migration `0080`; empty = the built-in default
+- `invoice_settings.template_json`, `logo_png`, `logo_sha256` (migration `0081`; empty = the built-in default
   layout). Settings, so kept by Reinitialize and restored with *settings.general*.
 - `services/invoice_template.py`: `TemplateConfig` (font from the cover-letter fonts, size 8-12, accent color,
   logo LEFT/RIGHT/NONE, letterhead and Bill to lines (up to 6, several-line variables split), title, Bill to heading,
@@ -151,7 +151,7 @@ cover-letter editor: logo and letterhead, {VARIABLES}, live preview, line-table 
 
 **2.4.0 build 10 — Email invoices and statements (#249, decided 2026-10-30; remaining details proposed).**
 - `email_settings` (one row: on/off, host, port, STARTTLS/SSL/none, user name, `password_enc`, sender address and
-  name, reply-to) and `email_log` (migration `0079`). The mail server is in the database (Kyle): System/About →
+  name, reply-to) and `email_log` (migration `0080`). The mail server is in the database (Kyle): System/About →
   Settings → **Email**, Administrator only (`email.setup`). The password is encrypted with the application key (AAD
   `fmpoc:smtp_password:v1`), replace-only - an empty field keeps it, *Remove the saved password* clears it - and is
   never returned, logged, audited (`password_changed` true/false only) or put in an error (BR-103/104). Kept by
@@ -180,7 +180,7 @@ cover-letter editor: logo and letterhead, {VARIABLES}, live preview, line-table 
 
 **2.4.0 build 9 — Batch invoicing (#248).** The issue left its rules open ("to be identified when planned"); the
 build follows these proposals (posted on the issue for Kyle to confirm):
-- `invoice_batch` (id, name, created) and `invoice.batch_id` (migration `0078`; Reinitialize wipes batches after
+- `invoice_batch` (id, name, created) and `invoice.batch_id` (migration `0079`; Reinitialize wipes batches after
   invoices; selective restore carries them before invoices).
 - `POST /api/invoices/batches` (Invoice Manager): the customers, lines, dates, tax, discount, notes and invoice fields
   of one invoice; one **draft** per customer through the normal invoice create path (every invoice rule applies),
@@ -215,7 +215,7 @@ build follows these proposals (posted on the issue for Kyle to confirm):
 - Overdue: `GET /api/invoices/overdue` - the dashboard section **Overdue invoices** (`dashboard_layout` key
   `invoices`, shown when the module is on and the user can view invoices) and, for Invoice Managers, the reminders
   shown on the Invoices page: every open invoice from due date + N days (N = `invoice_settings.overdue_reminder_days`,
-  migration `0077`, default 0, 0-365, set in Invoices Setup, audited with the setup). Computed when viewed: nothing is
+  migration `0078`, default 0, 0-365, set in Invoices Setup, audited with the setup). Computed when viewed: nothing is
   sent or stored.
 - Close report (not the End of Year Audit): *Open invoices at the year's end* for information; closing is not
   blocked (BR-013/014 unchanged). Restore re-entry report: invoices created after the backup are listed under "Other
@@ -227,7 +227,7 @@ build follows these proposals (posted on the issue for Kyle to confirm):
   ACs **AC-INV-RPT-001..009**. Tests: `backend/tests/test_v240_invoice_reports.py` (10).
 
 **2.4.0 build 7 — Invoice payments (#254).**
-- `invoice_payment` (migration `0076`): one row per register allocation that pays, overpays or refunds an invoice
+- `invoice_payment` (migration `0077`): one row per register allocation that pays, overpays or refunds an invoice
   (`kind` PAYMENT / OVERPAYMENT / REFUND), unlinked rows kept with who/when/why. Reinitialize wipes it first (it
   references allocations and invoices); selective restore carries it with the register data.
 - **Record payment** (`POST /api/invoices/{id}/payments`, Register User - `invoice.record_payment`): creates the
@@ -264,7 +264,7 @@ build follows these proposals (posted on the issue for Kyle to confirm):
 
 **2.4.0 build 6b — Invoice custom fields (#253 part 2).**
 - `invoice_custom_field` (level INVOICE/LINE, type TEXT/NUMBER/DATE/PICKLIST with options, required, show on PDF,
-  position, active) and `custom_values` JSON on `invoice` and `invoice_line` (migration `0075`). Fields are setup:
+  position, active) and `custom_values` JSON on `invoice` and `invoice_line` (migration `0076`). Fields are setup:
   kept by Reinitialize, restored with *settings.general* in a selective restore.
 - Administrator (`invoice.setup`): `POST/PUT /api/invoices/setup/fields[/{id}]`, `.../{id}/retire|restore`; level and
   type are fixed once created (entered values keep their meaning); names unique per level; audited
@@ -282,7 +282,7 @@ build follows these proposals (posted on the issue for Kyle to confirm):
 **2.4.0 build 6 — Invoices (#253, decided 2026-10-16; part 1 of 2).** Kyle's plan allows splitting a build; #253 is
 split: this build has drafts, lines, discounts, tax, numbering, sending (PDF), revisions, void and write-off; the
 **custom fields** and the **PDF template editor** (on the cover-letter editor) follow as build 6b.
-- Tables (migration `0074`): `invoice_settings` (pattern, `next_seq`, terms days/text, default notes - in the
+- Tables (migration `0075`): `invoice_settings` (pattern, `next_seq`, terms days/text, default notes - in the
   selective-restore *settings.general* section), `invoice`, `invoice_line`, `invoice_revision`, and
   `attachment.invoice_id` (each sent version's PDF). Invoices, lines and revisions are in Reinitialize `WIPE` and
   `DATA_TABLES`; the settings are kept by Reinitialize so the sequence never restarts.
@@ -322,7 +322,7 @@ split: this build has drafts, lines, discounts, tax, numbering, sending (PDF), r
 - Tests: `backend/tests/test_v240_invoices.py` (9).
 
 **2.4.0 build 5 — Product catalog (#252, decided 2026-10-16).**
-- Tables (migration `0073`): `invoice_unit_type`, `invoice_product_category`, `invoice_product` (name, code, description,
+- Tables (migration `0074`): `invoice_unit_type`, `invoice_product_category`, `invoice_product` (name, code, description,
   unit price, unit type, category, taxable, `budget_id`, `is_system`, active), `invoice_tax_rate` (name,
   `rate_milli_pct` = thousandths of a percent, `budget_id`, active). All four are in Reinitialize `WIPE` (before
   `Budget`) and selective-restore `DATA_TABLES`; after a Reinitialize with the module on the seed comes back.
@@ -350,7 +350,7 @@ split: this build has drafts, lines, discounts, tax, numbering, sending (PDF), r
 - Tests: `backend/tests/test_v240_invoice_catalog.py` (6).
 
 **2.4.0 build 4 — Invoices module switch and the Invoice Manager role (#251, decided 2026-10-16).**
-- `workspace.invoices_enabled` and the role `INVOICE_MANAGER` (Financial; migration `0072`; seeded for new installs
+- `workspace.invoices_enabled` and the role `INVOICE_MANAGER` (Financial; migration `0073`; seeded for new installs
   from `ROLE_DEFS`; a new local install's first user gets it too). `services/invoices.py`: switch (audited
   `MODULE_ENABLED`/`MODULE_DISABLED`, SECURITY), `require_module` (404 `MODULE_DISABLED`), overview and setup
   placeholders; `routers/invoices.py`: `GET /api/invoices/overview` (`invoice.view`), `GET /api/invoices/setup`
@@ -375,7 +375,7 @@ split: this build has drafts, lines, discounts, tax, numbering, sending (PDF), r
 - Tests: `backend/tests/test_v240_invoices_module.py` (5).
 
 **2.4.0 build 3 — Invoiced Income budgets (#250, decided 2026-10-16).**
-- `budget.invoiced_income` (migration `0071`, off). Set on an Income **parent** with
+- `budget.invoiced_income` (migration `0072`, off). Set on an Income **parent** with
   `PUT /api/budgets/{id}/invoiced-income` (`budget.manage`); stored on the whole family like `locked` (sub-budgets and
   Other), and a sub-budget or Other created later takes the parent's value (BR-016). Expense budgets, sub-budgets,
   Other, Budget 0, rejected/inactive/deleted budgets and a closed Fiscal Year are refused. Not writable through budget
@@ -400,7 +400,7 @@ split: this build has drafts, lines, discounts, tax, numbering, sending (PDF), r
 - UI-only rename: nav **Events**; *Events & Fundraisers* on the module setting (with examples), the list page heading
   and back links; "Series" for the series link. Internal names unchanged: tables `fundraiser*`, `/api/fundraisers*`,
   audit object type `fundraiser`, code identifiers.
-- `fundraiser.event_type` (`FUNDRAISER` | `EVENT`, migration `0070`, server default Fundraiser for every existing row).
+- `fundraiser.event_type` (`FUNDRAISER` | `EVENT`, migration `0071`, server default Fundraiser for every existing row).
   Writable only through `FundraiserIn` (create/edit, `fundraiser.manage`); omitted on edit = unchanged; other bodies
   refuse it (`extra="forbid"`).
 - Required budgets (`REQUIRED_KINDS`): Fundraiser = Income + Expense, Event = Expense, per Fiscal Year used; a shell
@@ -438,7 +438,7 @@ split: this build has drafts, lines, discounts, tax, numbering, sending (PDF), r
   included; the *Attachment added* audit event notes the link; the same file twice on one record warns with
   **Cancel / Attach anyway**, a match on another record links silently.
 - Storage (Claude's call, one of the two shapes in the issue): `attachment.storage_key` is no longer unique (migration
-  `0069`, plus an index on `workspace_id, sha256`); every attachment record keeps its own row and owner, and records
+  `0070`, plus an index on `workspace_id, sha256`); every attachment record keeps its own row and owner, and records
   with identical content point at one stored file. Chosen over a separate `attachment_file` table because backup,
   selective restore, Reinitialize, reports and downloads already work per stored file / per row and need no change;
   shared files are countable with `GROUP BY storage_key` (Diagnostics does). No new table, so nothing to add to
@@ -474,6 +474,25 @@ split: this build has drafts, lines, discounts, tax, numbering, sending (PDF), r
 - Tests: `backend/tests/test_v240_attachment_dedup.py` (15) and the E2E step "#425" (in the #259 reorder step). The
   test helper `env.fy_doc` now uploads a PDF with content of its own.
 
+**2.3.0 polish — The signer chosen when printing (#395 follow-up, decided with Kyle 2026-10-31).**
+A letter's signer can be left to the Register User when printing, for donation receipts, year-end statements and
+payment cover letters.
+- Settings: donation receipts `signer_choice` FIXED | AT_PRINT; statements `statement_signer_choice` (None = the
+  receipt's); cover letters a third `signer_source`, AT_PRINT. The setting's signer is the default and stays
+  required while a signature is printed.
+- The print screen asks only when more than one active signer is tagged for the area; with one, that one signs.
+  `signers.signing_out` gives each screen `{choice, ask, signers, default_id}`; `signers.chosen` checks the pick
+  (tagged for the area, active, in the workspace - BR-078/BR-099). A pick while the setting is Fixed, or for a letter
+  printed without a signature, is refused (BR-098).
+- Where the choice starts: a reprinted receipt or statement starts from the signer of the copy it reprints (Kyle);
+  Print all statements takes one signer for the batch; a cover letter starts from the check's signer when that one is
+  tagged for cover letters, else the template's default. API fields: `signer_id` on the receipt/statement print and
+  preview bodies, `letter_signer_id` on the cover letter print (`signer_id` there stays the check's signer).
+- Migration `0069` adds `signer_id` (plain integer, like `printed_by_user_id`) to `donation_receipt` and
+  `donation_statement`; the printed audit events record it. A different signer does not make a new receipt number:
+  the signature is not part of the content compared for Duplicate/Corrected.
+- Tests: `backend/tests/test_v230_signer_at_print.py` (7).
+
 **2.3.0 build 15 — Budget History: years included in another budget (#414, decided with Kyle 2026-10-30).**
 - Kyle: any budget of the same type at any level; years before **and** in PennyWarden; shown only on the marked
   budget; not counted in Avg; #415's automatic *history on parent* stays where nothing is marked.
@@ -498,6 +517,23 @@ split: this build has drafts, lines, discounts, tax, numbering, sending (PDF), r
   restore (#319) restores them with the data (`partial_restore.DATA_TABLES`).
 - Tests: `backend/tests/test_v230_history_included.py` (5) and the E2E step "#414".
 
+**2.3.0 polish — Letters that run onto a second page (decided with Kyle 2026-10-31).**
+A signature pushed alone onto page 2 looked odd. `services/letter_fit.py` lays out donation receipts, year-end
+statements and payment cover letters:
+- Fit when close: a letter laid out on two letter pages is tried again with spacing between sections at 60%, then
+  0.5 pt and 1 pt smaller type (not below 8 pt); the first that fits one page is used. Three or more pages are not
+  squeezed. `FixedSpacer` keeps the window-envelope offset, pre-printed letterhead margin and the room to sign by
+  hand at full height.
+- Keep with the last paragraph: the letter's last paragraph (the last paragraph inside the acknowledgment block, or
+  a cover letter's last closing paragraph) is kept together with the closing/sign-off and signature. Tables are
+  never pulled along. The acknowledgment table itself stays one block, as before.
+- Continuation: when more than one letter page remains, later pages carry "<organization> · <document> · Page N of
+  M" at the top left (clear of the DUPLICATE/CORRECTED mark) and page 1 "Continued on page 2" at the bottom. The
+  address-only page of a double-window layout isn't counted. Fold marks on the back are added after the layout.
+- Receipts and statements build their middle from the settings (`_receipt_middle`, `_statement_middle`) so the
+  smaller type can be tried. Nothing in the settings or data changes; no migration.
+- Tests: `backend/tests/test_v230_letter_page_breaks.py` (7).
+
 **2.3.0 build 14 — Push builds skip the repeated test suite (#420, Kyle 2026-10-30).**
 - `build.yml`: the `tests` job runs only on `workflow_dispatch`; `package`, `windows-exe`, `macos-app`, `assemble`,
   `publish` and `site` use `!failure() && !cancelled()` (a skipped job otherwise skips everything that depends on it,
@@ -508,12 +544,36 @@ split: this build has drafts, lines, discounts, tax, numbering, sending (PDF), r
   nothing is lost there.
 - No spec impact (CI only).
 
+**2.3.0 polish — Quarterly / Annual report fixes (#373 follow-up, Kyle 2026-10-31).**
+- Over / under: income received above its budget prints "+$X above budget" (green in the PDF, as reports.py's
+  CR-019 cell), not a negative amount; an expense over budget stays negative. The note under the tables says so
+  (`period_report_output.ou_text`, `_ou_cell`, `OU_NOTE`). The data (`remaining`) is unchanged.
+- Starting balance: `period_report._balance` returned "no data" for the day before a register account's Opening
+  Balance Date, so an opening balance dated on the Fiscal Year's first day showed a dash. The opening balance is the
+  balance at the start of its date (the end of the day before), as `bank.available_cents` and the Register's
+  starting balance already treat it (BR-043); only days before that are "no data".
+- Tests: two more in `backend/tests/test_v230_period_report.py`.
+
 **2.3.0 build 13 — Users: filters and sortable columns (#409, Kyle 2026-10-29).**
 - Client-side on the already-loaded list (`pages/Users.tsx`): Roles (multi-select, OR), Security domain, Status
   (`ACTIVE` / `DISABLED` / `LOCKED` = active with `locked_until` in the future), combined with the search (AND).
   Sortable headings as in the register (`aria-sort`, a button per heading); default Last name ascending; empty values
   last either way; ties by last name, first name, username. Not remembered between visits. No API or data change.
 - Test: E2E "#134" extended (roles OR, domain, status, clear, sort and reverse).
+
+**2.3.0 polish — Budget Review PDF: every column on one page; letter or legal (Kyle, 2026-10-31).**
+- Avg and the current year always print. Prior years + Projected + Next year's budget may add up to
+  `budget_planning.pdf_max_added(paper)` = 6 on landscape letter and 9 on landscape legal. That number comes from the
+  page geometry: (frame width − 0.95 in label) // 1.0 in minimum column − 2 fixed columns.
+- A PDF over the limit is refused (`check_pdf_fits`, 422 on `years`) before anything is generated or audited. The
+  JSON gives `added_columns` and `pdf_max_added` for the screen, and the audit summary records `paper`.
+- `years` is 0–9 (`REVIEW_MAX_YEARS`); `-1` ("every linked year") was removed. The screen offers prior years up to
+  the paper's limit, less Projected and Next year. A saved option from Recently run is clamped: "all" becomes the
+  most that fits.
+- The Planning Sheet's appended review (3 years + Projected + Next) stays on letter.
+- The banding code ("Columns 1 of 2") remains for a review produced internally, but the API never reaches it.
+- Tests: `backend/tests/test_v230_review_pdf_columns.py`. `years=-1` in the 2.1.0 tests became `years=9`. The E2E
+  #382 step checks the options and runs on legal with 9 years.
 
 **2.3.0 build 12 — Report settings: configurable report grouping (#376).**
 - New business rule (recorded here; spec docs aren't changed in the repo): **report grouping is workspace

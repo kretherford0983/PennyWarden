@@ -1931,7 +1931,7 @@ test("#284: a Budget Manager enters years before PennyWarden on History and impo
   await expect(imp.getByRole("status")).toContainText("1 year was entered.");
   await imp.getByRole("button", { name: "Done" }).click();
   // the Budget Review shows the entered years after the PennyWarden ones, labelled entered
-  const rep = await (await page.request.get(`/api/reports/budget-review?fiscal_year_id=${f41.id}&years=-1`)).json();
+  const rep = await (await page.request.get(`/api/reports/budget-review?fiscal_year_id=${f41.id}&years=9`)).json();
   const entered = rep.years.filter((y: any) => y.entered).map((y: any) => y.display_name);
   expect(entered).toEqual(expect.arrayContaining([y1, y2]));
   const row = rep.expense.find((r: any) => r.code === "8900");
@@ -1953,7 +1953,13 @@ test("#382: the Budget Review lists a budget of the years shown that is not in t
   await page.goto("/reports");
   await page.getByRole("link", { name: "Budget Review", exact: true }).click();
   await page.getByLabel("Budget Review Fiscal Year").selectOption(String(f41.id));
-  await page.getByLabel("Prior years").selectOption("-1");
+  // 2.3.0 polish: prior years follow the PDF paper - up to 6 on letter (less Projected / Next year), 9 on legal
+  await expect(page.getByLabel("Prior years").locator("option")).toHaveCount(7);
+  await page.getByLabel("Projected column").check();
+  await expect(page.getByLabel("Prior years").locator("option")).toHaveCount(6);
+  await page.getByLabel("Projected column").uncheck();
+  await page.getByLabel("PDF paper").selectOption("LEGAL");
+  await page.getByLabel("Prior years").selectOption("9");
   await page.getByRole("button", { name: "Run report" }).click();
   const table = page.locator(".budget-review").getByRole("table", { name: "Budget Review" });
   const head = table.locator("th", { hasText: "460 Darts League" });
@@ -2060,7 +2066,7 @@ test("#414: a year whose money was included in another budget is marked on Histo
   await expect(row).toContainText(y);
   await expect(row).toContainText("Included in 460 Club nights");
   // the Budget Review shows the text in that year, not "—", and leaves the year out of Avg
-  const rep = await (await page.request.get(`/api/reports/budget-review?fiscal_year_id=${f41.id}&years=-1`)).json();
+  const rep = await (await page.request.get(`/api/reports/budget-review?fiscal_year_id=${f41.id}&years=9`)).json();
   const r = rep.expense.find((x: any) => x.id === kiw.id);
   const i = rep.years.findIndex((x: any) => x.display_name === y);
   expect(r.history_notes[i]).toBe("included in 460 Club nights");
@@ -2994,6 +3000,23 @@ test("#156-#162: Administrator sets up check printing; a Register User prints a 
   await expect(page.getByRole("heading", { name: /Check style: 3 per page/ })).toBeVisible();
   await expect(page.getByRole("img", { name: "Check preview drawn to scale" })).toContainText("SAMPLE PAYEE COMPANY INC");
   await expect(page.getByLabel("Pay to x")).toHaveValue("1.275");
+  // 2.3.0 polish: at a narrower two-column width the Feed modes stay in the settings column and fit it - each feed
+  // mode a card with labelled fields (a single-check mode on a check-sized page used to run into the preview)
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.getByLabel("Page size").first().selectOption("CHECK");
+  const feedWrap = page.locator(".table-wrap:has(table.feed-modes)");
+  const fit = await feedWrap.evaluate((el) => ({ scroll: el.scrollWidth, client: el.clientWidth }));
+  expect(fit.scroll).toBeLessThanOrEqual(fit.client + 1);
+  const fb = (await feedWrap.boundingBox())!, sb = (await page.locator(".setup-settings").boundingBox())!;
+  expect(fb.x + fb.width).toBeLessThanOrEqual(sb.x + sb.width + 1);
+  await expect(page.locator("table.feed-modes thead")).toBeHidden();
+  await expect(page.getByLabel("Printer note").first()).toBeVisible();
+  // wide enough for the table: the column headings are back
+  await page.setViewportSize({ width: 1900, height: 900 });
+  await expect(page.locator("table.feed-modes thead")).toBeVisible();
+  const fit2 = await feedWrap.evaluate((el) => ({ scroll: el.scrollWidth, client: el.clientWidth }));
+  expect(fit2.scroll).toBeLessThanOrEqual(fit2.client + 1);
+  await page.setViewportSize({ width: 1280, height: 720 });
   // #174: the default memo shows in the preview as it is typed (sample data)
   await page.getByLabel("Default memo").fill("FBA {BUDGET_CODE}, INVOICE {INVOICE}");
   await expect(page.getByRole("img", { name: "Check preview drawn to scale" })).toContainText("FBA 51, INVOICE 12345");
@@ -4092,6 +4115,22 @@ test("#312: Donations module - Administrator sets up the receipt; a Register Use
   await expect(page.getByTestId("donation-org")).toContainText("12-3456789");
   await expect(page.getByTestId("donation-org")).toContainText("Sampletown, US 55555");
   await expect(page.getByLabel("Include EIN on receipts")).toBeChecked();   // 2.3.0 (#393): on by default
+  // 2.3.0 polish: an ⓘ explains Statement signer chosen (the statement is signed once, not by the receipts' signers)
+  await page.getByRole("button", { name: "About Statement signer chosen" }).click();
+  await expect(page.getByRole("note").filter({ hasText: "signed once when it is printed" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("note").filter({ hasText: "signed once when it is printed" })).toHaveCount(0);
+  // ui-standards §1: the ⓘ doesn't make its label taller - the statement row's labels and dropdowns line up - and the
+  // label still names the dropdown (the ⓘ is outside the <label>)
+  await expect(page.getByLabel("Statement signer chosen", { exact: true })).toHaveJSProperty("tagName", "SELECT");
+  expect(await layoutViolations(page), "donation-setup").toEqual([]);
+  // each label one line; fields whose labels share a line have their dropdowns level (a narrow row may wrap a field)
+  const boxes = await Promise.all(["st-signer", "st-signature-mode", "st-signer-choice"].map((t) => page.getByTestId(t).evaluate((el) => {
+    const lab = el.closest(".field")!.querySelector(".field-label")!.getBoundingClientRect();
+    return { labelTop: lab.top, labelH: lab.height, top: el.getBoundingClientRect().top };
+  })));
+  for (const b of boxes) expect(b.labelH).toBeLessThanOrEqual(20);
+  for (const a of boxes) for (const b of boxes) if (Math.abs(a.labelTop - b.labelTop) <= 1) expect(Math.abs(a.top - b.top)).toBeLessThanOrEqual(1);
   await expect(page.getByRole("img", { name: "Donation receipt preview" })).toBeVisible();
   // 2.3.0 (#395): the signer comes from the shared Signers page, tagged for donation letters
   await expect(page.getByText("No signers are tagged for donation letters yet")).toBeVisible();

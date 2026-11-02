@@ -1,14 +1,14 @@
 """2.4.0 (#249): email invoices and statements - the empty tables email_settings (the Administrator's mail server,
 off) and email_log.
 
-Revision ID: 0079_email
-Revises: 0078_invoice_batches
+Revision ID: 0080_email
+Revises: 0079_invoice_batches
 """
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0079_email"
-down_revision = "0078_invoice_batches"
+revision = "0080_email"
+down_revision = "0079_invoice_batches"
 branch_labels = None
 depends_on = None
 

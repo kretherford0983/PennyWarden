@@ -31,7 +31,7 @@ from reportlab.graphics.charts.barcharts import VerticalBarChart
 from reportlab.graphics.charts.legends import Legend
 from reportlab.graphics.shapes import Drawing, String
 from reportlab.lib import colors
-from reportlab.lib.pagesizes import landscape, letter
+from reportlab.lib.pagesizes import landscape, legal, letter
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.platypus import CondPageBreak, KeepTogether, PageBreak, Paragraph, Spacer, Table, TableStyle
@@ -669,6 +669,9 @@ def budget_review(db: Session, ctx, fy: FiscalYear, *, years: int = 3, projected
         "filter": {"budget_id": budget_id, "parent_budget_id": parent_budget_id},
         "income": sections["income"], "expense": sections["expense"],
         "generated_at": utcnow().isoformat(timespec="seconds"),
+        # 2.3.0 polish: how many added columns this run has and how many the PDF fits per paper size
+        "added_columns": len(shown) + (1 if projected else 0) + (1 if include_next else 0),
+        "pdf_max_added": {p: pdf_max_added(p) for p in PAPERS},
     }
 
 
@@ -860,13 +863,44 @@ def _review_columns(rep: dict) -> list[tuple[str, callable]]:
     return cols
 
 
+# 2.3.0 polish (Kyle, 2026-10-31): the PDF keeps every column on one page. Avg and the current year always print, so
+# a run may add as many prior years, Projected and Next year columns as the rest of the page width holds: 6 on
+# landscape letter, 9 on landscape legal. More is refused for the PDF (the screen and CSV show them all).
+PAPERS = {"LETTER": landscape(letter), "LEGAL": landscape(legal)}
+REVIEW_LABEL_W, REVIEW_MIN_COL = 0.95 * inch, 1.0 * inch
+REVIEW_FIXED_COLS = 2                     # Avg and the current year (YTD)
+REVIEW_MAX_YEARS = 9                      # prior years: what landscape legal holds (Kyle, 2026-10-31)
+
+
+def _review_frame_w(pagesize) -> float:
+    return pagesize[0] - 2 * MARGIN - 12
+
+
+def pdf_max_added(paper: str) -> int:
+    """How many added columns (prior years, Projected, Next year) the Budget Review PDF fits on one page."""
+    return int((_review_frame_w(PAPERS[paper]) - REVIEW_LABEL_W) // REVIEW_MIN_COL) - REVIEW_FIXED_COLS
+
+
+def added_columns(rep: dict) -> int:
+    return len(rep["years"]) + (1 if rep["projected"] else 0) + (1 if rep["include_next"] else 0)
+
+
+def check_pdf_fits(rep: dict, paper: str) -> None:
+    n, cap = added_columns(rep), pdf_max_added(paper)
+    if n > cap:
+        other = "" if paper == "LEGAL" else f", or print on legal paper (up to {pdf_max_added('LEGAL')})"
+        raise validation(f"The PDF fits {cap} added columns on {paper.lower()} paper; this report has {n} (prior years, "
+                         f"Projected and Next year's budget). Choose fewer prior years or columns{other}. The screen "
+                         "and the CSV show them all.", "years")
+
+
 def _review_flowables(db: Session, ctx, rep: dict, doc) -> list:
     """The Budget Review pages (layout A, #283): a block per budget - its heading, then Budgeted, Actual and
     Difference with the years across - in an Income and an Expense section."""
     ws = db.get(Workspace, ctx.workspace_id)
     fyn = rep["fiscal_year"]["display_name"]
-    frame_w = doc.pagesize[0] - 2 * MARGIN - 12
-    label_w, min_col = 0.95 * inch, 1.0 * inch
+    frame_w = _review_frame_w(doc.pagesize)
+    label_w, min_col = REVIEW_LABEL_W, REVIEW_MIN_COL
     cols = _review_columns(rep)
     per_band = max(1, int((frame_w - label_w) // min_col))
     bands = [cols[i:i + per_band] for i in range(0, len(cols), per_band)]
@@ -939,12 +973,13 @@ def _review_flowables(db: Session, ctx, rep: dict, doc) -> list:
 
 
 @branding.themed
-def budget_review_pdf(db: Session, ctx, rep: dict) -> tuple[str, str, int]:
+def budget_review_pdf(db: Session, ctx, rep: dict, paper: str = "LETTER") -> tuple[str, str, int]:
+    """`paper` (2.3.0 polish): LETTER or LEGAL, landscape."""
     ws = db.get(Workspace, ctx.workspace_id)
     fyn = rep["fiscal_year"]["display_name"]
     title = f"{ws.name}  ·  Budget Review — {fyn}  ·  printed {_us(dt.date.today())}"
     buf = io.BytesIO()
-    doc = _AuditDoc(buf, pagesize=landscape(letter), title="Budget Review", author=ws.name)
+    doc = _AuditDoc(buf, pagesize=PAPERS[paper], title="Budget Review", author=ws.name)
     doc.build(_review_flowables(db, ctx, rep, doc))
     fd, path = tempfile.mkstemp(prefix="fmpoc-budget-review-", suffix=".pdf")
     os.close(fd)

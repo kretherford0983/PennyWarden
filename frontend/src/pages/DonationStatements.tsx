@@ -7,7 +7,7 @@
 import { Fragment, useEffect, useState } from "react";
 import { api, ApiError, withPreviewToken } from "../api";
 import { useMe } from "../App";
-import { EntityPicker, ErrorBox, Field, Loading, Modal, useConfirmable } from "../components";
+import { EntityPicker, ErrorBox, Field, Loading, Modal, useConfirmable, SignerPicker, useSignerChoice } from "../components";
 import { PdfViewer, usePdf } from "./checkShared";
 import { ReceiptEnvelopePanel } from "./Envelopes";
 
@@ -39,12 +39,13 @@ export function StatementsTab() {
   const [pdf, setPdf] = usePdf();
   const [viewing, setViewing] = useState<string | null>(null);
   const { run, dialog } = useConfirmable();
+  const signer = useSignerChoice(data?.signing);   // 2.3.0 polish: one signer for the whole batch
   const load = () => api.get(`/api/donations/statements?year=${year}&min_cents=${toCents(min)}`).then(setData, setErr);
   useEffect(() => { setData(null); load(); }, [year]); // eslint-disable-line react-hooks/exhaustive-deps
   const printAll = async () => {
     setErr(null);
     try {
-      const blob = await run((c) => api.postBlob(`/api/donations/statements/${year}/print-all`, { min_cents: toCents(min), confirmations: c }));
+      const blob = await run((c) => api.postBlob(`/api/donations/statements/${year}/print-all`, { min_cents: toCents(min), confirmations: c, ...signer.body }));
       if (!blob) return;
       setPdf(blob, `statements-${year}.pdf`); setViewing(`Year-end statements ${year}`); load();
     } catch (x) { setErr(x); }
@@ -60,6 +61,7 @@ export function StatementsTab() {
         <Field label="Year"><select value={year} onChange={(e) => setYear(Number(e.target.value))} aria-label="Year">{YEARS.map((y) => <option key={y} value={y}>{y}</option>)}</select></Field>
         <Field label="Minimum total ($, optional)"><input inputMode="decimal" aria-label="Minimum total" value={min} onChange={(e) => setMin(e.target.value)} placeholder="e.g. 250" /></Field>
         <button type="submit" className="small">Show</button>
+        {printer && data?.items.length ? <SignerPicker signing={data.signing} value={signer.value} onChange={signer.set} label="Print all signed by" testId="statements-signer" /> : null}
         {printer && data?.items.length ? <button type="button" className="primary" onClick={printAll}>Print all ({data.items.length})</button> : null}
       </form>
       {!data ? <Loading /> : !data.items.length ? <p className="muted">No donor has donations received in {year}{toCents(min) ? " with that minimum total" : ""}.</p> : (
@@ -91,17 +93,18 @@ function StatementDialog({ year, donorId, printer, onClose, onChanged }: { year:
   const [viewing, setViewing] = useState<string | null>(null);
   const [printedId, setPrintedId] = useState<number | null>(null);
   const { run, dialog } = useConfirmable();
+  const signer = useSignerChoice(d?.signing);   // 2.3.0 polish: a reprint starts from the last statement's signer
   const url = `/api/donations/statements/${year}/donors/${donorId}`;
   const load = () => api.get(url).then(setD, setErr);
   useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const preview = async () => {
     setErr(null);
-    try { setPdf(await api.postBlob(`${url}/preview`, {}), "statement-preview.pdf"); setViewing("Statement preview"); } catch (x) { setErr(x); }
+    try { setPdf(await api.postBlob(`${url}/preview`, signer.body), "statement-preview.pdf"); setViewing("Statement preview"); } catch (x) { setErr(x); }
   };
   const print = async () => {
     setErr(null);
     try {
-      const blob = await run((c) => api.postBlob(url, { confirmations: c }));
+      const blob = await run((c) => api.postBlob(url, { confirmations: c, ...signer.body }));
       if (!blob) return;
       setPdf(blob, "statement.pdf"); setViewing("Year-end statement");
       const fresh = await api.get(url); setD(fresh);
@@ -128,6 +131,7 @@ function StatementDialog({ year, donorId, printer, onClose, onChanged }: { year:
             </tbody>
             <tfoot><tr><td colSpan={3}><b>Total (money)</b></td><td className="num"><b>{d.total}</b></td><td /></tr></tfoot>
           </table>
+          {printer ? <SignerPicker signing={d.signing} value={signer.value} onChange={signer.set} testId="statement-signer" /> : null}
           {printer ? (
             <div className="actions left">
               <button onClick={preview}>Preview</button>

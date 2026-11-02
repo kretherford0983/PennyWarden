@@ -1,13 +1,13 @@
 """2.4.0 (#255): the overdue reminder to Invoice Managers - due date + N days, N set by the Administrator (default 0).
 
-Revision ID: 0077_invoice_overdue_reminder
-Revises: 0076_invoice_payments
+Revision ID: 0078_invoice_overdue_reminder
+Revises: 0077_invoice_payments
 """
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0077_invoice_overdue_reminder"
-down_revision = "0076_invoice_payments"
+revision = "0078_invoice_overdue_reminder"
+down_revision = "0077_invoice_payments"
 branch_labels = None
 depends_on = None
 
