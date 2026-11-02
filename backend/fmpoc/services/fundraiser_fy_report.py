@@ -52,6 +52,15 @@ def highlights(rep: dict) -> list[tuple[str, str, str]]:
     return out
 
 
+def est_lines(rep: dict) -> list[str]:
+    """2.3.0 (#390): "* Estimated: <year> <series> — <note>" lines (also in the report's footnotes)."""
+    return [x for x in rep["footnotes"] if x.startswith("* Estimated:")]
+
+
+def _star(est: bool) -> str:
+    return "*" if est else ""
+
+
 def file_stem(org: str, rep: dict) -> str:
     return f"fundraising-{safe_name(rep['fiscal_year']['display_name'])}"
 
@@ -106,12 +115,13 @@ def build_pdf(org: str, rep: dict) -> tuple[bytes, _AuditDoc]:
     if rep["linked_history"]:
         data = [_h(["Year", "Net raised"])]
         for t in rep["trend"]:
-            label = str(t["year"]) + (" (YTD)" if t["current"] and not rep["fy_ended"] else "")
+            label = str(t["year"]) + _star(t.get("estimated")) + (" (YTD)" if t["current"] and not rep["fy_ended"] else "")
             data.append([P(label, "cell"), P(money(t["total"]), "cellr")])
         if rep["targeted"] and rep["estimates"]:
             data.append([P(f"{rep['year']} targeted (YTD + estimate {money(rep['estimate_total'])})", "cell"),
                          P(money(rep["targeted_total"]), "fs_rb")])
         f.append(_table(data, [W - 1.5 * inch, 1.5 * inch]))
+        f += [P(x, "small") for x in est_lines(rep)]
     else:
         f.append(P(NO_HISTORY, "body"))
     if rep["targeted"] and rep["estimates"]:
@@ -145,18 +155,21 @@ def build_pdf(org: str, rep: dict) -> tuple[bytes, _AuditDoc]:
         idx = [rep["period"].index(y) for y in years]
         data = [_h(["Series"] + [str(y) for y in years] + ["Change vs year before"])]
         for x in rep["year_over_year"]:
-            data.append([P(x["name"], "cell")] + [P(money(x["values"][i]) if x["values"][i] is not None else "—", "cellr") for i in idx]
+            data.append([P(x["name"], "cell")] + [P(money(x["values"][i]) + _star(x.get("estimated", [False] * 99)[i])
+                                                    if x["values"][i] is not None else "—", "cellr") for i in idx]
                         + [P(_chg(x), "cell")])
         f.append(_table(data, widths))
+        f += [P(x, "small") for x in est_lines(rep)]
         if len(rep["period"]) > len(years):
             f.append(P(f"The last {len(years)} years are shown; the historical results below list every year.", "small"))
     # historical table
     f += [Spacer(1, 8), *heading("Historical results")]
     data = [_h(["Year", "Series", "Amount raised", "Source", "Note"])]
     for h in rep["history"]:
-        data.append([P(str(h["year"]), "cell"), P(h["series"], "cell"), P(money(h["amount"]), "cellr"),
+        data.append([P(str(h["year"]) + _star(h.get("estimated")), "cell"), P(h["series"], "cell"), P(money(h["amount"]), "cellr"),
                      P(h["source"], "cell"), P(h["note"] or "", "cell")])
     f.append(_table(data, [0.6 * inch, 2.3 * inch, 1.2 * inch, 1.2 * inch, W - 5.3 * inch]))
+    f += [P(x, "small") for x in est_lines(rep)]
     if rep["notes"]:
         f += [Spacer(1, 8), *heading("Notes"), P(rep["notes"], "body")]
     if rep["footnotes"]:
@@ -231,7 +244,8 @@ def build_pptx(org: str, rep: dict) -> bytes:
     deck._title(sl, "Annual trend", "Net raised per year")
     if rep["linked_history"]:
         cd = CategoryChartData(number_format='"$"#,##0.00')
-        cats = [str(t["year"]) + (" (YTD)" if t["current"] and not rep["fy_ended"] else "") for t in rep["trend"]]
+        cats = [str(t["year"]) + _star(t.get("estimated")) + (" (YTD)" if t["current"] and not rep["fy_ended"] else "")
+                for t in rep["trend"]]
         cd.categories = cats
         cd.add_series("Recorded / entered", [float(t["total"]) for t in rep["trend"]])
         est = rep["targeted"] and rep["estimates"]
@@ -246,7 +260,14 @@ def build_pptx(org: str, rep: dict) -> bytes:
         if est:
             ch.plots[0].series[1].format.fill.solid()
             ch.plots[0].series[1].format.fill.fore_color.rgb = deck.C.SERIES[1]
-        deck._notes(sl, [f"{t['year']}: {money(t['total'])}" for t in rep["trend"]]
+        for i, t in enumerate(rep["trend"]):     # 2.3.0 (#390): an estimated year's bar lighter, labelled *
+            if t.get("estimated"):
+                pt = ch.plots[0].series[0].points[i]
+                pt.format.fill.solid()
+                pt.format.fill.fore_color.rgb = deck._lighter(deck.C.SERIES[0])
+        if est_lines(rep):
+            deck._text(sl, Inches(0.9), Inches(7.0), Inches(11.5), Inches(0.45), est_lines(rep), size=10, color=deck.C.GREY)
+        deck._notes(sl, est_lines(rep) + [f"{t['year']}: {money(t['total'])}" for t in rep["trend"]]
                     + ([f"Targeted total {money(rep['targeted_total'])} = YTD + estimate {money(rep['estimate_total'])}: "
                         + "; ".join(f"{e['series']} average of {e['years']} years" for e in rep["estimates"])] if est else []))
     else:
@@ -293,7 +314,8 @@ def build_pptx(org: str, rep: dict) -> bytes:
         sl = prs.slides.add_slide(blank)
         deck._title(sl, "Year over year by series", "Net raised per year")
         cd = CategoryChartData(number_format='"$"#,##0.00')
-        cd.categories = [str(y) for y in rep["period"]]
+        est_years = {y for t in rep["trend"] if t.get("estimated") for y in [t["year"]]}
+        cd.categories = [str(y) + _star(y in est_years) for y in rep["period"]]
         for x in rep["year_over_year"][:8]:
             cd.add_series(x["name"], [float(v) if v is not None else None for v in x["values"]])
         ch = sl.shapes.add_chart(XL_CHART_TYPE.LINE_MARKERS, Inches(0.6), Inches(1.7), Inches(12.1), Inches(5.4), cd).chart
@@ -302,7 +324,7 @@ def build_pptx(org: str, rep: dict) -> bytes:
         for i, ser in enumerate(ch.plots[0].series):
             ser.format.line.color.rgb = deck.C.SERIES[i % len(deck.C.SERIES)]
             ser.smooth = False
-        deck._notes(sl, ["Net raised by each series per year; a gap = not held that year."]
+        deck._notes(sl, ["Net raised by each series per year; a gap = not held that year."] + est_lines(rep)
                     + [f"{x['name']}: " + ", ".join(f"{y} {money(v) if v is not None else '—'}" for y, v in zip(rep["period"], x["values"]))
                        + f"; vs year before: {_chg(x)}" for x in rep["year_over_year"]])
         rows = [["Series", f"{rep['year']}", "Change vs year before"]] + [
@@ -313,13 +335,15 @@ def build_pptx(org: str, rep: dict) -> bytes:
             deck._table(sl, Inches(0.6), Inches(1.7), Inches(12.1), [rows[0]] + part, [6.1, 2.5, 3.5], {1}, size=13)
             deck._notes(sl, ["Change = this year's net − the series' most recent earlier year; % of that earlier year."])
     # 7. historical table (about 12 rows per slide)
-    rows = [[str(h["year"]), h["series"], money(h["amount"]), h["source"], h["note"] or ""] for h in rep["history"]]
+    rows = [[str(h["year"]) + _star(h.get("estimated")), h["series"], money(h["amount"]), h["source"], h["note"] or ""]
+            for h in rep["history"]]
     for k, part in enumerate(deck._chunks(rows, deck.TABLE_ROWS)):
         sl = prs.slides.add_slide(blank)
         deck._title(sl, "Historical results" + (" (continued)" if k else ""))
         deck._table(sl, Inches(0.6), Inches(1.7), Inches(12.1), [["Year", "Series", "Amount raised", "Source", "Note"]] + part,
                     [1.0, 4.0, 1.9, 1.8, 3.4], {2}, size=12)
-        deck._notes(sl, ["Recorded = from the fundraisers in PennyWarden; Entered = entered by hand for a year before PennyWarden."])
+        deck._notes(sl, ["Recorded = from the fundraisers in PennyWarden; Entered = entered by hand for a year before PennyWarden."]
+                    + est_lines(rep))
     # 8. notes and footnotes
     lines = ([rep["notes"]] if rep["notes"] else []) + rep["footnotes"]
     if lines:

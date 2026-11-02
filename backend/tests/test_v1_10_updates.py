@@ -170,7 +170,9 @@ def test_admin_turns_it_off_no_request_no_indicator(env_up, feed):
 def test_is_newer_rules():
     cur = {"version": "1.10.0", "build": 57}
     assert updates.is_newer({"version": "1.10.1", "build": None}, cur, "stable")
-    assert not updates.is_newer({"version": "1.10.0", "build": None}, cur, "stable")
+    # 2.3.0 (#379): a test build on the production channel is told about its own version's production release
+    assert updates.is_newer({"version": "1.10.0", "build": None}, cur, "stable")
+    assert not updates.is_newer({"version": "1.10.0", "build": None}, {"version": "1.10.0", "build": None}, "stable")
     assert not updates.is_newer({"version": "1.9.9", "build": None}, cur, "stable")
     assert updates.is_newer({"version": "1.10.0", "build": 60}, cur, "test")
     assert not updates.is_newer({"version": "1.10.0", "build": None}, cur, "test")

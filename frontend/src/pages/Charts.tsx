@@ -6,7 +6,7 @@ import {
   ResponsiveContainer, Tooltip, XAxis, YAxis,
 } from "recharts";
 import { api, money } from "../api";
-import { ErrorBox } from "../components";
+import { ErrorBox, GROSS_BUDGET_NOTE, InfoTip } from "../components";
 import { useMe } from "../App";
 
 export const SERIES = {
@@ -97,7 +97,7 @@ export default function DashboardCharts({ fys, currentFyId }: { fys: any[]; curr
       {data ? (
         <Masonry narrow={narrow} items={CHARTS.filter((c) => shown.includes(c.key)).map((c) => ({
           key: c.key, height: estimateHeight(c.key, data),
-          el: <ChartCard key={c.key} title={c.title} testId={`chart-${c.key}`}>{renderChart(c.key, data, theme)}</ChartCard>,
+          el: <ChartCard key={c.key} title={c.title} testId={`chart-${c.key}`} info={c.key === "expense_vs_budget" ? GROSS_BUDGET_NOTE : undefined}>{renderChart(c.key, data, theme)}</ChartCard>,
         }))} />
       ) : shown.length ? <p className="hint">Loading charts…</p> : null}
     </section>
@@ -142,11 +142,11 @@ export function Masonry({ items, narrow }: { items: { key: string; height: numbe
   return <div className="chart-cols">{cols.map((c, n) => <div key={n} className="chart-col">{c.els}</div>)}</div>;
 }
 
-export function ChartCard({ title, testId, children }: { title: string; testId: string; children: [JSX.Element, JSX.Element] | JSX.Element[] }) {
+export function ChartCard({ title, testId, children, info }: { title: string; testId: string; children: [JSX.Element, JSX.Element] | JSX.Element[]; info?: string }) {
   const [chart, table] = children as JSX.Element[];
   return (
     <figure className="chart-card" data-testid={testId}>
-      <figcaption className="chart-title">{title}</figcaption>
+      <figcaption className="chart-title">{title}{info ? <InfoTip label={`About ${title}`} text={info} /> : null}</figcaption>
       <div className="chart-body" role="img" aria-label={`${title} chart; the data is available in the table below`}>{chart}</div>
       <details className="chart-table">
         <summary>Show data table</summary>

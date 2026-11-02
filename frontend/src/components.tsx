@@ -224,7 +224,23 @@ export function FyStatus({ status }: { status: string }) {
   return <span className={`pill pill-${status.toLowerCase()}`}>{status.charAt(0) + status.slice(1).toLowerCase()}</span>;
 }
 
-export function Field({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) {
+export function Field({ label, children, hint, info }: { label: string; children: ReactNode; hint?: string; info?: string }) {
+  const autoId = React.useId();
+  if (info && React.isValidElement(children)) {
+    // 2.3.0 polish: `info` adds an ⓘ with a popup explanation beside the label. The ⓘ is a button, so it sits outside
+    // the <label> (inside it, it would become the label's control); the label points at the field with htmlFor.
+    const el = children as React.ReactElement<{ id?: string }>;
+    const id = el.props.id || `field-${autoId}`;
+    return (
+      <div className="field">
+        <div className="field-inner">
+          <span className="field-label"><label htmlFor={id}>{label}</label><InfoTip label={`About ${label}`} text={info} /></span>
+          {el.props.id ? el : React.cloneElement(el, { id })}
+        </div>
+        {hint ? <span className="hint">{hint}</span> : null}
+      </div>
+    );
+  }
   return (
     <div className="field">
       <label className="field-inner">
@@ -233,6 +249,39 @@ export function Field({ label, children, hint }: { label: string; children: Reac
       </label>
       {hint ? <span className="hint">{hint}</span> : null}
     </div>
+  );
+}
+
+// ------------------------------------------------------------------ 2.3.0 (#371, BR-109): budgets are gross
+/** The same sentence is GROSS_BUDGET_NOTE in backend/fmpoc/services/common.py (a test keeps the two identical). */
+export const GROSS_BUDGET_NOTE =
+  "Budget amounts are gross. Offsetting income or expense recorded in a budget of the opposite type, such as a reimbursement, is not subtracted.";
+
+/** The disclaimer line shown with a budget table (Budgets, Fiscal Year, Budget Review). */
+export function GrossBudgetNote() {
+  return <p className="hint gross-note" data-testid="gross-budget-note">{GROSS_BUDGET_NOTE}</p>;
+}
+
+let infoTipSeq = 0;
+/** A small ⓘ button that opens a popup with a short explanation (Escape, a click elsewhere or the button closes it). */
+export function InfoTip({ label, text }: { label: string; text: string }) {
+  const [open, setOpen] = useState(false);
+  const [id] = useState(() => `info-tip-${++infoTipSeq}`);
+  const box = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: Event) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === "Escape") setOpen(false); };
+    document.addEventListener("mousedown", away);
+    document.addEventListener("keydown", esc);
+    return () => { document.removeEventListener("mousedown", away); document.removeEventListener("keydown", esc); };
+  }, [open]);
+  return (
+    <span className="info-tip" ref={box}>
+      <button type="button" className="info-tip-btn" aria-label={label} title={label} aria-expanded={open}
+              aria-controls={open ? id : undefined} onClick={() => setOpen(!open)}>ⓘ</button>
+      {open ? <span id={id} role="note" className="info-tip-pop">{text}</span> : null}
+    </span>
   );
 }
 
@@ -640,5 +689,29 @@ export function RowMenu({ name, actions }: { name: string; actions: (RowAction |
           ))}
         </ul>, document.body) : null}
     </>
+  );
+}
+
+// ------------------------------------------------------------------ 2.3.0 polish: the signer chosen when printing
+/** A letter's signing from the API (`signing`): asked only when its settings say "chosen when printing" and more than
+ * one signer is tagged for it. */
+export type Signing = { choice: string; ask: boolean; default_id: number | null; signers: { id: number; name: string; title: string }[] };
+
+/** The signer chosen for this print: the API's starting signer until the user picks another (null: none to send). */
+export function useSignerChoice(signing: Signing | null | undefined) {
+  const [picked, setPicked] = useState<number | null>(null);
+  const valid = !!signing?.ask && picked != null && signing.signers.some((s) => s.id === picked);
+  const value = signing?.ask ? (valid ? picked : signing.default_id) : null;
+  return { value, set: setPicked, body: value != null ? { signer_id: value } : {} };
+}
+
+export function SignerPicker({ signing, value, onChange, label = "Signed by", testId }: { signing: Signing | null | undefined; value: number | null; onChange: (id: number) => void; label?: string; testId?: string }) {
+  if (!signing?.ask) return null;
+  return (
+    <Field label={label}>
+      <select data-testid={testId} value={value ?? ""} onChange={(e) => onChange(Number(e.target.value))}>
+        {signing.signers.map((s) => <option key={s.id} value={s.id}>{s.name}{s.title ? ` (${s.title})` : ""}</option>)}
+      </select>
+    </Field>
   );
 }

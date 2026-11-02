@@ -1,6 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
 import { api, money } from "../api";
-import { ErrorBox, FyStatus, Loading, Remaining } from "../components";
+import { ErrorBox, FyStatus, GROSS_BUDGET_NOTE, InfoTip, Loading, Remaining } from "../components";
 import { Link } from "../router";
 import { useMe } from "../App";
 import { DashboardNotifications } from "./Notifications";
@@ -50,7 +50,7 @@ export default function Dashboard() {
       <div className="tiles">
         {(["income", "expense"] as const).map((k) => (
           <div className="tile" key={k}>
-            <div className="tile-label">{k === "income" ? "Income" : "Expense"} budget</div>
+            <div className="tile-label">{k === "income" ? "Income" : "Expense"} budget <InfoTip label="About budget amounts" text={GROSS_BUDGET_NOTE} /></div>
             <div className="tile-value">{money(d.budget_summary[k].amount)}</div>
             <div className="muted">Actual {money(d.budget_summary[k].actual)} · Remaining <Remaining x={d.budget_summary[k]} /></div>
           </div>

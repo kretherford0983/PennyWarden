@@ -191,7 +191,9 @@ def main(base: str, start_month: int = 7, backup: str | None = None, summary: st
                                            "email": "treasurer@example.org", "ein": "00-0000000"})
     ent[ORG] = {"id": admin.get("/api/system/organization")["id"]}
     # ---- Donations module (2.1.0, #312): the receipt signer, and two donors with addresses
-    admin.put("/api/donations/setup", {"config": {"signer_name": "Jamie Ellison", "signer_title": "Treasurer"}})
+    # 2.3.0 (#395): one shared signer list - the same signer, tagged for checks and donation receipts
+    admin.put(f"/api/signers/{signer['id']}/areas", {"areas": ["CHECKS", "DONATIONS"]})
+    admin.put("/api/donations/setup", {"config": {"signer_id": signer["id"], "signature_mode": "SPACE"}})
     for name in DONORS:
         ent[name] = tr.post("/api/entities", {"entity_type": "INDIVIDUAL", "primary_contact": name,
                                               "address_line1": "1200 Prairie Lane", "city": "Cedar Valley",

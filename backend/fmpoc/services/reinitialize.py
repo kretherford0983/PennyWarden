@@ -30,7 +30,7 @@ from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
 from .. import audit
-from ..models import (Donation, Attachment, AuditEvent, BankAccount, BankAccountBalance, Budget, BudgetHistoryEntry, BudgetProjectionChoice, CheckAccount, FormerBudget,
+from ..models import (Donation, Attachment, AuditEvent, BankAccount, BankAccountBalance, FiscalYearBalanceChange, Budget, BudgetHistoryEntry, BudgetInclusion, BudgetProjectionChoice, CheckAccount, FormerBudget,
                       CheckDocument, CheckNumberAcknowledgement, CheckPrinterSetting, CheckSigner, CheckStyle, DonationDetail, DonationLine,
                       DonationReceipt, DonationSettings, DonationStatement, Entity,
                       FiscalYear, FiscalYearReview, Fundraiser, FundraiserBucket, FundraiserBucketCategory, FundraiserBucketLine, FundraiserBudget,
@@ -48,8 +48,8 @@ COOLDOWN = dt.timedelta(hours=24)
 # children first
 WIPE = (DonationStatement, DonationReceipt, DonationDetail, DonationLine, Donation, FundraiserBucketLine, FundraiserLineContributor, FundraiserClassification, FundraiserExclusion, FiscalYearReview, Attachment,
         TransactionAllocation, RegisterTransaction, CheckNumberAcknowledgement, CheckAccount, CheckPrinterSetting,
-        BankAccountBalance, BankAccount, FundraiserBucket, FundraiserBucketCategory, FundraiserBudget, Fundraiser, FundraiserSeriesResult,
-        FundraiserSeries, FundraiserFyReportNote, BudgetProjectionChoice, BudgetHistoryEntry, FormerBudget, Budget, FiscalYear,
+        FiscalYearBalanceChange, BankAccountBalance, BankAccount, FundraiserBucket, FundraiserBucketCategory, FundraiserBudget, Fundraiser, FundraiserSeriesResult,
+        FundraiserSeries, FundraiserFyReportNote, BudgetProjectionChoice, BudgetInclusion, BudgetHistoryEntry, FormerBudget, Budget, FiscalYear,
         CheckDocument, CheckSigner, CheckStyle, DonationSettings, RequestKey)   # 2.1.0 (#312): donations
 
 

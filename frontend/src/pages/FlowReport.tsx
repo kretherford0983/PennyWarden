@@ -17,9 +17,11 @@ export function Signed({ c }: { c: number }) {
   return <b className={cls}>{txt}</b>;
 }
 
-export default function FlowReport({ accounts }: { accounts: any[] }) {
+export default function FlowReport({ accounts, initial = {}, onRun }: { accounts: any[]; initial?: Record<string, any>; onRun?: (params: Record<string, any>, label: string) => void }) {
   const open = accounts.filter((a) => a.status === "ACTIVE");
-  const [p, setP] = useState({ title: "", date_from: "", date_to: "", include_balances: false, compare_date: "", notes: "", show_substitution_notes: false });
+  // 2.3.0 (#375): the user's last title and dates are filled in (notes and the balance options are not remembered)
+  const [p, setP] = useState({ title: String(initial.title || ""), date_from: String(initial.date_from || ""), date_to: String(initial.date_to || ""),
+    include_balances: false, compare_date: "", notes: "", show_substitution_notes: false });
   const [ids, setIds] = useState<number[]>(open.map((a) => a.id));
   const [review, setReview] = useState<any>(null);
   const [err, setErr] = useState<unknown>(null);
@@ -36,12 +38,13 @@ export default function FlowReport({ accounts }: { accounts: any[] }) {
     setBusy(true);
     try {
       setReview({ data: await api.post("/api/reports/financial-flow/review", params()), params: params() });
+      onRun?.({ title: p.title, date_from: p.date_from, date_to: p.date_to },
+        `${p.title || "Financial Flow"} · ${p.date_from}${p.date_to ? ` – ${p.date_to}` : ""}`);
     } catch (x) { setErr(x); } finally { setBusy(false); }
   };
   if (review) return <FlowReview review={review} onBack={() => setReview(null)} />;
   return (
-    <section className="card">
-      <h2>Financial Flow Report</h2>
+    <>
       <p>The money that came in and went out of the chosen accounts in a period: every income and every expense with
         their totals and the Difference, one section per account. Transfers between accounts and VOID transactions are
         not listed. You review the lines before the PDF is made. Optionally adds the balance of every account.</p>
@@ -76,7 +79,7 @@ export default function FlowReport({ accounts }: { accounts: any[] }) {
         <Field label="Notes" hint="Printed on the report."><textarea maxLength={4000} value={p.notes} onChange={(e) => setP({ ...p, notes: e.target.value })} /></Field>
         <div className="actions left"><button className="primary" type="submit" disabled={busy || !ids.length}>Review transactions</button></div>
       </GuardedForm>
-    </section>
+    </>
   );
 }
 

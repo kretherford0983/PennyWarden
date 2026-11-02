@@ -1,11 +1,13 @@
 // v1.6.0 CR-033: Fundraiser module - list per Fiscal Year (+ upcoming), details, create/edit (Budget Manager).
 import { Fragment, lazy, Suspense, useEffect, useRef, useState, type FormEvent } from "react";
-import { api, money, todayIso } from "../api";
+import { api, money, qs, todayIso } from "../api";
 import { Attachments, EntityPicker, ErrorBox, Field, GuardedForm, Loading, Modal, RowMenu } from "../components";
 import { positionTitle } from "./SignatureOptions";
 import { Link, useRouter } from "../router";
 import { useMe } from "../App";
 import { AddChoice } from "./FundraiserSeries";
+import { reportPath } from "./reports/registry";
+import { currentFy, type ActionsFn, type RunFn } from "./reports/common";
 
 const FundraiserCharts = lazy(() => import("./FundraiserCharts")); // chart library loaded on demand
 
@@ -30,7 +32,6 @@ export default function Fundraisers() {
   const [err, setErr] = useState<unknown>(null);
   const [creating, setCreating] = useState(false);
   const [picked, setPicked] = useState<Set<number>>(new Set());   // 2.1.0 (#277): the Fiscal Year report's fundraisers
-  const [fyReport, setFyReport] = useState(false);
 
   useEffect(() => {
     Promise.all([api.get("/api/fiscal-years"), api.get(`/api/fiscal-years/natural?date=${todayIso()}`)]).then(([y, nat]) => {
@@ -60,7 +61,8 @@ export default function Fundraisers() {
           </select>
         </Field>
         <label className="check"><input type="checkbox" checked={archived} onChange={(e) => setArchived(e.target.checked)} /> Show archived</label>
-        {fy !== UPCOMING && rows?.length ? <button onClick={() => setFyReport(true)} disabled={!shown.length}>Fiscal Year report…</button> : null}
+        {/* 2.3.0 (#375): a shortcut to the report in Reports, with this year and the ticked fundraisers filled in */}
+        {fy !== UPCOMING && rows?.length ? <button onClick={() => navigate(`${reportPath("fundraising-fy")}${qs({ fiscal_year_id: fy, ids: shown.map((r) => r.id).join(",") })}`)} disabled={!shown.length}>Fiscal Year report…</button> : null}
         {can("fundraiser.manage") ? <Link className="button" to="/fundraiser-series">Fundraiser series</Link> : null}
         {can("fundraiser.manage") ? <button className="primary" onClick={() => setCreating(true)}>New fundraiser</button> : null}
       </div>
@@ -88,31 +90,66 @@ export default function Fundraisers() {
         </table>
       )}
       {creating ? <FundraiserForm onClose={() => setCreating(false)} onSaved={(f) => navigate(`/fundraisers/${f.id}`)} /> : null}
-      {fyReport ? <FyReportDialog fy={fys.find((y) => String(y.id) === fy)} ids={shown.map((r) => r.id)} manage={can("fundraiser.manage")} onClose={() => setFyReport(false)} /> : null}
     </div>
   );
 }
 
-// 2.1.0 (#277): the Fiscal Year fundraising report and presentation for the ticked fundraisers
-function FyReportDialog({ fy, ids, manage, onClose }: { fy: any; ids: number[]; manage: boolean; onClose: () => void }) {
-  const [o, setO] = useState({ years: "5", targeted: false, avg_years: "5" });
+// 2.1.0 (#277): the Fiscal Year fundraising report and presentation for the ticked fundraisers.
+// 2.3.0 (#375): a report page in Reports (the Fundraisers page's button is a shortcut to it, pre-filled).
+export function FundraisingFyReport({ fys, initial, onRun, actions }: { fys: any[]; initial: Record<string, any>; onRun: RunFn; actions: ActionsFn }) {
+  const { can } = useMe();
+  const manage = can("fundraiser.manage");
+  const cur = currentFy(fys);
+  const [fyId, setFyId] = useState(String(initial.fiscal_year_id || cur?.id || ""));
+  const [rows, setRows] = useState<any[] | null>(null);
+  const [picked, setPicked] = useState<Set<number>>(new Set());
+  const [o, setO] = useState({ years: String(initial.years || "5"), targeted: initial.targeted === true || initial.targeted === "true", avg_years: String(initial.avg_years || "5") });
   const [notes, setNotes] = useState("");
   const [savedNotes, setSavedNotes] = useState("");
   const [err, setErr] = useState<unknown>(null);
-  useEffect(() => { api.get(`/api/fundraisers/fy-report/selection?fiscal_year_id=${fy.id}`).then((x) => { setNotes(x.notes || ""); setSavedNotes(x.notes || ""); }, setErr); }, [fy.id]);
+  const fy = fys.find((y) => String(y.id) === fyId);
+  useEffect(() => {
+    if (!fyId) return;
+    setRows(null);
+    Promise.all([api.get(`/api/fundraisers?fiscal_year_id=${fyId}`), api.get(`/api/fundraisers/fy-report/selection?fiscal_year_id=${fyId}`)]).then(([list, sel]) => {
+      setRows(list);
+      setNotes(sel.notes || ""); setSavedNotes(sel.notes || "");
+      const given = String(initial.fiscal_year_id || "") === fyId && initial.ids ? String(initial.ids).split(",").map(Number).filter(Boolean) : null;
+      setPicked(new Set(given || sel.default_ids));
+    }, setErr);
+  }, [fyId]); // eslint-disable-line react-hooks/exhaustive-deps
+  const ids = (rows || []).filter((r) => picked.has(r.id)).map((r) => r.id);
   const href = (format: string) => {
-    const p = new URLSearchParams({ fiscal_year_id: String(fy.id), years: o.years, targeted: String(o.targeted), avg_years: o.avg_years, format });
+    const p = new URLSearchParams({ fiscal_year_id: fyId, years: o.years, targeted: String(o.targeted), avg_years: o.avg_years, format });
     ids.forEach((i) => p.append("ids", String(i)));
     return `/api/fundraisers/fy-report?${p.toString()}`;
   };
   const saveNotes = async () => {
     setErr(null);
-    try { const r = await api.put("/api/fundraisers/fy-report/notes", { fiscal_year_id: fy.id, notes }); setNotes(r.notes || ""); setSavedNotes(r.notes || ""); } catch (x) { setErr(x); }
+    try { const r = await api.put("/api/fundraisers/fy-report/notes", { fiscal_year_id: Number(fyId), notes }); setNotes(r.notes || ""); setSavedNotes(r.notes || ""); } catch (x) { setErr(x); }
   };
+  const toggle = (id: number) => { const n = new Set(picked); if (n.has(id)) n.delete(id); else n.add(id); setPicked(n); };
+  const run = () => onRun({ fiscal_year_id: fyId, ids: ids.map(String), years: o.years, targeted: o.targeted, avg_years: o.avg_years },
+    `${fy?.display_name || ""} · ${ids.length} fundraiser${ids.length === 1 ? "" : "s"}`);
   return (
-    <Modal title="Fiscal Year fundraising report" onClose={onClose} wide>
-      <p>{ids.length} fundraiser{ids.length === 1 ? "" : "s"} of <b>{fy.display_name}</b>, with the history of their series (linked with <i>Continues from</i>, plus results entered for earlier years). No contributor names.</p>
+    <>
       <ErrorBox error={err} />
+      <div className="report-options">
+        <Field label="Fiscal Year">
+          <select aria-label="Fundraising report Fiscal Year" value={fyId} onChange={(e) => setFyId(e.target.value)}>
+            {fys.map((y) => <option key={y.id} value={y.id}>{y.label}</option>)}
+          </select>
+        </Field>
+      </div>
+      {!rows ? <Loading /> : !rows.length ? <p className="muted">No fundraisers in this Fiscal Year.</p> : (
+        <fieldset className="lines" data-testid="fy-report-fundraisers">
+          <legend>Fundraisers in the report</legend>
+          <div className="row"><button type="button" className="small" onClick={() => setPicked(new Set(rows.map((r) => r.id)))}>All</button>
+            <button type="button" className="small" onClick={() => setPicked(new Set())}>None</button></div>
+          {rows.map((f) => <label key={f.id} className="check"><input type="checkbox" checked={picked.has(f.id)} onChange={() => toggle(f.id)} /> {f.name} <span className="muted">({eventDates(f)})</span></label>)}
+        </fieldset>
+      )}
+      <p>{ids.length} fundraiser{ids.length === 1 ? "" : "s"}{fy ? <> of <b>{fy.display_name}</b></> : null}, with the history of their series (linked with <i>Continues from</i>, plus results entered for earlier years). No contributor names.</p>
       <div className="row fields">
         <Field label="Years of history">
           <select value={o.years} onChange={(e) => setO({ ...o, years: e.target.value })}>
@@ -132,12 +169,8 @@ function FyReportDialog({ fy, ids, manage, onClose }: { fy: any; ids: number[]; 
           <div className="actions left"><button disabled={notes === savedNotes} onClick={saveNotes}>Save notes</button></div>
         </>
       ) : savedNotes ? <p className="pre-wrap"><b>Notes:</b> {savedNotes}</p> : null}
-      <div className="actions">
-        <button onClick={onClose}>Done</button>
-        <a className="button" href={href("pptx")}>Presentation</a>
-        <a className="button primary" href={href("pdf")} target="_blank" rel="noopener">Report (PDF)</a>
-      </div>
-    </Modal>
+      {actions({ open: ids.length ? href("pdf") : null, download: ids.length ? `${href("pdf")}&download=true` : null, pptx: ids.length ? href("pptx") : null, onRun: run })}
+    </>
   );
 }
 
@@ -158,7 +191,6 @@ export function FundraiserDetail({ id }: { id: number }) {
   const [linking, setLinking] = useState(false);
   const [adding, setAdding] = useState(false);          // 2.2.0 (#302)
   const [cancelling, setCancelling] = useState(false); // v1.6.4 CR-037
-  const [countSheet, setCountSheet] = useState(false); // v1.6.4 CR-038
   const load = () => api.get(`/api/fundraisers/${id}`).then(setF, setErr);
   useEffect(() => { load(); }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!f) return <><ErrorBox error={err} />{err ? null : <Loading />}</>;
@@ -178,7 +210,7 @@ export function FundraiserDetail({ id }: { id: number }) {
       <div className="page-head">
         <h1>{f.name} <FundraiserStatus status={f.status} /></h1>
         <button onClick={() => setReporting(true)}>Report…</button>
-        <button onClick={() => setCountSheet(true)}>Cash count sheet…</button>
+        <button onClick={() => navigate(`${reportPath("count-sheet")}${qs({ fundraiser_id: f.id })}`)}>Cash count sheet…</button>
         {manage ? (
           <div className="row">
             {!f.read_only ? <button onClick={() => setEditing(true)}>Edit</button> : null}
@@ -229,6 +261,13 @@ export function FundraiserDetail({ id }: { id: number }) {
         <div className="tile"><div className="tile-label">Expenses</div><div className="tile-value">{money(t.expense)}</div></div>
         <div className="tile"><div className="tile-label">Net</div><div className={`tile-value ${Number(t.net) < 0 ? "neg" : ""}`}>{money(t.net)}</div></div>
         <div className="tile"><div className="tile-label">Return on expenses (net ÷ expenses)</div><div className="tile-value">{roiText(t.roi)}</div></div>
+        {t.goal ? (
+          <div className="tile" data-testid="fr-goal">
+            <div className="tile-label">Goal (compared with net)</div>
+            <div className="tile-value">{money(t.goal.goal)}</div>
+            <div className="muted">{t.goal.pct_of_goal === null ? "No percentage for a goal of 0" : `${t.goal.pct_of_goal}% of goal`} · {t.goal.met ? `Met (${money(t.goal.difference)} over)` : `${money(t.goal.difference.replace("-", ""))} to go`}</div>
+          </div>
+        ) : null}
       </div>
       {Number(t.cash_float_out) || Number(t.cash_float_returned) || t.excluded_lines ? (
         <p className="hint" data-testid="fr-adjustments">
@@ -336,7 +375,6 @@ export function FundraiserDetail({ id }: { id: number }) {
       </section>
 
       {cancelling ? <CancelDialog f={f} onClose={() => setCancelling(false)} onSaved={(x) => { setF(x); setCancelling(false); }} /> : null}
-      {countSheet ? <CountSheetDialog f={f} onClose={() => setCountSheet(false)} /> : null}
       {lineEdit ? <LineDialog f={f} line={lineEdit} onClose={() => setLineEdit(null)} onSaved={(x) => { setF(x); setLineEdit(null); }} /> : null}
       {bucketEdit ? <BucketDialog f={f} bucket={bucketEdit} onClose={() => setBucketEdit(null)} onSaved={(x) => { setF(x); setBucketEdit(null); }} /> : null}
       {categoryEdit ? <CategoryDialog f={f} category={categoryEdit} onClose={() => setCategoryEdit(null)} onSaved={(x) => { setF(x); setCategoryEdit(null); }} /> : null}
@@ -366,6 +404,7 @@ function FundraiserForm({ current, prefill, onClose, onSaved }: { current?: any;
     name: src?.name || "", description: src?.description || "",
     start_date: src?.start_date || "", end_date: src?.end_date || "",
     filter_text: src?.filter_text || "", filter_regex: !!src?.filter_regex,
+    goal_amount: current?.goal_amount || "",   // 2.3.0 (#372); not copied into next year's
   });
   // 2.1.0 (#277): "Continues from (previous fundraiser)"
   const [cont, setCont] = useState<string>(src?.continues_from_id ? String(src.continues_from_id) : "");
@@ -428,7 +467,7 @@ function FundraiserForm({ current, prefill, onClose, onSaved }: { current?: any;
     setErr(null);
     const body: any = { name: v.name, description: v.description || null, start_date: v.start_date, end_date: v.end_date || null,
                    budget_ids: ids, filter_text: v.filter_text || null, filter_regex: v.filter_regex,
-                   continues_from_id: cont ? Number(cont) : null };
+                   continues_from_id: cont ? Number(cont) : null, goal_amount: v.goal_amount.trim() || null };
     if (!current && prefill?.copy_buckets_from_id) body.copy_buckets_from_id = prefill.copy_buckets_from_id;
     try {
       onSaved(current ? await api.put(`/api/fundraisers/${current.id}`, body) : await api.post("/api/fundraisers", body));
@@ -442,6 +481,7 @@ function FundraiserForm({ current, prefill, onClose, onSaved }: { current?: any;
         <ErrorBox error={err} />
         <Field label="Name"><input required maxLength={120} value={v.name} onChange={set("name")} /></Field>
         <Field label="Description"><textarea rows={2} maxLength={2000} value={v.description} onChange={set("description")} /></Field>
+        <Field label="Goal (optional)" hint="What the fundraiser aims to raise, compared with its net (income minus expenses). Informational only."><input inputMode="decimal" pattern="\d+(\.\d{1,2})?" maxLength={20} value={v.goal_amount} onChange={set("goal_amount")} placeholder="e.g. 5000" /></Field>
         <div className="row fields">
           <Field label="Event start date" hint="The day(s) the event takes place."><input type="date" required value={v.start_date} onChange={set("start_date")} /></Field>
           <Field label="Event end date" hint="Leave empty for a one-day event."><input type="date" min={v.start_date || undefined} value={v.end_date} onChange={set("end_date")} /></Field>
@@ -929,14 +969,30 @@ function CancelDialog({ f, onClose, onSaved }: { f: any; onClose: () => void; on
   );
 }
 
-function CountSheetDialog({ f, onClose }: { f: any; onClose: () => void }) {
+/** v1.6.4 (CR-038): the blank cash count sheet. 2.3.0 (#375): a report page in Reports; the fundraiser page's button is
+ * a shortcut to it with the fundraiser filled in. */
+export function CountSheetReport({ fys, initial, onRun, actions }: { fys: any[]; initial: Record<string, any>; onRun: RunFn; actions: ActionsFn }) {
+  const cur = currentFy(fys);
+  const [fyId, setFyId] = useState(String(initial.fiscal_year_id || cur?.id || ""));
+  const [list, setList] = useState<any[]>([]);
+  const [fid, setFid] = useState(String(initial.fundraiser_id || ""));
   const [people, setPeople] = useState<any[]>([]);
   const [signers, setSigners] = useState<{ entity_id: string; title: string }[]>([0, 1].map(() => ({ entity_id: "", title: "" })));
-  const [extra, setExtra] = useState(true);   // 1.6.7: page 2 with more check lines (print on the back)
+  const [extra, setExtra] = useState(initial.extra_checks !== false && initial.extra_checks !== "false");   // 1.6.7: page 2 with more check lines (print on the back)
   const [err, setErr] = useState<unknown>(null);
   useEffect(() => {
     api.get("/api/entities").then((es: any[]) => setPeople(es.filter((e) => e.entity_type === "INDIVIDUAL" && !e.is_system && e.active !== false)), setErr);
-  }, []);
+    // a shortcut names the fundraiser: show its Fiscal Year
+    if (initial.fundraiser_id && !initial.fiscal_year_id) api.get(`/api/fundraisers/${initial.fundraiser_id}`).then((f) => { if (f.fiscal_years?.[0]) setFyId(String(f.fiscal_years[0].id)); }, () => undefined);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!fyId) return;
+    api.get(`/api/fundraisers?fiscal_year_id=${fyId}&include_archived=true`).then((r: any[]) => {
+      setList(r);
+      setFid((cur) => (r.some((f) => String(f.id) === cur) ? cur : r[0] ? String(r[0].id) : ""));
+    }, () => setList([]));
+  }, [fyId]);
+  const f = list.find((x) => String(x.id) === fid);
   const chosen = signers.filter((x) => x.entity_id);
   const ids = chosen.map((x) => x.entity_id);
   const blank = signers.length - chosen.length;
@@ -948,12 +1004,26 @@ function CountSheetDialog({ f, onClose }: { f: any; onClose: () => void }) {
   chosen.forEach((x) => { p.append("signer_id", x.entity_id); p.append("signer_title", x.title.trim()); });
   if (!extra) p.append("extra_checks", "false");
   p.append("blank_lines", String(blank));   // 1.6.7: a row left empty prints a blank row
-  const href = `/api/fundraisers/${f.id}/count-sheet?${p.toString()}`;
+  // 2.1.1 (CodeQL js/xss-through-dom): the link uses the id of the fundraiser loaded from the server
+  const href = f ? `/api/fundraisers/${f.id}/count-sheet?${p.toString()}` : null;
   const upd = (i: number, patch: object) => setSigners(signers.map((y, j) => (j === i ? { ...y, ...patch } : y)));
   return (
-    <Modal title="Cash count sheet" onClose={onClose}>
+    <>
       <p>A blank sheet to print: bills and coins, checks, totals, notes and signature lines. Fill it in by hand at the count, have everyone sign, then scan it and add it under <b>Fundraiser documents</b>.</p>
       <ErrorBox error={err} />
+      <div className="report-options">
+        <Field label="Fiscal Year">
+          <select aria-label="Count sheet Fiscal Year" value={fyId} onChange={(e) => setFyId(e.target.value)}>
+            {fys.map((y) => <option key={y.id} value={y.id}>{y.label}</option>)}
+          </select>
+        </Field>
+        <Field label="Fundraiser">
+          <select aria-label="Count sheet fundraiser" value={fid} onChange={(e) => setFid(e.target.value)}>
+            {list.length ? null : <option value="">No fundraisers in this Fiscal Year</option>}
+            {list.map((x) => <option key={x.id} value={x.id}>{x.name}</option>)}
+          </select>
+        </Field>
+      </div>
       <h3>Signature lines (1 to 5)</h3>
       {signers.map((x, i) => (
         <div key={i} className="sig-signer row">
@@ -968,11 +1038,8 @@ function CountSheetDialog({ f, onClose }: { f: any; onClose: () => void }) {
       <label className="check"><input type="checkbox" checked={extra} onChange={(e) => setExtra(e.target.checked)} /> Add page 2 for more checks</label>
       <p className="hint">Page 1 has 13 check lines. Page 2 has 30 more and their own total — print it on the back (two-sided printing) or as a second sheet, or print page 1 only when it is not needed.</p>
       {problem ? <div className="alert error" role="alert">{problem}</div> : null}
-      <div className="actions">
-        <button type="button" onClick={onClose}>Close</button>
-        {problem ? null : <a className="button primary" href={href} target="_blank" rel="noopener">Open sheet (PDF)</a>}
-      </div>
-    </Modal>
+      {actions({ open: problem ? null : href, download: problem || !href ? null : `${href}&download=true`, onRun: () => onRun({ fiscal_year_id: fyId, fundraiser_id: fid, extra_checks: extra }, f ? f.name : "") })}
+    </>
   );
 }
 

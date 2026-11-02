@@ -23,6 +23,7 @@ import FundraiserSeries from "./pages/FundraiserSeries";
 import CheckSetup from "./pages/CheckSetup";
 import DonationSetup from "./pages/Donations";
 import EnvelopesPage from "./pages/Envelopes";
+import SignersPage from "./pages/Signers";
 import { setNameOrder } from "./names";
 import Payments from "./pages/Payments";
 import DonationsPage from "./pages/DonationsPage";
@@ -193,6 +194,8 @@ function navFor(me: Me) {
   if (me.modules?.donations && me.permissions.includes("donation.setup")) checkSetup.push(["/donation-setup", "Donations Setup"]);
   // 2.2.0 (#325): the shared envelope library, when a feature that uses envelopes is on
   if (checkSetup.length) checkSetup.push(["/envelopes", "Envelopes"]);
+  // 2.3.0 (#395): the shared signer list (checks, cover letters, donation letters), beside Envelopes
+  if (checkSetup.length) checkSetup.push(["/signers", "Signers"]);
   if (me.security_domain === "ADMINISTRATOR") return [["/", "Dashboard"], ["/users", "Users"], ["/audit-log", "Audit Log"], ...checkSetup, ["/about", "System/About"]];
   // 2.0.0 (#126, #127): Auditors see System/About read-only (effective settings, sessions)
   if (me.security_domain === "AUDITOR") return [...fin, ["/users", "Users"], ["/audit-log", "Audit Log"], ...(me.permissions.includes("system.view") ? [["/about", "System/About"]] : [])];
@@ -246,12 +249,14 @@ function Shell({ workspace, warning, mode, testing, demo, onLogout }: { workspac
   else if (path === "/register") page = guard("/register", <Register />);
   else if (path === "/entities") page = guard("/entities", <Entities />);
   else if (path === "/reports") page = guard("/reports", <Reports />);
+  else if ((m = match("/reports/:id", path))) page = guard("/reports", <Reports id={m.id} />);   // 2.3.0 (#375): a page per report
   else if (path === "/notifications") page = can("reminder.view") ? <Notifications /> : <NotAuthorized />;
   else if (path === "/fundraisers") page = guard("/fundraisers", <Fundraisers />);
   else if (path === "/fundraiser-series") page = can("fundraiser.manage") ? guard("/fundraisers", <FundraiserSeries />) : <NotAuthorized />; // 2.1.0 (#277)
   else if (path === "/check-setup") page = guard("/check-setup", <CheckSetup />);
   else if (path === "/donation-setup") page = guard("/donation-setup", <DonationSetup />);
   else if (path === "/envelopes") page = guard("/envelopes", <EnvelopesPage />);
+  else if (path === "/signers") page = guard("/signers", <SignersPage />);
   else if (path === "/payments") page = guard("/payments", <Payments />);
   else if (path === "/donations") page = guard("/donations", <DonationsPage />);
   else if ((m = match("/fundraisers/:id", path))) page = guard("/fundraisers", <FundraiserDetail id={Number(m.id)} />);
@@ -323,6 +328,6 @@ function Bell({ path }: { path: string }) {
   );
 }
 
-function NotAuthorized() {
+export function NotAuthorized() {
   return <div className="alert error" role="alert">You are not authorized to view this module.</div>;
 }

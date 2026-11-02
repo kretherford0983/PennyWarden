@@ -47,8 +47,10 @@ def create(body: FiscalYearCreateIn, db: Session = Depends(get_db), ctx: Ctx = D
 @router.get("/{fy_id}")
 def detail(fy_id: int, db: Session = Depends(get_db), ctx: Ctx = Depends(require("financial.view"))):
     fy = get_scoped(db, FiscalYear, fy_id, ctx, "Fiscal Year")
+    from ..services import bank_accounts as bank
     return {**svc.out(fy), "budgets": bsvc.tree(db, fy), "closure": svc.closure_check(db, fy),
-            "document_counts": svc.fy_document_counts(db, fy)}
+            "document_counts": svc.fy_document_counts(db, fy),
+            "balance_changes_after_close": bank.changes_after_close(db, fy)}      # 2.3.0 (#391)
 
 
 @router.patch("/{fy_id}")

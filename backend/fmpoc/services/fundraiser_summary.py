@@ -480,8 +480,14 @@ def yoy_change(r: dict) -> str:
     return f"{word} {money(r['change'].lstrip('-'))}" + (f" ({r['change_pct'].lstrip('-')}%)" if r.get("change_pct") else "")
 
 
+def estimate_lines(s: dict) -> list[str]:
+    """2.3.0 (#390): the footnote under the year-over-year table - one line per estimated year."""
+    return [f"* Estimated: {r['year']} — " + "; ".join(n for n in r.get("estimate_notes", []) if n)
+            for r in s.get("year_over_year", []) if r.get("estimated")]
+
+
 def yoy_rows(s: dict) -> list[list[str]]:
-    return [[str(r["year"]), r["label"] + ("" if r["source"] == "Recorded" else f" ({r['source']})"),
+    return [[str(r["year"]) + ("*" if r.get("estimated") else ""), r["label"] + ("" if r["source"] == "Recorded" else f" ({r['source']})"),
              money(r["net_revenue"]) if r["net_revenue"] is not None else "—",
              money(r["expenses"]) if r["expenses"] is not None else "—", money(r["net_proceeds"]),
              _p(r["net_margin"]) if r["net_revenue"] is not None else "—", yoy_change(r)] for r in s["year_over_year"]]
@@ -500,7 +506,8 @@ def _yoy_pdf(s: dict, W: float) -> list:
         data.append([P(row[0], "cell"), P(row[1], "cell")] + [P(v, "cellr") for v in row[2:6]] + [P(row[6], "cell")])
     t = _table(data, [0.5 * inch, W - 5.15 * inch, 0.9 * inch, 0.85 * inch, 0.95 * inch, 0.6 * inch, 1.35 * inch],
                bold_rows=[len(data) - 1])
-    return [Spacer(1, 8), KeepTogether([P("Year over year", "h2"), P(YOY_NOTE, "small"), Spacer(1, 3), t])]
+    return [Spacer(1, 8), KeepTogether([P("Year over year", "h2"), P(YOY_NOTE, "small"), Spacer(1, 3), t]
+                                       + [P(x, "small") for x in estimate_lines(s)])]
 
 
 def _itemized(title: str, lines: list[dict], subtotal: str, W: float) -> list:
@@ -697,6 +704,9 @@ def build_docx(s: dict) -> bytes:
         rows = yoy_rows(s)
         for i, row in enumerate(rows):
             _drow(tb, row, {2, 3, 4, 5}, bold=i == len(rows) - 1, widths=WY)
+        for x in estimate_lines(s):          # 2.3.0 (#390)
+            q = d.add_paragraph(x)
+            q.runs[0].font.size = Pt(8)
     groups, other = s["groups"], s["other"]
     if s["has_buckets"]:
         d.add_heading("Revenue breakdown", level=2)

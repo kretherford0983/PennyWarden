@@ -8,7 +8,7 @@ from sqlalchemy import case, func, select, update as sa_update
 from sqlalchemy.orm import Session
 
 from .. import audit
-from ..errors import AppError, conflict, validation
+from ..errors import AppError, Warning_, conflict, not_found, require_confirmations, validation
 from ..models import BankAccount, BankAccountBalance, Entity, RegisterTransaction, TransactionAllocation, utcnow
 from ..money import fmt, parse_amount
 from ..security import crypto
@@ -64,7 +64,8 @@ def balance_on(db: Session, a: BankAccount, d: dt.date) -> tuple[int, dict | Non
         v = manual_as_of(db, a, d)
         if v is not None:
             return v, None
-        first = db.scalar(select(BankAccountBalance).where(BankAccountBalance.bank_account_id == a.id)
+        first = db.scalar(select(BankAccountBalance).where(BankAccountBalance.bank_account_id == a.id,
+                                                           BankAccountBalance.retired_at.is_(None))
                           .order_by(BankAccountBalance.as_of_date, BankAccountBalance.id).limit(1))
         if first is None:
             return a.manual_current_balance_cents or 0, None
@@ -84,6 +85,7 @@ def manual_as_of(db: Session, a: BankAccount, as_of: dt.date) -> int | None:
     """1.7.3 (#88): a non-register account's balance on a date - the latest history entry on or before it (for the
     same date, the one entered last); None before the first entry. The balance carries forward between entries."""
     e = db.scalar(select(BankAccountBalance).where(BankAccountBalance.bank_account_id == a.id,
+                                                   BankAccountBalance.retired_at.is_(None),     # 2.3.0 (#391)
                                                    BankAccountBalance.as_of_date <= as_of)
                   .order_by(BankAccountBalance.as_of_date.desc(), BankAccountBalance.id.desc()).limit(1))
     return e.balance_cents if e is not None else None
@@ -294,27 +296,56 @@ def _add_entry(db: Session, ctx, a: BankAccount, as_of: dt.date, cents: int, rea
                            reason=reason, source=source, entered_at=utcnow(), entered_by_user_id=ctx.user.id)
     db.add(e)
     db.flush()
-    latest = db.scalar(select(BankAccountBalance).where(BankAccountBalance.bank_account_id == a.id)
-                       .order_by(BankAccountBalance.as_of_date.desc(), BankAccountBalance.id.desc()).limit(1))
-    a.manual_current_balance_cents = latest.balance_cents  # current balance = the entry with the latest date
+    _recompute(db, a)
     return e
 
 
+def _recompute(db: Session, a: BankAccount) -> None:
+    """The current balance = the counted (not retired) entry with the latest date (2.3.0, #391: also after a
+    correction or a retirement, in the same transaction)."""
+    latest = db.scalar(select(BankAccountBalance).where(BankAccountBalance.bank_account_id == a.id,
+                                                        BankAccountBalance.retired_at.is_(None))
+                       .order_by(BankAccountBalance.as_of_date.desc(), BankAccountBalance.id.desc()).limit(1))
+    a.manual_current_balance_cents = latest.balance_cents if latest is not None else 0
+
+
+def first_fiscal_year_start(db: Session, ws_id: int) -> dt.date | None:
+    from ..models import FiscalYear
+    return db.scalar(select(func.min(FiscalYear.start_date)).where(FiscalYear.workspace_id == ws_id))
+
+
 def balance_history(db: Session, a: BankAccount) -> list[dict]:
-    """1.7.3 (#88): newest first, each with the change from the entry before it (by date, then entry order)."""
+    """1.7.3 (#88): newest first, each with the change from the entry before it (by date, then entry order).
+    2.3.0 (#391): only counted entries make the change; retired entries follow, marked `retired` (newest first);
+    `entered` marks an entry dated before the first Fiscal Year in PennyWarden; `corrected` carries the last
+    correction (who, when, why, and the values it replaced)."""
     from ..models import User
     rows = list(db.scalars(select(BankAccountBalance).where(BankAccountBalance.bank_account_id == a.id)
                            .order_by(BankAccountBalance.as_of_date, BankAccountBalance.id)))
-    users = {u.id: u for u in db.scalars(select(User).where(User.id.in_({r.entered_by_user_id for r in rows} - {None})))}
+    ids = {r.entered_by_user_id for r in rows} | {r.corrected_by_user_id for r in rows} | {r.retired_by_user_id for r in rows}
+    users = {u.id: u for u in db.scalars(select(User).where(User.id.in_(ids - {None})))}
+    name = lambda uid: (users[uid].display_name or users[uid].username) if uid in users else None   # noqa: E731
+    first = first_fiscal_year_start(db, a.workspace_id)
+
+    def one(r: BankAccountBalance, change) -> dict:
+        return {"id": r.id, "as_of_date": r.as_of_date.isoformat(), "balance": fmt(r.balance_cents),
+                "change": change, "reason": r.reason, "source": r.source, "entered_at": r.entered_at.isoformat() + "Z",
+                "entered_by": name(r.entered_by_user_id),
+                "entered": first is None or r.as_of_date < first,
+                "corrected": None if r.corrected_at is None else {
+                    "at": r.corrected_at.isoformat() + "Z", "by": name(r.corrected_by_user_id), "reason": r.correct_reason,
+                    "previous_balance": fmt(r.previous_balance_cents),
+                    "previous_as_of_date": r.previous_as_of_date.isoformat() if r.previous_as_of_date else None},
+                "retired": None if r.retired_at is None else {
+                    "at": r.retired_at.isoformat() + "Z", "by": name(r.retired_by_user_id), "reason": r.retire_reason}}
     out, prev = [], None
     for r in rows:
-        u = users.get(r.entered_by_user_id)
-        out.append({"id": r.id, "as_of_date": r.as_of_date.isoformat(), "balance": fmt(r.balance_cents),
-                    "change": fmt(r.balance_cents - prev) if prev is not None else None, "reason": r.reason,
-                    "source": r.source, "entered_at": r.entered_at.isoformat() + "Z",
-                    "entered_by": (u.display_name or u.username) if u else None})
+        if r.retired_at is not None:
+            continue
+        out.append(one(r, fmt(r.balance_cents - prev) if prev is not None else None))
         prev = r.balance_cents
-    return list(reversed(out))
+    retired = [one(r, None) for r in rows if r.retired_at is not None]
+    return list(reversed(out)) + list(reversed(retired))
 
 
 def _require_active(a: BankAccount) -> None:
@@ -390,35 +421,194 @@ def set_primary(db: Session, ctx, a: BankAccount) -> BankAccount:
     return a
 
 
+# ------------------------------------------------------------------ 2.3.0 (#391): the rules for a balance date
+CLOSED_YEAR_PERMISSION = "bank_account.closed_year"      # Budget Admins (always also Budget Managers)
+CLOSED_YEAR_EVENT = "BANK_ACCOUNT_BALANCE_CHANGED_AFTER_CLOSE"
+
+
+def _check_date(db: Session, ctx, a: BankAccount, d: dt.date, field: str = "as_of_date") -> list:
+    """Open years: as before. Before the first Fiscal Year in PennyWarden: allowed, even before the account's opening
+    balance date (backfilling history). Inside a Closed Fiscal Year: refused for Budget Managers; Budget Admins may,
+    with a confirmation and a reason (checked by the caller). Returns the Closed Fiscal Years the date is in."""
+    if d > dt.date.today():
+        raise validation("The balance date cannot be in the future.", field)
+    first = first_fiscal_year_start(db, a.workspace_id)
+    before_pw = first is None or d < first
+    if a.opening_balance_date and d < a.opening_balance_date and not before_pw:
+        raise validation("The balance date cannot be before the account's opening balance date.", field)
+    from .common import covering_fiscal_years
+    closed = [f for f in covering_fiscal_years(db, a.workspace_id, d) if f.status == "CLOSED"]
+    if closed and not ctx.has(CLOSED_YEAR_PERMISSION):
+        raise conflict("FISCAL_YEAR_CLOSED", f"{closed[0].display_name} is closed; its balances cannot change.")
+    return closed
+
+
+def _closed_year_gate(closed: list, reason: str | None, confirmations) -> None:
+    if not closed:
+        return
+    names = ", ".join(f.display_name for f in closed)
+    if not (reason or "").strip():
+        raise validation(f"{names} is closed: a reason is required to change a balance in it.", "reason")
+    require_confirmations([Warning_("CLOSED_FISCAL_YEAR",
+                                    f"{names} is closed. It was closed with the old balance; this change will be "
+                                    "recorded and shown as 'Balance changed after close' on the Fiscal Year and its "
+                                    "Close report.")], confirmations)
+
+
+def _entry_snapshot(e: BankAccountBalance) -> dict:
+    return {"balance_entry_id": e.id, "as_of_date": e.as_of_date.isoformat(), "balance": fmt(e.balance_cents),
+            "retired": e.retired_at is not None}
+
+
+def _record_closed(db: Session, ctx, a: BankAccount, closed: list, e: BankAccountBalance, action: str,
+                   before: dict | None, after: dict | None, reason: str) -> None:
+    import json
+    from ..models import FiscalYearBalanceChange
+    for fy in closed:
+        db.add(FiscalYearBalanceChange(workspace_id=a.workspace_id, fiscal_year_id=fy.id, bank_account_id=a.id,
+                                       balance_entry_id=e.id, action=action, reason=reason.strip(),
+                                       before_json=json.dumps(before) if before else None,
+                                       after_json=json.dumps(after) if after else None,
+                                       changed_at=utcnow(), changed_by_user_id=ctx.user.id))
+    db.flush()
+
+
+def _audit_balance(db: Session, ctx, a: BankAccount, action: str, closed: list, before: dict | None, after: dict) -> None:
+    """A change inside a Closed Fiscal Year is its own audit event, flagged with the year (#391)."""
+    if closed:
+        after = {**after, "action": action, "closed_fiscal_years": [f.display_name for f in closed]}
+        audit.record(db, ctx, CLOSED_YEAR_EVENT, "bank_account", a.id, before, after, category="SECURITY")
+    else:
+        audit.record(db, ctx, action, "bank_account", a.id, before, after)
+
+
 def update_manual_balance(db: Session, ctx, a: BankAccount, value: str, reason: str | None,
-                          as_of: dt.date | None = None) -> BankAccount:
-    """1.7.3 (#88): every update adds a dated history entry (append-only); as_of defaults to today, may be earlier
-    (e.g. a month-end statement), never in the future, and never inside a Closed Fiscal Year."""
+                          as_of: dt.date | None = None, confirmations=None) -> BankAccount:
+    """1.7.3 (#88): every update adds a dated history entry; as_of defaults to today, may be earlier (e.g. a
+    month-end statement), never in the future. 2.3.0 (#391): before the first Fiscal Year it may also precede the
+    opening balance date; inside a Closed Fiscal Year only a Budget Admin, confirmed, with a reason."""
     _require_active(a)
     if a.register_enabled:
         raise conflict("REGISTER_BALANCE_DERIVED",
                        "Register-enabled balances are derived from Register activity and cannot be set manually.")
     as_of = as_of or dt.date.today()
-    if as_of > dt.date.today():
-        raise validation("The balance date cannot be in the future.", "as_of_date")
-    if a.opening_balance_date and as_of < a.opening_balance_date:
-        raise validation("The balance date cannot be before the account's opening balance date.", "as_of_date")
-    from .common import covering_fiscal_years
-    closed = [f for f in covering_fiscal_years(db, a.workspace_id, as_of) if f.status == "CLOSED"]
-    if closed:
-        raise conflict("FISCAL_YEAR_CLOSED", f"{closed[0].display_name} is closed; its balances cannot change.")
-    before = snapshot(a)
+    closed = _check_date(db, ctx, a, as_of)
     try:
         cents = parse_amount(value, allow_negative=True)
     except ValueError as e:
         raise validation(str(e), "current_balance") from None
+    _closed_year_gate(closed, reason, confirmations)
+    before = snapshot(a)
     entry = _add_entry(db, ctx, a, as_of, cents, reason)
     a.updated_by_user_id = ctx.user.id
     db.flush()
-    audit.record(db, ctx, "BANK_ACCOUNT_BALANCE_UPDATED", "bank_account", a.id, before,
-                 {**snapshot(a), "reason": reason, "as_of_date": as_of.isoformat(), "entry_balance": fmt(cents),
-                  "balance_entry_id": entry.id})
+    after = {**snapshot(a), "reason": reason, "as_of_date": as_of.isoformat(), "entry_balance": fmt(cents),
+             "balance_entry_id": entry.id}
+    if closed:
+        _record_closed(db, ctx, a, closed, entry, "ADD", None, _entry_snapshot(entry), reason)
+    _audit_balance(db, ctx, a, "BANK_ACCOUNT_BALANCE_UPDATED", closed, before, after)
     return a
+
+
+def _entry(db: Session, a: BankAccount, entry_id: int) -> BankAccountBalance:
+    e = db.get(BankAccountBalance, entry_id) if isinstance(entry_id, int) else None
+    if e is None or e.bank_account_id != a.id or e.workspace_id != a.workspace_id:
+        raise not_found("Balance entry")
+    if e.retired_at is not None:
+        raise conflict("ENTRY_RETIRED", "This balance entry is retired.")
+    return e
+
+
+def _need_reason(reason: str | None) -> str:
+    r = (reason or "").strip()
+    if not r:
+        raise validation("A reason is required.", "reason")
+    return r
+
+
+def correct_balance(db: Session, ctx, a: BankAccount, entry_id: int, value: str | None, as_of: dt.date | None,
+                    reason: str | None, confirmations=None) -> BankAccountBalance:
+    """2.3.0 (#391): Correct an entry's amount and/or "as of" date, with a reason. Both the old and the new date follow
+    the date rules (a closed year on either side needs a Budget Admin). Audited before/after; the current balance is
+    recalculated in the same transaction."""
+    _require_active(a)
+    if a.register_enabled:
+        raise conflict("REGISTER_BALANCE_DERIVED", "A register-enabled account has no balance history.")
+    e = _entry(db, a, entry_id)
+    why = _need_reason(reason)
+    try:
+        cents = e.balance_cents if value is None else parse_amount(value, allow_negative=True)
+    except ValueError as x:
+        raise validation(str(x), "balance") from None
+    new_date = as_of or e.as_of_date
+    if (cents, new_date) == (e.balance_cents, e.as_of_date):
+        raise validation("Nothing to correct: the amount and the date are unchanged.", "balance")
+    closed = {f.id: f for f in _check_date(db, ctx, a, e.as_of_date)}
+    closed.update({f.id: f for f in _check_date(db, ctx, a, new_date)})
+    closed_l = sorted(closed.values(), key=lambda f: f.start_date)
+    _closed_year_gate(closed_l, why, confirmations)
+    before_acct, before_e = snapshot(a), _entry_snapshot(e)
+    e.previous_balance_cents, e.previous_as_of_date = e.balance_cents, e.as_of_date
+    e.balance_cents, e.as_of_date = cents, new_date
+    e.corrected_at, e.corrected_by_user_id, e.correct_reason = utcnow(), ctx.user.id, why
+    db.flush()
+    _recompute(db, a)
+    a.updated_by_user_id = ctx.user.id
+    db.flush()
+    if closed_l:
+        _record_closed(db, ctx, a, closed_l, e, "CORRECT", before_e, _entry_snapshot(e), why)
+    _audit_balance(db, ctx, a, "BANK_ACCOUNT_BALANCE_CORRECTED", closed_l, {**before_acct, "entry": before_e},
+                   {**snapshot(a), "entry": _entry_snapshot(e), "reason": why})
+    return e
+
+
+def retire_balance(db: Session, ctx, a: BankAccount, entry_id: int, reason: str | None,
+                   confirmations=None) -> BankAccountBalance:
+    """2.3.0 (#391): Retire a wrong entry, with a reason: it no longer counts and stays listed as retired (never
+    deleted, BR-001). The account's only counted entry can't be retired - correct it instead."""
+    _require_active(a)
+    if a.register_enabled:
+        raise conflict("REGISTER_BALANCE_DERIVED", "A register-enabled account has no balance history.")
+    e = _entry(db, a, entry_id)
+    why = _need_reason(reason)
+    counted = db.scalar(select(func.count()).select_from(BankAccountBalance).where(
+        BankAccountBalance.bank_account_id == a.id, BankAccountBalance.retired_at.is_(None)))
+    if counted <= 1:
+        raise conflict("LAST_BALANCE_ENTRY", "This is the account's only balance entry; correct it instead.")
+    closed = _check_date(db, ctx, a, e.as_of_date)
+    _closed_year_gate(closed, why, confirmations)
+    before_acct, before_e = snapshot(a), _entry_snapshot(e)
+    e.retired_at, e.retired_by_user_id, e.retire_reason = utcnow(), ctx.user.id, why
+    db.flush()
+    _recompute(db, a)
+    a.updated_by_user_id = ctx.user.id
+    db.flush()
+    if closed:
+        _record_closed(db, ctx, a, closed, e, "RETIRE", before_e, _entry_snapshot(e), why)
+    _audit_balance(db, ctx, a, "BANK_ACCOUNT_BALANCE_RETIRED", closed, {**before_acct, "entry": before_e},
+                   {**snapshot(a), "entry": _entry_snapshot(e), "reason": why})
+    return e
+
+
+def changes_after_close(db: Session, fy) -> list[dict]:
+    """2.3.0 (#391): "Balance changed after close" - every balance change recorded in this Closed Fiscal Year."""
+    import json
+    from ..models import FiscalYearBalanceChange, User
+    rows = list(db.scalars(select(FiscalYearBalanceChange).where(FiscalYearBalanceChange.fiscal_year_id == fy.id)
+                           .order_by(FiscalYearBalanceChange.changed_at, FiscalYearBalanceChange.id)))
+    if not rows:
+        return []
+    users = {u.id: u for u in db.scalars(select(User).where(User.id.in_({r.changed_by_user_id for r in rows} - {None})))}
+    accts = {x.id: x for x in db.scalars(select(BankAccount).where(BankAccount.id.in_({r.bank_account_id for r in rows})))}
+    out = []
+    for r in rows:
+        u, acct = users.get(r.changed_by_user_id), accts.get(r.bank_account_id)
+        out.append({"id": r.id, "changed_at": r.changed_at.isoformat() + "Z",
+                    "changed_by": (u.display_name or u.username) if u else None,
+                    "account": f"{acct.account_name} - {masked(acct)}" if acct else None, "action": r.action,
+                    "before": json.loads(r.before_json) if r.before_json else None,
+                    "after": json.loads(r.after_json) if r.after_json else None, "reason": r.reason})
+    return out
 
 
 def close(db: Session, ctx, a: BankAccount, reason: str, closed_date: dt.date | None) -> BankAccount:

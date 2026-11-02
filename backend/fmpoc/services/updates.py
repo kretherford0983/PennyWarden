@@ -41,9 +41,13 @@ def channel(settings) -> str | None:
 
 
 def current(settings) -> dict:
+    """The running version; `build` is the test-build number (builds made from `test`), whatever the channel - a test
+    build set to production releases only still knows it is build N of its version (2.3.0, #379)."""
     bi = build_info() or {}
     run = bi.get("run")
-    return {"version": VERSION, "build": int(run) if channel(settings) == "test" and str(run).isdigit() else None,
+    branch = bi.get("branch")
+    is_test = branch == "test" or (branch != "main" and channel(settings) == "test")
+    return {"version": VERSION, "build": int(run) if is_test and str(run).isdigit() else None,
             "branch": bi.get("branch")}
 
 
@@ -55,6 +59,10 @@ def is_newer(rel: dict, cur: dict, chan: str) -> bool:
     v, mine = _vt(rel["version"]), _vt(cur["version"])
     if v != mine:
         return v > mine
+    # 2.3.0 (#379): a test build set to production releases only must still hear about the production release of its
+    # own version (on the test channel the newer test builds are what it follows, as before)
+    if chan == "stable" and cur.get("build") is not None and rel.get("build") is None:
+        return True
     if chan == "test" and rel.get("build") is not None and cur.get("build") is not None:
         return rel["build"] > cur["build"]
     return False

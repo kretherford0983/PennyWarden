@@ -225,7 +225,32 @@ def snapshot(f: Fundraiser) -> dict:
             "cancelled": f.cancelled_at is not None, "cancel_reason": f.cancel_reason,
             "cancelled_at": f.cancelled_at.isoformat() + "Z" if f.cancelled_at else None,
             "summary_notes": f.summary_notes, "results_final": f.results_final_at is not None,
-            "series_id": f.series_id, "continues_from_id": f.continues_from_id}
+            "series_id": f.series_id, "continues_from_id": f.continues_from_id,
+            "goal_amount": fmt(f.goal_amount_cents)}
+
+
+def goal_vs_actual(goal_cents: int | None, net_cents: int) -> dict | None:
+    """2.3.0 (#372): goal vs actual - the goal is compared with the net (Kyle, 2026-10-29). None when no goal."""
+    if goal_cents is None:
+        return None
+    pct = None if goal_cents == 0 else round(net_cents * 100 / goal_cents, 1)
+    return {"goal": fmt(goal_cents), "net": fmt(net_cents), "difference": fmt(net_cents - goal_cents),
+            "pct_of_goal": pct, "met": net_cents >= goal_cents}
+
+
+def _goal_cents(body, f: Fundraiser, creating: bool) -> int | None:
+    if not creating and "goal_amount" not in body.model_fields_set:
+        return f.goal_amount_cents          # an edit that doesn't send it keeps the goal
+    raw = (body.goal_amount or "").strip()
+    if not raw:
+        return None
+    try:
+        cents = parse_amount(raw, allow_negative=True)
+    except ValueError:
+        raise validation("Enter the goal as an amount such as 1500 or 1500.00, or leave it blank.", "goal_amount")
+    if cents < 0:
+        raise validation("The goal can't be negative.", "goal_amount")
+    return cents
 
 
 def _apply(db: Session, ctx, f: Fundraiser, body, creating: bool) -> None:
@@ -240,6 +265,7 @@ def _apply(db: Session, ctx, f: Fundraiser, body, creating: bool) -> None:
             if fy.status == "CLOSED" and not in_window(fy, start, end):
                 raise validation(f"The new dates are too far from {fy.display_name}, whose budget is part of this "
                                  "fundraiser and can no longer change.", "start_date")
+    f.goal_amount_cents = _goal_cents(body, f, creating)
     f.name, f.description = body.name, body.description or None
     f.start_date, f.end_date = start, end
     f.filter_text = (body.filter_text or "").strip() or None
@@ -626,6 +652,7 @@ def detail(db: Session, ctx, f: Fundraiser) -> dict:
         "notices": notices(db, ctx.workspace_id, f),
         "totals": {"income": fmt(t["income"]), "expense": fmt(t["expense"]), "net": fmt(t["net"]),
                    "roi": roi(t["income"], t["expense"]),
+                   "goal": goal_vs_actual(f.goal_amount_cents, t["net"]),       # 2.3.0 (#372)
                    "cash_float_out": fmt(sum(r["classified"] for r in rows if r["kind"] == "EXPENSE")),
                    "cash_float_returned": fmt(sum(r["classified"] for r in rows if r["kind"] == "INCOME")),
                    "excluded_income": fmt(sum(r["a"].amount_cents for r in rows if r["excluded"] and r["kind"] == "INCOME")),

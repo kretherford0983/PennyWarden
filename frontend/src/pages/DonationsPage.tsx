@@ -6,10 +6,11 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { api, money } from "../api";
 import { useMe } from "../App";
-import { EntityPicker, ErrorBox, Field, GuardedForm, Loading, Modal, useConfirmable } from "../components";
+import { EntityPicker, ErrorBox, Field, GuardedForm, Loading, Modal, useConfirmable, SignerPicker, useSignerChoice } from "../components";
 import { Link } from "../router";
 import { PatternInput, PdfViewer, usePdf, type Variable } from "./checkShared";
 import { ReceiptEnvelopePanel } from "./Envelopes";
+import { useEinOverride } from "./Donations";
 import { DonorReportTab, StatementsTab } from "./DonationStatements";
 import { TxnForm } from "./Register";
 
@@ -112,6 +113,8 @@ function DonationEditor({ id, canPrint, variables, onClose, onChanged, onOpen }:
   const [viewing, setViewing] = useState(false);
   const [printed, setPrinted] = useState(false);     // 2.2.0 (#325): after a receipt, its envelope can be printed
   const { run, dialog } = useConfirmable();
+  const ein = useEinOverride();      // 2.3.0 (#393)
+  const signer = useSignerChoice(d?.signing);   // 2.3.0 polish: the signer chosen when printing
   const take = (x: any) => {
     setD(x); setDonor(String(x.donor.id)); setDetails(x.details || "");
     setLines(x.lines.map((l: any) => ({
@@ -140,7 +143,8 @@ function DonationEditor({ id, canPrint, variables, onClose, onChanged, onOpen }:
     e?.preventDefault();
     setErr(null);
     try {
-      const x = id == null ? await api.post("/api/donations", body()) : await api.put(`/api/donations/${id}`, body());
+      const x: any = await ein.run((o) => id == null ? api.post("/api/donations", { ...body(), ...o }) : api.put(`/api/donations/${id}`, { ...body(), ...o }));
+      if (x === undefined) return null;
       take(x); setSaved(true); onChanged();
       if (id == null) onOpen(x.id);
       return x;
@@ -148,12 +152,12 @@ function DonationEditor({ id, canPrint, variables, onClose, onChanged, onOpen }:
   };
   const preview = async () => {
     setErr(null);
-    try { setPdf(await api.postBlob(`/api/donations/${id}/receipts/preview`, {}), "receipt-preview.pdf"); setViewing(true); } catch (x) { setErr(x); }
+    try { setPdf(await api.postBlob(`/api/donations/${id}/receipts/preview`, signer.body), "receipt-preview.pdf"); setViewing(true); } catch (x) { setErr(x); }
   };
   const print = async () => {
     setErr(null);
     try {
-      const r = await run((confirmations) => api.postBlob(`/api/donations/${id}/receipts`, { confirmations }));
+      const r = await run((confirmations) => api.postBlob(`/api/donations/${id}/receipts`, { confirmations, ...signer.body }));
       if (!r) return;
       setPdf(r, "receipt.pdf"); setViewing(true); setPrinted(true);
       api.get(`/api/donations/${id}`).then(take); onChanged();
@@ -226,6 +230,7 @@ function DonationEditor({ id, canPrint, variables, onClose, onChanged, onOpen }:
             </Field>
           )}
         </fieldset>
+        {d && canPrint && d.printable ? <SignerPicker signing={d.signing} value={signer.value} onChange={signer.set} testId="receipt-signer" /> : null}
         <div className="actions left">
           {editable ? <button type="submit" className="primary">{id == null ? "Save donation" : "Save changes"}</button> : null}
           {saved ? <span className="hint" role="status">Saved.</span> : null}
@@ -247,6 +252,7 @@ function DonationEditor({ id, canPrint, variables, onClose, onChanged, onOpen }:
       ) : null}
       {viewing && pdf ? <PdfViewer pdf={pdf} title="Donation receipt" onClose={() => setViewing(false)} /> : null}
       {dialog}
+      {ein.dialog}
     </Modal>
   );
 }

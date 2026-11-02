@@ -220,7 +220,7 @@ def test_review_pdf_and_csv(env, base):
 
 
 TEMPLATE_HEAD = ["budget code", "budget name (ignored)", "type", "former code", "former name", "year", "budgeted",
-                 "actual", "note", "line"]
+                 "actual", "note", "line", "estimated"]   # 2.3.0 (#390): estimated
 
 
 def test_csv_template_preview_and_import(env, base):

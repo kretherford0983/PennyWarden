@@ -2,7 +2,7 @@
  * own when the check is written by hand. Printed letters and envelopes are attached to the transaction. */
 import { useEffect, useState } from "react";
 import { api } from "../api";
-import { ErrorBox, Field, Loading, useConfirmable } from "../components";
+import { ErrorBox, Field, Loading, useConfirmable, SignerPicker, useSignerChoice } from "../components";
 import { PdfViewer, usePdf } from "./checkShared";
 
 const STEP = 0.0625;
@@ -23,14 +23,16 @@ export function EnclosuresPanel({ txnId, signerId, onChanged, intro, emptyMessag
   const [fold, setFold] = useState("NONE");
   const [foldSettings, setFoldSettings] = useState(false);
   const { run, dialog } = useConfirmable();
-  const load = () => api.get(`/api/checks/transactions/${txnId}/documents`).then((d) => {
+  const load = () => api.get(`/api/checks/transactions/${txnId}/documents${signerId != null ? `?check_signer_id=${signerId}` : ""}`).then((d) => {
     setDocs(d);
     const l = d.letters.find((x: any) => x.is_default) || d.letters[0];
     const e = d.envelopes.find((x: any) => x.is_default) || d.envelopes[0];
     setLetterId((cur) => { if (!cur && l) setInclude(l.include_by_default !== false); return cur || (l ? String(l.id) : ""); });
     setEnvId((cur) => { const id = cur || (e ? String(e.id) : ""); const en = d.envelopes.find((x: any) => String(x.id) === id); if (en && !cur) setUseReturn(!!en.return_address); return id; });
   }, setErr);
-  useEffect(() => { load(); }, [txnId]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => { load(); }, [txnId, signerId]); // eslint-disable-line react-hooks/exhaustive-deps
+  // 2.3.0 polish: a letter template chosen when printing asks who signs it (starting from the check's signer)
+  const letterSigner = useSignerChoice(docs?.letters.find((x: any) => String(x.id) === letterId)?.signing);
   const foldDefault = docs?.letters.find((x: any) => String(x.id) === letterId)?.fold_default || "NONE";
   useEffect(() => { setFold(foldDefault); }, [letterId, foldDefault]);
   if (!docs) return err ? <ErrorBox error={err} /> : <Loading />;
@@ -45,7 +47,8 @@ export function EnclosuresPanel({ txnId, signerId, onChanged, intro, emptyMessag
   const printLetter = async () => {
     setErr(null);
     try {
-      const blob = await run((c) => api.postBlob(`/api/checks/transactions/${txnId}/letter`, { document_id: Number(letterId), signer_id: signerId, fold_marks: fold, confirmations: c }));
+      const blob = await run((c) => api.postBlob(`/api/checks/transactions/${txnId}/letter`, { document_id: Number(letterId), signer_id: signerId, fold_marks: fold, confirmations: c,
+        ...(letterSigner.value != null ? { letter_signer_id: letterSigner.value } : {}) }));
       if (!blob) return;
       setPdf(blob, "cover-letter.pdf"); setViewing("letter"); setDone((s) => new Set(s).add("letter")); onChanged();
     } catch (x) { setErr(x); }
@@ -72,6 +75,7 @@ export function EnclosuresPanel({ txnId, signerId, onChanged, intro, emptyMessag
           <Field label="Cover letter">
             <select value={letterId} onChange={(e) => setLetterId(e.target.value)}>{docs.letters.map((d: any) => <option key={d.id} value={d.id}>{d.name}</option>)}</select>
           </Field>
+          <SignerPicker signing={letter?.signing} value={letterSigner.value} onChange={letterSigner.set} label="Letter signed by" testId="letter-signer" />
           <Field label="Fold marks">
             <select value={fold} onChange={(e) => setFold(e.target.value)} aria-label="Fold marks">
               <option value="NONE">None</option>

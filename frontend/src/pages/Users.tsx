@@ -12,6 +12,42 @@ const ROLES: Record<string, [string, string][]> = {
   AUDITOR: [["AUDITOR", "Auditor"]],
 };
 
+// 2.3.0: the Users filters - short role names, the domains, and the statuses
+const ROLE_SHORT: Record<string, string> = { ADMINISTRATOR: "Administrator", BUDGET_MANAGER: "Budget Manager", BUDGET_USER: "Budget User",
+  REGISTER_USER: "Register User", BUDGET_ADMIN: "Budget Admin", REGISTER_ADMIN: "Register Admin", AUDITOR: "Auditor" };
+const DOMAIN_LABEL: Record<string, string> = { ADMINISTRATOR: "Administrator", FINANCIAL: "Financial", AUDITOR: "Auditor", COMBINED: "Combined (local install)" };
+const isLocked = (u: any) => !!u.locked_until && new Date(u.locked_until).getTime() > Date.now();
+const statusOf = (u: any) => (!u.active ? "DISABLED" : isLocked(u) ? "LOCKED" : "ACTIVE");
+
+/** 2.3.0: pick any number of roles; a user with any of them is shown. */
+function RoleFilter({ value, onChange, roles }: { value: string[]; onChange: (v: string[]) => void; roles: string[] }) {
+  return (
+    <details className="multi-filter" data-testid="role-filter">
+      <summary aria-label="Roles filter">{value.length ? `Roles: ${value.map((r) => ROLE_SHORT[r] || r).join(", ")}` : "Roles: any"}</summary>
+      <fieldset>
+        <legend className="sr-only">Show users with any of these roles</legend>
+        {roles.map((r) => (
+          <label key={r} className="check"><input type="checkbox" checked={value.includes(r)}
+            onChange={(e) => onChange(e.target.checked ? [...value, r] : value.filter((x) => x !== r))} /> {ROLE_SHORT[r] || r}</label>
+        ))}
+      </fieldset>
+    </details>
+  );
+}
+
+/** 2.3.0: a sortable Users column heading (as the register's): a button with aria-sort; empty values sort last. */
+type SortKey = "last_name" | "first_name" | "username" | "display_name" | "email";
+function SortTh({ col, label, sort, onSort }: { col: SortKey; label: string; sort: { col: SortKey; dir: "asc" | "desc" }; onSort: (c: SortKey) => void }) {
+  const active = sort.col === col;
+  return (
+    <th aria-sort={active ? (sort.dir === "asc" ? "ascending" : "descending") : "none"}>
+      <button type="button" className="sort-head" onClick={() => onSort(col)} title={`Sort by ${label}, ${active && sort.dir === "asc" ? "Z to A" : "A to Z"}`}>
+        {label}<span aria-hidden="true" className={active ? "sort-arrow" : "sort-arrow idle"}>{active ? (sort.dir === "asc" ? " ▲" : " ▼") : " ↕"}</span>
+      </button>
+    </th>
+  );
+}
+
 export default function Users() {
   const { me, can } = useMe();
   const [mode, setMode] = useState<string>("local");
@@ -22,7 +58,10 @@ export default function Users() {
   const [qReset, setQReset] = useState<any | null>(null); // 1.8.0 (#113)
   const [err, setErr] = useState<unknown>(null);
   const [q, setQ] = useState("");                       // 2.0.0 (#134): search
-  const [byName, setByName] = useState(false);          // sort by last name, then first name
+  const [sort, setSort] = useState<{ col: SortKey; dir: "asc" | "desc" }>({ col: "last_name", dir: "asc" });   // 2.3.0: column headings
+  const [roleF, setRoleF] = useState<string[]>([]);      // 2.3.0: any of these roles
+  const [domainF, setDomainF] = useState("");
+  const [statusF, setStatusF] = useState("");
   const load = () => api.get("/api/users").then(setUsers, setErr);
   useEffect(() => {
     load();
@@ -33,7 +72,19 @@ export default function Users() {
   const needle = q.trim().toLowerCase();
   const shown = users
     .filter((u) => !needle || [u.first_name, u.last_name, u.username, u.display_name, u.email].some((v) => (v || "").toLowerCase().includes(needle)))
-    .sort((a, b) => (byName ? `${a.last_name || "\uffff"} ${a.first_name || ""}`.localeCompare(`${b.last_name || "\uffff"} ${b.first_name || ""}`, undefined, { sensitivity: "base" }) : 0));
+    .filter((u) => !roleF.length || roleF.some((r) => u.roles.includes(r)))
+    .filter((u) => !domainF || u.security_domain === domainF)
+    .filter((u) => !statusF || statusOf(u) === statusF)
+    .sort((a, b) => {
+      // the chosen column, then last and first name; an empty value sorts last whichever the direction
+      const key = (u: any) => [u[sort.col], u.last_name, u.first_name, u.username].map((v) => (v || "").toString());
+      const [ka, kb] = [key(a), key(b)];
+      if (!ka[0] !== !kb[0]) return ka[0] ? -1 : 1;
+      const c = ka[0].localeCompare(kb[0], undefined, { sensitivity: "base" });
+      if (c) return sort.dir === "asc" ? c : -c;
+      return ka.slice(1).join(" ").localeCompare(kb.slice(1).join(" "), undefined, { sensitivity: "base" });
+    });
+  const onSort = (col: SortKey) => setSort((s) => ({ col, dir: s.col === col && s.dir === "asc" ? "desc" : "asc" }));
   return (
     <div>
       <div className="page-head">
@@ -43,11 +94,31 @@ export default function Users() {
       <ErrorBox error={err} />
       <div className="row form-row">
         <Field label="Search users"><input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Name, username or email" /></Field>
-        <label className="check"><input type="checkbox" checked={byName} onChange={(e) => setByName(e.target.checked)} /> Sort by last name</label>
+        <Field label="Security domain">
+          <select value={domainF} onChange={(e) => setDomainF(e.target.value)}>
+            <option value="">Any</option>
+            {Object.keys(DOMAIN_LABEL).filter((d) => d !== "COMBINED" || users.some((u) => u.security_domain === d))
+              .map((d) => <option key={d} value={d}>{DOMAIN_LABEL[d]}</option>)}
+          </select>
+        </Field>
+        <Field label="Status">
+          <select value={statusF} onChange={(e) => setStatusF(e.target.value)}>
+            <option value="">Any</option><option value="ACTIVE">Active</option><option value="DISABLED">Disabled</option><option value="LOCKED">Locked</option>
+          </select>
+        </Field>
+      </div>
+      <div className="row user-filter-row">
+        <RoleFilter value={roleF} onChange={setRoleF} roles={Object.keys(ROLE_SHORT)} />
+        {needle || roleF.length || domainF || statusF ? <>
+          <span className="hint" role="status">{shown.length} of {users.length} users</span>
+          <button type="button" className="small" onClick={() => { setQ(""); setRoleF([]); setDomainF(""); setStatusF(""); }}>Clear filters</button>
+        </> : null}
       </div>
       <table className="table">
-        <thead><tr><th>Last name</th><th>First name</th><th>Username</th><th>Display name</th><th>Email</th><th>Security domain</th><th>Roles</th><th>Status</th><th>Two-step</th><th>Security questions</th>{manage ? <th /> : null}</tr></thead>
+        <thead><tr>{([["last_name", "Last name"], ["first_name", "First name"], ["username", "Username"], ["display_name", "Display name"], ["email", "Email"]] as [SortKey, string][])
+          .map(([c, l]) => <SortTh key={c} col={c} label={l} sort={sort} onSort={onSort} />)}<th>Security domain</th><th>Roles</th><th>Status</th><th>Two-step</th><th>Security questions</th>{manage ? <th /> : null}</tr></thead>
         <tbody>
+          {!shown.length ? <tr><td colSpan={manage ? 11 : 10} className="muted">No users match these filters.</td></tr> : null}
           {shown.map((u) => (
             <tr key={u.id}>
               <td>{u.last_name || (u.name_needed ? <span className="badge red" title="An Administrator must enter this account's first and last name">name needed</span> : null)}</td>

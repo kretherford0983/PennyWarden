@@ -161,7 +161,14 @@ def start_options(db: Session, ctx) -> list[dict]:
 def _result_out(r: FundraiserSeriesResult) -> dict:
     return {"id": r.id, "fiscal_year_label": r.fiscal_year_label, "year": r.year, "net": fmt(r.net_cents),
             "income": fmt(r.income_cents), "expense": fmt(r.expense_cents), "note": r.note,
+            "estimated": bool(r.estimated),
             "retired": r.retired_at is not None, "retire_reason": r.retire_reason}
+
+
+def estimate_note_check(estimated: bool, note: str | None) -> None:
+    """2.3.0 (#390, BR-094): an estimated figure needs a note saying why (it becomes the report footnote)."""
+    if estimated and not (note or "").strip():
+        raise validation("An estimated year needs a note saying why it is estimated.", "note")
 
 
 SORT_DIRECTIONS = ("desc", "asc")
@@ -283,15 +290,38 @@ def add_result(db: Session, ctx, s: FundraiserSeries, body) -> FundraiserSeriesR
                                                          FundraiserSeriesResult.retired_at.is_(None)))
     if dup is not None:
         raise AppError(409, "YEAR_ENTERED", f"{label}: a result is already entered for that year; retire it first.")
+    estimate_note_check(bool(body.estimated), body.note)
     r = FundraiserSeriesResult(series_id=s.id, fiscal_year_label=label, year=year,
                                net_cents=_cents(body.net, "net", allow_negative=True),
                                income_cents=_cents(body.income, "income", required=False),
                                expense_cents=_cents(body.expense, "expense", required=False),
-                               note=(body.note or "").strip() or None, created_by_user_id=ctx.user.id)
+                               note=(body.note or "").strip() or None, estimated=bool(body.estimated),
+                               created_by_user_id=ctx.user.id)
     db.add(r)
     db.flush()
     audit.record(db, ctx, "FUNDRAISER_RESULT_ENTERED", "fundraiser_series", s.id, None, _result_out(r))
     return r
+
+
+def correct_result(db: Session, ctx, s: FundraiserSeries, result_id: int, body) -> None:
+    """2.3.0 (#390): Correct an entered result - amounts, note and Estimated - with a reason; audited before/after (the
+    year itself is not changed here: retire and enter it again)."""
+    r = db.get(FundraiserSeriesResult, result_id)
+    if r is None or r.series_id != s.id:
+        raise not_found("Entered result")
+    if r.retired_at is not None:
+        raise AppError(409, "ALREADY_RETIRED", "This entered result is retired; enter the year again instead.")
+    estimate_note_check(bool(body.estimated), body.note)
+    before = _result_out(r)
+    r.net_cents = _cents(body.net, "net", allow_negative=True)
+    r.income_cents = _cents(body.income, "income", required=False)
+    r.expense_cents = _cents(body.expense, "expense", required=False)
+    r.note, r.estimated = (body.note or "").strip() or None, bool(body.estimated)
+    db.flush()
+    after = _result_out(r)
+    if after != before:
+        audit.record(db, ctx, "FUNDRAISER_RESULT_CORRECTED", "fundraiser_series", s.id, before,
+                     {**after, "reason": body.reason})
 
 
 def retire_result(db: Session, ctx, s: FundraiserSeries, result_id: int, reason: str) -> None:
@@ -348,7 +378,7 @@ def series_history(db: Session, ctx, f: Fundraiser, current: dict) -> list[dict]
 
     def cell(y):
         return years.setdefault(y, {"year": y, "names": [], "income": 0, "expense": 0, "net": 0, "partial": False,
-                                    "sources": set(), "notes": []})
+                                    "sources": set(), "notes": [], "estimates": []})
     c = cell(me)
     c["names"].append(f.name)
     c["sources"].add("Recorded")
@@ -383,6 +413,8 @@ def series_history(db: Session, ctx, f: Fundraiser, current: dict) -> list[dict]
             c["expense"] += r.expense_cents or 0
             if r.note:
                 c["notes"].append(r.note)
+            if r.estimated:            # 2.3.0 (#390)
+                c["estimates"].append(r.note or "")
     out, prev = [], None
     for y in sorted(years):
         c = years[y]
@@ -390,6 +422,7 @@ def series_history(db: Session, ctx, f: Fundraiser, current: dict) -> list[dict]
                "net_revenue": None if c["partial"] else fmt(c["income"]),
                "expenses": None if c["partial"] else fmt(c["expense"]), "net_proceeds": fmt(c["net"]),
                "net_margin": None if c["partial"] else pct(c["net"], c["income"]), "note": "; ".join(c["notes"]) or None,
+               "estimated": bool(c["estimates"]), "estimate_notes": c["estimates"],
                "change": None, "change_pct": None}
         if prev is not None:
             row["change"] = fmt(c["net"] - prev)
@@ -527,12 +560,14 @@ def fy_report(db: Session, ctx, fy: FiscalYear, ids: list[int], *, years: int = 
     # history: recorded (fundraisers in the app, counted in their start year) and entered results
     hist: dict[tuple, dict[int, dict]] = {}   # key -> year -> {amount, kinds, notes}
 
-    def add(key, year, cents, kind, note=None):
-        cell = hist.setdefault(key, {}).setdefault(year, {"amount": 0, "kinds": set(), "notes": []})
+    def add(key, year, cents, kind, note=None, estimated=False):
+        cell = hist.setdefault(key, {}).setdefault(year, {"amount": 0, "kinds": set(), "notes": [], "estimates": []})
         cell["amount"] += cents
         cell["kinds"].add(kind)
         if note:
             cell["notes"].append(note)
+        if estimated:                  # 2.3.0 (#390)
+            cell["estimates"].append(note or "")
     for r in rows:
         add(r["key"], Y, r["_net"], "Recorded")
     for f in all_f:
@@ -542,7 +577,7 @@ def fy_report(db: Session, ctx, fy: FiscalYear, ids: list[int], *, years: int = 
     entered_any = False
     for r in db.scalars(select(FundraiserSeriesResult).where(FundraiserSeriesResult.retired_at.is_(None))):
         if root(r.series_id) in series and series[root(r.series_id)].workspace_id == ctx.workspace_id and r.year < Y:
-            add(("s", root(r.series_id)), r.year, r.net_cents, "Entered", r.note)
+            add(("s", root(r.series_id)), r.year, r.net_cents, "Entered", r.note, bool(r.estimated))
             entered_any = True
     # only the series of the selected fundraisers and those with history are relevant; every series with any year
     all_years = sorted({y for v in hist.values() for y in v})
@@ -599,6 +634,7 @@ def fy_report(db: Session, ctx, fy: FiscalYear, ids: list[int], *, years: int = 
         last = hist[k].get(Y, {}).get("amount")
         before = next((hist[k][y]["amount"] for y in sorted(hist[k], reverse=True) if y < Y), None)
         yoy.append({"name": name_of(k), "values": [fmt(v) if v is not None else None for v in vals],
+                    "estimated": [bool(hist[k].get(y, {}).get("estimates")) for y in period],     # 2.3.0 (#390)
                     "change": fmt(last - before) if last is not None and before is not None else None,
                     "change_pct": (_pct(last - before, abs(before)) if last is not None and before else None)})
 
@@ -608,7 +644,8 @@ def fy_report(db: Session, ctx, fy: FiscalYear, ids: list[int], *, years: int = 
             c = hist[k].get(y)
             if c:
                 history_rows.append({"year": y, "series": name_of(k), "amount": fmt(c["amount"]),
-                                     "source": " + ".join(sorted(c["kinds"])), "note": "; ".join(c["notes"]) or None})
+                                     "source": " + ".join(sorted(c["kinds"])), "note": "; ".join(c["notes"]) or None,
+                                     "estimated": bool(c["estimates"])})
     history_rows.sort(key=lambda r: (r["year"], r["series"].casefold()))
     prev = year_totals.get(Y - 1)
     linked_history = any(y < Y for y in all_years)
@@ -620,6 +657,12 @@ def fy_report(db: Session, ctx, fy: FiscalYear, ids: list[int], *, years: int = 
         if len(fys) > 1 or (fys and fy_year(fys[0]) != Y):
             foot.append(f"{f.name} has activity in more than one Fiscal Year; it counts wholly in the year its event "
                         f"starts ({fundraiser_year(db, f)}).")
+    estimated_years = {y for v in hist.values() for y, c in v.items() if c["estimates"] and y in period}
+    for k in keys:                     # 2.3.0 (#390): one line per estimated year
+        for y in period:
+            c = hist[k].get(y)
+            if c and c["estimates"]:
+                foot.append(f"* Estimated: {y} {name_of(k)} — " + "; ".join(n for n in c["estimates"] if n))
     if entered_any:
         foot.append("Entered = a result of a year before PennyWarden entered by hand; Recorded = from the fundraisers "
                     "in PennyWarden.")
@@ -639,7 +682,8 @@ def fy_report(db: Session, ctx, fy: FiscalYear, ids: list[int], *, years: int = 
         "growth_vs_first": (_pct(year_total - year_totals[period[0]], year_totals[period[0]])
                             if len(period) > 1 and year_totals[period[0]] else None),
         "cumulative": fmt(period_total), "peak_year": peak, "peak_total": fmt(year_totals.get(peak, 0)),
-        "trend": [{"year": y, "total": fmt(year_totals[y]), "current": y == Y} for y in period],
+        "trend": [{"year": y, "total": fmt(year_totals[y]), "current": y == Y, "estimated": y in estimated_years}
+                  for y in period],
         "estimates": estimates, "estimate_total": fmt(est_total), "targeted_total": fmt(year_total + est_total),
         "share": share, "averages": [{k: v for k, v in p.items() if not k.startswith("_")} for p in per_series],
         "history": history_rows, "notes": notes, "footnotes": foot, "year_over_year": yoy if linked_history else [],

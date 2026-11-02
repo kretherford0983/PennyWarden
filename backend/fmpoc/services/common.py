@@ -11,6 +11,11 @@ from ..errors import not_found
 from ..money import fmt
 from ..models import Budget, Entity, FiscalYear, RegisterTransaction, TransactionAllocation
 
+# 2.3.0 (#371, BR-109): budgets are gross. The same sentence is GROSS_BUDGET_NOTE in frontend/src/components.tsx
+# (a test keeps the two identical); every screen, report and deck that shows budget amounts carries it.
+GROSS_BUDGET_NOTE = ("Budget amounts are gross. Offsetting income or expense recorded in a budget of the opposite "
+                     "type, such as a reimbursement, is not subtracted.")
+
 
 def get_scoped(db: Session, model, obj_id: int, ctx, what: str | None = None):
     """Object-level authorization: records are only reachable inside the caller's workspace (BR-099)."""

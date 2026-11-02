@@ -25,10 +25,23 @@ def enable(env, on=True):
     return r.json()
 
 
+def signer(env, name="Jordan Sample", title="Treasurer", areas="DONATIONS"):
+    """2.3.0 (#395): the receipt's signer comes from the shared Signers page."""
+    existing = [s for s in env.admin.get("/api/signers").json()["signers"] if s["name"] == name]
+    if existing:
+        return existing[0]
+    r = env.admin.c.post("/api/signers", data={"name": name, "title": title, "areas": areas},
+                         headers={"X-CSRF-Token": env.admin.csrf})
+    assert r.status_code == 201, r.text
+    return r.json()
+
+
 def setup(env, **kw):
     r = env.admin.put("/api/system/organization", ORG)
     assert r.status_code == 200, r.text
-    cfg = dict(env.admin.get("/api/donations/setup").json()["config"], **SETUP, **kw)
+    s = signer(env, SETUP["signer_name"], SETUP["signer_title"])
+    base_cfg = {k: v for k, v in env.admin.get("/api/donations/setup").json()["config"].items()}
+    cfg = dict(base_cfg, signer_id=s["id"], signature_mode="SPACE", **kw)
     r = env.admin.put("/api/donations/setup", {"config": cfg})
     assert r.status_code == 200, r.text
     return r.json()

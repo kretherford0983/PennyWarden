@@ -9,9 +9,13 @@
 | Branch | Purpose | On every push/merge GitHub Actions… | Install with |
 |---|---|---|---|
 | `feature/*` | one enhancement / change request, branched from `develop` | runs all tests (`ci`) | — |
-| `develop` | integration of finished features | runs all tests and builds the packages (workflow-run artifacts, 7 days) | optional, for a quick look |
-| `test` | release candidate being tested | tests + packages + **GitHub pre-release** `v<version>-test.<n>` | test server |
-| `main` | production | tests + packages + **GitHub release** `v<version>` and git tag | production server |
+| `develop` | integration of finished features | builds the packages (workflow-run artifacts, 7 days) | optional, for a quick look |
+| `test` | release candidate being tested | packages + **GitHub pre-release** `v<version>-test.<n>` | test server |
+| `main` | production | packages + **GitHub release** `v<version>` and git tag | production server |
+
+Since 2.3.0 (#420) a push build doesn't run the test suite again: code reaches develop, test and main only through a
+pull request whose `ci` checks passed, and the ruleset requires the pull request to be **up to date** with its target
+(*Update branch* when it falls behind), so the merged code is what CI tested. A build run by hand still runs the tests.
 
 Packages in every build: `PennyWarden-linux-x64-portable.tar.gz` (servers), `PennyWarden-windows-x64.zip`,
 `PennyWarden-<version>-windows-x64.exe` (one file, since 1.5.0), `install.sh` (one-command Linux install, since 1.5.0),

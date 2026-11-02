@@ -37,13 +37,15 @@ from sqlalchemy.orm import Session
 
 from .. import audit
 from ..errors import AppError, Warning_, conflict, not_found, require_confirmations, validation
-from ..models import (Attachment, Donation, DonationLine, DonationReceipt, DonationSettings, Entity, FiscalYear,
+from ..models import (Attachment, CheckSigner, Donation, DonationLine, DonationReceipt, DonationSettings, Entity, FiscalYear,
                       RegisterTransaction, TransactionAllocation, User, Workspace, utcnow)
 from . import register as reg
 from .checkprint import config as cfgmod
 from . import organization as org_svc
 from .checkprint import documents, fonts, patterns
 from . import entity_vars
+from . import letter_fit, signers
+from .letter_fit import FixedSpacer
 from .checkprint.service import _store_doc_copy, address_lines, format_date
 from .common import get_scoped
 
@@ -99,8 +101,16 @@ class ReceiptConfig(BaseModel):
                               "possible.\n\n{DETAILS}\n\nPlease keep this letter as the written acknowledgment of your "
                               "contribution.", max_length=2000)
     closing: str = Field(default="With gratitude,", max_length=200)
-    signer_name: str = Field(default="", max_length=120)
-    signer_title: str = Field(default="", max_length=120)
+    # 2.3.0 (#395): the signer (shared Signers page, tagged for donation receipts) and how the signature is shown;
+    # the year-end statement has its own (None = the receipt's)
+    signer_id: int | None = None
+    signature_mode: Literal["NONE", "PRINTED", "IMAGE", "SPACE"] = "NONE"
+    statement_signer_id: int | None = None
+    statement_signature_mode: Literal["NONE", "PRINTED", "IMAGE", "SPACE"] | None = None
+    # 2.3.0 polish (Kyle, 2026-10-31): FIXED (the signer above) or AT_PRINT (chosen when printing, the signer above
+    # as the default); the statement's None = the receipt's
+    signer_choice: Literal["FIXED", "AT_PRINT"] = "FIXED"
+    statement_signer_choice: Literal["FIXED", "AT_PRINT"] | None = None
     items_note: str = Field(default="", max_length=1000)     # 2.2.0 (#325): empty = ITEMS_NOTE_DEFAULT
     # 2.2.0 (#325): the cover letter's window-envelope options (#177) and fold marks (#247). A receipt printed for a
     # #10 double-window envelope needs no envelope of its own (the print screen hides that step).
@@ -117,13 +127,15 @@ class ReceiptConfig(BaseModel):
                                         "contributions we received from you in {YEAR}:\n\n{DONATION_TABLE}\n\nPlease "
                                         "keep this statement with your tax records.", max_length=2000)
     statement_closing: str = Field(default="With gratitude,", max_length=200)
+    # 2.3.0 (#393): print the organization's EIN on receipts and statements (default on, also for existing setups)
+    include_ein: bool = True
 
     @model_validator(mode="before")
     @classmethod
     def _moved(cls, v):
         """2.1.0 (#314): the EIN and address moved to the organization profile; older saved settings carry them."""
-        if isinstance(v, dict):
-            v = {k: x for k, x in v.items() if k not in ("ein", "org_address")}
+        if isinstance(v, dict):    # 2.3.0 (#395): the typed signer became a signer (migration 0064)
+            v = {k: x for k, x in v.items() if k not in ("ein", "org_address", "signer_name", "signer_title")}
         return v
 
     @model_validator(mode="after")
@@ -175,11 +187,33 @@ def get_config(db: Session, ws_id: int) -> ReceiptConfig:
     return ReceiptConfig.model_validate(json.loads(row.config_json)) if row else ReceiptConfig()
 
 
+EIN_VARS = ("ORG.EIN", "ORG_EIN")
+
+
+def hide_ein(vals: dict) -> dict:
+    """2.3.0 (#393): the values with the EIN printed blank (Include EIN on receipts is off)."""
+    return {**vals, **{k: "" for k in EIN_VARS if k in vals}}
+
+
+def uses_ein(text: str, kind=None) -> bool:
+    """Does this text use {ORG.EIN} / {ORG_EIN}?"""
+    try:
+        return any(t.var in EIN_VARS for t in patterns.parse(text or "", kind or patterns.RECEIPT))
+    except patterns.PatternError:
+        return False
+
+
+def ein_entered(db: Session, ws_id: int) -> bool:
+    e = org_svc.get(db, ws_id)
+    return bool(e and e.ein)
+
+
 def missing_setup(db: Session, ws_id: int) -> list[str]:
-    """What a receipt can't be printed without (#314: from the organization profile in System/About)."""
+    """What a receipt can't be printed without (#314: from the organization profile in System/About). 2.3.0 (#393):
+    the EIN only while Include EIN on receipts is on."""
     e = org_svc.get(db, ws_id)
     out = []
-    if not (e and e.ein):
+    if not (e and e.ein) and get_config(db, ws_id).include_ein:
         out.append("the organization's EIN")
     if not org_svc.address_lines(e):
         out.append("the organization's address")
@@ -191,10 +225,31 @@ def organization_out(db: Session, ws_id: int) -> dict:
     return {"name": v["ORG.NAME"], "address": [x for x in v["ORG.ADDRESS"].split("\n") if x], "ein": v["ORG.EIN"]}
 
 
+def setup_warnings(db: Session, ws_id: int, cfg: ReceiptConfig) -> list[dict]:
+    """2.3.0 (#393): Donations Setup warnings about the EIN."""
+    out = []
+    if cfg.include_ein and not ein_entered(db, ws_id):
+        out.append({"code": "EIN_MISSING", "message": "Include EIN on receipts is on, but no EIN has been entered. "
+                    "Enter it in System/About → Organization (or turn Include EIN on receipts off); until then "
+                    "receipts and statements can't be printed."})
+    if not cfg.include_ein:
+        used = [n for n in ("title", "salutation", "body", "closing") if uses_ein(getattr(cfg, n))]
+        used += [f"statement {n}" for n in ("title", "salutation", "body", "closing")
+                 if uses_ein(getattr(cfg, f"statement_{n}"), patterns.STATEMENT)]
+        if used:
+            out.append({"code": "EIN_PLACEHOLDER_OFF", "message": "Include EIN on receipts is off, but the letter "
+                        "text still uses {ORG.EIN} (" + ", ".join(used) + "); it prints blank there."})
+    return out
+
+
 def setup_out(db: Session, ctx) -> dict:
     cfg = get_config(db, ctx.workspace_id)
     row = _settings_row(db, ctx.workspace_id)
     return {"config": cfg.model_dump(), "defaults": ReceiptConfig().model_dump(), "saved": row is not None,
+            "warnings": setup_warnings(db, ctx.workspace_id, cfg) + signature_warnings(db, ctx.workspace_id, cfg),
+            # 2.3.0 (#395): the signers tagged for donation receipts, and the signature modes
+            "signers": [signers.out(db, ctx, s) for s in signers.tagged(db, ctx, signers.DONATIONS)],
+            "signature_modes": [{"id": m, "label": signers.MODE_LABELS[m]} for m in signers.MODES],
             "missing": missing_setup(db, ctx.workspace_id), "organization": organization_out(db, ctx.workspace_id),
             "variables": patterns.variable_options(patterns.RECEIPT),
             "statement_variables": patterns.variable_options(patterns.STATEMENT),     # 2.2.0 (#256)
@@ -204,6 +259,11 @@ def setup_out(db: Session, ctx) -> dict:
 
 def save_config(db: Session, ctx, data: dict) -> ReceiptConfig:
     cfg = parse_config(data)
+    # 2.3.0 (#395): only signers tagged for donation receipts (BR-078/BR-099)
+    signers.require_tagged(db, ctx, cfg.signer_id, signers.DONATIONS, "signer_id")
+    signers.require_tagged(db, ctx, cfg.statement_signer_id, signers.DONATIONS, "statement_signer_id")
+    if cfg.signature_mode != "NONE" and cfg.signer_id is None:
+        raise validation("Choose the signer, or set the signature to None.", "signer_id")
     row = _settings_row(db, ctx.workspace_id)
     before = json.loads(row.config_json) if row else None
     if row is None:
@@ -216,6 +276,57 @@ def save_config(db: Session, ctx, data: dict) -> ReceiptConfig:
     if before != after:
         audit.record(db, ctx, "DONATION_SETUP_UPDATED", "donation_settings", row.id, before, after)
     return cfg
+
+
+def letter_signing(cfg: ReceiptConfig, which: str = "receipt") -> tuple[int | None, str, str]:
+    """The receipt's (or the statement's: its own, else the receipt's) signer, signature mode and signer choice."""
+    if which == "statement":
+        return (cfg.statement_signer_id if cfg.statement_signer_id is not None else cfg.signer_id,
+                cfg.statement_signature_mode or cfg.signature_mode,
+                cfg.statement_signer_choice or cfg.signer_choice)
+    return cfg.signer_id, cfg.signature_mode, cfg.signer_choice
+
+
+def signing_out(db: Session, ctx, cfg: ReceiptConfig, which: str = "receipt", last_id: int | None = None) -> dict:
+    """2.3.0 polish: the print screen's signer choice for a receipt or statement (signers.signing_out)."""
+    sid, mode, choice = letter_signing(cfg, which)
+    return signers.signing_out(db, ctx, signers.DONATIONS, choice, sid, mode, last_id)
+
+
+def chosen_signer(db: Session, ctx, cfg: ReceiptConfig, which: str, signer_id: int | None) -> int | None:
+    """2.3.0 polish: the signer of this print (None: no signature)."""
+    sid, mode, choice = letter_signing(cfg, which)
+    if mode == "NONE":
+        if signer_id is not None:
+            raise validation("This letter is printed without a signature.", "signer_id")
+        return None
+    return signers.chosen(db, ctx, signers.DONATIONS, choice, sid, signer_id)
+
+
+def signature_for(db: Session, ws_id: int, km, cfg: ReceiptConfig, which: str = "receipt",
+                  with_image: bool = False, signer_id: int | None = None) -> signers.SignatureBlock:
+    """2.3.0 (#395): the receipt's (or the statement's: its own signer and mode, else the receipt's) signature. The
+    image only with `with_image` (the printed copy, the Administrator's setup preview and test print).
+    `signer_id`: the signer chosen for this print (already checked by chosen_signer)."""
+    sid, mode, _choice = letter_signing(cfg, which)
+    if signer_id is not None:
+        sid = signer_id
+    s = db.get(CheckSigner, sid) if sid else None
+    if s is not None and (s.workspace_id != ws_id or not s.active):
+        s = None
+    return signers.block_for(km, s, mode, with_image)
+
+
+def signature_warnings(db: Session, ws_id: int, cfg: ReceiptConfig) -> list[dict]:
+    out = []
+    for which, label in (("receipt", "receipt"), ("statement", "year-end statement")):
+        sid = cfg.signer_id if which == "receipt" else (cfg.statement_signer_id or cfg.signer_id)
+        mode = cfg.signature_mode if which == "receipt" else (cfg.statement_signature_mode or cfg.signature_mode)
+        s = db.get(CheckSigner, sid) if sid else None
+        if mode == "IMAGE" and s is not None and not s.image_ciphertext:
+            out.append({"code": "SIGNER_NO_IMAGE", "message": f"{s.name} has no signature image, so the {label} "
+                        "prints the name with space to sign by hand. Upload the image on the Signers page."})
+    return out
 
 
 # ------------------------------------------------------------------ rendering
@@ -236,6 +347,8 @@ class ReceiptData:
     details: str = ""                    # the {DETAILS} text as written (may contain {VARIABLES})
     items: list[str] = field(default_factory=list)                    # 2.2.0 (#325): item descriptions (no values)
     donor_values: dict[str, str] = field(default_factory=dict)        # 2.2.0 (#317): {DONOR.*}
+    ein_override: bool = False            # 2.3.0 (#393): EIN off, but these details include it (confirmed, with a reason)
+    signature: signers.SignatureBlock = field(default_factory=signers.SignatureBlock)   # 2.3.0 (#395)
 
 
 def money(cents: int) -> str:
@@ -261,11 +374,14 @@ def values_for(cfg: ReceiptConfig, data: ReceiptData) -> dict[str, str]:
     vals = {"DONOR_NAME": data.donor_name, "DONOR_ADDRESS": "\n".join(data.donor_address),
             "AMOUNT": f"{data.amount_cents // 100:,}.{data.amount_cents % 100:02d}",
             "DATE_RECEIVED": dates_text(data.dates, cfg.date_format) or BLANK_DATE,
-            "PURPOSE": "; ".join(data.purposes), **data.org, "RECEIPT_NO": data.number, "SIGNER": cfg.signer_name,
-            "SIGNER_TITLE": cfg.signer_title, "TODAY": format_date(data.today, cfg.date_format), **data.donor_values}
-    # the details may use the same variables (not {DETAILS} itself)
-    vals["DETAILS"] = patterns.resolve(data.details, vals, patterns.RECEIPT).text if data.details.strip() else ""
-    return vals
+            "PURPOSE": "; ".join(data.purposes), **data.org, "RECEIPT_NO": data.number, "SIGNER": data.signature.name,
+            "SIGNER_TITLE": data.signature.title, "TODAY": format_date(data.today, cfg.date_format), **data.donor_values}
+    # the details may use the same variables (not {DETAILS} itself); 2.3.0 (#393): with the EIN off it prints blank
+    # in the letter, and in the details only when they include it by a confirmed override
+    shown = vals if cfg.include_ein else hide_ein(vals)
+    dvals = vals if (cfg.include_ein or data.ein_override) else shown
+    shown["DETAILS"] = patterns.resolve(data.details, dvals, patterns.RECEIPT).text if data.details.strip() else ""
+    return shown
 
 
 def check_details(text: str) -> None:
@@ -297,7 +413,8 @@ def receipt_texts(cfg: ReceiptConfig, data: ReceiptData) -> tuple[dict, list[str
         # empty {DETAILS} inside a sentence leaves no double space (a paragraph of its own is dropped by _paras)
         out[name] = "\n".join(re.sub(r"[ \t]{2,}", " ", line).strip() if "DETAILS" in r.empty else line
                               for line in r.text.split("\n"))
-        empty += [v for v in r.empty if v not in empty and v != "DETAILS"]     # details are optional
+        empty += [v for v in r.empty if v not in empty and v != "DETAILS"     # details are optional
+                  and (cfg.include_ein or v not in EIN_VARS)]                # #393: blank on purpose
     return out, empty
 
 
@@ -326,18 +443,35 @@ def ack_table(rows: list[tuple[str, str]], st: dict) -> Table:
 
 
 def donor_letter_pdf(cfg: ReceiptConfig, *, org: dict, donor_lines: list[str], today: dt.date,
-                     kind: str, sample: bool, watermark: str | None, doc_title: str, middle: list,
-                     closing: str) -> bytes:
+                     kind: str, sample: bool, watermark: str | None, doc_title: str, middle,
+                     closing: str, signature: "signers.SignatureBlock | None" = None) -> bytes:
     """A letter to a donor (receipt or year-end statement, 2.2.0 #256): the organization and donor heading - or the
     window-envelope layout and fold marks (#325) - then `middle`, the closing and the signer. A kind other than
-    ORIGINAL is printed in the top corner; `watermark` across the page."""
+    ORIGINAL is printed in the top corner; `watermark` across the page. `middle`: the flowables, or a function of
+    the settings giving them (so a letter can be fitted to one page with smaller type - 2.3.0 polish, letter_fit)."""
+    make = middle if callable(middle) else (lambda _c: middle)
+    skip = 1 if cfg.window == "ADDRESS_PAGE" else 0
+
+    def build(spacing: float, size: float, total: int) -> tuple[bytes, int]:
+        c = cfg if size == cfg.size else cfg.model_copy(update={"size": size})
+        return _donor_letter_once(c, org=org, donor_lines=donor_lines, today=today, kind=kind, sample=sample,
+                                  watermark=watermark, doc_title=doc_title, middle=make(c), closing=closing,
+                                  signature=signature, spacing=spacing, total=total, skip=skip)
+    return letter_fit.fit(build, cfg.size, skip)
+
+
+def _donor_letter_once(cfg: ReceiptConfig, *, org: dict, donor_lines: list[str], today: dt.date, kind: str,
+                       sample: bool, watermark: str | None, doc_title: str, middle: list, closing: str,
+                       signature: "signers.SignatureBlock | None", spacing: float, total: int,
+                       skip: int) -> tuple[bytes, int]:
     st = _styles(cfg)
     reg_f, bold, size, base = st["reg"], st["bold"], st["size"], st["base"]
     lcfg = documents.LetterConfig(font=cfg.font, size=cfg.size, window=cfg.window, window_return=cfg.window_return,
                                   fold_marks=cfg.fold_marks)
-    org_lines = [org["ORG.NAME"]] + [x for x in org["ORG.ADDRESS"].split("\n") if x]
     windowed = cfg.window != "NONE"
-    blocks = documents.window_blocks(lcfg, {"letterhead": org_lines}, donor_lines) if windowed else []
+    blocks = documents.window_blocks(lcfg, {"letterhead": [org["ORG.NAME"]] + [x for x in org["ORG.ADDRESS"].split("\n")
+                                                                                if x]}, donor_lines) if windowed else []
+    label = f"{org['ORG.NAME']} · {doc_title}"
 
     def first_page(c, doc):
         if cfg.fold_marks == "FRONT":
@@ -362,7 +496,7 @@ def donor_letter_pdf(cfg: ReceiptConfig, *, org: dict, donor_lines: list[str], t
             c.restoreState()
         page(c, doc)
 
-    def page(c, _doc):
+    def page(c, doc):
         c.saveState()
         if kind != ORIGINAL:
             c.setFont(bold, 9)
@@ -375,12 +509,13 @@ def donor_letter_pdf(cfg: ReceiptConfig, *, org: dict, donor_lines: list[str], t
             c.rotate(35)
             c.drawCentredString(0, 0, watermark)
         c.restoreState()
+        letter_fit.draw_continuation(c, doc.page, total, label, reg_f, skip)     # 2.3.0 polish
 
     story = []
     if cfg.window == "ADDRESS_PAGE":
-        story += [Spacer(1, 1), PageBreak()]                    # page 1: only the addresses, for the windows
+        story += [FixedSpacer(1, 1), PageBreak()]               # page 1: only the addresses, for the windows
     if cfg.window == "LETTER":                                  # the addresses show through the windows
-        story += [Spacer(1, (documents.FOLD_LINES[0] + 0.15 - 1) * inch),
+        story += [FixedSpacer(1, (documents.FOLD_LINES[0] + 0.15 - 1) * inch),
                   Paragraph(escape(format_date(today, cfg.date_format)), base)]
     else:
         story += [Paragraph(escape(org["ORG.NAME"]), st["strong"])]
@@ -390,25 +525,21 @@ def donor_letter_pdf(cfg: ReceiptConfig, *, org: dict, donor_lines: list[str], t
         story += [Paragraph(escape(x), base) for x in donor_lines]
     story.append(Spacer(1, size * 1.4))
     story += middle
-    story.append(Spacer(1, size * 1.2))
     block = [Paragraph(escape(closing), base)] if closing.strip() else []
-    sign = []
-    if cfg.signer_name:
-        sign.append(f"<font name='{bold}'>{escape(cfg.signer_name)}</font>")
-    if cfg.signer_title:
-        sign.append(escape(", ".join(x for x in (cfg.signer_title, org["ORG.NAME"]) if x)))
-    if sign:                                            # room to sign by hand above the name (no signature image)
-        block += [Spacer(1, size * 2.6), Paragraph("<br/>".join(sign), base)]
-    if block:
-        story.append(KeepTogether(block))
+    # 2.3.0 (#395): the chosen signer, shown as the letter's mode says (image only in the printed copy)
+    block += signers.flowables(signature or signers.SignatureBlock(), base, bold, size, extra_title=org["ORG.NAME"])
+    if block:                         # 2.3.0 polish: the last paragraph goes with the closing and signature
+        story = letter_fit.with_tail(story, [Spacer(1, size * 1.2)] + block)
+    story = letter_fit.scale_spacers(story, spacing)
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=(8.5 * inch, 11 * inch), leftMargin=inch, rightMargin=inch,
                             topMargin=inch, bottomMargin=inch, title=doc_title,
                             creator="PennyWarden", author="", subject="", invariant=1)
     doc.build(story, onFirstPage=first_page, onLaterPages=page)
+    pages = doc.page
     if cfg.fold_marks == "BACK":
-        return documents._with_back_pages(buf.getvalue(), lcfg, doc_title)
-    return buf.getvalue()
+        return documents._with_back_pages(buf.getvalue(), lcfg, doc_title), pages
+    return buf.getvalue(), pages
 
 
 def addressee_lines(cfg: ReceiptConfig, values: dict, name: str, address: list[str]) -> list[str]:
@@ -426,6 +557,17 @@ def receipt_pdf(cfg: ReceiptConfig, data: ReceiptData, sample: bool = False, wat
     if sample and watermark is None:
         watermark = "SAMPLE - NOT A RECEIPT"
     texts, _empty = receipt_texts(cfg, data)
+    values = values_for(cfg, data)
+    return donor_letter_pdf(cfg, org=data.org, donor_lines=addressee_lines(cfg, values, data.donor_name,
+                                                                           data.donor_address),
+                            today=data.today, kind=data.kind, sample=sample, watermark=watermark,
+                            doc_title=f"Donation receipt {data.number}",
+                            middle=lambda c: _receipt_middle(c, data, texts, values), closing=texts["closing"],
+                            signature=data.signature)
+
+
+def _receipt_middle(cfg: ReceiptConfig, data: ReceiptData, texts: dict, values: dict) -> list:
+    """The receipt between the addresses and the closing, at the settings' type size."""
     st = _styles(cfg)
     size, base = st["size"], st["base"]
     middle = []
@@ -438,8 +580,8 @@ def receipt_pdf(cfg: ReceiptConfig, data: ReceiptData, sample: bool = False, wat
     for key in ("salutation", "body"):
         for p in _paras(texts[key]):
             middle += [Paragraph(p, base), Spacer(1, size * 0.7)]
-    rows = [("Organization", data.org["ORG.NAME"]), ("EIN", data.org["ORG.EIN"]), ("Donor", data.donor_name),
-            ("Date received", dates_text(data.dates, cfg.date_format) or BLANK_DATE)]
+    rows = ([("Organization", data.org["ORG.NAME"])] + ([("EIN", data.org["ORG.EIN"])] if cfg.include_ein else [])
+            + [("Donor", data.donor_name), ("Date received", dates_text(data.dates, cfg.date_format) or BLANK_DATE)])
     if data.amount_cents or not data.items:                    # 2.2.0 (#325): the total covers money only
         rows.append(("Amount", money(data.amount_cents)))
     if data.items:
@@ -449,12 +591,9 @@ def receipt_pdf(cfg: ReceiptConfig, data: ReceiptData, sample: bool = False, wat
     rows.append(("Receipt No.", data.number))
     ack = [ack_table(rows, st), Spacer(1, size * 0.6), Paragraph(escape(goods_statement(data.goods)), st["strong"])]
     if data.items:                                  # 2.2.0 (#325): always with items; the wording is editable
-        ack += [Spacer(1, size * 0.4), Paragraph(escape(items_note_text(cfg, values_for(cfg, data))), base)]
+        ack += [Spacer(1, size * 0.4), Paragraph(escape(items_note_text(cfg, values)), base)]
     middle.append(KeepTogether(ack))
-    return donor_letter_pdf(cfg, org=data.org, donor_lines=addressee_lines(cfg, values_for(cfg, data), data.donor_name,
-                                                                           data.donor_address),
-                            today=data.today, kind=data.kind, sample=sample, watermark=watermark,
-                            doc_title=f"Donation receipt {data.number}", middle=middle, closing=texts["closing"])
+    return middle
 
 
 SAMPLE_DONOR = ["SAMPLE DONOR", "123 Main Street", "Sample Town, US 55555"]
@@ -480,9 +619,12 @@ def sample_data(db: Session, ctx, cfg: ReceiptConfig) -> ReceiptData:
                                "how the gift of ${AMOUNT} will be used.)")
 
 
-def sample_pdf(db: Session, ctx, data: dict | None) -> bytes:
+def sample_pdf(db: Session, ctx, data: dict | None, km=None) -> bytes:
+    """Setup preview and test print (Administrators): sample data; 2.3.0 (#395) the real signature for IMAGE."""
     cfg = parse_config(data) if data is not None else get_config(db, ctx.workspace_id)
-    return receipt_pdf(cfg, sample_data(db, ctx, cfg), sample=True)
+    sd = sample_data(db, ctx, cfg)
+    sd.signature = signature_for(db, ctx.workspace_id, km, cfg, "receipt", with_image=True)
+    return receipt_pdf(cfg, sd, sample=True)
 
 
 # ------------------------------------------------------------------ 2.2.0 (#325): the donation model
@@ -689,10 +831,12 @@ def _check_printable(db: Session, ctx, d: Donation) -> None:
                        " in System/About → Organization before receipts can be printed.")
 
 
-def _compose(db: Session, ctx, d: Donation) -> dict:
-    """Everything a receipt for this donation would be now: kind and number, the data, the warnings."""
+def _compose(db: Session, ctx, d: Donation, signer_id: int | None = None) -> dict:
+    """Everything a receipt for this donation would be now: kind and number, the data, the warnings. `signer_id`:
+    the signer chosen when printing (2.3.0 polish)."""
     _check_printable(db, ctx, d)
     cfg = get_config(db, ctx.workspace_id)
+    sid = chosen_signer(db, ctx, cfg, "receipt", signer_id)
     c = _content(db, d)
     receipts = _receipts_of(db, d)
     cur = _current(receipts)
@@ -712,8 +856,21 @@ def _compose(db: Session, ctx, d: Donation) -> dict:
                        donor_name=e.legal_name, donor_address=address_lines(e),
                        amount_cents=c["amount"], dates=c["dates"], purposes=c["purposes"],
                        goods=c["goods"], details=c["details"], items=c["items"],
-                       donor_values=entity_vars.values("DONOR", e))
+                       donor_values=entity_vars.values("DONOR", e),
+                       signature=signature_for(db, ctx.workspace_id, None, cfg, signer_id=sid))   # #395: no image yet
     warnings = []
+    if not cfg.include_ein and uses_ein(data.details):        # 2.3.0 (#393): a one-off EIN through {DETAILS}
+        if not ein_entered(db, ctx.workspace_id):
+            raise conflict("EIN_NOT_ENTERED", "These details include the EIN, but no EIN has been entered in "
+                                              "System/About → Organization. Remove it from the details, or ask an "
+                                              "Administrator to enter it.")
+        if not (d.ein_override_reason or "").strip():
+            raise conflict("EIN_OVERRIDE_REASON_MISSING", "The EIN is turned off for donations, and these details "
+                                                          "include it without a reason. Save the details again and "
+                                                          "give the reason.")
+        data.ein_override = True
+        warnings.append(Warning_("EIN_OVERRIDE", "The EIN has been turned off for donations, and these details "
+                                 f"include it (reason: {d.ein_override_reason}). Print the receipt with the EIN?"))
     _texts, empty = receipt_texts(cfg, data)
     if empty:
         warnings.append(Warning_("EMPTY_VARIABLES", "These variables have no data for this receipt: " +
@@ -729,14 +886,14 @@ def _compose(db: Session, ctx, d: Donation) -> dict:
         warnings.append(Warning_("CORRECTED_RECEIPT", f"The donation changed since receipt {cur.number}. Print a "
                                  f"corrected receipt {number} that replaces it?", replaces=cur.number))
     return {"cfg": cfg, "data": data, "kind": kind, "number": number, "year": year, "seq": seq, "cur": cur,
-            "sha": sha, "c": c, "e": e, "warnings": warnings}
+            "sha": sha, "c": c, "e": e, "warnings": warnings, "signer_id": sid}
 
 
 PREVIEW_NUMBER = "(assigned when printed)"
 
 
-def _preview(db: Session, ctx, d: Donation) -> tuple[bytes, dict]:
-    c = _compose(db, ctx, d)
+def _preview(db: Session, ctx, d: Donation, signer_id: int | None = None) -> tuple[bytes, dict]:
+    c = _compose(db, ctx, d, signer_id)
     data = c["data"]
     if c["kind"] != DUPLICATE:
         data.number = PREVIEW_NUMBER          # a new number is only taken when the receipt is printed
@@ -765,12 +922,19 @@ def _store_donation_copy(db: Session, ctx, settings, d: Donation, kind_type: str
     return True, path
 
 
-def print_donation(db: Session, ctx, settings, d: Donation, confirmations: list[str]) -> tuple[bytes, DonationReceipt]:
-    c = _compose(db, ctx, d)
+def print_donation(db: Session, ctx, settings, d: Donation, confirmations: list[str],
+                   km=None, signer_id: int | None = None) -> tuple[bytes, DonationReceipt]:
+    c = _compose(db, ctx, d, signer_id)
     cfg, data, kind, number, year, seq, cur, sha, content, e = (c[k] for k in ("cfg", "data", "kind", "number",
                                                                                 "year", "seq", "cur", "sha", "c", "e"))
     require_confirmations(c["warnings"], confirmations)
-    pdf = receipt_pdf(cfg, data)
+    pdf = receipt_pdf(cfg, data)                                   # the copy kept with the record: never the image
+    printed = pdf
+    if cfg.signature_mode == "IMAGE" and km is not None:          # 2.3.0 (#395): the image only in the printed copy
+        data.signature = signature_for(db, ctx.workspace_id, km, cfg, "receipt", with_image=True,
+                                       signer_id=c["signer_id"])
+        if data.signature.image:
+            printed = receipt_pdf(cfg, data)
     suffix = "-duplicate" if kind == DUPLICATE else ""
     fname = f"receipt-{number}{suffix}.pdf"
     deposits = [t for t in deposits_of(db, d) if t.status == "ACTIVE"]
@@ -792,14 +956,19 @@ def print_donation(db: Session, ctx, settings, d: Donation, confirmations: list[
                         goods_cents=sum(x for x, _d in content["goods"]),
                         date_received=content["dates"][0] if content["dates"] else None,
                         allocation_ids=",".join(str(x) for x in content["allocs"])[:500], content_sha=sha,
-                        attachment_id=att.id if att else None, printed_by_user_id=ctx.user.id)
+                        attachment_id=att.id if att else None, printed_by_user_id=ctx.user.id,
+                        signer_id=c["signer_id"] if data.signature.name else None)          # 2.3.0 polish
     db.add(r)
     db.flush()
     audit.record(db, ctx, "DONATION_RECEIPT_PRINTED", "donation", d.id, None,
                  {"donation_id": d.id, "transaction_id": r.transaction_id, "receipt_id": r.id, "number": number,
                   "kind": kind, "donor_entity_id": e.id, "amount_cents": content["amount"],
                   "items": len(content["items"]), "goods_cents": r.goods_cents, "received": content["received"],
-                  "replaces": cur.number if cur is not None and kind != ORIGINAL else None, "attached": added})
+                  "replaces": cur.number if cur is not None and kind != ORIGINAL else None, "attached": added,
+                  "ein_override": data.ein_override,                                        # 2.3.0 (#393)
+                  "ein_override_reason": d.ein_override_reason if data.ein_override else None,
+                  "signature": data.signature.mode if data.signature.name else "NONE",           # 2.3.0 (#395)
+                  "signer_id": r.signer_id})                                                    # 2.3.0 polish
     try:
         db.commit()
     except Exception:
@@ -811,7 +980,7 @@ def print_donation(db: Session, ctx, settings, d: Donation, confirmations: list[
                 except OSError:
                     pass
         raise
-    return pdf, r
+    return printed, r
 
 
 # ------------------------------------------------------------------ deposits: marking (part 1 flow) and receipts
@@ -849,7 +1018,8 @@ def transaction_out(db: Session, ctx, t: RegisterTransaction) -> dict:
                        "amount_cents": c["amount"], "goods_cents": sum(x for x, _d in c["goods"]),
                        "purposes": c["purposes"], "has_address": bool(address_lines(e)),
                        "dates": [x.isoformat() for x in c["dates"]], "details": c["details"],
-                       "current_receipt": cur.number if cur else None, "next_kind": next_kind})
+                       "current_receipt": cur.number if cur else None, "next_kind": next_kind,
+                       "signing": signing_out(db, ctx, cfg, "receipt", cur.signer_id if cur else None)})
     receipts.sort(key=lambda r: r["id"])
     page_linked = []
     for d in donations.values():
@@ -880,6 +1050,7 @@ def transaction_out(db: Session, ctx, t: RegisterTransaction) -> dict:
         "variables": [v for v in patterns.variable_options(patterns.RECEIPT) if v["name"] != "DETAILS"],
         "lines": [line_out(a) for a in t.live_allocations], "donors": donors, "receipts": receipts,
         "page_donations": page_linked,
+        "signing": signing_out(db, ctx, cfg, "receipt"),    # 2.3.0 polish: for a donor not printed yet
     }
 
 
@@ -897,6 +1068,27 @@ class DonorIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     entity_id: int
     details: str = Field(default="", max_length=2000)
+    # 2.3.0 (#393): details that include the EIN while it is off - confirmed, with a reason
+    confirm_ein_override: bool = False
+    ein_override_reason: str | None = Field(default=None, max_length=500)
+
+
+def ein_override_check(db: Session, ctx, text: str, confirmed: bool, reason: str | None,
+                       field_prefix: str = "") -> str | None:
+    """2.3.0 (#393): {ORG.EIN} in the details while Include EIN on receipts is off needs an explicit confirmation and
+    a reason (server-validated); refused when no EIN is entered. Returns the reason to keep (None: no override)."""
+    if not text or not uses_ein(text) or get_config(db, ctx.workspace_id).include_ein:
+        return None
+    if not ein_entered(db, ctx.workspace_id):
+        raise conflict("EIN_NOT_ENTERED", "The details include the EIN, but no EIN has been entered in System/About → "
+                                          "Organization, so it would print blank. Remove it, or ask an Administrator "
+                                          "to enter the EIN.")
+    why = (reason or "").strip()
+    if not confirmed or not why:
+        raise AppError(409, "EIN_OVERRIDE_REQUIRED", "The EIN has been turned off for donations. These details include "
+                       "it: confirm that this receipt should show the EIN, and give the reason.",
+                       field=field_prefix + "ein_override_reason")
+    return why
 
 
 def _line_snap(db: Session, x: DonationLine | None) -> dict | None:
@@ -1004,11 +1196,14 @@ def set_details(db: Session, ctx, t: RegisterTransaction, donors: list[DonorIn])
         before = d.details or ""
         if before == text:
             continue
+        why = ein_override_check(db, ctx, text, it.confirm_ein_override, it.ein_override_reason, f"donors.{i}.")
+        before_reason = d.ein_override_reason
         d.details, d.updated_by_user_id, d.updated_at = (text or None), ctx.user.id, utcnow()
+        d.ein_override_reason = why
         db.flush()
         audit.record(db, ctx, "DONATION_DETAILS_UPDATED", "register_transaction", t.id,
-                     {"donor_entity_id": it.entity_id, "details": before},
-                     {"donor_entity_id": it.entity_id, "details": text})
+                     {"donor_entity_id": it.entity_id, "details": before, "ein_override_reason": before_reason},
+                     {"donor_entity_id": it.entity_id, "details": text, "ein_override_reason": why})
 
 
 def _deposit_donation(db: Session, t: RegisterTransaction, donor_entity_id: int) -> Donation:
@@ -1019,7 +1214,8 @@ def _deposit_donation(db: Session, t: RegisterTransaction, donor_entity_id: int)
 
 
 def preview_receipt(db: Session, ctx, t: RegisterTransaction, donor_entity_id: int,
-                    lines: list | None = None, donors: list | None = None) -> tuple[bytes, dict]:
+                    lines: list | None = None, donors: list | None = None,
+                    signer_id: int | None = None) -> tuple[bytes, dict]:
     """2.1.0 (Kyle, 2026-10-23): the receipt as it would print, from what is on screen (unsaved lines and details
     applied in a transaction that is rolled back). Watermarked PREVIEW - NOT A RECEIPT; nothing is attached, no
     number is used and nothing counts toward Duplicate/Corrected. The preview itself is audited."""
@@ -1028,7 +1224,7 @@ def preview_receipt(db: Session, ctx, t: RegisterTransaction, donor_entity_id: i
             set_lines(db, ctx, t, lines)
         if donors:
             set_details(db, ctx, t, donors)
-        pdf, info = _preview(db, ctx, _deposit_donation(db, t, donor_entity_id))
+        pdf, info = _preview(db, ctx, _deposit_donation(db, t, donor_entity_id), signer_id)
         info["unsaved"] = bool(lines or donors)
     finally:
         db.rollback()                             # nothing of the unsaved changes stays
@@ -1040,13 +1236,14 @@ def preview_receipt(db: Session, ctx, t: RegisterTransaction, donor_entity_id: i
 
 
 def print_receipt(db: Session, ctx, settings, t: RegisterTransaction, donor_entity_id: int,
-                  confirmations: list[str]) -> tuple[bytes, DonationReceipt]:
+                  confirmations: list[str], km=None, signer_id: int | None = None) -> tuple[bytes, DonationReceipt]:
     if t.status != "ACTIVE":
         raise conflict("NOT_PRINTABLE", "This deposit is void - its receipts are void and no receipt can be printed.")
     if reg.is_closed_protected(db, t):
         raise conflict("FISCAL_YEAR_CLOSED", "The deposit belongs to a Closed Fiscal Year and cannot be printed. Its "
                                              "receipts are attached to it.")
-    return print_donation(db, ctx, settings, _deposit_donation(db, t, donor_entity_id), confirmations)
+    return print_donation(db, ctx, settings, _deposit_donation(db, t, donor_entity_id), confirmations, km=km,
+                          signer_id=signer_id)
 
 
 # ------------------------------------------------------------------ 2.2.0 (#256): fundraiser donation buckets
@@ -1147,6 +1344,8 @@ class DonationIn(BaseModel):
     model_config = ConfigDict(extra="forbid")
     donor_entity_id: int
     details: str = Field(default="", max_length=2000)
+    confirm_ein_override: bool = False                                      # 2.3.0 (#393)
+    ein_override_reason: str | None = Field(default=None, max_length=500)
     lines: list[PageLineIn] = Field(min_length=1, max_length=50)
 
 
@@ -1213,6 +1412,7 @@ def _apply_line(db: Session, ctx, x: DonationLine, it: PageLineIn, i: int) -> No
 
 def _donation_snap(db: Session, d: Donation) -> dict:
     return {"donor_entity_id": d.donor_entity_id, "details": d.details, "status": d.status,
+            "ein_override_reason": d.ein_override_reason,
             "lines": [_line_snap(db, x) for x in lines_of(db, d)]}
 
 
@@ -1221,8 +1421,9 @@ def create(db: Session, ctx, data: DonationIn) -> Donation:
     text = (data.details or "").replace("\r\n", "\n").strip()
     if text:
         check_details(text)
+    why = ein_override_check(db, ctx, text, data.confirm_ein_override, data.ein_override_reason)
     d = Donation(workspace_id=ctx.workspace_id, donor_entity_id=e.id, origin=PAGE, status=ACTIVE, details=text or None,
-                 created_by_user_id=ctx.user.id, updated_by_user_id=ctx.user.id)
+                 ein_override_reason=why, created_by_user_id=ctx.user.id, updated_by_user_id=ctx.user.id)
     db.add(d)
     db.flush()
     for i, it in enumerate(data.lines):
@@ -1251,6 +1452,8 @@ def update(db: Session, ctx, d: Donation, data: DonationIn) -> Donation:
     text = (data.details or "").replace("\r\n", "\n").strip()
     if text:
         check_details(text)
+    if text != (d.details or ""):
+        d.ein_override_reason = ein_override_check(db, ctx, text, data.confirm_ein_override, data.ein_override_reason)
     d.details = text or None
     kept = set()
     for i, it in enumerate(data.lines):
@@ -1344,6 +1547,8 @@ def donation_out(db: Session, ctx, d: Donation, full: bool = True) -> dict:
     next_kind = ORIGINAL if cur is None else (DUPLICATE if cur.content_sha == _content_sha(c) else CORRECTED)
     out.update({
         "details": d.details or "", "next_kind": next_kind, "receipts": _receipts_out(db, d),
+        # 2.3.0 polish: who signs, when chosen when printing (a reprint starts from the last receipt's signer)
+        "signing": signing_out(db, ctx, get_config(db, ctx.workspace_id), "receipt", cur.signer_id if cur else None),
         "editable": d.status == ACTIVE and d.origin == PAGE,
         "cancellable": d.status == ACTIVE and d.origin == PAGE and not any(line_received(db, x) for x in lines),
         "printable": d.status == ACTIVE and not receipts_void(db, d) and bool(lines),
@@ -1390,8 +1595,8 @@ def list_out(db: Session, ctx, show: str = "all", q: str | None = None) -> dict:
             "variables": [v for v in patterns.variable_options(patterns.RECEIPT) if v["name"] != "DETAILS"]}
 
 
-def preview_donation(db: Session, ctx, d: Donation) -> tuple[bytes, dict]:
-    pdf, info = _preview(db, ctx, d)
+def preview_donation(db: Session, ctx, d: Donation, signer_id: int | None = None) -> tuple[bytes, dict]:
+    pdf, info = _preview(db, ctx, d, signer_id)
     audit.record(db, ctx, "DONATION_RECEIPT_PREVIEW", "donation", d.id, None,
                  {"donation_id": d.id, "kind": info["kind"]})
     db.commit()

@@ -1,6 +1,6 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { Fragment, useEffect, useState, type FormEvent } from "react";
 import { api, money, qs } from "../api";
-import { ErrorBox, Field, Loading, Modal, GuardedForm } from "../components";
+import { ErrorBox, Field, GrossBudgetNote, Loading, Modal, GuardedForm } from "../components";
 import { useMe } from "../App";
 import { useRouter } from "../router";
 import { BudgetSection } from "./BudgetTable";
@@ -60,6 +60,7 @@ export default function Budgets() {
         <>
           <BudgetSection title="Income" rows={tree.income} summary={tree.income_summary} fyStatus={fy.status} actions={actions} registerLinks onHistory={(r) => setModal({ kind: "history", row: r })} historyForAll={manage} />
           <BudgetSection title="Expense" rows={tree.expense} summary={tree.expense_summary} fyStatus={fy.status} actions={actions} registerLinks onHistory={(r) => setModal({ kind: "history", row: r })} historyForAll={manage} />
+          <GrossBudgetNote />
           {tree.budget_zero ? (
             <p className="muted">Protected Budget 0 (non-budget activity such as transfers): inflows {money(tree.budget_zero.inflow)} · outflows {money(tree.budget_zero.outflow)}</p>
           ) : null}
@@ -106,7 +107,7 @@ function BudgetForm({ fys, fyId, parent, onClose, onSaved }: any) {
         {!parent ? (
           <Field label="Type"><select value={f.budget_type} onChange={(e) => setF({ ...f, budget_type: e.target.value })}><option value="INCOME">Income</option><option value="EXPENSE">Expense</option></select></Field>
         ) : null}
-        <Field label="Amount"><input required inputMode="decimal" pattern="\d+(\.\d{1,2})?" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} /></Field>
+        <Field label="Gross amount"><input required inputMode="decimal" pattern="\d+(\.\d{1,2})?" value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} /></Field>
         <ContinuesField fyId={Number(f.fiscal_year_id)} budgetType={f.budget_type} subBudget={!!parent} value={cont} onChange={setCont} />
         <Field label="Notes"><textarea value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} /></Field>
         <div className="actions"><button type="button" onClick={onClose}>Cancel</button><button className="primary" type="submit">Create</button></div>
@@ -131,7 +132,7 @@ function BudgetEdit({ row, onClose, onSaved, canDelete, onDelete }: any) {
       <GuardedForm onSubmit={submit}>
         <ErrorBox error={err} />
         <Field label="Name"><input required value={f.name} onChange={(e) => setF({ ...f, name: e.target.value })} /></Field>
-        <Field label="Amount" hint="Other is recalculated automatically; sub-budgets may not exceed the parent."><input required value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} /></Field>
+        <Field label="Gross amount" hint="Other is recalculated automatically; sub-budgets may not exceed the parent."><input required value={f.amount} onChange={(e) => setF({ ...f, amount: e.target.value })} /></Field>
         <ContinuesField fyId={row.fiscal_year_id} budgetType={row.budget_type} subBudget={!!row.parent_budget_id} budgetId={row.id} value={cont} onChange={setCont} />
         <Field label="Notes"><textarea value={f.notes} onChange={(e) => setF({ ...f, notes: e.target.value })} /></Field>
         <div className="actions">
@@ -228,7 +229,7 @@ function BudgetHistory({ row, onClose, manage }: any) {
   const [h, setH] = useState<any[] | null>(null);
   const [en, setEn] = useState<any>(null);
   const [err, setErr] = useState<unknown>(null);
-  const [edit, setEdit] = useState<any>(null);   // {mode: "add"} | {mode: "correct", e} | {mode: "retire", e}
+  const [edit, setEdit] = useState<any>(null);   // {mode: "add"} | {mode: "correct", e} | {mode: "retire", e} | {mode: "include"} | {mode: "retire-mark", m}
   const load = () => {
     api.get(`/api/budgets/${row.id}/history`).then(setH, setErr);
     api.get(`/api/budgets/${row.id}/history/entered`).then(setEn, setErr);
@@ -237,6 +238,23 @@ function BudgetHistory({ row, onClose, manage }: any) {
   const entries: any[] = en?.entries || [];
   const shown = entries.filter((x) => !x.retired);
   const retired = entries.filter((x) => x.retired);
+  // 2.3.0 (#414): years its money was included in another budget, with the years before / in PennyWarden
+  const marks: any[] = en?.inclusions || [];
+  const markRow = (m: any) => (
+    <tr key={`m${m.id}`} className="entered-row" data-testid="inclusion-row">
+      <td>{m.fiscal_year_label}</td><td />
+      <td>
+        <i>Included in {m.included_in}</i>
+        {m.note ? <div className="muted small">{m.note}</div> : null}
+        {!m.counted ? <div className="muted small">Not shown: this budget's line has figures that year.</div> : null}
+      </td>
+      <td className="num muted">—</td><td className="num muted">—</td>
+      {manage ? <td><button type="button" className="small" aria-label={`Retire the mark for ${m.fiscal_year_label}`} onClick={() => setEdit({ mode: "retire-mark", m })}>Retire</button></td> : null}
+    </tr>
+  );
+  const before = marks.filter((m) => !m.retired && !m.in_pennywarden);
+  const inPw = marks.filter((m) => !m.retired && m.in_pennywarden);
+  const retiredMarks = marks.filter((m) => m.retired);
   return (
     <Modal title={`History of ${row.label}`} onClose={onClose} wide>
       <ErrorBox error={err} />
@@ -246,9 +264,10 @@ function BudgetHistory({ row, onClose, manage }: any) {
             <table className="table" aria-label="Budget history">
               <thead><tr><th>Fiscal Year</th><th>ID</th><th>Name</th><th className="num">Amount</th><th className="num">Actual</th>{manage ? <th /> : null}</tr></thead>
               <tbody>
+                {before.filter((m) => !shown.length || m.year < shown[0].year).map(markRow)}
                 {shown.map((x, i) => (
                   <tr key={`e${x.id ?? `s${i}`}`} className="entered-row">
-                    <td>{x.fiscal_year_label} <span className="badge grey" title="Entered from earlier records, before PennyWarden">Entered</span></td>
+                    <td>{x.fiscal_year_label}{x.estimated ? <span title={`Estimated: ${x.note || ""}`} data-testid="estimated-mark">*</span> : null} <span className="badge grey" title="Entered from earlier records, before PennyWarden">Entered</span></td>
                     {/* 2.2.0 (#381): the code and name the budget had that year (from before PennyWarden) */}
                     <td>{x.code_shown ? <span className="code">{x.code_shown}</span> : null}</td>
                     <td>
@@ -264,16 +283,25 @@ function BudgetHistory({ row, onClose, manage }: any) {
                     </span> : null}</td> : null}
                   </tr>
                 ))}
-                {h.map((x) => (
+                {before.filter((m) => shown.length && m.year >= shown[0].year).map(markRow)}
+                {inPw.filter((m) => !h.length || m.start_date < h[0].fiscal_year.start_date).map(markRow)}
+                {h.map((x, hi) => (<Fragment key={x.id}>
+                  {hi > 0 ? inPw.filter((m) => m.start_date > h[hi - 1].fiscal_year.start_date && m.start_date < x.fiscal_year.start_date).map(markRow) : null}
                   <tr key={x.id} className={x.this ? "current-row" : ""} aria-current={x.this ? "true" : undefined}>
                     <td>{x.fiscal_year.display_name}</td><td><span className="code">{x.code}</span></td>
                     <td>{x.this ? <b>{x.name}</b> : x.name}{["REJECTED", "INACTIVE"].includes(x.status) ? <span className="muted"> ({x.status.toLowerCase()})</span> : null}</td>
                     <td className="num">{money(x.amount)}</td><td className="num">{money(x.actual)}</td>{manage ? <td /> : null}
                   </tr>
-                ))}
+                </Fragment>))}
               </tbody>
             </table>
           </div>
+          {retiredMarks.length ? (
+            <details className="retired-entries">
+              <summary>Retired "included in" marks ({retiredMarks.length})</summary>
+              <ul>{retiredMarks.map((m) => <li key={m.id}>{m.fiscal_year_label}: included in {m.included_in} — retired: {m.retire_reason}</li>)}</ul>
+            </details>
+          ) : null}
           {retired.length ? (
             <details className="retired-entries">
               <summary>Retired entries ({retired.length})</summary>
@@ -289,10 +317,92 @@ function BudgetHistory({ row, onClose, manage }: any) {
           ) : null}
         </>
       )}
-      {edit ? <YearForm title={edit.mode === "add" ? `Add an earlier year to ${row.label}` : undefined} addUrl={`/api/budgets/${row.id}/history/entered`} edit={edit}
+      {edit?.mode === "include" ? <InclusionForm row={row} onBack={() => setEdit({ mode: "add" })} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); load(); }} /> : null}
+      {edit?.mode === "retire-mark" ? <RetireMark m={edit.m} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); load(); }} /> : null}
+      {edit && ["add", "correct", "retire"].includes(edit.mode) ? <YearForm title={edit.mode === "add" ? `Add an earlier year to ${row.label}` : undefined} addUrl={`/api/budgets/${row.id}/history/entered`} edit={edit}
+                        onIncluded={edit.mode === "add" ? () => setEdit({ mode: "include" }) : undefined}
                         defaults={en?.former ? { code: en.former.default_code, name: en.former.default_name } : undefined}
                         onClose={() => setEdit(null)} onSaved={() => { setEdit(null); load(); }} /> : null}
       <div className="actions"><button type="button" onClick={onClose}>Close</button></div>
+    </Modal>
+  );
+}
+
+/** 2.3.0 (#414): mark a year in which this budget's money was included in another budget (no figures of its own):
+ * a Fiscal Year in PennyWarden with a budget of that year, or a year before PennyWarden with a budget from before
+ * PennyWarden. Same type (Income/Expense), any level. Shown as "included in …" in the Budget Review. */
+function InclusionForm({ row, onBack, onClose, onSaved }: any) {
+  const [o, setO] = useState<any>(null);
+  const [year, setYear] = useState("");            // a Fiscal Year id, or "before"
+  const [label, setLabel] = useState("");
+  const [target, setTarget] = useState("");
+  const [note, setNote] = useState("");
+  const [err, setErr] = useState<unknown>(null);
+  useEffect(() => { api.get(`/api/budgets/${row.id}/history/inclusion-options`).then(setO, setErr); }, [row.id]);
+  const fy = o?.fiscal_years.find((y: any) => String(y.id) === year);
+  const submit = async (ev: FormEvent) => {
+    ev.preventDefault();
+    setErr(null);
+    try {
+      await api.post(`/api/budgets/${row.id}/history/inclusions`, year === "before"
+        ? { fiscal_year_label: label, included_former_budget_id: Number(target), note: note || null }
+        : { fiscal_year_id: Number(year), included_budget_id: Number(target), note: note || null });
+      onSaved();
+    } catch (x) { setErr(x); }
+  };
+  const targets: any[] = year === "before" ? (o?.formers || []) : (fy?.budgets || []);
+  return (
+    <Modal title={`Add an earlier year to ${row.label}`} onClose={onClose}>
+      <GuardedForm onSubmit={submit}>
+        <ErrorBox error={err} />
+        <fieldset className="choices">
+          <label className="check"><input type="radio" name="year-kind" checked={false} onChange={onBack} /> Its figures that year</label>
+          <label className="check"><input type="radio" name="year-kind" checked readOnly /> Its money was included in another budget that year</label>
+        </fieldset>
+        {!o ? (err ? null : <Loading />) : (
+          <>
+            <Field label="Year">
+              <select required value={year} onChange={(x) => { setYear(x.target.value); setTarget(""); }}>
+                <option value="">Choose…</option>
+                {o.fiscal_years.map((y: any) => <option key={y.id} value={y.id}>{y.display_name}</option>)}
+                <option value="before">An earlier year (before PennyWarden{o.first_year ? `, before FY${o.first_year}` : ""})</option>
+              </select>
+            </Field>
+            {year === "before" ? <Field label="Fiscal Year" hint="Include the year, for example FY2021."><input required maxLength={40} value={label} onChange={(x) => setLabel(x.target.value)} /></Field> : null}
+            {year ? (
+              <Field label="Included in" hint="A budget of the same type (Income or Expense), at any level.">
+                <select required value={target} onChange={(x) => setTarget(x.target.value)}>
+                  <option value="">Choose…</option>
+                  {targets.map((t: any) => <option key={t.id} value={t.id}>{t.label}</option>)}
+                </select>
+              </Field>
+            ) : null}
+            {year && !targets.length ? <p className="muted small">{year === "before" ? "No budgets from before PennyWarden of this type." : "No budgets of this type that year."}</p> : null}
+            <Field label="Note (optional)"><input maxLength={500} value={note} onChange={(x) => setNote(x.target.value)} /></Field>
+            <p className="hint">No amounts: the Budget Review shows <i>included in …</i> that year, and the year isn't counted in Avg.</p>
+          </>
+        )}
+        <div className="actions"><button type="button" onClick={onClose}>Cancel</button><button className="primary" type="submit">Add</button></div>
+      </GuardedForm>
+    </Modal>
+  );
+}
+
+function RetireMark({ m, onClose, onSaved }: any) {
+  const [reason, setReason] = useState("");
+  const [err, setErr] = useState<unknown>(null);
+  const submit = async (ev: FormEvent) => {
+    ev.preventDefault();
+    try { await api.post(`/api/budgets/history-inclusions/${m.id}/retire`, { reason }); onSaved(); } catch (x) { setErr(x); }
+  };
+  return (
+    <Modal title={`Retire the mark for ${m.fiscal_year_label}`} onClose={onClose}>
+      <GuardedForm onSubmit={submit}>
+        <ErrorBox error={err} />
+        <p>The Budget Review stops showing <i>included in {m.included_in}</i> that year. The mark is kept (with your reason) and can't be deleted; the year can be marked again.</p>
+        <Field label="Reason (required)"><input required maxLength={500} value={reason} onChange={(x) => setReason(x.target.value)} /></Field>
+        <div className="actions"><button type="button" onClick={onClose}>Cancel</button><button className="primary" type="submit">Retire</button></div>
+      </GuardedForm>
     </Modal>
   );
 }
@@ -334,12 +444,13 @@ function ImportHistory({ fy, onClose, onSaved }: any) {
         <>
           <p>
             A CSV file from your earlier spreadsheets, one row per budget per year, with the columns <b>budget code, type,
-            former code, former name, year, budgeted, actual, note, line</b>.
+            former code, former name, year, budgeted, actual, note, line, estimated</b>.
           </p>
           <ul className="small">
             <li><b>Budget code</b>: the budget of <b>{fy.display_name}</b> that continues it (a sub-budget, or <i>-00</i> for a parent's Other, works too). Leave it empty for a budget that no budget of PennyWarden continues; then <b>type</b> (Income or Expense) is needed.</li>
             <li><b>Former code</b> and <b>former name</b>: the budget as it was called that year (empty: the same as the budget). Rows with the same budget code are one budget; without a budget code, rows with the same former code are. Use <b>line</b> (any label) to keep a renumbered budget together.</li>
             <li>Only years before the first Fiscal Year in PennyWarden. Template rows you don't fill in are skipped.</li>
+            <li><b>Estimated</b> (optional): <i>yes</i> for a figure that is an estimate — its <b>note</b> must then say why; empty or <i>no</i> otherwise.</li>
           </ul>
           <p><a className="button" href={`/api/budgets/history-entries/template${qs({ fiscal_year_id: fy.id })}`}>Download the template</a> <span className="hint">(this year's budgets, ready to fill in)</span></p>
           <ErrorBox error={err} />
