@@ -1707,6 +1707,30 @@ test("#56 / #57: the Register shows Opening, Current (bank) and Available; the b
     allocations: [{ budget_id: opts[0].id, amount: "1.00" }] } });
   expect(bad.status()).toBe(422);
   await page.screenshot({ path: "e2e-screenshots/light-register-balances.png" });
+  // 2.4.0 polish (#468): the system Print - a short header (title, applied filters, balances) instead of the screen's
+  // header, filters and tiles
+  await page.emulateMedia({ media: "print" });
+  const head = page.getByTestId("register-print-head");
+  await expect(head).toBeVisible();
+  await expect(head).toContainText("Register — ");
+  await expect(head).toContainText("Fiscal Year: ");
+  await expect(head).toContainText("Available (incl. uncleared)");
+  await expect(page.locator(".register-sticky")).toBeHidden();
+  expect((await head.boundingBox())!.height).toBeLessThanOrEqual(1.5 * 96);
+  // two lines per transaction (Kyle, 2026-11-02): Date … Balance, then Entity, Description, Status; no 📎
+  await expect(page.locator(".register-page .table-wrap")).toBeHidden();
+  const pt = page.getByTestId("register-print-table");
+  await expect(pt).toBeVisible();
+  for (const h of ["Date", "Cleared", "Check #", "Invoice #", "Deposit", "Withdrawal", "Entity", "Description", "Status"])
+    await expect(pt.locator("thead th", { hasText: h }).first()).toBeVisible();
+  await expect(pt.locator("thead th", { hasText: "📎" })).toHaveCount(0);
+  expect(await pt.locator("tbody tr").count()).toBe(2 * await page.locator("table.register tbody tr[id^='txn-']").count());
+  // long entity names and descriptions are shortened with an ellipsis (whole text in the title)
+  for (const cell of await pt.locator("td.rp-entity, td.rp-desc").all())
+    expect(((await cell.textContent()) || "").length).toBeLessThanOrEqual(45);
+  await page.pdf({ path: "e2e-screenshots/register-print.pdf" });
+  await page.emulateMedia({ media: "screen" });
+  await expect(head).toBeHidden();
 });
 
 // ---------------------------------------------------------------- 1.7.3 #104/#105: Budget filter and Budgets links

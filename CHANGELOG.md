@@ -114,6 +114,14 @@ PennyWarden 2.4.0 (in progress).
   the log and the audit event. A restore of a backup from an earlier version is merged the same way.
 - System/About → **Health** shows how many files are shared and the space saved.
 
+### Register
+- **Clean printout (#468).** Printing the Register with the browser's or app's Print now gives a portrait page with a
+  short header — *Register — bank account* and the printed date, the filters that are applied, and the balances on one
+  line — followed by the register as filtered on screen, two lines per transaction: Date, Cleared, Check #, Invoice #,
+  Deposit, Withdrawal and balance, then Entity, Description and Status. Long entity names and descriptions are
+  shortened with "…". The screen's filters and balance tiles, the ▸ details and the 📎 column are not printed; long
+  registers repeat the column headings on each page.
+
 ### Check printing
 - **Cover letter logo top right (#466).** A third logo position, **Top right, beside the letterhead**: the logo sits
   level with the organization's name at the right margin, and the letter text is not pushed down. The letterhead and

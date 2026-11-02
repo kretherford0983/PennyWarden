@@ -128,6 +128,17 @@ could not otherwise be corrected. Scope and safeguards:
   with a link; the variable picker completes dotted names.
 - Tests: `backend/tests/test_v210_organization.py` (6, including the data migration) and the E2E #126 and #312 steps.
 
+**2.4.0 polish — Register printout (#468, decided with Kyle 2026-11-02).** System Print only (no Print button).
+Print-only `RegisterPrintHead` (title + printed date; applied filters: the Fiscal Year always, the others when set, a
+non-default sort; balances on one line, Ending only when the screen shows that tile). In print the `.register-sticky`
+block (page head, filters, tiles), the sort note, the reviews panel and the screen table are hidden; a print-only
+`RegisterPrintTable` shows two lines per transaction (Kyle: Date, Cleared, Check #, Invoice #, Deposit, Withdrawal,
+balance / Entity, Description, Status; one `<tbody>` per transaction, never split across pages). Entity and
+description are cut to 30 / 45 characters (`clip`: at the last word break when it keeps ≥ 60 %, trailing punctuation
+dropped, "…"; the whole text in the cell's title). Named `@page register` (letter portrait, 0.5 in margins) so other prints keep their own
+setup. (The screen table's Date/Cleared headings are sort buttons, which the global print rule hides - one reason
+for a separate print table.) E2E: the "#56 / #57" register test checks the print layout (`emulateMedia print`).
+
 **2.4.0 polish — cover letter logo top right (#466, Kyle 2026-11-02).** `LetterConfig.logo_position` adds `RIGHT`
 (LEFT|CENTER|RIGHT). Drawn on the first page's canvas (not in the story), top level with the text frame's top (1 in
 + 6 pt frame padding), right edge at the 7.5 in margin, so the letterhead is not pushed down. The letterhead and date

@@ -166,6 +166,17 @@ removed, freeing disk space. Every file is checked first; anything that doesn't 
 An Administrator can see how many files are shared and how much space was saved in the **Health** section of
 **System/About**.
 
+## Register
+
+### Printing the register
+Print the Register with **Print** in your browser or the app (Ctrl+P). You get a clean portrait printout of the
+register **as it is filtered on screen**. The top of the page has one line with the bank account and the date printed,
+one line with the filters you applied (the Fiscal Year is always listed), and one line with the balances. The
+transactions follow, two lines each: the dates, check and invoice numbers, amounts and balance on the first, the entity,
+description and status on the second (a long entity name or description is shortened and ends in "…"). The filter
+boxes, balance tiles, opened details and the 📎 column are not printed.
+For a printout of just some transactions — one budget, a date range, uncleared items — set the filters first, then print.
+
 ## Check printing
 
 ### Cover letter logo on the right

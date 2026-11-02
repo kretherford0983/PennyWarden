@@ -198,6 +198,28 @@ tr.child td.indent { padding-left: 28px; }
   .print-only { display: block !important; }
 }
 .print-only { display: none; }
+/* 2.4.0 polish (#468): the register on paper (the system Print) - portrait, a short header (title, applied filters,
+   balances: RegisterPrintHead) instead of the screen's header, filters and tiles, then RegisterPrintTable (two lines
+   per transaction, no details or attachment column) instead of the screen table */
+@page register { size: letter portrait; margin: 0.5in; }
+@media print {
+  .register-page { page: register; }
+  .register-page .register-sticky, .register-page .sort-note { display: none !important; }
+  .register-print-head { font-size: 9pt; line-height: 1.3; margin: 0 0 6pt; padding-bottom: 4pt; border-bottom: 1px solid #000; }
+  .register-print-head .rph-title { display: flex !important; justify-content: space-between; font-size: 11pt; margin-bottom: 2pt; }
+  table.register-print { display: table !important; width: 100%; font-size: 8.5pt; border-collapse: collapse; }
+  table.register-print th, table.register-print td { padding: 1pt 4pt; text-align: left; vertical-align: top; }
+  table.register-print .num { text-align: right; white-space: nowrap; }
+  table.register-print tbody tr:first-child td:nth-child(-n+2) { white-space: nowrap; }
+  table.register-print thead th { font-size: 8pt; }
+  table.register-print thead tr.rp2 th { border-bottom: 1pt solid #000; font-weight: normal; font-style: italic; }
+  table.register-print tbody { break-inside: avoid; }
+  table.register-print tbody tr.rp2 td { border-bottom: 0.5pt solid #999; padding-bottom: 2pt; }
+  table.register-print tbody.void td { text-decoration: line-through; color: #444 !important; }
+  table.register-print tbody.void td.rp-status { text-decoration: none; }
+  table.register-print .badge { display: inline-block; margin-left: 3pt; padding: 0 2pt; font-size: 7.5pt; background: none !important;
+    border: 0.5pt solid #666; color: #000 !important; }
+}
 a.button { display: inline-block; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); text-decoration: none; }
 a.button.primary { background: var(--primary); color: var(--primary-text); border-color: var(--primary); }
 
