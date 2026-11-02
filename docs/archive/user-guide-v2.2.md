@@ -1,6 +1,6 @@
 # What's new in 2.2 — quick guide
 
-*2.2.0 is in progress. The full list is in the [changelog](../CHANGELOG.md).*
+*2.2.0 is in progress. The full list is in the [changelog](../../CHANGELOG.md).*
 
 ## Signing in and passwords
 
@@ -330,4 +330,4 @@ Want to show PennyWarden to someone before they set up their own organization? E
 made-up band boosters club. Install PennyWarden, choose **Restore from a backup instead** on the first screen, pick the
 demo file and enter `pennywarden demo`, then sign in as `demo-admin`, `demo-budget`, `demo-register` or
 `demo-auditor` (password `Demo-PennyWarden-2026`). Changes are undone when PennyWarden restarts or with **Reset demo
-data**; **Remove the demo and start fresh** clears it away for real use. Details: [docs/demo.md](demo.md).
+data**; **Remove the demo and start fresh** clears it away for real use. Details: [docs/demo.md](../demo.md).

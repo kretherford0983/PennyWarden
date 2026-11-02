@@ -5,6 +5,8 @@ WORKDIR /src
 COPY frontend/package.json frontend/package-lock.json frontend/
 RUN npm --prefix frontend ci
 COPY frontend frontend
+# 2.4.0 (#473): the user guide and the guides it links to are bundled into the UI
+COPY docs/user-guide.md docs/check-printing.md docs/backup-restore.md docs/
 RUN mkdir -p backend/fmpoc && npm --prefix frontend run build
 
 FROM python:3.12-slim

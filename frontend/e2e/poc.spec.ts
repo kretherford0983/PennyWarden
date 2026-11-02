@@ -122,7 +122,7 @@ test("AC-INIT-001..007: fresh install wizard bootstraps a working Administrator"
   // 1.9.0 (#54): on a local install the first user holds every role - one account runs the organization's books
   const nav = page.getByRole("navigation", { name: "Main navigation" });
   await expect(nav.getByRole("link")).toHaveText(["Dashboard", "Fiscal Years", "Budgets", "Bank Accounts", "Register",
-    "Entities", "Reports", "Users", "Audit Log", "System/About"]);
+    "Entities", "Reports", "Users", "Audit Log", "System/About", "Help"]);   // 2.4.0 (#473): Help is last for every role
   await nav.getByRole("link", { name: "Users" }).click();
   const row = page.getByRole("row", { name: /admin/ });
   await expect(row).toContainText("COMBINED");
@@ -144,7 +144,7 @@ test("AC-INIT-001..007: fresh install wizard bootstraps a working Administrator"
   await expect(ed).toHaveCount(0);
   await page.reload();
   await expect(page.getByRole("heading", { name: "Users" })).toBeVisible();
-  await expect(nav.getByRole("link")).toHaveText(["Dashboard", "Users", "Audit Log", "System/About"]);
+  await expect(nav.getByRole("link")).toHaveText(["Dashboard", "Users", "Audit Log", "System/About", "Help"]);
   await expect(page.getByRole("row", { name: /admin/ })).toContainText("ADMINISTRATOR");
   await nav.getByRole("link", { name: "Audit Log" }).click();
   await expect(page.locator(".audit-action", { hasText: "Application initialized" })).toBeVisible();   // 2.0.0 (#133)
@@ -344,6 +344,38 @@ test("AC-FY-VIS-006 / AC-REG-001 / AC-SEC-011: Register User allocates to Draft 
   await row.getByRole("button", { name: /Details/ }).click();
   await expect(page.getByRole("cell", { name: "FY2027", exact: true })).toBeVisible();
   expect(await page.evaluate(() => (window as any).__xss)).toBeUndefined();
+});
+
+test("#473 AC-DOC-001..004: Help opens the bundled guide at the page's section, for every role, with no outside requests", async ({ page }) => {
+  const outside: string[] = [];
+  page.on("request", (r) => { const h = new URL(r.url()).hostname; if (!["127.0.0.1", "localhost"].includes(h)) outside.push(r.url()); });
+  await login(page, "ru1");
+  const nav = page.getByRole("navigation", { name: "Main navigation" });
+  await nav.getByRole("link", { name: "Register" }).click();
+  // AC-DOC-001: the top bar's help opens the guide at this page's section
+  await page.getByRole("link", { name: "Help for this page" }).click();
+  await expect(page).toHaveURL(/\/help#register$/);
+  await expect(page.getByRole("heading", { level: 2, name: "Register" })).toBeInViewport();
+  // a link to another bundled guide stays in the app
+  await page.getByTestId("help-doc").getByRole("link", { name: "Check printing", exact: true }).first().click();
+  await expect(page).toHaveURL(/\/help\/check-printing$/);
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+  // AC-DOC-002: Help in the menu opens the start of the guide
+  await nav.getByRole("link", { name: "Help", exact: true }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "PennyWarden user guide" })).toBeVisible();
+  // AC-DOC-003: the guide came from the app itself
+  expect(outside).toEqual([]);
+  await logout(page);
+
+  await login(page, "admin");
+  await expect(nav.getByRole("link", { name: "Help", exact: true })).toBeVisible();
+  await nav.getByRole("link", { name: "Users" }).click();
+  await page.getByRole("link", { name: "Help for this page" }).click();
+  await expect(page).toHaveURL(/\/help#users$/);
+  // AC-DOC-004: on a module the Administrator can't open, help points at the start of the guide, not the module
+  await page.goto("/register");
+  await expect(page.getByText("You are not authorized to view this module.")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Help for this page" })).toHaveAttribute("href", "/help");
 });
 
 test("AC-AUTH-SELF-001/004: self-service password change", async ({ page }) => {
