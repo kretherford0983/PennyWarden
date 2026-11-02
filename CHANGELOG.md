@@ -114,6 +114,11 @@ PennyWarden 2.4.0 (in progress).
   the log and the audit event. A restore of a backup from an earlier version is merged the same way.
 - System/About → **Health** shows how many files are shared and the space saved.
 
+### Check printing
+- **Cover letter logo top right (#466).** A third logo position, **Top right, beside the letterhead**: the logo sits
+  level with the organization's name at the right margin, and the letter text is not pushed down. The letterhead and
+  date lines wrap short of the logo; the address starts below the logo only when the logo is taller than those lines.
+
 ## 2.3.0 — 2026-11-01
 PennyWarden 2.3.0 (in progress).
 

@@ -128,6 +128,14 @@ could not otherwise be corrected. Scope and safeguards:
   with a link; the variable picker completes dotted names.
 - Tests: `backend/tests/test_v210_organization.py` (6, including the data migration) and the E2E #126 and #312 steps.
 
+**2.4.0 polish — cover letter logo top right (#466, Kyle 2026-11-02).** `LetterConfig.logo_position` adds `RIGHT`
+(LEFT|CENTER|RIGHT). Drawn on the first page's canvas (not in the story), top level with the text frame's top (1 in
++ 6 pt frame padding), right edge at the 7.5 in margin, so the letterhead is not pushed down. The letterhead and date
+paragraphs get `rightIndent` = logo width + 0.25 in (wrap, never under the logo); a `_ClearBelow` flowable after the
+date adds space only when the logo reaches lower than those lines. Window (LETTER/ADDRESS_PAGE) and pre-printed
+letters unchanged (the window letter already prints its logo top right). Test
+`test_v200_build6.py::test_logo_top_right_beside_the_letterhead`. No BR/AC change.
+
 **2.4.0 build 11 — Invoice PDF template (#253 part 3).** Completes #253 ("PDF template built on the 2.0.0
 cover-letter editor: logo and letterhead, {VARIABLES}, live preview, line-table column picker").
 - `invoice_settings.template_json`, `logo_png`, `logo_sha256` (migration `0081`; empty = the built-in default

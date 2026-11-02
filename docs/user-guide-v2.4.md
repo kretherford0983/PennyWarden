@@ -165,3 +165,11 @@ The first time 2.4 starts, attachments that are identical are linked to one stor
 removed, freeing disk space. Every file is checked first; anything that doesn't check out is left exactly as it is.
 An Administrator can see how many files are shared and how much space was saved in the **Health** section of
 **System/About**.
+
+## Check printing
+
+### Cover letter logo on the right
+A cover letter's logo can now go **Top right, beside the letterhead** (the letter's **Logo position**).
+The logo lines up with the organization's name at the right margin, and the rest of the letter stays
+where it was — nothing is pushed down. If the logo is taller than the letterhead and date lines, the address simply
+starts below it.
