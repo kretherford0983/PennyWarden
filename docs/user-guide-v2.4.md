@@ -175,6 +175,11 @@ one line with the filters you applied (the Fiscal Year is always listed), and on
 transactions follow, two lines each: the dates, check and invoice numbers, amounts and balance on the first, the entity,
 description and status on the second (a long entity name or description is shortened and ends in "…"). The filter
 boxes, balance tiles, opened details and the 📎 column are not printed.
+
+### Sorted by Cleared: voided checks
+When you sort the register by **Cleared**, a check that was voided without ever clearing now sits at its own date (the
+date it was written) rather than at the top or bottom with the uncleared items. Uncleared items that are not voided
+still stay together, since they are still outstanding.
 For a printout of just some transactions — one budget, a date range, uncleared items — set the filters first, then print.
 
 ## Check printing

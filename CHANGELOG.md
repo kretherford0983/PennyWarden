@@ -121,6 +121,9 @@ PennyWarden 2.4.0 (in progress).
   Deposit, Withdrawal and balance, then Entity, Description and Status. Long entity names and descriptions are
   shortened with "…". The screen's filters and balance tiles, the ▸ details and the 📎 column are not printed; long
   registers repeat the column headings on each page.
+- **Voids sort by their date when sorted by Cleared (#471).** A voided (or deleted) transaction that never cleared is
+  final, not outstanding, so it is now placed by its transaction date instead of with the uncleared items at the top or
+  bottom. Uncleared transactions that are not voided still stay together as outstanding.
 
 ### Check printing
 - **Cover letter logo top right (#466).** A third logo position, **Top right, beside the letterhead**: the logo sits

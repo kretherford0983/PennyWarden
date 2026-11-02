@@ -161,7 +161,7 @@ export default function Register() {
           {sortKey !== DEFAULT_SORT ? (
             <p className="muted sort-note">
               Sorted by {sortCol === "clear_date" ? "Cleared" : "Date"}, {sortDir === "asc" ? "oldest first" : "newest first"}
-              {sortCol === "clear_date" ? " (uncleared transactions " + (sortDir === "asc" ? "last" : "first") + "; the balance column is the bank balance)" : ""}.{" "}
+              {sortCol === "clear_date" ? " (uncleared transactions " + (sortDir === "asc" ? "last" : "first") + "; a void that never cleared by its date; the balance column is the bank balance)" : ""}.{" "}
               <button type="button" className="link" onClick={() => chooseSort(DEFAULT_SORT)}>Reset to default</button>
             </p>
           ) : null}
