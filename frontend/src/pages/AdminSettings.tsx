@@ -331,6 +331,9 @@ export function HealthPanel() {
           <dl className="dl">
             <dt>Database</dt><dd>{size(h.database_bytes)}</dd>
             <dt>Attachments</dt><dd>{size(h.attachments_bytes)} ({h.attachment_files} files)</dd>
+            {h.attachment_shared_files ? (  /* 2.4.0 (#425): identical files are stored once */
+              <><dt>Shared files</dt><dd>{h.attachment_shared_files} {h.attachment_shared_files === 1 ? "file is" : "files are"} stored once and shared by identical attachments — {size(h.attachment_bytes_saved)} saved</dd></>
+            ) : null}
             <dt>Free disk space</dt><dd>{size(h.disk.free)}{h.disk.free_percent != null ? ` (${h.disk.free_percent} %)` : ""}{h.low_disk ? " – low" : ""}</dd>
             <dt>Database version</dt><dd>{h.migrations.current || "—"} {h.migrations.up_to_date ? <span className="badge">up to date</span> : <span className="badge grey">expected {h.migrations.head}</span>}</dd>
           </dl>

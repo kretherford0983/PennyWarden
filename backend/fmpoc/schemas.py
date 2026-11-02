@@ -80,7 +80,7 @@ class ChangePasswordIn(In):
 
 
 class DashboardSectionIn(In):
-    key: Literal["notifications", "fiscal_year", "budget", "review", "bank", "attention", "charts"]
+    key: Literal["notifications", "fiscal_year", "budget", "review", "bank", "attention", "invoices", "charts"]   # 2.4.0 (#255): invoices
     visible: bool
 
 
@@ -91,7 +91,7 @@ class PreferencesIn(In):
     dashboard_charts: list[Literal["income_pie", "monthly", "expense_vs_budget", "balances", "expense_pie",
                                    "cumulative_net"]] | None = Field(None, max_length=6)
     # v1.5.0 CR-031: dashboard sections in display order with visibility; reset_dashboard_layout -> default
-    dashboard_layout: list[DashboardSectionIn] | None = Field(None, max_length=7)
+    dashboard_layout: list[DashboardSectionIn] | None = Field(None, max_length=8)   # 2.4.0 (#255): 8 sections
     reset_dashboard_layout: bool | None = None
     # 2.1.0 (#262): the register's sort, remembered per user; reset_register_sort -> Date, oldest first
     register_sort: Literal["transaction_date:asc", "transaction_date:desc", "clear_date:asc", "clear_date:desc"] | None = None
@@ -104,7 +104,8 @@ class PreferencesIn(In):
 
 Domain = Literal["ADMINISTRATOR", "FINANCIAL", "AUDITOR", "COMBINED"]  # 1.9.0 (#54): COMBINED on local installs
 RoleCode = Literal["ADMINISTRATOR", "BUDGET_MANAGER", "BUDGET_USER", "REGISTER_USER", "AUDITOR",
-                   "BUDGET_ADMIN", "REGISTER_ADMIN"]  # 1.7.3 (#52, #53)
+                   "BUDGET_ADMIN", "REGISTER_ADMIN",  # 1.7.3 (#52, #53)
+                   "INVOICE_MANAGER"]  # 2.4.0 (#251)
 
 
 class UserCreateIn(In):
@@ -519,6 +520,159 @@ class FundraiserIn(In):
     continues_from_id: int | None = None       # 2.1.0 (#277): the previous fundraiser of the series
     copy_buckets_from_id: int | None = None    # 2.1.0 (#277): "Create next year's from this one" (create only)
     goal_amount: Amount | None = None          # 2.3.0 (#372): optional goal; blank/None = no goal (left unchanged if omitted on edit)
+    event_type: Literal["FUNDRAISER", "EVENT"] | None = None   # 2.4.0 (#429): create default Fundraiser; omitted on edit = unchanged
+
+
+class CatalogNameIn(In):                     # 2.4.0 (#252): a unit type or category
+    name: Str(80)
+
+
+class InvoiceProductIn(In):                  # 2.4.0 (#252)
+    name: Str(120)
+    code: OptStr(30) = None
+    description: OptStr(1000) = None
+    unit_price: Amount
+    unit_type_id: int | None = None
+    category_id: int | None = None
+    taxable: bool = False
+    budget_id: int | None = None
+
+
+class InvoiceTaxRateIn(In):                  # 2.4.0 (#252)
+    name: Str(80)
+    rate: Str(12)
+    budget_id: int | None = None
+
+
+class InvoiceDiscountIn(In):                 # 2.4.0 (#253)
+    kind: Literal["AMOUNT", "PERCENT"]
+    value: Str(20)
+    reason: Str(200)
+
+
+class InvoiceLineIn(In):                     # 2.4.0 (#253): every line comes from the catalog
+    id: int | None = None
+    product_id: int
+    quantity: Str(14)
+    discount_kind: Literal["AMOUNT", "PERCENT"] | None = None
+    discount_value: OptStr(20) = None
+    discount_reason: OptStr(200) = None
+    custom_values: dict[str, str | None] | None = None    # 2.4.0 (#253 part 2): {field id: value}
+
+
+class InvoiceIn(In):                         # 2.4.0 (#253)
+    customer_entity_id: int
+    invoice_date: Date
+    due_date: OptDate = None
+    terms_text: OptStr(200) = None
+    notes: OptStr(2000) = None
+    tax_rate_id: int | None = None
+    discount: InvoiceDiscountIn | None = None
+    lines: list[InvoiceLineIn] = Field(default_factory=list, max_length=200)
+    custom_values: dict[str, str | None] | None = None    # 2.4.0 (#253 part 2)
+
+
+class InvoiceBatchIn(In):                    # 2.4.0 (#248): one draft per customer
+    name: OptStr(120) = None
+    customer_entity_ids: list[int] = Field(default_factory=list, max_length=1000)
+    invoice_date: Date
+    due_date: OptDate = None
+    terms_text: OptStr(200) = None
+    notes: OptStr(2000) = None
+    tax_rate_id: int | None = None
+    discount: InvoiceDiscountIn | None = None
+    lines: list[InvoiceLineIn] = Field(default_factory=list, max_length=200)
+    custom_values: dict[str, str | None] | None = None
+
+
+class EmailSettingsIn(In):                   # 2.4.0 (#249): the Administrator's outgoing mail server
+    enabled: bool = False
+    host: OptStr(255) = None
+    port: int = 587
+    security: Literal["STARTTLS", "SSL", "NONE"] = "STARTTLS"
+    username: OptStr(255) = None
+    password: Annotated[str | None, StringConstraints(max_length=500)] = None   # empty = keep the saved one
+    clear_password: bool = False
+    from_address: OptStr(254) = None
+    from_name: OptStr(120) = None
+    reply_to: OptStr(254) = None
+
+
+class EmailTestIn(In):
+    to: Str(254)
+
+
+class EmailSendIn(In):                       # 2.4.0 (#249): one email, sent by a person
+    to: list[Str(254)] = Field(default_factory=list, max_length=10)
+    cc: list[Str(254)] = Field(default_factory=list, max_length=10)
+    subject: Str(200)
+    message: OptStr(10000) = None
+
+
+class StatementEmailIn(EmailSendIn):
+    customer_entity_id: int
+    date_from: Date
+    date_to: Date
+
+
+class InvoiceFieldIn(In):                    # 2.4.0 (#253 part 2): an Administrator-defined field
+    level: Literal["INVOICE", "LINE"] | None = None
+    field_type: Literal["TEXT", "NUMBER", "DATE", "PICKLIST"] | None = None
+    name: Str(60)
+    options: list[Str(80)] = Field(default_factory=list, max_length=50)
+    required: bool = False
+    show_on_pdf: bool = True
+
+
+class InvoiceSetupIn(In):                    # 2.4.0 (#253): the Administrator's setup
+    number_pattern: Str(40)
+    terms_days: int = 30
+    terms_text: OptStr(200) = None
+    default_notes: OptStr(2000) = None
+    overdue_reminder_days: int | None = None      # 2.4.0 (#255): reminder to Invoice Managers, due date + N days
+
+
+class InvoiceWriteOffDecisionIn(In):          # 2.4.0 (#253)
+    approve: bool
+    note: OptStr(500) = None
+
+
+class InvoicePaymentIn(In):                   # 2.4.0 (#254): Record payment (Register User)
+    bank_account_id: int
+    amount: Amount
+    transaction_date: OptDate = None
+    clear_date: OptDate = None
+    notes: OptStr(4000) = None
+    confirm_overpayment: bool = False
+    confirmations: Confirmations = []
+
+
+class InvoiceLinkIn(In):                      # 2.4.0 (#254)
+    allocation_id: int
+    confirmations: Confirmations = []
+
+
+class InvoiceUnlinkIn(In):                    # 2.4.0 (#254)
+    move_to_budget_id: int
+    reason: Str(500)
+
+
+class InvoiceRefundIn(In):                    # 2.4.0 (#254): refund of an overpayment
+    bank_account_id: int
+    amount: Amount
+    transaction_date: OptDate = None
+    clear_date: OptDate = None
+    check_number: Annotated[str | None, StringConstraints(strip_whitespace=True, max_length=20,
+                                                          pattern=r"^[A-Za-z0-9-]*$")] = None
+    electronic_payment: bool | None = None
+    payment_method: PaymentMethod | None = None
+    payment_reference: PaymentReferenceStr = None
+    notes: OptStr(4000) = None
+    confirmations: Confirmations = []
+
+
+class InvoicedIncomeIn(In):                   # 2.4.0 (#250)
+    invoiced_income: bool
 
 
 class FundraiserLinkIn(In):                    # 2.1.0 (#277)
@@ -631,6 +785,7 @@ class ModulesIn(In):
     fundraisers: bool | None = None
     checks: bool | None = None   # 2.0.0 (#156): Check Printing
     donations: bool | None = None   # 2.1.0 (#312): Donations (receipt letters)
+    invoices: bool | None = None    # 2.4.0 (#251): Invoices
 
 
 # ------------------------------------------------------------------ v1.6.1 CR-034 fundraiser management

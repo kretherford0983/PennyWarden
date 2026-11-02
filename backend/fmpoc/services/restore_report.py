@@ -23,8 +23,8 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from ..models import (Attachment, BankAccount, Budget, Entity, FiscalYear, RegisterTransaction, TransactionAllocation,
-                      User, Workspace)
+from ..models import (Attachment, BankAccount, Budget, Entity, FiscalYear, Invoice, RegisterTransaction,
+                      TransactionAllocation, User, Workspace)
 from .reports import _csv_safe
 
 REPORT_DIR = "restore-reports"
@@ -110,7 +110,9 @@ def build(db: Session, ws_id: int, backup_db: Path, backup_created_at: str | Non
     for label, model, name in (("fiscal_years", FiscalYear, lambda x: x.identifier),
                                ("budgets", Budget, lambda x: f"{x.parent_code}{'-' + x.child_code if x.child_code else ''} {x.name}"),
                                ("entities", Entity, lambda x: x.display_name),
-                               ("bank_accounts", BankAccount, lambda x: x.account_name)):
+                               ("bank_accounts", BankAccount, lambda x: x.account_name),
+                               # 2.4.0 (#255): invoices made after the backup are re-entered too
+                               ("invoices", Invoice, lambda x: f"{x.number}{'-R' + str(x.revision) if x.revision else ''}")):
         new = [r for r in db.scalars(select(model).where(model.workspace_id == ws_id, model.created_at > created))]
         if new:
             other[label] = {"count": len(new), "names": [str(name(x))[:120] for x in new[:50]]}

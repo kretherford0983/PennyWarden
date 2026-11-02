@@ -3,6 +3,7 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 
+from ..errors import forbidden
 from ..deps import Ctx, auth_ctx, get_db, require
 from ..models import FiscalYear
 from ..services import charts as charts_svc
@@ -24,6 +25,8 @@ def dashboard(db: Session = Depends(get_db), ctx: Ctx = Depends(auth_ctx)):
         if ctx.has("financial.view"):
             return svc.financial(db, ctx)
         return svc.administrator(db, ctx)
+    if not ctx.has("financial.view"):      # 2.4.0 (#251): an Invoice Manager alone has no Dashboard (budget figures)
+        raise forbidden()
     return svc.financial(db, ctx)
 
 

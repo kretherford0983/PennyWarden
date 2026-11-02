@@ -122,7 +122,7 @@ def copy_budgets(db: Session, ctx, source: FiscalYear, target: FiscalYear, paren
         np = Budget(workspace_id=target.workspace_id, fiscal_year_id=target.id, parent_code=p.parent_code,
                     name=p.name, budget_type=p.budget_type, amount_cents=p.amount_cents, status="DRAFT",
                     notes=p.notes, created_by_user_id=ctx.user.id, updated_by_user_id=ctx.user.id,
-                    continues_budget_id=_link(p))
+                    continues_budget_id=_link(p), invoiced_income=bool(p.invoiced_income))   # 2.4.0 (#250)
         db.add(np)
         db.flush()
         explicit, _ = bsvc.children_of(db, p)
@@ -131,7 +131,7 @@ def copy_budgets(db: Session, ctx, source: FiscalYear, target: FiscalYear, paren
                           parent_code=np.parent_code, child_code=c.child_code, name=c.name,
                           budget_type=c.budget_type, amount_cents=c.amount_cents, status="DRAFT", notes=c.notes,
                           created_by_user_id=ctx.user.id, updated_by_user_id=ctx.user.id,
-                          continues_budget_id=_link(c)))
+                          continues_budget_id=_link(c), invoiced_income=bool(p.invoiced_income)))
         db.flush()
         bsvc.recalc_other(db, np)
         created.append(np.id)

@@ -3,6 +3,7 @@ import { Fragment, useEffect, useState } from "react";
 import { api, money, qs } from "../api";
 import { EntityPicker, ErrorBox, Field, Loading } from "../components";
 import { NotAuthorized, useMe } from "../App";
+import { InvoiceReport } from "./InvoiceReports";
 import { Link, useRouter } from "../router";
 import BudgetReview, { PlanningSheetReport } from "./BudgetReview";
 import FlowReport from "./FlowReport";
@@ -81,6 +82,8 @@ const BODIES: Record<string, (p: BodyProps) => JSX.Element> = {
   "budget-review": (p) => <BudgetReview fys={p.fys} initial={p.initial} onRun={p.onRun} />,
   "planning-sheet": (p) => <PlanningSheetReport {...p} />,
   "count-sheet": (p) => <CountSheetReport {...p} />,
+  ...Object.fromEntries(["inv-open", "inv-aging", "inv-statement", "inv-sales-tax", "inv-register", "inv-sales", "inv-activity"]
+    .map((rid) => [rid, (p: BodyProps) => <InvoiceReport rid={rid} {...p} />])),     // 2.4.0 (#255)
 };
 
 /** A run's options as an address, so Recently run opens the report with them filled in. */

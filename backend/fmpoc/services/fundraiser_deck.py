@@ -253,7 +253,7 @@ def build(s: dict) -> bytes:
     _text(sl, Inches(2.4), Inches(3.5), Inches(10), Inches(0.6), "Financial & Proceeds results", size=22, color=C.GREY)
     _text(sl, Inches(2.4), Inches(4.1), Inches(10), Inches(0.6), f"{event_dates(s)}  ·  {st['text']}", size=18, color=C.GREY)
     notes = [f"{s['fundraiser']} — {s['organization']}", f"Event: {event_dates(s)}. Status: {st['text']}.",
-             f"Generated {generated} by PennyWarden; the figures match the fundraiser's stakeholder report."]
+             f"Generated {generated} by PennyWarden; the figures match the {s.get('noun', 'fundraiser')}'s stakeholder report."]
     if st["code"] == "CANCELLED":
         warn = sl.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(2.4), Inches(5.0), Inches(10), Inches(0.8))
         warn.fill.solid()
@@ -265,14 +265,14 @@ def build(s: dict) -> bytes:
         r.text = f"Cancelled: {st['cancel_reason'] or 'no reason given'}. The figures are what was received and spent."
         r.font.name, r.font.size, r.font.bold = FONT, Pt(16), True
         r.font.color.rgb = RED
-        notes.append(f"This fundraiser was cancelled: {st['cancel_reason'] or 'no reason given'}.")
+        notes.append(f"This {s.get('noun', 'fundraiser')} was cancelled: {st['cancel_reason'] or 'no reason given'}.")
     _notes(sl, notes)
 
     # 2. executive highlights
     sl = prs.slides.add_slide(blank)
     _title(sl, "Executive highlights")
-    for i, (k, v, cap) in enumerate((("Net revenue", t["net_revenue"], "All income counted for the fundraiser"),
-                                     ("Expenses", t["expenses"], "Fundraiser expenses"),
+    for i, (k, v, cap) in enumerate((("Net revenue", t["net_revenue"], f"All income counted for the {s.get('noun', 'fundraiser')}"),
+                                     ("Expenses", t["expenses"], f"{s.get('noun', 'fundraiser').capitalize()} expenses"),
                                      ("Net proceeds", t["net_proceeds"], f"Net margin {_p(t['net_margin'])}"))):
         x = Inches(0.6 + i * 4.1)
         card = sl.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, x, Inches(2.0), Inches(3.8), Inches(2.6))
@@ -317,7 +317,7 @@ def build(s: dict) -> bytes:
         from .fundraiser_summary import YOY_HEAD, estimate_lines, yoy_rows, yoy_change
         yy = s["year_over_year"]
         sl = prs.slides.add_slide(blank)
-        _title(sl, "Year over year", "Each year this fundraiser was held")
+        _title(sl, "Year over year", f"Each year this {s.get('noun', 'fundraiser')} was held")
         cd = CategoryChartData(number_format='"$"#,##0.00')
         cd.categories = [str(r["year"]) + ("*" if r.get("estimated") else "") for r in yy]   # 2.3.0 (#390)
         cd.add_series("Net revenue", [float(r["net_revenue"]) if r["net_revenue"] is not None else None for r in yy])

@@ -260,7 +260,8 @@ def _entity(db: Session, ctx, entity_id: int | None, keep_ids: set[int]) -> Enti
 
 def _plan_allocations(db: Session, ctx, *, txn_type: str, txn_date: dt.date, parent_entity_id: int | None,
                       allocs_in: list, existing: dict[int, TransactionAllocation], date_changed: bool,
-                      keep_entity_ids: set[int]) -> tuple[list[_Plan], list[Warning_], int | None]:
+                      keep_entity_ids: set[int], refund_ok: set[int] = frozenset(),
+                      refund_alloc_ids: set[int] = frozenset()) -> tuple[list[_Plan], list[Warning_], int | None]:
     if not allocs_in:
         raise validation("At least one allocation is required.", "allocations")
     covering = covering_fiscal_years(db, ctx.workspace_id, txn_date)
@@ -280,7 +281,9 @@ def _plan_allocations(db: Session, ctx, *, txn_type: str, txn_date: dt.date, par
         except ValueError as e:
             raise validation(str(e), f"allocations.{i}.amount") from None
         unchanged_budget = ex is not None and ex.budget_id == ai.budget_id
-        budget, bw = bsvc.resolve_for_allocation(db, ctx, ai.budget_id, txn_type, unchanged_budget)
+        # 2.4.0 (#254): a refund of an invoice overpayment (new, from the invoice; or an existing one left unchanged)
+        refund = ai.budget_id in refund_ok or (ex is not None and ex.id in refund_alloc_ids and unchanged_budget)
+        budget, bw = bsvc.resolve_for_allocation(db, ctx, ai.budget_id, txn_type, unchanged_budget, income_refund=refund)
         warnings.extend(bw)
         if ai.fiscal_year_id is not None and ai.fiscal_year_id != budget.fiscal_year_id:
             raise validation("The selected Budget does not belong to the selected Fiscal Year.",
@@ -408,7 +411,9 @@ def check_clear_date(txn_date: dt.date, clear_date: dt.date | None) -> None:
 
 
 # ------------------------------------------------------------------ create
-def create(db: Session, ctx, data) -> RegisterTransaction:
+def create(db: Session, ctx, data, invoice_flow: dict | None = None) -> RegisterTransaction:
+    """`invoice_flow` (2.4.0 #254, set only by the invoice payment service): {"refund_ok": budget ids} - lets a
+    payment land on Invoiced Income budgets and a refund withdrawal use the BR-050 exception."""
     acct = _account_for_register(db, ctx, data.bank_account_id)
     txn_date = data.transaction_date or dt.date.today()  # BR-051 default
     check_clear_date(txn_date, data.clear_date)
@@ -435,7 +440,10 @@ def create(db: Session, ctx, data) -> RegisterTransaction:
         raise validation("void_reason is only accepted when creating a zero-dollar VOID record.", "void_reason")
     plans, warnings, natural_id = _plan_allocations(
         db, ctx, txn_type=data.transaction_type, txn_date=txn_date, parent_entity_id=t.parent_entity_id,
-        allocs_in=data.allocations, existing={}, date_changed=True, keep_entity_ids=set())
+        allocs_in=data.allocations, existing={}, date_changed=True, keep_entity_ids=set(),
+        refund_ok=set((invoice_flow or {}).get("refund_ok") or ()))
+    from . import invoice_payments as ipay                 # 2.4.0 (#254): Invoiced Income takes invoice payments only
+    ipay.guard_new_plans(db, ctx, data.transaction_type, plans, invoice_flow is not None)
     if data.transaction_type == "DEPOSIT":
         t.parent_entity_id = _deposit_parent_entity(db, ctx.workspace_id, plans, t.parent_entity_id)
     dup = possible_duplicate(db, ctx.workspace_id, acct.id, txn_date, data.transaction_type,
@@ -606,11 +614,15 @@ def update(db: Session, ctx, t: RegisterTransaction, data) -> RegisterTransactio
         if pe is not None and pe.is_system:
             parent_for_plan = None  # Multiple is derived, never an allocation default
     plans, natural_id = None, None
+    from . import invoice_payments as ipay                 # 2.4.0 (#254)
+    linked = ipay.linked_allocations(db, list(existing))
     if allocs_in is not None:
         plans, pw, natural_id = _plan_allocations(
             db, ctx, txn_type=new_type, txn_date=new_date, parent_entity_id=parent_for_plan, allocs_in=allocs_in,
-            existing=existing, date_changed=date_changed, keep_entity_ids=keep_ids)
+            existing=existing, date_changed=date_changed, keep_entity_ids=keep_ids,
+            refund_alloc_ids={aid for aid, k in linked.items() if k == "REFUND"})
         warnings.extend(pw)
+        ipay.guard_edit(db, ctx, t, new_type, plans, existing, linked)
     fin_fields = f - NO_ATTACHMENT_FIELDS  # documentation flags are not financial edits
     if plans is not None and "allocations" in fin_fields and not _allocations_financially_changed(plans, existing):
         fin_fields = fin_fields - {"allocations"}
@@ -706,6 +718,8 @@ def void(db: Session, ctx, t: RegisterTransaction, reason: str, confirm: bool) -
         if leg.transaction_type == "DEPOSIT":       # 2.2.0 (#325): Donations page lines await a deposit again
             from . import donations
             donations.unlink_for_deposit(db, ctx, leg)
+        from . import invoice_payments as ipay      # 2.4.0 (#254): a linked invoice re-opens (same transaction)
+        ipay.after_transaction_change(db, ctx, leg)
     return t
 
 
@@ -754,6 +768,8 @@ def delete(db: Session, ctx, t: RegisterTransaction, reason: str) -> RegisterTra
         if leg.transaction_type == "DEPOSIT":       # 2.2.0 (#325)
             from . import donations
             donations.unlink_for_deposit(db, ctx, leg)
+        from . import invoice_payments as ipay      # 2.4.0 (#254): a linked invoice re-opens
+        ipay.after_transaction_change(db, ctx, leg)
     return t
 
 

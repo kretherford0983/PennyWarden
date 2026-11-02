@@ -513,7 +513,8 @@ def _budget_section(tree: dict) -> list:
                  *[PM(f"<b>{q}</b>", "cellr") for q in qn], PM("<b>Actual</b>", "cellr"), PM("<b>Remaining</b>", "cellr")]]
         for r in rows:
             for x, indent in [(r, ""), *[(c, "    ") for c in r["children"]]]:
-                data.append([P(indent + x["label"], "cell"), P(x["state"]["label"], "cell"), P(money(x["amount"]), "cellr"),
+                inv = " (Invoiced income)" if x.get("invoiced_income") and not indent else ""   # 2.4.0 (#250)
+                data.append([P(indent + x["label"] + inv, "cell"), P(x["state"]["label"], "cell"), P(money(x["amount"]), "cellr"),
                              *[P(money(q), "cellr") for q in x["quarters"]], P(money(x["actual"]), "cellr"),
                              _remaining_cell(x)])
         data.append([PM("<b>Total</b>", "cell"), P("", "cell"), PM(f"<b>{money(summ['amount'])}</b>", "cellr"),
@@ -719,6 +720,26 @@ def build_audit_report(db: Session, ctx, settings, fy: FiscalYear, account_id: i
                     "(nothing was deposited); receipts list them by description only. The estimate is the "
                     "organization's own, for its records.", "small"), Spacer(1, 4),
                   _grid(rows, [0.8 * inch, 1.7 * inch, FRAME_W - 12 - 4.7 * inch, 1.2 * inch, 1.0 * inch]),
+                  PageBreak()]
+
+    # ---- 2.4.0 (#255): Close report only - invoices still open at the year's end, for information (they don't
+    # block the close: BR-013/014 unchanged)
+    if close_layout and account_id is None:
+        from . import invoice_reports as inv_rep
+        open_rows = sorted(inv_rep._open_rows(db, ctx.workspace_id, fy.end_date, None), key=lambda r: (r["due_date"], r["number"]))
+        if open_rows:
+            rows = [[PM("<b>Invoice</b>", "cell"), PM("<b>Customer</b>", "cell"), PM("<b>Date</b>", "cell"),
+                     PM("<b>Due</b>", "cell"), PM("<b>Total</b>", "cellr"), PM("<b>Open</b>", "cellr")]]
+            for x in open_rows:
+                rows.append([P(x["number"], "cell"), P(x["customer"], "cell"), P(x["invoice_date"].strftime("%m/%d/%Y"), "cell"),
+                             P(x["due_date"].strftime("%m/%d/%Y"), "cell"), P(money(x["total"]), "cellr"), P(money(x["open"]), "cellr")])
+            rows.append([PM("<b>Total open</b>", "cell"), P("", "cell"), P("", "cell"), P("", "cell"), P("", "cell"),
+                         PM(f"<b>{money(sum(x['open'] for x in open_rows))}</b>", "cellr")])
+            f += [_Mark(doc, "Open invoices"), PM("Open invoices at the year's end", "h1"),
+                  P(f"Invoices with a balance open on {fy.end_date.strftime('%m/%d/%Y')} (payments dated after it not "
+                    "counted). For information: open invoices don't prevent closing the Fiscal Year.", "small"),
+                  Spacer(1, 4),
+                  _grid(rows, [1.3 * inch, FRAME_W - 12 - 5.3 * inch, 0.9 * inch, 0.9 * inch, 1.1 * inch, 1.1 * inch]),
                   PageBreak()]
 
     # ---- one or more pages per transaction

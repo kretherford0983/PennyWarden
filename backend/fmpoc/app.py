@@ -23,7 +23,7 @@ from .errors import install_handlers
 from .routers import (admin, attachments, audit_log, auth, backup, bank_accounts, branding, budgets, checks, dashboard, donations,
                       envelopes,
                       entities, fiscal_years, fundraisers, pdf_preview, register, reminders, reports, system, updates,
-                      demo, report_settings, signers, testing, users)
+                      demo, email, invoices, report_settings, signers, testing, users)
 from .security import crypto
 from .services import bootstrap
 from .services.auth import LoginRateLimiter
@@ -169,6 +169,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         raise RuntimeError("The portable encryption key in the application data 'secrets' directory is missing or "
                            "does not match this database. Restore the key file from the same data set.")
     app.state.key = km
+    # 2.4.0 (#425): identical attachment files are stored once - merge any left from earlier versions or a restore
+    from .services.attachments import merge_duplicate_files
+    try:
+        merge_duplicate_files(session_factory, settings)
+    except Exception:  # noqa: BLE001 - never stops the application from starting; tried again at the next start
+        log.exception("Merging identical attachment files failed; nothing was removed.")
     # v1.4.1 CR-023/024/025: background backup/restore jobs, restore uploads, maintenance mode during a restore
     from .services.backup import Jobs, cleanup_work
     app.state.jobs, app.state.uploads, app.state.maintenance = Jobs(), {}, None
@@ -218,7 +224,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     for r in (system, backup, auth, users, audit_log, fiscal_years, budgets, entities, bank_accounts, register,
               attachments, dashboard, reports, fundraisers, reminders, updates, checks, donations, pdf_preview, admin,
-              testing, demo, branding, envelopes, signers, report_settings):
+              testing, demo, branding, envelopes, signers, report_settings, email, invoices):
         app.include_router(r.router)
 
     @app.api_route("/api/{rest:path}", methods=["GET", "POST", "PUT", "PATCH", "DELETE"], include_in_schema=False)

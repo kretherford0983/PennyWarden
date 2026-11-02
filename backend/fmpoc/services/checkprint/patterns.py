@@ -86,7 +86,18 @@ from ..entity_vars import FIELDS as _EF, MULTILINE_FIELDS as _EM   # noqa: E402
 for _k, _d in _EF.items():
     VARIABLES[f"PAYEE.{_k}"] = (f"Payee's {_d}", (LETTER, ENVELOPE) if _k in _EM else ALL)
     VARIABLES[f"DONOR.{_k}"] = (f"Donor's {_d}", (RECEIPT, STATEMENT))
-MULTILINE = (LETTER, ENVELOPE, RECEIPT, STATEMENT)     # contexts whose text may contain line breaks
+# 2.4.0 (#253 part 3): the invoice PDF template - organization, customer and invoice variables
+INVOICE_DOC = "INVOICE"
+for _k in ("ORG", "TODAY", "ORG.ADDRESS") + tuple(k for k in VARIABLES if k.startswith("ORG.")):
+    if INVOICE_DOC not in VARIABLES[_k][1]:
+        VARIABLES[_k] = (VARIABLES[_k][0], VARIABLES[_k][1] + (INVOICE_DOC,))
+for _k, _d in _EF.items():
+    VARIABLES[f"CUSTOMER.{_k}"] = (f"Customer's {_d}", (INVOICE_DOC,))
+for _k, _d in (("NUMBER", "Invoice number, e.g. INV-2027-0042 (with -R1 when revised)"), ("DATE", "Invoice date"),
+               ("DUE_DATE", "Due date"), ("TOTAL", "Invoice total, e.g. 1,250.00"),
+               ("BALANCE", "Amount still due, e.g. 250.00"), ("TERMS", "Payment terms, e.g. Net 30")):
+    VARIABLES[f"INVOICE.{_k}"] = (_d, (INVOICE_DOC,))
+MULTILINE = (LETTER, ENVELOPE, RECEIPT, STATEMENT, INVOICE_DOC)     # contexts whose text may contain line breaks
 _NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)?")    # 2.1.0 (#314): ORG.NAME
 
 
@@ -116,7 +127,7 @@ def _suggest(name: str, context: str) -> str | None:
 def parse(pattern: str, context: str = CHECK) -> list[Token]:
     if pattern is None:
         return []
-    limit = MAX_TEXT if context in (LETTER, RECEIPT, STATEMENT) else MAX_PATTERN
+    limit = MAX_TEXT if context in (LETTER, RECEIPT, STATEMENT, INVOICE_DOC) else MAX_PATTERN
     if len(pattern) > limit:
         raise PatternError(f"The text is longer than {limit} characters.")
     allowed = {"\n"} if context in MULTILINE else set()

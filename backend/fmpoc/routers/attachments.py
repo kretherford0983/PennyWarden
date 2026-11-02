@@ -18,17 +18,18 @@ Owner = Literal["fiscal_year", "transaction", "allocation", "fundraiser"]
 
 @router.get("/attachments")
 def list_attachments(owner_type: Owner, owner_id: int, include_removed: bool = False, db: Session = Depends(get_db),
-                     ctx: Ctx = Depends(require("financial.view"))):
+                     ctx: Ctx = Depends(require("register.view"))):
     return [svc.out(a) for a in svc.list_for(db, ctx, owner_type, owner_id, include_removed)]
 
 
 @router.post("/attachments", status_code=201)
 async def upload(request: Request, owner_type: Owner, owner_id: int, file: UploadFile = File(...),
                  document_type: Literal["APPROVAL", "AUDIT_SIGNOFF", "UNSPECIFIED"] | None = None,
-                 db: Session = Depends(get_db), ctx: Ctx = Depends(require("financial.view"))):
+                 attach_anyway: bool = False, db: Session = Depends(get_db), ctx: Ctx = Depends(require("financial.view"))):
     svc.check_manage(ctx, owner_type)  # authorize before reading the body into memory
     data = await svc.read_limited(file)
-    a = svc.store(db, ctx, request.app.state.settings, owner_type, owner_id, file.filename, data, document_type)
+    a = svc.store(db, ctx, request.app.state.settings, owner_type, owner_id, file.filename, data, document_type,
+                  attach_anyway=attach_anyway)   # 2.4.0 (#425): the same file twice on one record needs a yes
     return svc.out(a)
 
 
@@ -41,13 +42,13 @@ def reorder(body: AttachmentOrderIn, db: Session = Depends(get_db), ctx: Ctx = D
 
 
 @router.get("/attachments/{att_id}")
-def get_attachment(att_id: int, db: Session = Depends(get_db), ctx: Ctx = Depends(require("financial.view"))):
+def get_attachment(att_id: int, db: Session = Depends(get_db), ctx: Ctx = Depends(require("register.view"))):
     return svc.out(svc.get(db, ctx, att_id))
 
 
 @router.get("/attachments/{att_id}/content")
 def content(att_id: int, request: Request, download: bool = False, db: Session = Depends(get_db),
-            ctx: Ctx = Depends(require("financial.view"))):
+            ctx: Ctx = Depends(require("register.view"))):
     a = svc.get(db, ctx, att_id)
     path = svc.path_for(request.app.state.settings, a)
     if not path.is_file():

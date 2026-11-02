@@ -7,7 +7,7 @@ import sqlite3
 from pathlib import Path
 
 import pytest
-from conftest import PASSWORD, PDF_BYTES, Api, jpeg_bytes, png_bytes
+from conftest import PASSWORD, PDF_BYTES, Api, jpeg_bytes, png_bytes, unique_pdf
 
 
 def upload(client, owner_type, owner_id, name, data, mime="application/octet-stream"):
@@ -22,7 +22,7 @@ def txn(env, base):
 
 # ------------------------------------------------------------------ attachments
 def test_ac_att_001_003_allowed_formats_and_multiple(env, txn):
-    for name, data in [("a.pdf", PDF_BYTES), ("b.png", png_bytes()), ("c.jpg", jpeg_bytes()), ("d.JPEG", jpeg_bytes())]:
+    for name, data in [("a.pdf", PDF_BYTES), ("b.png", png_bytes()), ("c.jpg", jpeg_bytes()), ("d.JPEG", jpeg_bytes(other=True))]:
         r = upload(env.ru, "transaction", txn["id"], name, data)
         assert r.status_code == 201, (name, r.text)
     lst = env.bu.get(f"/api/attachments?owner_type=transaction&owner_id={txn['id']}").json()
@@ -66,7 +66,7 @@ def test_ac_sec_015_ac_att_004_path_traversal(env, txn, settings):
     names = ["../receipt.pdf", "..\\receipt.pdf", "/etc/passwd.pdf", "C:\\Windows\\win.pdf", "../../../../app.pdf",
              "..%2F..%2Fx.pdf", "\x00evil.pdf"]
     for n in names:
-        r = upload(env.ru, "transaction", txn["id"], n, PDF_BYTES)
+        r = upload(env.ru, "transaction", txn["id"], n, unique_pdf())   # 2.4.0 (#425): a file of its own each
         assert r.status_code == 201, n
         meta = r.json()
         assert "/" not in meta["original_filename"] and "\\" not in meta["original_filename"]

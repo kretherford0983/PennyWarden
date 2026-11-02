@@ -193,8 +193,9 @@ class Env:
 
     def fy_doc(self, fy_id, document_type="UNSPECIFIED", name="doc.pdf"):
         """v1.3 CR-007: upload a typed Fiscal Year document as the Budget Manager."""
+        # 2.4.0 (#425): each document has its own content (the same file twice on one Fiscal Year asks first)
         r = self.bm.c.post(f"/api/attachments?owner_type=fiscal_year&owner_id={fy_id}&document_type={document_type}",
-                           files={"file": (name, PDF_BYTES, "application/pdf")}, headers={"X-CSRF-Token": self.bm.csrf})
+                           files={"file": (name, unique_pdf(), "application/pdf")}, headers={"X-CSRF-Token": self.bm.csrf})
         assert r.status_code == 201, r.text
         return r.json()
 
@@ -233,9 +234,9 @@ def png_bytes(size=(4, 4)) -> bytes:
     return buf.getvalue()
 
 
-def jpeg_bytes() -> bytes:
+def jpeg_bytes(other: bool = False) -> bytes:
     buf = io.BytesIO()
-    Image.new("RGB", (4, 4), (10, 200, 10)).save(buf, "JPEG")
+    Image.new("RGB", (4, 4), (10, 10, 200) if other else (10, 200, 10)).save(buf, "JPEG")
     return buf.getvalue()
 
 
@@ -243,5 +244,32 @@ PDF_BYTES = (b"%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</T
              b"trailer<</Root 1 0 R>>\n%%EOF\n")
 
 
+_pdf_seq = itertools.count(1)
+
+
+def unique_pdf() -> bytes:
+    """A valid minimal PDF with content of its own (2.4.0 #425: identical files are stored once)."""
+    return PDF_BYTES.replace(b"%PDF-1.4\n", b"%%PDF-1.4\n%% doc %d\n" % next(_pdf_seq), 1)
+
+
 def today() -> str:
     return dt.date.today().isoformat()
+
+
+# 2.4.0 (#429): a Fundraiser needs an Income and an Expense budget (an Event an Expense budget) in each Fiscal Year it
+# uses once any budget is chosen. These earlier test modules exercise other fundraiser rules (budget windows, adjacent
+# years, closed years, report pages) with one-budget setups, so the new rule is relaxed for them only; it is tested in
+# test_v240_events.py and stays in force for every other module.
+_BEFORE_REQUIRED_BUDGETS = {"test_v160_fundraisers", "test_v161_fundraiser_manage", "test_v162_fundraiser_report",
+                            "test_v164_cancel_count_sheet", "test_v171_report_fundraiser_pages",
+                            "test_v210_attachment_order", "test_v210_budget_prep", "test_v210_fundraiser_series",
+                            "test_v210_fy_report_many_years", "test_v210_report_without_history",
+                            "test_v210_start_fundraiser_series", "test_v220_fundraiser_series", "test_v220_year_end",
+                            "test_v230_estimated_years"}
+
+
+@pytest.fixture(autouse=True)
+def _required_budgets_rule(request, monkeypatch):
+    if request.module.__name__.rsplit(".", 1)[-1] in _BEFORE_REQUIRED_BUDGETS:
+        from fmpoc.services import fundraisers as _fsvc
+        monkeypatch.setattr(_fsvc, "REQUIRED_KINDS", {"FUNDRAISER": (), "EVENT": ()})

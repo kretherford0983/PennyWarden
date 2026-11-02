@@ -9,6 +9,7 @@ import { MaintenancePanel } from "./Maintenance";
 import { ReinitializePanel } from "./Reinitialize";
 import { TestingPanel } from "./Testing";
 import { BackupWarningSetting, DiagnosticsPanel, HealthPanel, OrganizationPanel, OrganizationView, SecurityOverviewPanel, SessionsPanel, SettingsPanel } from "./AdminSettings";
+import { EmailSettingsPanel } from "./Email";
 
 /** 2.0.0 build 11 (#216, docs/ui-standards.md): System/About in tabs, each at its own address (/about/<tab>, so it can
  * be bookmarked, reloaded and reached with Back). Tabs the user can't use are not shown; an unknown or unavailable tab
@@ -68,7 +69,7 @@ export default function About() {
     ),
     branding: () => <Suspense fallback={<Loading />}><BrandingPanel org={org || ""} /></Suspense>,      // 2.2.0 (#280)
     reports: () => <ReportSettings />,      // 2.3.0 (#376)
-    settings: () => <SettingsPanel />,
+    settings: () => <><SettingsPanel />{can("email.setup") ? <EmailSettingsPanel /> : null}</>,      // 2.4.0 (#249): email
     backups: () => (
       <>
         {backups ? <BackupRestore maxMb={a.restore_max_mb} /> : null}
@@ -126,7 +127,7 @@ function ModulesPanel() {
   const [err, setErr] = useState<unknown>(null);
   const [saved, setSaved] = useState(false);
   useEffect(() => { api.get("/api/system/modules").then(setM, setErr); }, []);
-  const toggle = async (key: "fundraisers" | "checks" | "donations", on: boolean) => {
+  const toggle = async (key: "fundraisers" | "checks" | "donations" | "invoices", on: boolean) => {
     setErr(null);
     setSaved(false);
     const before = m;
@@ -139,9 +140,11 @@ function ModulesPanel() {
       <ErrorBox error={err} />
       {m ? (
         <>
-          <label className="check"><input type="checkbox" checked={m.fundraisers} onChange={(e) => toggle("fundraisers", e.target.checked)} /> Fundraiser module</label>
-          <p className="hint">Adds <b>Fundraisers</b> to the menu of Budget Managers, Budget Users, Register Users and Auditors (it appears at their next sign-in or page reload).
-            Turning it off hides the module; fundraisers that were set up are kept.</p>
+          <label className="check"><input type="checkbox" checked={m.fundraisers} onChange={(e) => toggle("fundraisers", e.target.checked)} /> Events &amp; Fundraisers module</label>
+          {/* 2.4.0 (#429) */}
+          <p className="hint">Track events of every kind — for example fundraisers, a Summer Cookout, an annual picnic or a members' dinner — with their income, expenses and net.
+            Adds <b>Events</b> to the menu of Budget Managers, Budget Users, Register Users and Auditors (it appears at their next sign-in or page reload).
+            Turning it off hides the module; events and fundraisers that were set up are kept.</p>
           <label className="check"><input type="checkbox" checked={!!m.checks} onChange={(e) => toggle("checks", e.target.checked)} /> Payments module</label>
           <p className="hint">Check printing, payments, cover letters and envelopes. Adds <b>Payments Setup</b> to the Administrator's menu (check styles,
             signatures, letter and envelope templates, test prints), and <b>Payments</b> and a <b>Print check</b> action on withdrawals for Register Users. For
@@ -151,6 +154,11 @@ function ModulesPanel() {
           <p className="hint">Donation receipt letters. Adds <b>Donations Setup</b> to the Administrator's menu (EIN, mailing address, receipt letter, test
             print), and a <b>Donation receipt</b> action on deposits in the register: Register Users mark donations and print receipts; Budget Managers,
             Budget Users and Auditors see them. Works with the Payments module on or off. Turning it off hides the module; receipts and settings are kept.</p>
+          {/* 2.4.0 (#251) */}
+          <label className="check"><input type="checkbox" checked={!!m.invoices} onChange={(e) => toggle("invoices", e.target.checked)} /> Invoices module</label>
+          <p className="hint">Invoices for customers, paid into Invoiced Income budgets. Adds <b>Invoices</b> to the menu of Invoice Managers, Register Users, Budget Managers,
+            Budget Users and Auditors, and <b>Invoices Setup</b> to the Administrator's menu. Give the <b>Invoice Manager</b> role under Users. Works with the other modules on
+            or off. Turning it off hides the module; what was set up is kept.</p>
           {saved ? <p className="hint" role="status">Saved.</p> : null}
         </>
       ) : null}

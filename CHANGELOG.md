@@ -2,7 +2,119 @@
 
 Versions are `Breaking.Major.Minor` from 1.6.0 (docs/branching.md).
 
-## 2.3.0 — unreleased
+## 2.4.0 — unreleased
+PennyWarden 2.4.0 (in progress).
+
+### Invoices
+- **The Invoices module and the Invoice Manager role (#251).** An Administrator turns on **Invoices** under
+  System/About → General (off by default; audited). A new Financial role, **Invoice Manager**, decides what is billed;
+  give it under Users, alone or with the other Financial roles (never with Administrator or Auditor). The invoice
+  pages themselves arrive with the next 2.4.0 test builds; for now **Invoices** explains who does what, and
+  **Invoices Setup** (Administrator) is a placeholder.
+- **Invoices (#253).** Invoice Managers create invoices for a customer (an entity) from catalog products: enter the
+  quantity, and the product's description and price are copied onto the line. Discounts - a fixed amount or a
+  percentage, on a line or the whole invoice - need a reason that is printed on the invoice; a whole-invoice discount
+  is spread over the lines' budgets. Sales tax (one rate per invoice) is added on taxable lines after discounts.
+  Totals are calculated to the cent.
+- **Numbers** follow the pattern set in **Invoices Setup** (for example `INV-{YYYY}-{SEQ:4}` → INV-2027-0042); one
+  sequence that never restarts, and a number is never reused - not even after a void. Setup also holds the default
+  terms (due date) and notes, and a test print with sample data.
+- **Custom fields** (Invoices Setup): the Administrator adds fields to invoices or to their lines - text, number,
+  date or a pick-list - each required or not and shown on the PDF or not. A field no longer needed is retired; values
+  already entered stay.
+- **Mark as sent** keeps the invoice's PDF with it. A sent invoice is changed by **Revise**: the same number with
+  -R1, -R2…, and every earlier PDF stays attached. **Void** (with a reason) is for an invoice with no payments.
+  A **write-off** is requested by the Invoice Manager with a reason and approved or rejected by a Budget Manager
+  (*Write-off pending* until then; *self-approved* when one person holds both roles). Void and write-off change no
+  budget or balance. Everything is in the audit log. Register Users, Budget Managers, Budget Users and Auditors can
+  view invoices.
+- **Invoice PDF template (#253).** **Invoices Setup → Invoice PDF**: the Administrator chooses the font, an accent
+  color, the logo and where it goes, the letterhead and *Bill to* lines, the title, which columns the line table shows
+  (and their order and headings), whether invoice fields, terms and notes print, and a footer - with {VARIABLES} for
+  the organization, the customer and the invoice (e.g. `{INVOICE.BALANCE}`). A live preview with sample data shows
+  each change. Paid amounts and the balance due print on partly paid invoices.
+- **Email invoices and statements (#249).** An Administrator sets the outgoing mail server under System/About →
+  Settings → **Email** (server, port, security, user name, password, sender) and sends a test email. The password is
+  stored encrypted and never shown again (leave the field empty to keep it). Invoice Managers then use **Email…** on a
+  sent invoice, or *Email to the customer…* on the Customer statement report: the customer's address, a subject and a
+  message are filled in and can be changed; one click sends one email with the PDF. Nothing is emailed
+  automatically. Every email (and any failure) is listed on the invoice and in the audit log.
+- **Batch invoicing (#248).** **New batch…** on the Invoices page: choose the customers (search, *Choose all shown*)
+  and the lines and dates once; one draft invoice is created for each customer. The batch page lists them - open and
+  change any one on its own - then **Mark all drafts as sent** and print them as one **Combined PDF**.
+- **Invoice reports (#255).** **Reports** has an **Invoices** group: *Open invoices*, *Aging* (current, 1–30, 31–60,
+  61–90, over 90 days), *Customer statement* (PDF), *Sales tax collected* (charged and collected per rate),
+  *Invoice register*, *Sales by product / category* (or Income budget) and *Payments, write-offs, discounts and
+  refunds* (self-approved write-offs marked) - on screen, as PDF and as CSV, with Recently run and deep links like
+  the other reports. Invoice Managers, Register Users, Budget Managers, Budget Users and Auditors can run them (not the
+  Administrator); Invoice Managers now have **Reports** in their menu for these.
+- **Overdue invoices:** a dashboard section for everyone who can view invoices, and reminders for Invoice Managers on
+  the Invoices page from the due date plus a number of days the Administrator sets in Invoices Setup (default 0).
+- The **Fiscal Year Close** report lists invoices still open at the year's end (for information; they don't prevent
+  closing), and the restore re-entry report lists invoices created after the backup.
+- **Payments (#254).** A Register User records a payment from the invoice (**Record payment…**): one deposit,
+  spread over the invoice lines' Invoiced Income budgets and the sales tax; the invoice becomes *Partly paid* or
+  *Paid*. An existing deposit on an Invoiced Income budget can be linked instead (**Link a deposit…**, Invoice
+  Manager or Register User); a payment from someone other than the customer asks for confirmation. More than the open
+  balance is an **overpayment** (confirmed first) that a Register User can **refund** - the only withdrawal allowed on
+  an Income budget, and it reduces that income. While the module is on, a deposit on an Invoiced Income budget can't
+  be entered directly in the Register, and a linked line keeps its amount and budget until a Register User unlinks it
+  on the invoice (moving it to another budget). Voiding a payment in the Register re-opens the invoice. A revised
+  invoice can't total less than what has been paid, and an invoice with payments can't be voided.
+- **Product catalog (#252).** On the **Invoices** page Invoice Managers keep the products the organization bills for
+  (name, code, description, unit price, unit type, category, taxable, and the Invoiced Income budget the money goes
+  to), the sales **tax rates** (with their Invoiced Income budget), **unit types** (Each, Hour, Day, Week, Month,
+  Year to start with) and **categories**. A built-in **Discount** item is ready for invoices. The budget list offers
+  only Invoiced Income budgets, by code and name. Nothing is deleted: entries are inactivated and can be restored;
+  every change is in the audit log. Budget Managers, Budget Users and Auditors can see the catalog. A product whose
+  budget isn't continued into the current Fiscal Year shows **Needs budget**.
+- **Separation of duties:** the Budget Manager decides budgets, the Invoice Manager what is billed, the Register User
+  receives the money, the Auditor reviews. One person may hold several roles; System/About → **Security** lists any
+  account holding Budget Manager + Invoice Manager + Register User (information only).
+- An **Invoice Manager** sees the Register read-only (and its transaction documents), and creates and edits customer
+  entities - not Financial Institutions, budgets, Fiscal Years, the Dashboard or reports.
+- **Invoiced Income budgets (#250).** A Budget Manager can mark an Income budget as **Invoiced Income** (budget row
+  menu → *Mark as Invoiced Income*); its sub-budgets and Other carry it. It is shown with a 🧾 *Invoiced income* label
+  on the budget lists and in the Audit / Close report, and copying the budget into a new Fiscal Year keeps it. On an
+  Approved budget it can be changed only after unlocking the budget with a reason. Each change is in the audit log.
+  The budget still counts as income everywhere; the designation is groundwork for the Invoices module later in 2.4.0
+  and has no effect on the Register until that module is turned on.
+
+### Events & Fundraisers
+- **The Fundraisers module is now Events & Fundraisers (#429).** The menu item is **Events**; the module setting and
+  the pages read *Events & Fundraisers*, and the setting lists examples (fundraisers, a Summer Cookout, an annual
+  picnic…). Nothing moves: every fundraiser, its buckets, reports and history stay where they were.
+- **Each record is a Fundraiser or an Event.** Choose the **Type** when you create or edit it. An Event (for example
+  a cookout that isn't meant to raise money) shows income, expenses and net, without the goal or donation receipts. A
+  Fundraiser works as before. Every existing record is a Fundraiser after the upgrade.
+- **Changing the type** keeps the goal and receipt settings (hidden while it is an Event) and is recorded in the audit
+  log. A series holds one type: *Continues from* lists only the same type, and an event linked with others is taken
+  out of its series before its type changes.
+- **Required budgets.** Once budgets are chosen, a **Fundraiser** needs an Income and an Expense budget, and an
+  **Event** an Expense budget (Income optional), in each Fiscal Year it uses. A record with no budgets yet can still be
+  saved. Results can't be marked final while a required budget is missing; a record from before the upgrade that
+  misses one shows a warning until it is added (or the type is changed).
+- An event using two Fiscal Years shows **one Income and one Expense budget figure** (combined).
+- **Reports:** the stakeholder report and presentation work for both (an Event's report says "event" and has no goal);
+  the Fiscal Year fundraising report and presentation list Events in a **separate section**, not in the fundraising
+  totals; the Quarterly/Annual report shows no goal for an Event.
+
+### Attachments
+- **Identical files are stored once (#425).** When you attach a file that is already stored anywhere in PennyWarden,
+  the file is not saved to disk again: the new attachment is linked to the stored copy. Nothing changes on screen —
+  each record still has its own attachment, with its own name, uploader and date, and removing it never affects
+  another record. PennyWarden's own saved PDFs (Close report, check record copies, receipt, statement and envelope
+  copies) follow the same rule. The audit log notes when an added attachment shares a stored file.
+- **Same file twice on one record asks first.** If the file you pick is already attached to the record you are
+  adding it to, PennyWarden asks *Same file already attached* — **Cancel** (nothing is added; pick the file you
+  meant) or **Attach anyway**. A match on a different record never asks.
+- **The upgrade merges existing duplicates.** At the first start after the upgrade (after the installer's pre-upgrade
+  backup), attachments with identical content are linked to one stored file and the extra copies are removed. Each
+  file's checksum is verified first; a file that no longer matches its recorded checksum is left alone and reported in
+  the log and the audit event. A restore of a backup from an earlier version is merged the same way.
+- System/About → **Health** shows how many files are shared and the space saved.
+
+## 2.3.0 — 2026-11-01
 PennyWarden 2.3.0 (in progress).
 
 ### Reports

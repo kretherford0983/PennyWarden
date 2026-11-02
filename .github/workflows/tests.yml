@@ -18,7 +18,7 @@ jobs:
   test:
     name: test
     runs-on: ubuntu-26.04
-    timeout-minutes: 45
+    timeout-minutes: 75   # 2.4.0: the backend suite alone is ~35-40 min on the hosted runner
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
