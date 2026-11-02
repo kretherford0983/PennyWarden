@@ -7,6 +7,7 @@ The page at <https://pennywarden.org> is published from this repository by GitHu
 | | |
 |---|---|
 | `site/index.html`, `site.css`, `site.js` | The page itself, written by hand for people who are not technical (the README stays the technical overview). No external fonts, scripts or trackers; a strict Content-Security-Policy |
+| `site/guide/index.html`, `guide.js` | The **User guide** page (2.4.0, #473): the current `docs/user-guide.md` (and the check-printing and backup guides it links to) and a version list of the archived release notes from 1.10 on, read from `guide/versions.json`. Markdown is turned into page elements with `textContent` only |
 | `docs/screenshots/readme/*.png` | A few of the README screenshots are copied in when the site is built |
 | `scripts/release_data.py` | Builds `releases.json` (production releases) and `releases-test.json` (test builds and production releases) from the repository's GitHub releases |
 | `scripts/build_site.sh` | Assembles everything into `_site/` |

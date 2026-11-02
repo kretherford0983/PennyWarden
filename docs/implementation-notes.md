@@ -128,6 +128,66 @@ could not otherwise be corrected. Scope and safeguards:
   with a link; the variable picker completes dotted names.
 - Tests: `backend/tests/test_v210_organization.py` (6, including the data migration) and the E2E #126 and #312 steps.
 
+**2.4.0 — One current user guide, archived release notes, in-app Help and the guide on pennywarden.org (#473,
+decided with Kyle 2026-11-02).** The `docs/user-guide-v*.md` files were "what's new" notes, not full guides; a new
+feature-organized `docs/user-guide.md` replaces them and they moved to `docs/archive/` (only their relative links were
+repointed). Decisions: the guide is bundled with the app *and* hosted on the site; per-page help plus a Help menu
+item; the site's version list starts at 1.10 (the first public release); part of 2.4.0.
+- New rules (the spec documents are not modified): **BR-DOC-001** the app bundles the user guide of its own version and
+  Help opens it without network access; **BR-DOC-002** every primary page has a help link to its guide section and the
+  navigation has Help for all roles; **BR-DOC-003** one current guide is maintained in `docs/`, earlier releases' notes
+  are archived, not rewritten. **AC-DOC-001** each page's help opens the bundled guide at that page's section;
+  **AC-DOC-002** Help in the menu opens the start of the guide for Administrator, Financial and Auditor users;
+  **AC-DOC-003** Help needs no outside request; **AC-DOC-004** no help link points at a module hidden from the user's
+  roles (such a page's **?** opens the start of the guide); **AC-DOC-005** pennywarden.org/guide shows the current guide
+  and switches to archived versions 1.10 and later; **AC-DOC-006** nothing links to a moved `docs/user-guide-v*.md`.
+- Existing rules respected: BR-091/AC-SEC-005 (help is never an authorization path - `/help` shows only documents, and
+  `helpFor` gives a hidden module's page the guide's start), BR-083 (bundled, offline), BR-105/AC-SEC-021 (same
+  origin, no new CSP sources; the site keeps its strict CSP), BR-096/AC-SEC-011 (Markdown is turned into React elements
+  / DOM nodes with escaped text; the only HTML understood is the guide's own `<a id="…"></a>` section-marker line;
+  only http(s), in-page and repository links become links), BR-106 (no new dependency - a small renderer instead of a
+  Markdown library).
+- App: `frontend/src/help.ts` (`HELP_SECTIONS` page -> anchor, `helpFor`), `helpDocs.ts` (the `?raw` imports of
+  `user-guide.md`, `check-printing.md`, `backup-restore.md`), `pages/Help.tsx` (renderer; routes `/help` and
+  `/help/<doc>`), loaded lazily so the main bundle doesn't carry the documents; the **?** link in the top bar and Help
+  as the last menu item in `App.tsx`. Links to other repository files open on GitHub (`main`). `vite.config.ts` lets the
+  dev server read `../docs`; the Docker UI stage copies the three documents.
+- Site: `site/guide/index.html` + `guide.js` (the same renderer in plain DOM), `scripts/build_site.sh` copies the
+  current documents and the archived notes from 1.10 and writes `guide/versions.json` (newest first); `pages.yml` also
+  publishes when those documents change on main. The page is built from `main`, so the site's current guide is the
+  latest production release's.
+- Section anchors are fixed `<a id="…"></a>` lines in the guide, so headings can be reworded without breaking help
+  links. **Release practice:** each release updates `docs/user-guide.md`; the per-release summary goes in the CHANGELOG.
+- Tests: `backend/tests/test_v240_user_guide.py` (archive layout, every `HELP_SECTIONS` anchor exists, in-guide links,
+  bundling incl. the Dockerfile, no links to moved files, no other raw HTML, the site build and `versions.json`); E2E
+  "#473 AC-DOC-001..004"; `test_v170_rename.py`'s allow-list no longer names the moved notes.
+
+**2.4.0 polish — Cleared sort places never-cleared voids by date (#471, decided with Kyle 2026-11-02).** In
+`register.list` the `clear_date` sort key groups only uncleared **ACTIVE** transactions (last ascending, first
+descending); a VOID or DELETED one without a clear date sorts at its `transaction_date` (Kyle chose the transaction
+date over `voided_at`, which is when Void was clicked). A void that had cleared keeps its clear date. The running
+(cleared) balance is unchanged - voids are never in it. Test `test_v210_register_sort.py::
+test_cleared_sort_places_an_uncleared_void_by_its_date`.
+
+**2.4.0 polish — Register printout (#468, decided with Kyle 2026-11-02).** System Print only (no Print button).
+Print-only `RegisterPrintHead` (title + printed date; applied filters: the Fiscal Year always, the others when set, a
+non-default sort; balances on one line, Ending only when the screen shows that tile). In print the `.register-sticky`
+block (page head, filters, tiles), the sort note, the reviews panel and the screen table are hidden; a print-only
+`RegisterPrintTable` shows two lines per transaction (Kyle: Date, Cleared, Check #, Invoice #, Deposit, Withdrawal,
+balance / Entity, Description, Status; one `<tbody>` per transaction, never split across pages). Entity and
+description are cut to 30 / 45 characters (`clip`: at the last word break when it keeps ≥ 60 %, trailing punctuation
+dropped, "…"; the whole text in the cell's title). Named `@page register` (letter portrait, 0.5 in margins) so other prints keep their own
+setup. (The screen table's Date/Cleared headings are sort buttons, which the global print rule hides - one reason
+for a separate print table.) E2E: the "#56 / #57" register test checks the print layout (`emulateMedia print`).
+
+**2.4.0 polish — cover letter logo top right (#466, Kyle 2026-11-02).** `LetterConfig.logo_position` adds `RIGHT`
+(LEFT|CENTER|RIGHT). Drawn on the first page's canvas (not in the story), top level with the text frame's top (1 in
++ 6 pt frame padding), right edge at the 7.5 in margin, so the letterhead is not pushed down. The letterhead and date
+paragraphs get `rightIndent` = logo width + 0.25 in (wrap, never under the logo); a `_ClearBelow` flowable after the
+date adds space only when the logo reaches lower than those lines. Window (LETTER/ADDRESS_PAGE) and pre-printed
+letters unchanged (the window letter already prints its logo top right). Test
+`test_v200_build6.py::test_logo_top_right_beside_the_letterhead`. No BR/AC change.
+
 **2.4.0 build 11 — Invoice PDF template (#253 part 3).** Completes #253 ("PDF template built on the 2.0.0
 cover-letter editor: logo and letterhead, {VARIABLES}, live preview, line-table column picker").
 - `invoice_settings.template_json`, `logo_png`, `logo_sha256` (migration `0081`; empty = the built-in default

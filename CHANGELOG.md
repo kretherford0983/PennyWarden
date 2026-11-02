@@ -114,6 +114,33 @@ PennyWarden 2.4.0 (in progress).
   the log and the audit event. A restore of a backup from an earlier version is merged the same way.
 - System/About → **Health** shows how many files are shared and the space saved.
 
+### Register
+- **Clean printout (#468).** Printing the Register with the browser's or app's Print now gives a portrait page with a
+  short header — *Register — bank account* and the printed date, the filters that are applied, and the balances on one
+  line — followed by the register as filtered on screen, two lines per transaction: Date, Cleared, Check #, Invoice #,
+  Deposit, Withdrawal and balance, then Entity, Description and Status. Long entity names and descriptions are
+  shortened with "…". The screen's filters and balance tiles, the ▸ details and the 📎 column are not printed; long
+  registers repeat the column headings on each page.
+- **Voids sort by their date when sorted by Cleared (#471).** A voided (or deleted) transaction that never cleared is
+  final, not outstanding, so it is now placed by its transaction date instead of with the uncleared items at the top or
+  bottom. Uncleared transactions that are not voided still stay together as outstanding.
+
+### Help and the user guide
+- **One user guide (#473).** `docs/user-guide.md` describes the whole app as it works today, one area at a time
+  (Register, Budgets, Fiscal Years, Reports, the optional modules, System/About …), instead of a separate
+  "what's new" note per release. Those notes are kept in `docs/archive/`.
+- **Help in the app.** **Help** at the bottom of the menu opens the guide for every role, and the **?** at the top
+  right opens the section for the page you are on (on a page your roles can't open, the start of the guide). The guide
+  is part of the app, so it matches the version you have installed and works without an internet connection. Links to
+  the check-printing and backup guides open inside Help too.
+- **On pennywarden.org.** The site has a **User guide** page with the current guide and a version list going back to
+  1.10 (each earlier version's "what's new" notes).
+
+### Check printing
+- **Cover letter logo top right (#466).** A third logo position, **Top right, beside the letterhead**: the logo sits
+  level with the organization's name at the right margin, and the letter text is not pushed down. The letterhead and
+  date lines wrap short of the logo; the address starts below the logo only when the logo is taller than those lines.
+
 ## 2.3.0 — 2026-11-01
 PennyWarden 2.3.0 (in progress).
 

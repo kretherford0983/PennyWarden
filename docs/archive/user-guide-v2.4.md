@@ -1,6 +1,6 @@
 # What's new in 2.4 — quick guide
 
-*2.4.0 is in progress. The full list is in the [changelog](../CHANGELOG.md).*
+*2.4.0 is in progress. The full list is in the [changelog](../../CHANGELOG.md).*
 
 ## Invoices module and the Invoice Manager
 An Administrator turns on **Invoices** under System/About → General, and gives the new **Invoice Manager** role
@@ -165,3 +165,27 @@ The first time 2.4 starts, attachments that are identical are linked to one stor
 removed, freeing disk space. Every file is checked first; anything that doesn't check out is left exactly as it is.
 An Administrator can see how many files are shared and how much space was saved in the **Health** section of
 **System/About**.
+
+## Register
+
+### Printing the register
+Print the Register with **Print** in your browser or the app (Ctrl+P). You get a clean portrait printout of the
+register **as it is filtered on screen**. The top of the page has one line with the bank account and the date printed,
+one line with the filters you applied (the Fiscal Year is always listed), and one line with the balances. The
+transactions follow, two lines each: the dates, check and invoice numbers, amounts and balance on the first, the entity,
+description and status on the second (a long entity name or description is shortened and ends in "…"). The filter
+boxes, balance tiles, opened details and the 📎 column are not printed.
+
+### Sorted by Cleared: voided checks
+When you sort the register by **Cleared**, a check that was voided without ever clearing now sits at its own date (the
+date it was written) rather than at the top or bottom with the uncleared items. Uncleared items that are not voided
+still stay together, since they are still outstanding.
+For a printout of just some transactions — one budget, a date range, uncleared items — set the filters first, then print.
+
+## Check printing
+
+### Cover letter logo on the right
+A cover letter's logo can now go **Top right, beside the letterhead** (the letter's **Logo position**).
+The logo lines up with the organization's name at the right margin, and the rest of the letter stays
+where it was — nothing is pushed down. If the logo is taller than the letterhead and date lines, the address simply
+starts below it.
