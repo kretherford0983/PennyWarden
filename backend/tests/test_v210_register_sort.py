@@ -66,6 +66,18 @@ def test_void_is_listed_but_not_in_the_cleared_balance(env, base):
     assert asc["current_balance"] == "950.00"
 
 
+def test_cleared_sort_places_an_uncleared_void_by_its_date(env, base):
+    """2.4.0 polish (#471): a void that never cleared is final, not outstanding - sorted by Cleared it is placed by
+    its transaction date; uncleared ACTIVE transactions stay grouped (last ascending, first descending)."""
+    t1, t2, t3, t4, t5 = _setup(env, base)
+    assert env.ru.post(f"/api/transactions/{t3}/void", {"reason": "Wrong payee", "confirm_irreversible": True}).status_code == 200
+    asc = _reg(env, base, sort="clear_date", direction="asc")
+    assert [t["id"] for t in asc["transactions"]] == [t3, t2, t4, t1, t5]     # t3 dated 08-03, before the 08-05 clears
+    assert {t["id"]: t["running_balance"] for t in asc["transactions"]}[t3] is None
+    desc = _reg(env, base, sort="clear_date", direction="desc")
+    assert [t["id"] for t in desc["transactions"]] == [t5, t1, t4, t2, t3]
+
+
 def test_preference_is_saved_per_user_and_reset(env, base):
     me = env.bu.get("/api/auth/me").json()
     assert me["register_sort"] == "transaction_date:asc"

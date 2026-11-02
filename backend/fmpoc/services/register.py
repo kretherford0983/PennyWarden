@@ -962,8 +962,11 @@ def register_view(db: Session, ctx, acct: BankAccount, *, fiscal_year: FiscalYea
         "entry_timestamp": lambda t: (t.entry_timestamp, t.id),
         "amount": lambda t: (t.total_cents, t.id),
         "check_number": lambda t: (t.check_number or "", t.id),
-        "clear_date": lambda t: (t.clear_date is None, t.clear_date or dt.date.max, t.transaction_date,
-                                 t.entry_timestamp, t.id),
+        # 2.4.0 polish (#471): a VOID or DELETED transaction that never cleared is final, not outstanding - placed by
+        # its transaction date; only uncleared ACTIVE ones are grouped last (first when newest first)
+        "clear_date": lambda t: (t.clear_date is None and t.status == "ACTIVE",
+                                 t.clear_date or (t.transaction_date if t.status != "ACTIVE" else dt.date.max),
+                                 t.transaction_date, t.entry_timestamp, t.id),
     }[sort]
     rows.sort(key=keyf)
     if direction == "desc":   # reverse the whole order, so ties also read newest-entered first

@@ -128,6 +128,13 @@ could not otherwise be corrected. Scope and safeguards:
   with a link; the variable picker completes dotted names.
 - Tests: `backend/tests/test_v210_organization.py` (6, including the data migration) and the E2E #126 and #312 steps.
 
+**2.4.0 polish — Cleared sort places never-cleared voids by date (#471, decided with Kyle 2026-11-02).** In
+`register.list` the `clear_date` sort key groups only uncleared **ACTIVE** transactions (last ascending, first
+descending); a VOID or DELETED one without a clear date sorts at its `transaction_date` (Kyle chose the transaction
+date over `voided_at`, which is when Void was clicked). A void that had cleared keeps its clear date. The running
+(cleared) balance is unchanged - voids are never in it. Test `test_v210_register_sort.py::
+test_cleared_sort_places_an_uncleared_void_by_its_date`.
+
 **2.4.0 polish — Register printout (#468, decided with Kyle 2026-11-02).** System Print only (no Print button).
 Print-only `RegisterPrintHead` (title + printed date; applied filters: the Fiscal Year always, the others when set, a
 non-default sort; balances on one line, Ending only when the screen shows that tile). In print the `.register-sticky`
