@@ -91,6 +91,13 @@ PennyWarden 2.4.0 (in progress).
   `MBRSHP-{YY}-{SEQ:4}`. On the product form **Category comes first**: picking it fills in the next code (editable)
   and offers the category's budget. Each category counts its own numbers, starting again each year when the pattern
   shows the year; a number is used only when a product is saved with it, and a code already in use is skipped.
+- **Tax groups — several taxes per item (#487).** Sales tax is no longer one rate per invoice. The Invoice Manager
+  sets up **tax rates** (name, %, budget), groups them into **tax groups** (for example *Lodging* = Hotel tax +
+  State tax, *Food* = Food tax) and picks a **tax group on each product** (none = not taxed; it replaces the
+  *Taxable* box). Each line is charged every rate of its product's group; each rate is worked out once per invoice
+  on its own lines, shown on its own total line and on the PDF, and paid into its own budget. A night and a meal
+  billed together show three taxes on two lines. Changing a rate or a group reaches drafts (and revisions) when they
+  are saved or sent; sent invoices keep what they were sent with. The Sales tax collected report lists each rate.
 - **Custom fields for chosen products (#484).** The Administrator can define a field *on lines of chosen products*
   (for example **Serial number**); the Invoice Manager ticks it on those products in the catalog. It is asked on each
   invoice line that uses such a product — required if the field says so — and prints after the line's description

@@ -27,7 +27,7 @@ def setup(db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.set
 # ------------------------------------------------------------------ 2.4.0 (#252): the product catalog
 from typing import Literal  # noqa: E402
 
-from ..schemas import CatalogNameIn, InvoiceProductIn, InvoiceTaxRateIn  # noqa: E402
+from ..schemas import CatalogNameIn, InvoiceProductIn, InvoiceTaxGroupIn, InvoiceTaxRateIn  # noqa: E402
 from ..services import invoice_catalog as cat  # noqa: E402
 
 Simple = Literal["unit-types", "categories"]
@@ -66,6 +66,36 @@ def update_product(pid: int, body: InvoiceProductIn, db: Session = Depends(get_d
 def product_active(pid: int, action: Literal["inactivate", "restore"], db: Session = Depends(get_db),
                    ctx: Ctx = Depends(require("invoice.catalog_manage"))):
     out = cat.set_product_active(db, ctx, pid, action == "restore")
+    db.commit()
+    return out
+
+
+@router.get("/catalog/tax-groups")
+def tax_groups(include_inactive: bool = False, db: Session = Depends(get_db),
+               ctx: Ctx = Depends(require("invoice.catalog_view"))):
+    return cat.list_tax_groups(db, ctx, include_inactive)
+
+
+@router.post("/catalog/tax-groups", status_code=201)
+def create_tax_group(body: InvoiceTaxGroupIn, db: Session = Depends(get_db),
+                     ctx: Ctx = Depends(require("invoice.catalog_manage"))):
+    out = cat.save_tax_group(db, ctx, None, body)
+    db.commit()
+    return out
+
+
+@router.put("/catalog/tax-groups/{gid}")
+def update_tax_group(gid: int, body: InvoiceTaxGroupIn, db: Session = Depends(get_db),
+                     ctx: Ctx = Depends(require("invoice.catalog_manage"))):
+    out = cat.save_tax_group(db, ctx, gid, body)
+    db.commit()
+    return out
+
+
+@router.post("/catalog/tax-groups/{gid}/{action}")
+def tax_group_active(gid: int, action: Literal["inactivate", "restore"], db: Session = Depends(get_db),
+                     ctx: Ctx = Depends(require("invoice.catalog_manage"))):
+    out = cat.set_tax_group_active(db, ctx, gid, action == "restore")
     db.commit()
     return out
 

@@ -18,15 +18,18 @@ def ib(env, base):
     assert env.bm.put(f"/api/budgets/{base['inc']['id']}/invoiced-income", {"invoiced_income": True}).status_code == 200
     units = {u["name"]: u["id"] for u in im.get("/api/invoices/catalog/unit-types").json()}
 
+    tax = im.post("/api/invoices/catalog/tax-rates", {"name": "Sales tax", "rate": "7.25", "budget_id": base["inc_leaf"]}).json()
+    group = im.post("/api/invoices/catalog/tax-groups", {"name": "Taxable", "rate_ids": [tax["id"]]}).json()   # #487
+
     def product(name, price, unit="Each", taxable=False):
         r = im.post("/api/invoices/catalog/products", {"name": name, "unit_price": price, "unit_type_id": units[unit],
-                                                      "taxable": taxable, "budget_id": base["inc_leaf"]})
+                                                      "tax_group_id": group["id"] if taxable else None,
+                                                      "budget_id": base["inc_leaf"]})
         assert r.status_code == 201, r.text
         return r.json()["id"]
-    tax = im.post("/api/invoices/catalog/tax-rates", {"name": "Sales tax", "rate": "7.25", "budget_id": base["inc_leaf"]}).json()
     cust = env.entity("Acme Customer", client=im)
     return {"im": im, "dues": product("Annual dues", "120.00", "Year"), "hour": product("Coaching", "40.00", "Hour", True),
-            "shirt": product("Shirt", "19.99", "Each", True), "tax": tax["id"], "cust": cust["id"]}
+            "shirt": product("Shirt", "19.99", "Each", True), "tax": tax["id"], "group": group["id"], "cust": cust["id"]}
 
 
 def _body(ib, lines, **kw):
@@ -39,7 +42,7 @@ def test_draft_totals_to_the_cent(env, ib):
         {"product_id": ib["dues"], "quantity": "1"},
         {"product_id": ib["hour"], "quantity": "2.5", "discount_kind": "AMOUNT", "discount_value": "10", "discount_reason": "Loyal member"},
         {"product_id": ib["shirt"], "quantity": "3"},
-    ], tax_rate_id=ib["tax"], discount={"kind": "PERCENT", "value": "10", "reason": "Early payment"}))
+    ], discount={"kind": "PERCENT", "value": "10", "reason": "Early payment"}))
     assert r.status_code == 201, r.text
     i = r.json()
     # gross 120.00 + 100.00 + 59.97; line discount 10.00 -> nets 120.00, 90.00, 59.97 = 269.97
@@ -213,3 +216,52 @@ def test_list_filters_and_search(env, ib):
     assert [x["id"] for x in im.get("/api/invoices?status=DRAFT").json()] == [a["id"]]
     assert len(im.get("/api/invoices?search=Acme").json()) == 2
     assert im.get("/api/invoices?search=zzz' OR 1=1 --").json() == []        # AC-SEC-009
+
+
+# ------------------------------------------------------------------ 2.4.0 polish (#487): tax groups
+def test_tax_groups_charge_each_rate_on_its_own_lines(env, ib, base):
+    """#487 (Kyle's hotel example): Lodging = Hotel tax 6 % + State tax 5 %, Food = Food tax 2 %; 1 night + 1 meal
+    -> three taxes on two lines, each rounded once per invoice and paid into its own budget; a rate change reaches a
+    draft when it is saved again, not a sent invoice."""
+    im = ib["im"]
+    units = {u["name"]: u["id"] for u in im.get("/api/invoices/catalog/unit-types").json()}
+    rate = lambda n, r: im.post("/api/invoices/catalog/tax-rates", {"name": n, "rate": r, "budget_id": base["inc_leaf"]}).json()["id"]
+    hotel, state, food = rate("Hotel tax", "6"), rate("State tax", "5"), rate("Food tax", "2")
+    assert im.post("/api/invoices/catalog/tax-groups", {"name": "Empty", "rate_ids": []}).status_code == 422
+    lodging = im.post("/api/invoices/catalog/tax-groups", {"name": "Lodging", "rate_ids": [hotel, state]})
+    assert lodging.status_code == 201 and lodging.json()["label"] == "Hotel tax 6 % + State tax 5 %"
+    lodging = lodging.json()["id"]
+    meals = im.post("/api/invoices/catalog/tax-groups", {"name": "Food", "rate_ids": [food]}).json()["id"]
+    prod = lambda n, price, g: im.post("/api/invoices/catalog/products", {"name": n, "unit_price": price, "unit_type_id": units["Each"],
+                                                                         "budget_id": base["inc_leaf"], "tax_group_id": g}).json()
+    room, meal = prod("Room night", "100.00", lodging), prod("Restaurant meal", "30.00", meals)
+    assert room["tax_group"]["name"] == "Lodging" and room["taxable"] is True
+    r = im.post("/api/invoices", _body(ib, [{"product_id": room["id"], "quantity": "1"}, {"product_id": meal["id"], "quantity": "1"}]))
+    assert r.status_code == 201, r.text
+    i = r.json()
+    taxes = {x["name"]: x for x in i["taxes"]}
+    assert set(taxes) == {"Hotel tax", "State tax", "Food tax"}
+    assert taxes["Hotel tax"]["base"] == "100.00" and taxes["Hotel tax"]["tax"] == "6.00"
+    assert taxes["State tax"]["tax"] == "5.00" and taxes["Food tax"]["base"] == "30.00" and taxes["Food tax"]["tax"] == "0.60"
+    assert i["totals"]["tax"] == "11.60" and i["totals"]["total"] == "141.60"
+    assert i["lines"][0]["taxes"] == ["Hotel tax", "State tax"] and i["lines"][1]["taxes"] == ["Food tax"]
+    pdf = im.get(f"/api/invoices/{i['id']}/pdf").content
+    text = "".join(p.extract_text() for p in PdfReader(io.BytesIO(pdf)).pages)
+    assert "Hotel tax (6 %)" in text and "Food tax (2 %)" in text
+    # a rate change: the draft follows when saved again; the sent copy keeps its taxes
+    sent = im.post("/api/invoices", _body(ib, [{"product_id": room["id"], "quantity": "1"}])).json()
+    assert im.post(f"/api/invoices/{sent['id']}/send").json()["totals"]["tax"] == "11.00"
+    assert im.put(f"/api/invoices/catalog/tax-rates/{state}", {"name": "State tax", "rate": "5.5", "budget_id": base["inc_leaf"]}).status_code == 200
+    assert im.get(f"/api/invoices/{sent['id']}").json()["totals"]["tax"] == "11.00"
+    lines = [{"id": ln["id"], "product_id": room["id"] if k == 0 else meal["id"], "quantity": "1"} for k, ln in enumerate(i["lines"])]
+    again = im.put(f"/api/invoices/{i['id']}", _body(ib, lines)).json()
+    assert {x["name"]: x["tax"] for x in again["taxes"]}["State tax"] == "5.50"
+    # payment: each rate's part goes to the rate's budget line (by description)
+    env.bm.put(f"/api/budgets/{base['inc']['id']}/invoiced-income", {"invoiced_income": True})
+    assert im.post(f"/api/invoices/{i['id']}/send").status_code == 200
+    p = env.ru.post(f"/api/invoices/{i['id']}/payments", {"bank_account_id": base["acct"]["id"], "amount": again["totals"]["total"],
+                                                          "transaction_date": "2026-09-20"})
+    assert p.status_code in (200, 201), p.text
+    t = p.json()["transaction"]
+    descs = {a["description"].split(": ", 1)[1]: a["amount"] for a in t["allocations"] if ": " in (a["description"] or "")}
+    assert descs["Hotel tax"] == "6.00" and descs["State tax"] == "5.50" and descs["Food tax"] == "0.60"

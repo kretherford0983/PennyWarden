@@ -162,6 +162,32 @@ item; the site's version list starts at 1.10 (the first public release); part of
   bundling incl. the Dockerfile, no links to moved files, no other raw HTML, the site build and `versions.json`); E2E
   "#473 AC-DOC-001..004"; `test_v170_rename.py`'s allow-list no longer names the moved notes.
 
+**2.4.0 polish — tax groups, several rates per item (#487, decided with Kyle 2026-11-02).** Replaces #253's one rate
+per invoice. Migration `0084_tax_groups`: table `invoice_tax_group` (name, `rate_ids` JSON, active; in Reinitialize
+WIPE and selective-restore DATA_TABLES), `invoice_product.tax_group_id`, `invoice_line.taxes` (JSON
+`[{rate_id, name, milli, budget_id}]`); existing invoices' one rate is copied onto their taxable lines; the
+`invoice.tax_*` columns stay but are no longer used (always NULL from now on).
+- **BR-INV-TAX-001 (rewritten):** a product picks one tax group (none = not taxed; `taxable` kept = has a group).
+  When an invoice is saved (draft or revision being prepared) and when it is sent, each line takes the *active* rates
+  of its product's group, each with its Invoiced Income budget for the invoice's Fiscal Year (none -> 422
+  `NEEDS_BUDGET`) - `invoice_docs.refresh_taxes`. A sent version keeps its lines' rates.
+- **BR-INV-TAX-002:** per rate (key: rate id, milli, name) base = the final nets (after line and invoice discounts) of
+  the lines carrying it; tax = round half up (base x rate) once per rate per invoice; total = nets + the taxes; no
+  compound tax. `compute()` returns `taxes` (+ `tax` = their sum, `taxable_base` = finals of lines with any rate).
+- **BR-INV-TAX-003:** a payment's tax part is the same proportion as before, filled into the rates in the order they
+  appear (each up to its tax), so parts never go down between payments and add up exactly when paid in full;
+  each rate's part is its own allocation on the rate's budget (`apportion_rates`). The Sales tax collected report
+  is per rate.
+- **BR-INV-TAX-004:** tax groups are maintained by Invoice Managers (`/api/invoices/catalog/tax-groups`, at least
+  one active rate, names unique), audited `INVOICE_TAX_GROUP_CREATED/UPDATED/INACTIVATED/RESTORED`, never deleted.
+- API: invoice bodies no longer take `tax_rate_id` (batches too); invoice out has `taxes` [{name, rate, label, base,
+  tax}] instead of `tax`, lines have `taxes` (names); PDF totals one line per rate (`data["taxes"]`).
+- UI: Catalog tab **Tax groups** (rates as checkboxes); product form **Tax group** select replaces *Taxable*;
+  invoice form has no Sales tax picker; invoice detail lists each tax.
+- Tests: `test_v240_invoices.py::test_tax_groups_charge_each_rate_on_its_own_lines` (Kyle's hotel example, rate
+  change reaching a draft not a sent copy, payment per rate); existing invoice/payment/report tests moved to groups.
+  ACs **AC-INV-TAX-001..004**.
+
 **2.4.0 polish — custom fields applied to products (#484, decided with Kyle 2026-11-02).** Migration
 `0083_product_custom_fields`: `invoice_product.custom_field_ids` (JSON list). `invoice_custom_field.level` adds
 `PRODUCT` (Administrator-defined as before). The Invoice Manager attaches active PRODUCT fields on the product

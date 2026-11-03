@@ -1360,6 +1360,9 @@ class InvoiceProduct(Base):
     taxable: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
     budget_id: Mapped[int | None] = mapped_column(ForeignKey("budget.id"), nullable=True, index=True)
     is_system: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
+    # 2.4.0 polish (#487): the tax group whose rates apply to this product (none = not taxed; replaces `taxable`,
+    # which is kept equal to "has a group")
+    tax_group_id: Mapped[int | None] = mapped_column(ForeignKey("invoice_tax_group.id"), nullable=True)
     # 2.4.0 polish (#484): the product-scope custom fields asked for on lines with this product (JSON list of ids)
     custom_field_ids: Mapped[str | None] = mapped_column(Text, nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=sa_true(), nullable=False)
@@ -1378,6 +1381,21 @@ class InvoiceTaxRate(Base):
     name: Mapped[str] = mapped_column(String(80))
     rate_milli_pct: Mapped[int] = mapped_column(Integer)
     budget_id: Mapped[int | None] = mapped_column(ForeignKey("budget.id"), nullable=True, index=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=sa_true(), nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    updated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class InvoiceTaxGroup(Base):
+    """2.4.0 polish (#487): a named set of tax rates (e.g. Lodging = Hotel tax + State tax) a product picks; every
+    rate in it applies to the product's lines. Maintained by Invoice Managers; inactivated, never deleted."""
+    __tablename__ = "invoice_tax_group"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
+    name: Mapped[str] = mapped_column(String(80))
+    rate_ids: Mapped[str] = mapped_column(Text, default="[]")                 # JSON list of invoice_tax_rate ids
     active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=sa_true(), nullable=False)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
     created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
@@ -1471,6 +1489,9 @@ class InvoiceLine(Base):
     discount_value: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     discount_reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
     custom_values: Mapped[str | None] = mapped_column(Text, nullable=True)     # 2.4.0 (#253 part 2): JSON {field id: value}
+    # 2.4.0 polish (#487): the rates that apply to this line, copied from its product's tax group when the invoice
+    # is saved (a draft or a new revision): JSON [{"rate_id", "name", "milli", "budget_id"}]
+    taxes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     invoice: Mapped["Invoice"] = relationship(back_populates="lines")
 

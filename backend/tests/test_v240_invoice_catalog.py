@@ -42,7 +42,7 @@ def test_invoice_manager_maintains_everything_audited_never_deleted(env, cat):
     im = cat["im"]
     c = im.post("/api/invoices/catalog/categories", {"name": "Membership"})
     assert c.status_code == 201
-    p = _product(im, cat, category_id=c.json()["id"], code="DUES", taxable=True)
+    p = _product(im, cat, category_id=c.json()["id"], code="DUES")
     assert p.status_code == 201, p.text
     pj = p.json()
     assert pj["unit_type"] == "Year" and pj["category"] == "Membership" and pj["needs_budget"] is False
