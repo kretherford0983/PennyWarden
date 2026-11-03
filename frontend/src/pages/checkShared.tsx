@@ -159,7 +159,7 @@ export function CheckPreview({ cfg, fonts, texts, highlight, showBoxes = true, s
 }
 
 /** Text with {VARIABLES}: autocomplete after "{" (case-insensitive), descriptions shown, Enter/Tab/click inserts. */
-const ROLE_GROUPS: Record<string, string> = { ORG: "Organization", PAYEE: "Payee", DONOR: "Donor" };
+const ROLE_GROUPS: Record<string, string> = { ORG: "Organization", PAYEE: "Payee", DONOR: "Donor", CUSTOMER: "Customer", INVOICE: "Invoice" };
 
 export function PatternInput({ value, onChange, variables, label, id, placeholder, maxLength = 200, multiline = false, hint = true }: {
   value: string; onChange: (v: string) => void; variables: Variable[]; label: string; id: string; placeholder?: string; maxLength?: number;
@@ -525,5 +525,22 @@ export function AmountPreview({ accountId, total }: { accountId: number; total: 
     <div className="amount-preview" data-testid="amount-preview" aria-live="polite">
       <span className="hint">On the check:</span> <code>{p.number}</code> <span className="words">{p.words}</span>
     </div>
+  );
+}
+
+/** Up to `max` one-line {VARIABLE} texts, one per row with Remove and + Add line (cover letter letterhead, addressee;
+ *  2.4.0 polish #477: the invoice PDF letterhead and Bill to). */
+export function Lines({ label, lines, max, onChange, variables, idBase, addLabel = "+ Add line" }: { label: string; lines: string[]; max: number; onChange: (l: string[]) => void; variables: any[]; idBase: string; addLabel?: string }) {
+  return (
+    <fieldset className="lines">
+      <legend>{label}</legend>
+      {lines.map((l, i) => (
+        <div key={i} className="row form-row">
+          <PatternInput id={`${idBase}-${i}`} label={`${label} line ${i + 1}`} value={l} variables={variables} hint={false} onChange={(v) => onChange(lines.map((x, j) => (j === i ? v : x)))} />
+          <button type="button" className="small" onClick={() => onChange(lines.filter((_, j) => j !== i))} aria-label={`Remove ${label.toLowerCase()} line ${i + 1}`}>Remove</button>
+        </div>
+      ))}
+      {lines.length < max ? <button type="button" className="small" onClick={() => onChange([...lines, ""])}>{addLabel}</button> : null}
+    </fieldset>
   );
 }

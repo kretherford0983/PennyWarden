@@ -79,6 +79,12 @@ PennyWarden 2.4.0 (in progress).
   Approved budget it can be changed only after unlocking the budget with a reason. Each change is in the audit log.
   The budget still counts as income everywhere; the designation is groundwork for the Invoices module later in 2.4.0
   and has no effect on the Register until that module is turned on.
+- **Invoice PDF setup polish (#477–#480).** The letterhead and Bill to lines are listed one per row (Remove, + Add
+  line), and every text suggests `{VARIABLES}` as you type, as on the cover letter. The logo can go **left**,
+  **center** (between the letterhead and the title) or **right** (now at the right margin, over the title). Invoices
+  get **fold marks** (front or back) and the **#10 double-window layout** (letterhead and Bill to in the windows, the
+  invoice below the first fold; the preview draws the windows), as on the cover letter. The line-table columns line
+  up in a grid and can be **dragged** into order (↑/↓ stay for the keyboard).
 
 ### Events & Fundraisers
 - **The Fundraisers module is now Events & Fundraisers (#429).** The menu item is **Events**; the module setting and

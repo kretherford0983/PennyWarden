@@ -162,6 +162,18 @@ item; the site's version list starts at 1.10 (the first public release); part of
   bundling incl. the Dockerfile, no links to moved files, no other raw HTML, the site build and `versions.json`); E2E
   "#473 AC-DOC-001..004"; `test_v170_rename.py`'s allow-list no longer names the moved notes.
 
+**2.4.0 polish — Invoice PDF setup (#477–#480, Kyle 2026-11-02).** `InvoiceTemplate.tsx` uses `PatternInput` for the
+title, Bill to heading and footer, and the shared `Lines` (moved from CheckDocuments.tsx to checkShared.tsx) for the
+letterhead and Bill to (one row each, max 6); `ROLE_GROUPS` gains CUSTOMER/INVOICE. `TemplateConfig.logo_position`
+adds CENTER (a 3-column header, the logo cell centered, max 1.7 in wide); the header's logo cells are aligned with
+`ALIGN` (an Image's own hAlign is ignored in a table cell - the RIGHT bug). New `fold_marks/fold_length/fold_edge/
+fold_weight/fold_shade` and `window` (NONE|LETTER) + `window_return`, `return_dx/dy`, `payee_dx/dy` reuse the cover
+letter's `WINDOW_PRESET`, `FOLD_LINES`, `fold_ticks` and `_with_back_pages`: the letterhead (return) and the resolved
+Bill to lines are drawn in the window positions on page 1, the header keeps only the logo/title block, the body
+starts at the first fold + 0.15 in, the Bill to block is not repeated. Window outlines and labeled folds only on the
+SAMPLE preview/test print. Columns: a CSS grid (`ol.column-order`) and HTML5 drag-and-drop by a handle, ↑/↓ kept.
+Tests `test_v240_invoice_template.py::test_logo_right_sits_at_the_margin_and_center_between`, `::test_fold_marks_and_window_layout`.
+
 **2.4.0 polish — Cleared sort places never-cleared voids by date (#471, decided with Kyle 2026-11-02).** In
 `register.list` the `clear_date` sort key groups only uncleared **ACTIVE** transactions (last ascending, first
 descending); a VOID or DELETED one without a clear date sorts at its `transaction_date` (Kyle chose the transaction

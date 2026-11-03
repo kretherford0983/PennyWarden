@@ -827,3 +827,9 @@ button.info-tip-btn { background: none; border: 0; padding: 0 2px; min-height: 0
 .help-table { border-collapse: collapse; margin: 8px 0; }
 .help-table th, .help-table td { border: 1px solid var(--border); padding: 5px 8px; text-align: left; vertical-align: top; }
 .help-table th { background: var(--surface-2); }
+/* 2.4.0 polish (#480): invoice line-table columns - one grid so every heading box and button lines up, with row
+   spacing; a drag handle per row */
+ol.column-order { list-style: none; padding: 0; margin: 4px 0; display: grid; grid-template-columns: auto minmax(10em, max-content) minmax(8em, 1fr) auto auto; gap: 6px 8px; align-items: center; }
+ol.column-order li.column-row { display: contents; }
+ol.column-order .drag-handle { cursor: grab; color: var(--muted); padding: 0 2px; user-select: none; }
+ol.column-order label { margin: 0; }
