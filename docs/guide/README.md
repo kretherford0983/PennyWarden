@@ -134,7 +134,7 @@ Billing members and customers from a product catalog, with sales tax and payment
 - [Recording a payment](invoices/record-payment.md) — Register Users: the deposit from an invoice.
 - [Many customers at once](invoices/batches.md) — Invoice Managers: a batch of invoices for dues and the like.
 - [Emailing invoices](invoices/email-invoices.md) — Sending invoices and statements by email.
-- [Invoice reports](invoices/invoice-reports.md) — Open invoices, aging, statements, sales tax and more.
+- [Invoice reports](invoices/invoice-reports.md) — Open invoices, aging, statements, sales tax, and sales reports for the board.
 
 ## Reminders and notifications
 

@@ -203,9 +203,9 @@ def test_who_can_run_and_the_catalog(env, rb):
     assert set(INV_IDS) <= set(REPORT_IDS)
     for scheme, cats in DEFAULTS.items():
         inv = [c for c in cats if c["id"] == "invoices"]
-        assert inv and inv[0]["reports"] == INV_IDS, scheme
+        assert inv and inv[0]["reports"][:len(INV_IDS)] == INV_IDS, scheme
     g = env.bm.get("/api/reports/grouping").json()
-    assert next(c for c in g["categories"] if c["id"] == "invoices")["reports"] == INV_IDS
+    assert next(c for c in g["categories"] if c["id"] == "invoices")["reports"][:len(INV_IDS)] == INV_IDS
     r = rb["im"].post("/api/me/report-runs", {"report": "inv-aging", "params": {"as_of": "2026-10-15"}, "label": "as of 2026-10-15"})
     assert r.status_code == 200 and r.json()["recent"][0]["report"] == "inv-aging"
     env.admin.put("/api/system/modules", {"invoices": False})
@@ -218,7 +218,7 @@ def test_saved_grouping_gets_an_invoices_category(env, rb):
     cats = [{"id": c["id"], "name": c["name"], "reports": [x for x in c["reports"] if not x.startswith("inv-")]}
             for c in rg.DEFAULTS["PURPOSE"] if c["id"] != "invoices"]
     out = rg._complete(cats)
-    assert out[-1]["name"] == "Invoices" and out[-1]["reports"] == INV_IDS
+    assert out[-1]["name"] == "Invoices" and out[-1]["reports"] == INV_IDS + ["inv-sales-formal", "inv-overview"]   # + #513
 
 
 def test_overdue_card_and_invoice_manager_reminder(env, rb, monkeypatch):

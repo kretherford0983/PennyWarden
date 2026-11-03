@@ -32,6 +32,13 @@ export const REPORTS: ReportDef[] = [
   { id: "fundraising-fy", name: "Fiscal Year fundraising report", short: "FY fundraising", group: "share", outputs: ["PDF", "PPTX"],
     purpose: "The year's fundraisers with the history of their series, trends and averages.",
     audience: "Board and members", keywords: "fundraiser series history deck", visible: fundraisers },
+  // 2.4.0 (#513): the invoice reports for formal publication
+  { id: "inv-sales-formal", name: "Sales by product & category", short: "Product & category sales", group: "share", outputs: ["PDF", "PPTX"],
+    purpose: "A quarter's or year's sales by category, product and Income budget, with what was collected and last year beside them.",
+    audience: "Board and members", keywords: "invoice sales products categories budget presentation deck formal", visible: invoices },
+  { id: "inv-overview", name: "Sales overview", short: "Sales overview", group: "share", outputs: ["PDF", "PPTX"],
+    purpose: "A quarter's or year's invoicing in one report: sales, collections, open and overdue amounts, top customers and products, sales tax.",
+    audience: "Board and members", keywords: "invoice sales overview collections aging customers quarterly annual presentation deck formal", visible: invoices },
   { id: "audit", name: "End of Year Audit", short: "End of Year Audit", group: "audit", outputs: ["PDF"],
     purpose: "The year's budgets and every register transaction with its attachments, account by account.",
     audience: "Auditors", keywords: "transactions attachments signature", visible: financial },

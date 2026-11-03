@@ -4,6 +4,7 @@ import { api, money, qs } from "../api";
 import { EntityPicker, ErrorBox, Field, Loading } from "../components";
 import { NotAuthorized, useMe } from "../App";
 import { InvoiceReport } from "./InvoiceReports";
+import { InvoiceFormalReport } from "./reports/InvoiceFormal";
 import { Link, useRouter } from "../router";
 import BudgetReview, { PlanningSheetReport } from "./BudgetReview";
 import FlowReport from "./FlowReport";
@@ -84,6 +85,8 @@ const BODIES: Record<string, (p: BodyProps) => JSX.Element> = {
   "count-sheet": (p) => <CountSheetReport {...p} />,
   ...Object.fromEntries(["inv-open", "inv-aging", "inv-statement", "inv-sales-tax", "inv-register", "inv-sales", "inv-activity"]
     .map((rid) => [rid, (p: BodyProps) => <InvoiceReport rid={rid} {...p} />])),     // 2.4.0 (#255)
+  "inv-sales-formal": (p) => <InvoiceFormalReport rid="inv-sales-formal" initial={p.initial} onRun={p.onRun} actions={p.actions} />,   // 2.4.0 (#513)
+  "inv-overview": (p) => <InvoiceFormalReport rid="inv-overview" initial={p.initial} onRun={p.onRun} actions={p.actions} />,
 };
 
 /** A run's options as an address, so Recently run opens the report with them filled in. */

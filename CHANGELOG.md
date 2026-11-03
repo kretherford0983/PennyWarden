@@ -106,6 +106,14 @@ PennyWarden 2.4.0 (in progress).
   (for example **Serial number**); the Invoice Manager ticks it on those products in the catalog. It is asked on each
   invoice line that uses such a product — required if the field says so — and prints after the line's description
   when *show on PDF* is on.
+- **Invoice reports for the board and members (#513).** Two reports made for publishing, each a PDF report and a
+  presentation with charts, in **Reports → Share with the board and members**: **Sales by product & category** (by
+  category, by product within each category and by Income budget, with share, collected and last year) and **Sales
+  overview** (sales, sales tax, money collected and refunded by month, open and overdue amounts, discounts and
+  write-offs, top customers and products). Run them for a Fiscal Year quarter or the year — compared with the same
+  period last year — or for dates of your choice. Sales are invoiced amounts (after discounts, before tax) with what has
+  been collected beside them. **Show customer names** can be turned off (*Customer 1, 2, …*), and a commentary is
+  printed on the first page and on its own slide.
 
 ### Optional modules
 - **Turning a module on or off updates the menu at once (#482)** — no page reload (for the Administrator who changes
