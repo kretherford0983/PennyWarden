@@ -145,6 +145,12 @@ def save_setup(body: InvoiceSetupIn, db: Session = Depends(get_db), ctx: Ctx = D
     return out
 
 
+@router.get("/setup/number-example")
+def number_example(pattern: str = "", db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.setup"))):
+    """2.4.0 polish (#481): Next invoice for the pattern being typed (422 with the reason when it is not valid)."""
+    return docs.number_example(db, ctx, pattern)
+
+
 @router.get("/setup/test-print")
 def setup_test_print(db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.setup"))):
     """The Administrator's test print: sample data only (BR-003) - no invoice, customer or product is read."""

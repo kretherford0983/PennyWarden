@@ -173,6 +173,19 @@ export function InvoiceSetup() {
   const [v, setV] = useState<any>(null);
   const [saved, setSaved] = useState(false);
   const [err, setErr] = useState<unknown>(null);
+  // 2.4.0 polish (#481): Next invoice follows the pattern as it is typed (the server's own check and formatter)
+  const [example, setExample] = useState<{ text: string; error: string } | null>(null);
+  const pattern = v?.number_pattern;
+  useEffect(() => {
+    if (pattern === undefined) return;
+    let live = true;
+    const t = window.setTimeout(() => {
+      api.get(`/api/invoices/setup/number-example${qs({ pattern })}`).then(
+        (x) => { if (live) setExample({ text: x.next_number_example, error: "" }); },
+        (x) => { if (live) setExample({ text: "", error: (x as Error)?.message || "Not a valid pattern." }); });
+    }, 250);
+    return () => { live = false; window.clearTimeout(t); };
+  }, [pattern]);
   useEffect(() => { api.get("/api/invoices/setup").then((x) => { setO(x); setV({ number_pattern: x.number_pattern, terms_days: String(x.terms_days), terms_text: x.terms_text || "", default_notes: x.default_notes || "", overdue_reminder_days: String(x.overdue_reminder_days ?? 0) }); }, setErr); }, []);
   if (!o || !v) return <><ErrorBox error={err} />{err ? null : <Loading />}</>;
   const set = (k: string) => (e: any) => { setSaved(false); setV({ ...v, [k]: e.target.value }); };
@@ -190,7 +203,8 @@ export function InvoiceSetup() {
           <Field label="Invoice number pattern" hint="{YYYY} or {YY} = the invoice date's year, {SEQ} = the number (one sequence that never restarts; {SEQ:4} pads to 4 digits).">
             <input required maxLength={40} value={v.number_pattern} onChange={set("number_pattern")} />
           </Field>
-          <p className="hint">Next invoice: <b data-testid="inv-next-number">{o.next_number_example}</b></p>
+          {example?.error ? <p className="warn-text" role="status" data-testid="inv-next-number-error">{example.error}</p>
+            : <p className="hint">Next invoice: <b data-testid="inv-next-number">{example?.text || o.next_number_example}</b></p>}
           <div className="row fields">
             <Field label="Payment terms (days)"><input type="number" min={0} max={365} value={v.terms_days} onChange={set("terms_days")} /></Field>
             <Field label="Terms text" hint="Printed on the invoice, e.g. Net 30."><input maxLength={200} value={v.terms_text} onChange={set("terms_text")} /></Field>

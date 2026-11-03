@@ -166,6 +166,14 @@ def format_number(pattern: str, d: dt.date, seq: int) -> str:
     return PATTERN_TOKENS.sub(rep, pattern)
 
 
+def number_example(db: Session, ctx, pattern: str) -> dict:
+    """2.4.0 polish (#481): the next invoice number for an unsaved pattern - the same check and formatter Save uses,
+    with today's year and the next sequence number. Nothing is stored."""
+    s = settings_of(db, ctx.workspace_id)
+    p = check_pattern(pattern)
+    return {"pattern": p, "next_number_example": format_number(p, dt.date.today(), _next_seq(db, ctx.workspace_id, s))}
+
+
 def setup_out(db: Session, ctx) -> dict:
     s = settings_of(db, ctx.workspace_id)
     return {"module": inv.module_enabled(db, ctx.workspace_id), "number_pattern": s.number_pattern,

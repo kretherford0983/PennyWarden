@@ -94,6 +94,19 @@ def test_numbers_follow_the_pattern_and_are_never_reused(env, ib):
     assert ib["im"].put("/api/invoices/setup", {"number_pattern": "A-{SEQ}", "terms_days": 30}).status_code == 403
 
 
+def test_number_example_for_an_unsaved_pattern(env, ib):
+    """2.4.0 polish (#481): Next invoice follows the pattern being typed (same check and formatter as Save)."""
+    import datetime as dt
+    yy = dt.date.today().year % 100
+    r = env.admin.get("/api/invoices/setup/number-example?pattern=INV-{SEQ:6}")
+    assert r.status_code == 200 and r.json()["next_number_example"] == "INV-000001"
+    r = env.admin.get("/api/invoices/setup/number-example?pattern=A{YY}-{SEQ}")
+    assert r.json()["next_number_example"] == f"A{yy:02d}-1"
+    assert env.admin.get("/api/invoices/setup/number-example?pattern=INV-{YYYY}").status_code == 422
+    assert ib["im"].get("/api/invoices/setup/number-example?pattern=A-{SEQ}").status_code == 403
+    assert env.admin.get("/api/invoices/setup").json()["number_pattern"] != "INV-{SEQ:6}"     # nothing saved
+
+
 def test_send_revise_keeps_every_pdf(env, ib):
     """AC-INV-DOC-004: Mark as sent keeps the PDF; a revision keeps the number with -R1; earlier PDFs stay."""
     im = ib["im"]
