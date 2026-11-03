@@ -827,3 +827,24 @@ button.info-tip-btn { background: none; border: 0; padding: 0 2px; min-height: 0
 .help-table { border-collapse: collapse; margin: 8px 0; }
 .help-table th, .help-table td { border: 1px solid var(--border); padding: 5px 8px; text-align: left; vertical-align: top; }
 .help-table th { background: var(--surface-2); }
+/* 2.4.0 polish (#480): invoice line-table columns - one grid so every heading box and button lines up, with row
+   spacing; a drag handle per row */
+ol.column-order { list-style: none; padding: 0; margin: 4px 0; display: grid; grid-template-columns: auto minmax(10em, max-content) minmax(8em, 1fr) auto auto; gap: 6px 8px; align-items: center; }
+ol.column-order li.column-row { display: contents; }
+ol.column-order .drag-handle { cursor: grab; color: var(--muted); padding: 0 2px; user-select: none; }
+ol.column-order label { margin: 0; }
+/* 2.4.0 (#488): the user guide as a book - contents, chapters, pages, search, pictures */
+.help-search { display: flex; gap: 8px; margin: 0 0 12px; max-width: 520px; }
+.help-search input { flex: 1; }
+.help-crumbs { margin: 4px 0 6px; }
+.help-applies { margin: -6px 0 12px; font-size: .9em; }
+.help-lead { font-size: 1.05em; color: var(--muted); }
+.help-chapters { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; margin-top: 12px; }
+.help-chapter-card { border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; background: var(--surface); }
+.help-chapter-card h2 { font-size: 1.05em; margin: 0 0 4px; border: 0; padding: 0; }
+.help-chapter-card ul { margin: 6px 0 0; padding-left: 18px; }
+.help-page-list { list-style: none; padding: 0; }
+.help-page-list li { padding: 8px 0; border-bottom: 1px solid var(--border); }
+.help-results li { margin: 0 0 10px; }
+.help-img { display: block; max-width: 100%; height: auto; border: 1px solid var(--border); border-radius: 6px; margin: 10px 0; }
+.help-prevnext { display: flex; justify-content: space-between; gap: 12px; margin-top: 28px; padding-top: 12px; border-top: 1px solid var(--border); }

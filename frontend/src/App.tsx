@@ -257,7 +257,8 @@ function Shell({ workspace, warning, mode, testing, demo, onLogout }: { workspac
   // 2.4.0 (#251): a user without the Dashboard (an Invoice Manager only) starts on Invoices or the Register
   if (path === "/") page = allowed.has("/") ? <Dashboard /> : allowed.has("/invoices") ? <Invoices /> : allowed.has("/register") ? <Register /> : <Dashboard />;
   else if (path === "/help") page = <Suspense fallback={<Loading />}><Help /></Suspense>;   // 2.4.0 (#473): every role
-  else if ((m = match("/help/:doc", path))) page = <Suspense fallback={<Loading />}><Help doc={m.doc} /></Suspense>;
+  else if ((m = match("/help/:chapter", path))) page = <Suspense fallback={<Loading />}><Help chapter={m.chapter} /></Suspense>;
+  else if ((m = match("/help/:chapter/:page", path))) page = <Suspense fallback={<Loading />}><Help chapter={m.chapter} page={m.page} /></Suspense>;   // 2.4.0 (#488): the book
   else if (path === "/account") page = <Account updates={mode === "local" ? updates : null} />;
   else if (path === "/users") page = guard("/users", <Users />);
   else if (path === "/audit-log") page = guard("/audit-log", <AuditLog />);

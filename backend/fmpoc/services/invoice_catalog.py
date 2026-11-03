@@ -12,14 +12,15 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .. import audit
 from ..errors import AppError, conflict, not_found, validation
-from ..models import (Budget, FiscalYear, InvoiceProduct, InvoiceProductCategory, InvoiceTaxRate, InvoiceUnitType,
-                      utcnow)
+from ..models import (Budget, FiscalYear, InvoiceProduct, InvoiceProductCategory, InvoiceTaxGroup, InvoiceTaxRate,
+                      InvoiceUnitType, utcnow)
 from ..money import fmt, parse_amount
 from . import budgets as bsvc
 from . import invoices as inv
@@ -136,10 +137,19 @@ def budget_for_year(db: Session, budget_id: int | None, fy: FiscalYear | None) -
     return cur
 
 
+def product_budget_id(db: Session, p: InvoiceProduct) -> int | None:
+    """2.4.0 polish (#483): the budget a product uses - its own, else its category's current one."""
+    if p.budget_id is not None or p.category_id is None:
+        return p.budget_id
+    c = db.get(InvoiceProductCategory, p.category_id)
+    return c.budget_id if c is not None else None
+
+
 def needs_budget(db: Session, p: InvoiceProduct | InvoiceTaxRate, fy: FiscalYear | None) -> bool:
     if getattr(p, "is_system", False) or not p.active:
         return False
-    return budget_for_year(db, p.budget_id, fy) is None
+    bid = product_budget_id(db, p) if isinstance(p, InvoiceProduct) else p.budget_id
+    return budget_for_year(db, bid, fy) is None
 
 
 # ------------------------------------------------------------------ shared
@@ -182,16 +192,136 @@ def _simple(x) -> dict:
 
 
 # ------------------------------------------------------------------ unit types and categories
+def category_snapshot(c: InvoiceProductCategory) -> dict:
+    return {**_simple(c), "budget_id": c.budget_id, "code_pattern": c.code_pattern}
+
+
+def category_out(db: Session, c: InvoiceProductCategory) -> dict:
+    """A category with its budget (code and name) and the next product code its pattern gives (#483, #486)."""
+    return {**category_snapshot(c), "budget": _budget_brief(db, c.budget_id),
+            "next_code": next_code(db, c) if c.code_pattern else None,
+            "products_following": db.scalar(select(func.count(InvoiceProduct.id)).where(
+                InvoiceProduct.category_id == c.id, InvoiceProduct.budget_id.is_(None),
+                InvoiceProduct.is_system.is_(False))) or 0}
+
+
 def list_simple(db: Session, ctx, kind: str, include_inactive: bool) -> list[dict]:
     _require_view(db, ctx)
     model = KINDS[kind]
     q = select(model).where(model.workspace_id == ctx.workspace_id).order_by(func.lower(model.name))
     if not include_inactive:
         q = q.where(model.active.is_(True))
+    if kind == "categories":
+        return [category_out(db, x) for x in db.scalars(q)]
     return [_simple(x) for x in db.scalars(q)]
 
 
-def save_simple(db: Session, ctx, kind: str, oid: int | None, name: str) -> dict:
+# ------------------------------------------------------------------ 2.4.0 polish (#486): product code patterns
+def check_code_pattern(p: str | None) -> str | None:
+    """Like the invoice number pattern: exactly one {SEQ} / {SEQ:n}, optional {YY} / {YYYY}, and a code that fits."""
+    from .invoice_docs import check_pattern, format_number
+    p = (p or "").strip()
+    if not p:
+        return None
+    try:
+        p = check_pattern(p)
+    except AppError as e:
+        raise validation(str(e.message).replace("pattern needs", "code pattern needs"), "code_pattern") from None
+    if len(format_number(p, dt.date(2099, 1, 1), 99999)) > 30:
+        raise validation("The codes this pattern makes would be longer than 30 characters.", "code_pattern")
+    return p
+
+
+def _period(pattern: str, d: dt.date) -> str:
+    """The counter a pattern uses: one per year when the pattern shows the year, else one that never restarts."""
+    return str(d.year) if ("{YY}" in pattern or "{YYYY}" in pattern) else "0"
+
+
+def _counters(c: InvoiceProductCategory) -> dict:
+    try:
+        return json.loads(c.code_counters) if c.code_counters else {}
+    except ValueError:
+        return {}
+
+
+def _code_taken(db: Session, ws_id: int, code: str, exclude_id: int | None = None) -> bool:
+    q = select(InvoiceProduct.id).where(InvoiceProduct.workspace_id == ws_id, func.lower(InvoiceProduct.code) == code.lower())
+    if exclude_id is not None:
+        q = q.where(InvoiceProduct.id != exclude_id)
+    return db.scalar(q) is not None
+
+
+def _next(db: Session, c: InvoiceProductCategory, pattern: str, today: dt.date | None = None) -> tuple[str, int]:
+    from .invoice_docs import format_number
+    today = today or dt.date.today()
+    n = int(_counters(c).get(_period(pattern, today), 1)) if c.id is not None and pattern == c.code_pattern else 1
+    while True:                                          # skip a number whose code another product already has
+        code = format_number(pattern, today, n)
+        if not _code_taken(db, c.workspace_id, code):
+            return code, n
+        n += 1
+
+
+def next_code(db: Session, c: InvoiceProductCategory, pattern: str | None = None) -> str | None:
+    p = pattern if pattern is not None else c.code_pattern
+    return _next(db, c, p)[0] if p else None
+
+
+def code_example(db: Session, ctx, category_id: int | None, pattern: str | None) -> dict:
+    """The next product code for a category (its saved pattern) or for a pattern being typed."""
+    _require_view(db, ctx)
+    c = _get(db, ctx, InvoiceProductCategory, category_id, "Category") if category_id else \
+        InvoiceProductCategory(workspace_id=ctx.workspace_id)
+    p = check_code_pattern(pattern) if pattern is not None else c.code_pattern
+    return {"pattern": p, "next_code": next_code(db, c, p) if p else None,
+            "budget": _budget_brief(db, c.budget_id) if category_id else None}
+
+
+def _use_code(db: Session, c: InvoiceProductCategory | None, code: str | None) -> None:
+    """A product was saved with the code the category suggested: that number is used, the next one is offered next."""
+    if c is None or not c.code_pattern or not code:
+        return
+    sug, n = _next(db, c, c.code_pattern)
+    if code.lower() != sug.lower():
+        return
+    k = _counters(c)
+    k[_period(c.code_pattern, dt.date.today())] = n + 1
+    c.code_counters = json.dumps(k, sort_keys=True)
+
+
+def save_category(db: Session, ctx, oid: int | None, body) -> dict:
+    """#483 / #486: a category's name, optional budget and optional code pattern (audited)."""
+    _require_manage(db, ctx)
+    name = _name(body.name, "name", 80)
+    _unique(db, InvoiceProductCategory, ctx.workspace_id, name, oid, "category")
+    pattern = check_code_pattern(getattr(body, "code_pattern", None))
+    budget_id = getattr(body, "budget_id", None)
+    c = None if oid is None else _get(db, ctx, InvoiceProductCategory, oid, "Category")
+    if budget_id is not None and (c is None or budget_id != c.budget_id):
+        _leaf_ok(db, db.get(Budget, budget_id), ctx.workspace_id)
+    if c is not None and c.budget_id is not None and budget_id is None:
+        following = db.scalar(select(func.count(InvoiceProduct.id)).where(
+            InvoiceProduct.category_id == c.id, InvoiceProduct.budget_id.is_(None), InvoiceProduct.is_system.is_(False)))
+        if following:
+            raise conflict("CATEGORY_BUDGET_IN_USE", f"{following} product{'s' if following != 1 else ''} use this "
+                           "category's budget. Give them their own budget, or choose another budget for the category.")
+    before = None if c is None else category_snapshot(c)
+    if c is None:
+        c = InvoiceProductCategory(workspace_id=ctx.workspace_id, created_by_user_id=ctx.user.id)
+        db.add(c)
+    c.name, c.budget_id, c.code_pattern, c.updated_by_user_id = name, budget_id, pattern, ctx.user.id
+    db.flush()
+    after = category_snapshot(c)
+    if before is None:
+        audit.record(db, ctx, "INVOICE_CATEGORY_CREATED", "invoice_product_category", c.id, None, after)
+    elif after != before:
+        audit.record(db, ctx, "INVOICE_CATEGORY_UPDATED", "invoice_product_category", c.id, before, after)
+    return category_out(db, c)
+
+
+def save_simple(db: Session, ctx, kind: str, oid: int | None, name: str, body=None) -> dict:
+    if kind == "categories":
+        return save_category(db, ctx, oid, body)
     _require_manage(db, ctx)
     model = KINDS[kind]
     what = "unit type" if kind == "unit-types" else "category"
@@ -227,23 +357,34 @@ def set_simple_active(db: Session, ctx, kind: str, oid: int, active: bool) -> di
     tag = "INVOICE_UNIT_TYPE" if kind == "unit-types" else "INVOICE_CATEGORY"
     audit.record(db, ctx, f"{tag}_{'RESTORED' if active else 'INACTIVATED'}", model.__tablename__, x.id, before,
                  _simple(x))
-    return _simple(x)
+    return category_out(db, x) if kind == "categories" else _simple(x)
 
 
 # ------------------------------------------------------------------ products
 def product_snapshot(p: InvoiceProduct) -> dict:
     return {"id": p.id, "name": p.name, "code": p.code, "description": p.description,
             "unit_price": fmt(p.unit_price_cents), "unit_type_id": p.unit_type_id, "category_id": p.category_id,
-            "taxable": bool(p.taxable), "budget_id": p.budget_id, "is_system": bool(p.is_system),
-            "active": bool(p.active)}
+            "taxable": bool(p.tax_group_id), "tax_group_id": p.tax_group_id,          # 2.4.0 polish (#487)
+            "budget_id": p.budget_id, "is_system": bool(p.is_system),
+            "custom_field_ids": _field_ids(p), "active": bool(p.active)}
+
+
+def _field_ids(p: InvoiceProduct) -> list[int]:
+    from .invoice_docs import product_field_ids
+    return product_field_ids(p)
 
 
 def product_out(db: Session, p: InvoiceProduct, fy: FiscalYear | None) -> dict:
     u = db.get(InvoiceUnitType, p.unit_type_id) if p.unit_type_id else None
     c = db.get(InvoiceProductCategory, p.category_id) if p.category_id else None
-    now = budget_for_year(db, p.budget_id, fy)
+    eff = product_budget_id(db, p)
+    now = budget_for_year(db, eff, fy)
     return {**product_snapshot(p), "unit_type": u.name if u else None, "category": c.name if c else None,
-            "budget": _budget_brief(db, p.budget_id),
+            "budget": _budget_brief(db, eff),
+            "own_budget": p.budget_id is not None,                       # 2.4.0 polish (#483): else the category's
+            "tax_group": (lambda g: {"id": g.id, "name": g.name, "label": group_out(db, g)["label"]} if g else None)(
+                db.get(InvoiceTaxGroup, p.tax_group_id) if p.tax_group_id else None),
+            "category_budget": _budget_brief(db, c.budget_id) if c is not None else None,
             "current_budget": _budget_brief(db, now.id) if now is not None else None,
             "needs_budget": needs_budget(db, p, fy)}
 
@@ -283,22 +424,37 @@ def save_product(db: Session, ctx, pid: int | None, body) -> dict:
         raise conflict("SYSTEM_ITEM", "The built-in Discount item can't be changed.")
     unit = _ref(db, ctx, InvoiceUnitType, body.unit_type_id, "unit_type_id", "unit type")
     cat = _ref(db, ctx, InvoiceProductCategory, body.category_id, "category_id", "category")
-    if body.budget_id is None:
-        raise validation("Choose the Invoiced Income budget the money goes to.", "budget_id")
-    if p is None or body.budget_id != p.budget_id:
+    gid = getattr(body, "tax_group_id", None)                   # 2.4.0 polish (#487)
+    if gid is not None and (p is None or gid != p.tax_group_id):
+        _ref(db, ctx, InvoiceTaxGroup, gid, "tax_group_id", "tax group")
+    # 2.4.0 polish (#483): no budget of its own = the category's (which then must have one)
+    if body.budget_id is None and (cat is None or cat.budget_id is None):
+        raise validation("Choose the Invoiced Income budget the money goes to, or a category that has one.", "budget_id")
+    if body.budget_id is not None and (p is None or body.budget_id != p.budget_id):
         _leaf_ok(db, db.get(Budget, body.budget_id), ctx.workspace_id)
     code = (body.code or "").strip() or None
-    if code and db.scalar(select(InvoiceProduct.id).where(
-            InvoiceProduct.workspace_id == ctx.workspace_id, func.lower(InvoiceProduct.code) == code.lower(),
-            InvoiceProduct.id != (p.id if p else -1))) is not None:
+    if code and _code_taken(db, ctx.workspace_id, code, p.id if p else None):
         raise conflict("DUPLICATE_CODE", f"Another product already uses the code {code}.")
+    if p is None or (code or "") != (p.code or ""):
+        _use_code(db, cat, code)                         # #486: the category's suggested number is used up
+    # 2.4.0 polish (#484): product-scope custom fields (defined by the Administrator) attached by the Invoice Manager
+    from .invoice_docs import fields_of
+    want = list(dict.fromkeys(getattr(body, "custom_field_ids", None) or []))
+    usable = {f.id: f for f in fields_of(db, ctx.workspace_id, include_inactive=True) if f.level == "PRODUCT"}
+    kept = set(_field_ids(p)) if p is not None else set()
+    for fid in want:
+        f = usable.get(fid)
+        if f is None or (not f.active and fid not in kept):
+            raise validation("Choose product fields from the list.", "custom_field_ids")
     before = None if p is None else product_snapshot(p)
     if p is None:
         p = InvoiceProduct(workspace_id=ctx.workspace_id, created_by_user_id=ctx.user.id)
         db.add(p)
     p.name, p.code, p.description = name, code, (body.description or "").strip() or None
     p.unit_price_cents, p.unit_type_id, p.category_id = price, unit.id, cat.id if cat else None
-    p.taxable, p.budget_id, p.updated_by_user_id = bool(body.taxable), body.budget_id, ctx.user.id
+    p.tax_group_id, p.taxable = gid, gid is not None
+    p.budget_id, p.updated_by_user_id = body.budget_id, ctx.user.id
+    p.custom_field_ids = json.dumps(want) if want else None
     db.flush()
     after = product_snapshot(p)
     if before is None:
@@ -401,6 +557,88 @@ def set_tax_active(db: Session, ctx, tid: int, active: bool) -> dict:
         audit.record(db, ctx, "INVOICE_TAX_RATE_RESTORED" if active else "INVOICE_TAX_RATE_INACTIVATED",
                      "invoice_tax_rate", t.id, before, tax_snapshot(t))
     return tax_out(db, t, current_fiscal_year(db, ctx.workspace_id))
+
+
+# ------------------------------------------------------------------ 2.4.0 polish (#487): tax groups
+def _group_ids(g: InvoiceTaxGroup) -> list[int]:
+    try:
+        return [int(x) for x in json.loads(g.rate_ids or "[]")]
+    except (ValueError, TypeError):
+        return []
+
+
+def group_rates(db: Session, gid: int | None, active_only: bool = True) -> list[InvoiceTaxRate]:
+    """The rates of a tax group in their order (inactive rates no longer apply)."""
+    g = db.get(InvoiceTaxGroup, gid) if gid else None
+    if g is None:
+        return []
+    out = []
+    for rid in _group_ids(g):
+        t = db.get(InvoiceTaxRate, rid)
+        if t is not None and t.workspace_id == g.workspace_id and (t.active or not active_only):
+            out.append(t)
+    return out
+
+
+def group_snapshot(g: InvoiceTaxGroup) -> dict:
+    return {"id": g.id, "name": g.name, "rate_ids": _group_ids(g), "active": bool(g.active)}
+
+
+def group_out(db: Session, g: InvoiceTaxGroup) -> dict:
+    rates = group_rates(db, g.id, active_only=False)
+    return {**group_snapshot(g),
+            "rates": [{"id": t.id, "name": t.name, "rate": rate_text(t.rate_milli_pct), "active": bool(t.active)} for t in rates],
+            "label": " + ".join(f"{t.name} {rate_text(t.rate_milli_pct)} %" for t in rates if t.active) or "—",
+            "products": db.scalar(select(func.count(InvoiceProduct.id)).where(InvoiceProduct.tax_group_id == g.id)) or 0}
+
+
+def list_tax_groups(db: Session, ctx, include_inactive: bool) -> list[dict]:
+    _require_view(db, ctx)
+    q = select(InvoiceTaxGroup).where(InvoiceTaxGroup.workspace_id == ctx.workspace_id).order_by(
+        func.lower(InvoiceTaxGroup.name))
+    if not include_inactive:
+        q = q.where(InvoiceTaxGroup.active.is_(True))
+    return [group_out(db, g) for g in db.scalars(q)]
+
+
+def save_tax_group(db: Session, ctx, gid: int | None, body) -> dict:
+    """A named set of one or more active tax rates (audited; inactivated, never deleted)."""
+    _require_manage(db, ctx)
+    name = _name(body.name, "name", 80)
+    g = None if gid is None else _get(db, ctx, InvoiceTaxGroup, gid, "Tax group")
+    _unique(db, InvoiceTaxGroup, ctx.workspace_id, name, g.id if g else None, "tax group")
+    ids = list(dict.fromkeys(body.rate_ids or []))
+    if not ids:
+        raise validation("Choose at least one tax rate.", "rate_ids")
+    kept = set(_group_ids(g)) if g is not None else set()
+    for rid in ids:
+        t = db.get(InvoiceTaxRate, rid)
+        if t is None or t.workspace_id != ctx.workspace_id or (not t.active and rid not in kept):
+            raise validation("Choose active tax rates from the list.", "rate_ids")
+    before = None if g is None else group_snapshot(g)
+    if g is None:
+        g = InvoiceTaxGroup(workspace_id=ctx.workspace_id, created_by_user_id=ctx.user.id)
+        db.add(g)
+    g.name, g.rate_ids, g.updated_by_user_id = name, json.dumps(ids), ctx.user.id
+    db.flush()
+    after = group_snapshot(g)
+    if before is None:
+        audit.record(db, ctx, "INVOICE_TAX_GROUP_CREATED", "invoice_tax_group", g.id, None, after)
+    elif after != before:
+        audit.record(db, ctx, "INVOICE_TAX_GROUP_UPDATED", "invoice_tax_group", g.id, before, after)
+    return group_out(db, g)
+
+
+def set_tax_group_active(db: Session, ctx, gid: int, active: bool) -> dict:
+    _require_manage(db, ctx)
+    g = _get(db, ctx, InvoiceTaxGroup, gid, "Tax group")
+    if bool(g.active) != active:
+        before = group_snapshot(g)
+        g.active, g.updated_by_user_id = active, ctx.user.id
+        db.flush()
+        audit.record(db, ctx, "INVOICE_TAX_GROUP_RESTORED" if active else "INVOICE_TAX_GROUP_INACTIVATED",
+                     "invoice_tax_group", g.id, before, group_snapshot(g))
+    return group_out(db, g)
 
 
 __all__ = ["AppError", "utcnow"]

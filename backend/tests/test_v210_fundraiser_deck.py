@@ -143,3 +143,31 @@ def test_access_and_audit(env, buckets):
     assert any((e.get("after") or {}).get("report") == "FUNDRAISER_PRESENTATION" for e in ev)
     assert env.admin.put("/api/system/modules", {"fundraisers": False}).status_code == 200
     assert deck(env, buckets).status_code == 404
+
+
+def test_chart_text_off_chart_elements_and_colors_visible(env, buckets):
+    """2.4.0 polish (#490): category names sit at the low end of the axis (a negative bar can't cover them), value
+    labels sit on a box in the slide's color, and every series fill has >= 3:1 contrast with the slide."""
+    from pptx.dml.color import RGBColor
+    from pptx.oxml.ns import qn
+    from fmpoc.services import fundraiser_deck as fd
+    near_white, dark_page = RGBColor(0xF2, 0xF2, 0xF0), RGBColor(0x1E, 0x22, 0x28)
+    assert fd.contrast(near_white, dark_page) > 3                                   # already fine: unchanged
+    assert str(fd.visible(near_white, dark_page)) == "F2F2F0"
+    pale, white = RGBColor(0xEE, 0xEE, 0xEE), RGBColor(0xFF, 0xFF, 0xFF)
+    assert fd.contrast(pale, white) < 3 and fd.contrast(fd.visible(pale, white), white) >= 3
+    navy = RGBColor(0x25, 0x2A, 0x33)
+    assert fd.contrast(fd.visible(navy, dark_page), dark_page) >= 3
+    r = deck(env, buckets)
+    assert r.status_code == 200
+    found = 0
+    for kind, items in charts(r.content).items():
+        if kind == XL_CHART_TYPE.DOUGHNUT:
+            continue
+        for _i, ch in items:
+            found += 1
+            cat = ch._chartSpace.find(".//" + qn("c:catAx"))
+            assert cat.find(qn("c:tickLblPos")).get("val") == "low"
+            dl = ch.plots[0]._element.find(qn("c:dLbls"))
+            assert dl.find(qn("c:spPr")) is not None
+    assert found

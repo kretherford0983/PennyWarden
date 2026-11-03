@@ -100,3 +100,79 @@ def test_logo_checked_reencoded_and_printed(env, tb):
     assert env.admin.get("/api/audit-events?action=INVOICE_LOGO_SET").json()["items"]
     assert env.admin.post("/api/invoices/setup/template/logo/remove").json()["has_logo"] is False
     assert tb["im"].post("/api/invoices/setup/template/logo", files={"file": ("logo.png", _png(), "image/png")}).status_code == 403
+
+
+# ------------------------------------------------------------------ 2.4.0 polish (#478, #479)
+def _image_x(pdf: bytes) -> tuple[float, float]:
+    """(left, right) in inches of the first image drawn on page 1 (walks the content stream's q/Q/cm to the Do)."""
+    from pypdf.generic import ContentStream
+    page = PdfReader(io.BytesIO(pdf)).pages[0]
+    ctm, stack = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0], []
+    for operands, op in ContentStream(page.get_contents(), page.pdf).operations:
+        if op == b"q":
+            stack.append(ctm)
+        elif op == b"Q":
+            ctm = stack.pop()
+        elif op == b"cm":
+            a, b, c, d, e, f = (float(x) for x in operands)
+            A, B, C, D, E, F = ctm
+            ctm = [a * A + b * C, a * B + b * D, c * A + d * C, c * B + d * D, e * A + f * C + E, e * B + f * D + F]
+        elif op == b"Do":
+            return ctm[4] / 72, (ctm[4] + ctm[0]) / 72
+    raise AssertionError("no image")
+
+
+def _texts(pdf: bytes, page: int = 0) -> dict[str, tuple[float, float]]:
+    """text -> (x, y) in inches from the top-left corner."""
+    pg = PdfReader(io.BytesIO(pdf)).pages[page]
+    h = float(pg.mediabox.height)
+    out: dict[str, tuple[float, float]] = {}
+
+    def visit(text, cm, tm, _fd, _fs):
+        if text.strip():
+            x = tm[4] * cm[0] + tm[5] * cm[2] + cm[4]
+            y = tm[4] * cm[1] + tm[5] * cm[3] + cm[5]
+            out.setdefault(text.strip(), (x / 72, (h - y) / 72))
+    pg.extract_text(visitor_text=visit)
+    return out
+
+
+def test_logo_right_sits_at_the_margin_and_center_between(env, tb):
+    """#478: RIGHT puts the logo at the right margin (over the right-aligned title); CENTER centers it on the page."""
+    env.admin.post("/api/invoices/setup/template/logo", files={"file": ("logo.png", _png(), "image/png")})
+    cfg = env.admin.get("/api/invoices/setup/template").json()["config"]
+    right = env.admin.post("/api/invoices/setup/template/preview", {**cfg, "logo_position": "RIGHT"}).content
+    _l, r = _image_x(right)
+    assert abs(r - 7.75) < 0.05                                       # 8.5 in page, 0.75 in right margin
+    center = env.admin.post("/api/invoices/setup/template/preview", {**cfg, "logo_position": "CENTER"}).content
+    l, r = _image_x(center)
+    assert abs((l + r) / 2 - 4.25) < 0.05
+    assert env.admin.put("/api/invoices/setup/template", {**cfg, "logo_position": "CENTER"}).status_code == 200
+    assert env.admin.put("/api/invoices/setup/template", {**cfg, "logo_position": "MIDDLE"}).status_code == 422
+
+
+def test_fold_marks_and_window_layout(env, tb):
+    """#479: fold marks on the back add a back page per page; the window layout prints the letterhead and Bill to in
+    the #10 double-window positions and starts the body below the first fold; the sample draws the windows."""
+    cfg = env.admin.get("/api/invoices/setup/template").json()["config"]
+    plain = env.admin.post("/api/invoices/setup/template/preview", cfg).content
+    back = env.admin.post("/api/invoices/setup/template/preview", {**cfg, "fold_marks": "BACK"}).content
+    assert len(PdfReader(io.BytesIO(back)).pages) == 2 * len(PdfReader(io.BytesIO(plain)).pages)
+    front = env.admin.post("/api/invoices/setup/template/preview", {**cfg, "fold_marks": "FRONT"}).content
+    assert len(front) > len(plain)                                    # the ticks are drawn
+    win = env.admin.post("/api/invoices/setup/template/preview", {**cfg, "window": "LETTER"}).content
+    t = _texts(win)
+    cust = t["Sample Customer"]
+    assert abs(cust[0] - 0.85) < 0.05 and 2.1 < cust[1] < 2.35        # the lower window
+    assert "fold" in t                                                # sample: folds labeled
+    desc = [y for k, (x, y) in t.items() if k.startswith("Description")]
+    assert desc and min(desc) > 11 / 3                                # the line table starts below the first fold
+    moved = env.admin.post("/api/invoices/setup/template/preview", {**cfg, "window": "LETTER", "payee_dx": 0.25}).content
+    assert abs(_texts(moved)["Sample Customer"][0] - 1.10) < 0.05
+    bad = env.admin.put("/api/invoices/setup/template", {**cfg, "window": "LETTER", "payee_dx": 2})
+    assert bad.status_code == 422
+    # a real invoice PDF carries no window outlines or fold labels
+    env.admin.put("/api/invoices/setup/template", {**cfg, "window": "LETTER", "fold_marks": "FRONT"})
+    real = tb["im"].get(f"/api/invoices/{tb['inv']}/pdf").content
+    rt = _texts(real)
+    assert "fold" not in rt and abs(rt["Template Customer"][0] - 0.85) < 0.05

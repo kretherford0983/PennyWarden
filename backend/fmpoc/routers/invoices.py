@@ -27,7 +27,7 @@ def setup(db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.set
 # ------------------------------------------------------------------ 2.4.0 (#252): the product catalog
 from typing import Literal  # noqa: E402
 
-from ..schemas import CatalogNameIn, InvoiceProductIn, InvoiceTaxRateIn  # noqa: E402
+from ..schemas import CatalogNameIn, InvoiceProductIn, InvoiceTaxGroupIn, InvoiceTaxRateIn  # noqa: E402
 from ..services import invoice_catalog as cat  # noqa: E402
 
 Simple = Literal["unit-types", "categories"]
@@ -70,6 +70,36 @@ def product_active(pid: int, action: Literal["inactivate", "restore"], db: Sessi
     return out
 
 
+@router.get("/catalog/tax-groups")
+def tax_groups(include_inactive: bool = False, db: Session = Depends(get_db),
+               ctx: Ctx = Depends(require("invoice.catalog_view"))):
+    return cat.list_tax_groups(db, ctx, include_inactive)
+
+
+@router.post("/catalog/tax-groups", status_code=201)
+def create_tax_group(body: InvoiceTaxGroupIn, db: Session = Depends(get_db),
+                     ctx: Ctx = Depends(require("invoice.catalog_manage"))):
+    out = cat.save_tax_group(db, ctx, None, body)
+    db.commit()
+    return out
+
+
+@router.put("/catalog/tax-groups/{gid}")
+def update_tax_group(gid: int, body: InvoiceTaxGroupIn, db: Session = Depends(get_db),
+                     ctx: Ctx = Depends(require("invoice.catalog_manage"))):
+    out = cat.save_tax_group(db, ctx, gid, body)
+    db.commit()
+    return out
+
+
+@router.post("/catalog/tax-groups/{gid}/{action}")
+def tax_group_active(gid: int, action: Literal["inactivate", "restore"], db: Session = Depends(get_db),
+                     ctx: Ctx = Depends(require("invoice.catalog_manage"))):
+    out = cat.set_tax_group_active(db, ctx, gid, action == "restore")
+    db.commit()
+    return out
+
+
 @router.get("/catalog/tax-rates")
 def tax_rates(include_inactive: bool = False, db: Session = Depends(get_db),
               ctx: Ctx = Depends(require("invoice.catalog_view"))):
@@ -100,6 +130,13 @@ def tax_active(tid: int, action: Literal["inactivate", "restore"], db: Session =
     return out
 
 
+@router.get("/catalog/code-example")
+def catalog_code_example(category_id: int | None = None, pattern: str | None = None, db: Session = Depends(get_db),
+                         ctx: Ctx = Depends(require("invoice.catalog_view"))):
+    """2.4.0 polish (#486): the next product code of a category, or of a pattern being typed (nothing is used up)."""
+    return cat.code_example(db, ctx, category_id, pattern)
+
+
 @router.get("/catalog/{kind}")
 def simple_list(kind: Simple, include_inactive: bool = False, db: Session = Depends(get_db),
                 ctx: Ctx = Depends(require("invoice.catalog_view"))):
@@ -109,7 +146,7 @@ def simple_list(kind: Simple, include_inactive: bool = False, db: Session = Depe
 @router.post("/catalog/{kind}", status_code=201)
 def simple_create(kind: Simple, body: CatalogNameIn, db: Session = Depends(get_db),
                   ctx: Ctx = Depends(require("invoice.catalog_manage"))):
-    out = cat.save_simple(db, ctx, kind, None, body.name)
+    out = cat.save_simple(db, ctx, kind, None, body.name, body)
     db.commit()
     return out
 
@@ -117,7 +154,7 @@ def simple_create(kind: Simple, body: CatalogNameIn, db: Session = Depends(get_d
 @router.put("/catalog/{kind}/{oid}")
 def simple_update(kind: Simple, oid: int, body: CatalogNameIn, db: Session = Depends(get_db),
                   ctx: Ctx = Depends(require("invoice.catalog_manage"))):
-    out = cat.save_simple(db, ctx, kind, oid, body.name)
+    out = cat.save_simple(db, ctx, kind, oid, body.name, body)
     db.commit()
     return out
 
@@ -143,6 +180,12 @@ def save_setup(body: InvoiceSetupIn, db: Session = Depends(get_db), ctx: Ctx = D
     out = docs.save_setup(db, ctx, body)
     db.commit()
     return out
+
+
+@router.get("/setup/number-example")
+def number_example(pattern: str = "", db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.setup"))):
+    """2.4.0 polish (#481): Next invoice for the pattern being typed (422 with the reason when it is not valid)."""
+    return docs.number_example(db, ctx, pattern)
 
 
 @router.get("/setup/test-print")

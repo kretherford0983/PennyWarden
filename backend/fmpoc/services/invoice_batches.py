@@ -84,7 +84,7 @@ def create(db: Session, ctx, body) -> InvoiceBatch:
     made = []
     for e in sorted(ents.values(), key=lambda x: (x.display_name.lower(), x.id)):
         data = InvoiceIn(customer_entity_id=e.id, invoice_date=body.invoice_date, due_date=body.due_date,
-                         terms_text=body.terms_text, notes=body.notes, tax_rate_id=body.tax_rate_id,
+                         terms_text=body.terms_text, notes=body.notes,
                          discount=body.discount, lines=[ln.model_copy() for ln in body.lines],
                          custom_values=body.custom_values)
         try:
