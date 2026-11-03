@@ -107,6 +107,7 @@ function CatalogForm({ tab, row, onClose, onSaved }: { tab: Tab; row: any; onClo
   const [v, setV] = useState<any>({ name: row.name || "", code: row.code || "", description: row.description || "", unit_price: row.unit_price || "",
     unit_type_id: row.unit_type_id ? String(row.unit_type_id) : "", category_id: row.category_id ? String(row.category_id) : "", taxable: !!row.taxable,
     budget_id: row.budget_id ? String(row.budget_id) : "", rate: row.rate || "", code_pattern: row.code_pattern || "",
+    field_ids: (row.custom_field_ids || []) as number[],
     // 2.4.0 polish (#483): a product follows its category's budget unless it has its own
     own: tab !== "products" || !row.id || !!row.own_budget });
   const [codeTouched, setCodeTouched] = useState(!!row.id);
@@ -114,11 +115,13 @@ function CatalogForm({ tab, row, onClose, onSaved }: { tab: Tab; row: any; onClo
   const [units, setUnits] = useState<any[]>([]);
   const [cats, setCats] = useState<any[]>([]);
   const [budgets, setBudgets] = useState<any[]>([]);
+  const [pfields, setPfields] = useState<any[]>([]);          // 2.4.0 polish (#484): product-scope custom fields
   const [err, setErr] = useState<unknown>(null);
   useEffect(() => {
     if (tab === "products") {
       api.get("/api/invoices/catalog/unit-types").then(setUnits, setErr);
       api.get("/api/invoices/catalog/categories").then(setCats, setErr);
+      api.get("/api/invoices/fields").then((f) => setPfields(f.filter((x: any) => x.level === "PRODUCT")), () => setPfields([]));
     }
     if (tab !== "unit-types") api.get("/api/invoices/catalog/budget-options").then(setBudgets, setErr);
   }, [tab]);
@@ -150,7 +153,7 @@ function CatalogForm({ tab, row, onClose, onSaved }: { tab: Tab; row: any; onClo
     const num = (x: string) => (x ? Number(x) : null);
     const body = tab === "products" ? { name: v.name, code: v.code || null, description: v.description || null, unit_price: v.unit_price,
       unit_type_id: num(v.unit_type_id), category_id: num(v.category_id), taxable: v.taxable,
-      budget_id: v.own || !category?.budget ? num(v.budget_id) : null }
+      budget_id: v.own || !category?.budget ? num(v.budget_id) : null, custom_field_ids: v.field_ids }
       : tab === "tax-rates" ? { name: v.name, rate: v.rate, budget_id: num(v.budget_id) }
       : tab === "categories" ? { name: v.name, budget_id: num(v.budget_id), code_pattern: v.code_pattern.trim() || null } : { name: v.name };
     try {
@@ -196,6 +199,14 @@ function CatalogForm({ tab, row, onClose, onSaved }: { tab: Tab; row: any; onClo
             </fieldset>
           ) : null}
           {v.own || !category?.budget ? budgetPicker() : null}
+          {pfields.length || v.field_ids.length ? (
+            <fieldset className="choices" aria-label="Fields asked on invoice lines">
+              <legend>Fields asked on invoice lines for this product</legend>
+              {pfields.map((f) => <label key={f.id} className="check"><input type="checkbox" checked={v.field_ids.includes(f.id)}
+                onChange={(e) => setV({ ...v, field_ids: e.target.checked ? [...v.field_ids, f.id] : v.field_ids.filter((x: number) => x !== f.id) })} /> {f.name}{f.required ? " (required)" : ""}</label>)}
+              <span className="hint">Product fields are defined by the Administrator in Invoices Setup.</span>
+            </fieldset>
+          ) : null}
         </> : null}
         {tab === "tax-rates" ? <>
           <Field label="Rate (%)" hint="For example 7 or 7.25."><input required inputMode="decimal" maxLength={12} value={v.rate} onChange={set("rate")} /></Field>
@@ -440,6 +451,11 @@ function InvoiceForm({ current, batch, onClose, onSaved }: { current?: any; batc
     api.get("/api/invoices/fields").then(setFields, () => setFields([]));
   }, []);
   const set = (k: string) => (e: any) => setV({ ...v, [k]: e.target.value });
+  // 2.4.0 polish (#484): a line asks for the line fields plus the product fields attached to its product
+  const lineFields = (pid: string) => {
+    const attached: number[] = products.find((p) => String(p.id) === pid)?.custom_field_ids || [];
+    return fields.filter((f) => f.level === "LINE" || (f.level === "PRODUCT" && attached.includes(f.id)));
+  };
   const setLine = (k: number, patch: Partial<LineV>) => setLines(lines.map((l, i) => (i === k ? { ...l, ...patch } : l)));
   const submit = async (e: FormEvent) => {
     e.preventDefault();
@@ -449,7 +465,7 @@ function InvoiceForm({ current, batch, onClose, onSaved }: { current?: any; batc
       discount: v.discount_kind ? { kind: v.discount_kind, value: v.discount_value, reason: v.discount_reason } : null,
       lines: lines.map((l) => ({ ...(l.id ? { id: l.id } : {}), product_id: Number(l.product_id), quantity: l.quantity,
         discount_kind: l.discount_kind || null, discount_value: l.discount_kind ? l.discount_value : null, discount_reason: l.discount_kind ? l.discount_reason : null,
-        custom_values: Object.fromEntries(fields.filter((f) => f.level === "LINE").map((f) => [String(f.id), (l.custom || {})[String(f.id)] || null])) })),
+        custom_values: Object.fromEntries(lineFields(l.product_id).map((f) => [String(f.id), (l.custom || {})[String(f.id)] || null])) })),
       custom_values: Object.fromEntries(fields.filter((f) => f.level === "INVOICE").map((f) => [String(f.id), custom[String(f.id)] || null])) };
     if (!current) { delete body.notes; delete body.terms_text; if (!v.notes) body.notes = null; }
     if (batch) {
@@ -481,7 +497,7 @@ function InvoiceForm({ current, batch, onClose, onSaved }: { current?: any; batc
                 <Field label={`Line ${k + 1} discount value`}><input required inputMode="decimal" maxLength={20} value={l.discount_value} onChange={(e) => setLine(k, { discount_value: e.target.value })} /></Field>
                 <Field label={`Line ${k + 1} discount reason`}><input required maxLength={200} value={l.discount_reason} onChange={(e) => setLine(k, { discount_reason: e.target.value })} /></Field>
               </> : null}
-              {fields.filter((f) => f.level === "LINE").map((f) => <FieldInput key={f.id} f={f} prefix={`Line ${k + 1} `} value={(l.custom || {})[String(f.id)] || ""} onChange={(x) => setLine(k, { custom: { ...(l.custom || {}), [String(f.id)]: x } })} />)}
+              {lineFields(l.product_id).map((f) => <FieldInput key={f.id} f={f} prefix={`Line ${k + 1} `} value={(l.custom || {})[String(f.id)] || ""} onChange={(x) => setLine(k, { custom: { ...(l.custom || {}), [String(f.id)]: x } })} />)}
               {lines.length > 1 ? <button type="button" className="small" onClick={() => setLines(lines.filter((_x, i) => i !== k))}>Remove</button> : null}
             </div>
           ))}
@@ -524,7 +540,7 @@ function FieldSetup({ fields, onChanged }: { fields: any[]; onChanged: () => voi
       {!fields.length ? <p className="muted">No custom fields.</p> : (
         <table className="table compact"><thead><tr><th>Name</th><th>On</th><th>Type</th><th>Required</th><th>On the PDF</th><th>Status</th><th /></tr></thead>
           <tbody>{fields.map((f) => <tr key={f.id}>
-            <td>{f.name}{f.options?.length ? <span className="muted"> ({f.options.join(", ")})</span> : null}</td><td>{f.level === "LINE" ? "Lines" : "Invoice"}</td>
+            <td>{f.name}{f.options?.length ? <span className="muted"> ({f.options.join(", ")})</span> : null}</td><td>{f.level === "LINE" ? "Lines" : f.level === "PRODUCT" ? "Lines of chosen products" : "Invoice"}</td>
             <td>{FIELD_TYPES.find((t) => t[0] === f.field_type)?.[1]}</td><td>{f.required ? "Yes" : "No"}</td><td>{f.show_on_pdf ? "Yes" : "No"}</td>
             <td>{f.active ? "Active" : "Retired"}</td>
             <td className="actions-cell"><button className="small" onClick={() => setEdit(f)}>Edit</button> <button className="small" onClick={() => toggle(f)}>{f.active ? "Retire" : "Restore"}</button></td>
@@ -553,7 +569,8 @@ function FieldForm({ f, onClose, onSaved }: { f: any; onClose: () => void; onSav
         <ErrorBox error={err} />
         <Field label="Name"><input required maxLength={60} value={v.name} onChange={(e) => setV({ ...v, name: e.target.value })} /></Field>
         <div className="row fields">
-          <Field label="On"><select disabled={!!f.id} value={v.level} onChange={(e) => setV({ ...v, level: e.target.value })}><option value="INVOICE">The invoice</option><option value="LINE">Each line</option></select></Field>
+          <Field label="On"><select disabled={!!f.id} value={v.level} onChange={(e) => setV({ ...v, level: e.target.value })}><option value="INVOICE">The invoice</option><option value="LINE">Each line</option><option value="PRODUCT">Lines of chosen products</option></select></Field>
+          {v.level === "PRODUCT" ? <p className="hint">Asked on each invoice line whose product has this field — for example a Serial number. An Invoice Manager attaches it to products in the Product catalog.</p> : null}
           <Field label="Type"><select disabled={!!f.id} value={v.field_type} onChange={(e) => setV({ ...v, field_type: e.target.value })}>{FIELD_TYPES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Field>
         </div>
         {v.field_type === "PICKLIST" ? <Field label="Choices" hint="One per line."><textarea required rows={4} value={v.options} onChange={(e) => setV({ ...v, options: e.target.value })} /></Field> : null}

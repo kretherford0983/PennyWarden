@@ -538,6 +538,7 @@ class InvoiceProductIn(In):                  # 2.4.0 (#252)
     category_id: int | None = None
     taxable: bool = False
     budget_id: int | None = None
+    custom_field_ids: list[int] = Field(default_factory=list, max_length=20)   # 2.4.0 polish (#484)
 
 
 class InvoiceTaxRateIn(In):                  # 2.4.0 (#252)
@@ -618,7 +619,7 @@ class StatementEmailIn(EmailSendIn):
 
 
 class InvoiceFieldIn(In):                    # 2.4.0 (#253 part 2): an Administrator-defined field
-    level: Literal["INVOICE", "LINE"] | None = None
+    level: Literal["INVOICE", "LINE", "PRODUCT"] | None = None        # 2.4.0 polish (#484): PRODUCT
     field_type: Literal["TEXT", "NUMBER", "DATE", "PICKLIST"] | None = None
     name: Str(60)
     options: list[Str(80)] = Field(default_factory=list, max_length=50)

@@ -91,6 +91,10 @@ PennyWarden 2.4.0 (in progress).
   `MBRSHP-{YY}-{SEQ:4}`. On the product form **Category comes first**: picking it fills in the next code (editable)
   and offers the category's budget. Each category counts its own numbers, starting again each year when the pattern
   shows the year; a number is used only when a product is saved with it, and a code already in use is skipped.
+- **Custom fields for chosen products (#484).** The Administrator can define a field *on lines of chosen products*
+  (for example **Serial number**); the Invoice Manager ticks it on those products in the catalog. It is asked on each
+  invoice line that uses such a product — required if the field says so — and prints after the line's description
+  when *show on PDF* is on.
 
 ### Optional modules
 - **Turning a module on or off updates the menu at once (#482)** — no page reload (for the Administrator who changes

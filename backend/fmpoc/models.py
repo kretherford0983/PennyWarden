@@ -1360,6 +1360,8 @@ class InvoiceProduct(Base):
     taxable: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
     budget_id: Mapped[int | None] = mapped_column(ForeignKey("budget.id"), nullable=True, index=True)
     is_system: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
+    # 2.4.0 polish (#484): the product-scope custom fields asked for on lines with this product (JSON list of ids)
+    custom_field_ids: Mapped[str | None] = mapped_column(Text, nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=sa_true(), nullable=False)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
     created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
