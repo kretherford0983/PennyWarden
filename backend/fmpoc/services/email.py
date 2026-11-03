@@ -15,7 +15,10 @@ from __future__ import annotations
 import hashlib
 import re
 import smtplib
+import socket
 import ssl
+import threading
+from types import SimpleNamespace
 from email.message import EmailMessage
 from email.utils import formataddr, make_msgid
 
@@ -32,7 +35,13 @@ from . import invoices as inv
 
 AAD = b"fmpoc:smtp_password:v1"
 SECURITY = ("STARTTLS", "SSL", "NONE")
-TIMEOUT = 20
+TIMEOUT = 10        # seconds per network step (connect, greeting, TLS, login, send)
+DEADLINE = 30       # 2.4.0 polish (#506): seconds for the whole send - a server that doesn't answer fails quickly
+                    # (one slow address after another took 100 s, past a Cloudflare Tunnel's limit)
+
+
+class SendTimeout(Exception):
+    """The mail server didn't finish within DEADLINE seconds."""
 MAX_RECIPIENTS = 10
 ADDR = re.compile(r"^[^@\s<>,;\"']{1,64}@[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?(?:\.[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?)+$")
 HOST = re.compile(r"^[A-Za-z0-9.-]{1,253}$")
@@ -132,17 +141,57 @@ def _smtp_send(s: EmailSettings, km: crypto.KeyMaterial, msg: EmailMessage) -> N
             pass
 
 
-def _safe_error(x: Exception) -> str:
+def _send_with_deadline(s: EmailSettings, km, msg: EmailMessage) -> None:
+    """2.4.0 polish (#506): sends in a worker thread and gives up after DEADLINE seconds, so a mail server that never
+    answers is reported in half a minute. The worker gets a plain copy of the settings (no database access)."""
+    plain = SimpleNamespace(host=s.host, port=s.port, security=s.security, username=s.username,
+                            password_enc=s.password_enc)
+    box: dict = {}
+
+    def work():
+        try:
+            _smtp_send(plain, km, msg)
+        except BaseException as e:             # noqa: BLE001 - handed back to the caller
+            box["error"] = e
+    t = threading.Thread(target=work, name="pennywarden-smtp", daemon=True)
+    t.start()
+    t.join(DEADLINE)
+    if t.is_alive():
+        raise SendTimeout()
+    if "error" in box:
+        raise box["error"]
+
+
+def _hint(s) -> str:
+    sec, port = getattr(s, "security", None), getattr(s, "port", None)
+    if sec == "SSL" and port == 587:
+        return " Security is SSL/TLS but the port is 587, which normally uses STARTTLS - try STARTTLS, or port 465."
+    if sec == "STARTTLS" and port == 465:
+        return " Security is STARTTLS but the port is 465, which normally uses SSL/TLS - try SSL/TLS, or port 587."
+    return (" Check the server name and port with your email provider. Some internet providers and networks block "
+            "outgoing mail ports (25, 465, 587).")
+
+
+def _safe_error(x: Exception, s=None) -> str:
     """A short reason without anything secret (server replies don't contain our password; the exception text of a
-    login failure is the server's reply)."""
+    login failure is the server's reply). #506: in plain words, with what to check."""
     if isinstance(x, smtplib.SMTPAuthenticationError):
         return "The mail server refused the user name or password."
     if isinstance(x, smtplib.SMTPRecipientsRefused):
         return "The mail server refused the recipient address."
-    if isinstance(x, (smtplib.SMTPConnectError, ConnectionError, TimeoutError, OSError)) and not isinstance(x, smtplib.SMTPException):
-        return f"Could not reach the mail server ({type(x).__name__})."
+    if isinstance(x, SendTimeout) or isinstance(x, (TimeoutError, socket.timeout)):
+        return f"The mail server didn't answer within {DEADLINE} seconds." + _hint(s)
+    if isinstance(x, socket.gaierror):
+        return "The mail server's name wasn't found. Check the Mail server (SMTP) setting."
+    if isinstance(x, ConnectionRefusedError):
+        return "The mail server refused the connection on this port." + _hint(s)
     if isinstance(x, ssl.SSLError):
-        return "A secure connection to the mail server failed."
+        return "A secure connection to the mail server failed." + _hint(s)
+    if isinstance(x, smtplib.SMTPServerDisconnected):
+        return "The mail server closed the connection." + _hint(s)
+    if isinstance(x, (smtplib.SMTPConnectError, ConnectionError, OSError)) and not isinstance(x, smtplib.SMTPException):
+        why = getattr(x, "strerror", None) or type(x).__name__
+        return f"Could not reach the mail server ({why})." + _hint(s)
     text = str(x).replace("\n", " ")[:200]
     return f"The mail server refused the message: {text}"
 
@@ -201,9 +250,9 @@ def _send_logged(db: Session, ctx, km, kind: str, to: list[str], cc: list[str], 
                    attachment_sha256=hashlib.sha256(attachment[1]).hexdigest() if attachment else None,
                    sent_by_user_id=ctx.user.id, status="SENT")
     try:
-        _smtp_send(s, km, msg)
+        _send_with_deadline(s, km, msg)
     except Exception as x:                     # noqa: BLE001 - logged and reported, never with the password
-        log.status, log.error = "FAILED", _safe_error(x)
+        log.status, log.error = "FAILED", _safe_error(x, s)
     db.add(log)
     db.flush()
     action = {"INVOICE": "INVOICE_EMAILED", "STATEMENT": "STATEMENT_EMAILED", "TEST": "EMAIL_TEST_SENT"}[kind]
