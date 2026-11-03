@@ -162,6 +162,17 @@ item; the site's version list starts at 1.10 (the first public release); part of
   bundling incl. the Dockerfile, no links to moved files, no other raw HTML, the site build and `versions.json`); E2E
   "#473 AC-DOC-001..004"; `test_v170_rename.py`'s allow-list no longer names the moved notes.
 
+**2.4.0 polish — custom fields applied to products (#484, decided with Kyle 2026-11-02).** Migration
+`0083_product_custom_fields`: `invoice_product.custom_field_ids` (JSON list). `invoice_custom_field.level` adds
+`PRODUCT` (Administrator-defined as before). The Invoice Manager attaches active PRODUCT fields on the product
+(`custom_field_ids` in the product body; 422 for another level or an unknown/retired one not already attached).
+`custom_values(..., "LINE", ..., product_ids)` takes the LINE fields plus the PRODUCT fields attached to the line's
+product: their own Required flag applies; a value for a product field not attached to that line's product is refused
+("Unknown field"); a value of a field detached later is kept (like a retired field's). `values_out("LINE")` lists
+PRODUCT values too, so the PDF prints them after the description (show on PDF) and revisions keep them. Batches go
+through the same path. **BR-INV-FLD-004**, **AC-INV-FLD-005**. Test
+`test_v240_invoice_fields.py::test_product_fields_are_asked_only_on_lines_of_their_products`.
+
 **2.4.0 polish — category budget and product code pattern (#483, #486, decided with Kyle 2026-11-02).** Migration
 `0082_category_defaults`: `invoice_product_category.budget_id` (FK budget), `code_pattern` (40), `code_counters`
 (JSON `{"<year>|0": next}`) - on the category row, so Reinitialize/selective restore need no new table.

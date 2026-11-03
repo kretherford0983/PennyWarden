@@ -365,7 +365,12 @@ def product_snapshot(p: InvoiceProduct) -> dict:
     return {"id": p.id, "name": p.name, "code": p.code, "description": p.description,
             "unit_price": fmt(p.unit_price_cents), "unit_type_id": p.unit_type_id, "category_id": p.category_id,
             "taxable": bool(p.taxable), "budget_id": p.budget_id, "is_system": bool(p.is_system),
-            "active": bool(p.active)}
+            "custom_field_ids": _field_ids(p), "active": bool(p.active)}
+
+
+def _field_ids(p: InvoiceProduct) -> list[int]:
+    from .invoice_docs import product_field_ids
+    return product_field_ids(p)
 
 
 def product_out(db: Session, p: InvoiceProduct, fy: FiscalYear | None) -> dict:
@@ -426,6 +431,15 @@ def save_product(db: Session, ctx, pid: int | None, body) -> dict:
         raise conflict("DUPLICATE_CODE", f"Another product already uses the code {code}.")
     if p is None or (code or "") != (p.code or ""):
         _use_code(db, cat, code)                         # #486: the category's suggested number is used up
+    # 2.4.0 polish (#484): product-scope custom fields (defined by the Administrator) attached by the Invoice Manager
+    from .invoice_docs import fields_of
+    want = list(dict.fromkeys(getattr(body, "custom_field_ids", None) or []))
+    usable = {f.id: f for f in fields_of(db, ctx.workspace_id, include_inactive=True) if f.level == "PRODUCT"}
+    kept = set(_field_ids(p)) if p is not None else set()
+    for fid in want:
+        f = usable.get(fid)
+        if f is None or (not f.active and fid not in kept):
+            raise validation("Choose product fields from the list.", "custom_field_ids")
     before = None if p is None else product_snapshot(p)
     if p is None:
         p = InvoiceProduct(workspace_id=ctx.workspace_id, created_by_user_id=ctx.user.id)
@@ -433,6 +447,7 @@ def save_product(db: Session, ctx, pid: int | None, body) -> dict:
     p.name, p.code, p.description = name, code, (body.description or "").strip() or None
     p.unit_price_cents, p.unit_type_id, p.category_id = price, unit.id, cat.id if cat else None
     p.taxable, p.budget_id, p.updated_by_user_id = bool(body.taxable), body.budget_id, ctx.user.id
+    p.custom_field_ids = json.dumps(want) if want else None
     db.flush()
     after = product_snapshot(p)
     if before is None:

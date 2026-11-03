@@ -430,7 +430,7 @@ def _apply(db: Session, ctx, i: Invoice, body, creating: bool) -> None:
                                     i.custom_values)
     for ln, lb in zip(new_lines, body.lines):
         ln.custom_values = custom_values(db, ctx.workspace_id, "LINE", getattr(lb, "custom_values", None),
-                                         ln.custom_values)
+                                         ln.custom_values, product_field_ids(db.get(InvoiceProduct, ln.product_id)))
     i.updated_by_user_id = ctx.user.id
 
 
@@ -670,7 +670,7 @@ __all__ = ["Attachment"]
 
 # ------------------------------------------------------------------ 2.4.0 (#253 part 2): custom fields
 FIELD_TYPES = ("TEXT", "NUMBER", "DATE", "PICKLIST")
-FIELD_LEVELS = ("INVOICE", "LINE")
+FIELD_LEVELS = ("INVOICE", "LINE", "PRODUCT")   # 2.4.0 polish (#484): PRODUCT = on lines of the products it's attached to
 TEXT_MAX = 200
 
 
@@ -775,17 +775,30 @@ def _check_value(f, raw):
     return v
 
 
-def custom_values(db: Session, ws_id: int, level: str, given: dict | None, old_json: str | None) -> str | None:
-    """Validates the values for the level's active fields; values of retired fields are kept as they were."""
+def product_field_ids(p) -> list[int]:
+    """2.4.0 polish (#484): the product-scope fields attached to a product."""
+    try:
+        return [int(x) for x in json.loads(p.custom_field_ids)] if p is not None and p.custom_field_ids else []
+    except (ValueError, TypeError):
+        return []
+
+
+def custom_values(db: Session, ws_id: int, level: str, given: dict | None, old_json: str | None,
+                  product_ids: list[int] | None = None) -> str | None:
+    """Validates the values for the level's active fields; values of retired fields are kept as they were.
+    2.4.0 polish (#484): a line also takes the PRODUCT fields attached to its product (`product_ids`); a value of a
+    product field no longer attached is kept like a retired field's."""
     given = {str(k): v for k, v in (given or {}).items()}
     old = json.loads(old_json) if old_json else {}
-    fields = {str(f.id): f for f in fields_of(db, ws_id, include_inactive=True) if f.level == level}
-    unknown = set(given) - set(fields)
+    attached = {str(x) for x in (product_ids or [])}
+    every = fields_of(db, ws_id, include_inactive=True)
+    fields = {str(f.id): f for f in every if f.level == level or (level == "LINE" and f.level == "PRODUCT")}
+    unknown = {k for k in given if k not in fields or (fields[k].level == "PRODUCT" and k not in attached and given[k])}
     if unknown:
         raise validation("Unknown field.", "custom_values")
     out = {}
     for fid, f in fields.items():
-        if not f.active:
+        if not f.active or (f.level == "PRODUCT" and fid not in attached):
             if fid in old:
                 out[fid] = old[fid]
             continue
@@ -799,7 +812,8 @@ def values_out(db: Session, ws_id: int, level: str, raw: str | None, pdf_only: b
     vals = json.loads(raw) if raw else {}
     rows = []
     for f in fields_of(db, ws_id, include_inactive=True):
-        if f.level != level or str(f.id) not in vals or (pdf_only and not f.show_on_pdf):
+        lv_ok = f.level == level or (level == "LINE" and f.level == "PRODUCT")       # 2.4.0 polish (#484)
+        if not lv_ok or str(f.id) not in vals or (pdf_only and not f.show_on_pdf):
             continue
         rows.append({"field_id": f.id, "name": f.name, "value": vals[str(f.id)], "retired": not f.active})
     return rows

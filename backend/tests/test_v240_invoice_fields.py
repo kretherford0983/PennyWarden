@@ -87,3 +87,42 @@ def test_retired_field_keeps_its_values(env, ib):
     assert again.status_code == 200, again.text
     assert again.json()["fields"] == [{"field_id": po["id"], "name": "Purchase order", "value": "PO-1", "retired": True}]
     assert ib["im"].post("/api/invoices", base).status_code == 201                 # not required any more
+
+
+# ------------------------------------------------------------------ 2.4.0 polish (#484)
+def test_product_fields_are_asked_only_on_lines_of_their_products(env, ib):
+    """#484: the Administrator defines a PRODUCT field (e.g. Serial Number); the Invoice Manager attaches it to a
+    product; its value is entered per line using that product, with the field's own Required flag; other lines
+    don't take it; the PDF prints it after the description (show on PDF)."""
+    im = ib["im"]
+    serial = _field(env, level="PRODUCT", name="Serial number", required=True).json()
+    assert serial["level"] == "PRODUCT"
+    assert im.post("/api/invoices/setup/fields", {"level": "PRODUCT", "field_type": "TEXT", "name": "x"}).status_code == 403
+    units = {u["name"]: u["id"] for u in im.get("/api/invoices/catalog/unit-types").json()}
+    budget = im.get(f"/api/invoices/catalog/products").json()
+    dues = next(p for p in budget if p["id"] == ib["product"])
+    rad = im.post("/api/invoices/catalog/products", {"name": "Radio", "unit_price": "300.00", "unit_type_id": units["Each"],
+                                                    "budget_id": dues["budget_id"], "custom_field_ids": [serial["id"]]})
+    assert rad.status_code == 201, rad.text
+    rad = rad.json()
+    assert rad["custom_field_ids"] == [serial["id"]]
+    invoice_level = _field(env, name="PO").json()
+    bad = im.put(f"/api/invoices/catalog/products/{rad['id']}", {"name": "Radio", "unit_price": "300.00", "unit_type_id": units["Each"],
+                                                                "budget_id": dues["budget_id"], "custom_field_ids": [invoice_level["id"]]})
+    assert bad.status_code == 422
+    body = {"customer_entity_id": ib["cust"], "invoice_date": "2026-09-15",
+            "lines": [{"product_id": ib["product"], "quantity": "1"}, {"product_id": rad["id"], "quantity": "1"}]}
+    r = im.post("/api/invoices", body)
+    assert r.status_code == 422 and "Serial number" in r.json()["error"]["message"]           # required on the radio line
+    body["lines"][0]["custom_values"] = {str(serial["id"]): "SN-1"}                            # not on the dues line
+    body["lines"][1]["custom_values"] = {str(serial["id"]): "SN-12345"}
+    assert im.post("/api/invoices", body).status_code == 422
+    body["lines"][0]["custom_values"] = {}
+    r = im.post("/api/invoices", body)
+    assert r.status_code == 201, r.text
+    i = r.json()
+    assert i["lines"][1]["custom_values"] == {str(serial["id"]): "SN-12345"} and i["lines"][0]["custom_values"] == {}
+    assert i["lines"][1]["fields"][0]["name"] == "Serial number"
+    pdf = im.get(f"/api/invoices/{i['id']}/pdf").content
+    text = "".join(p.extract_text() for p in PdfReader(io.BytesIO(pdf)).pages)
+    assert "Serial number: SN-12345" in text
