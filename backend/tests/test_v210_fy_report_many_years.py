@@ -50,3 +50,33 @@ def test_pdf_with_many_years(env, six_entered, n):
     if n != "5":                                       # 8 years of history: the table shows the last 6
         assert "The last 6 years are shown" in t                  # $122,545.67 still fits 6 columns without wrapping
     assert _report(env, six_entered, fmt="pptx", years=n).status_code == 200
+
+
+# ---------------------------------------------------------------- 2.4.0 polish (#509): the highlight tiles
+from fmpoc.services.fundraiser_summary import _FONT_BOLD, tile_values  # noqa: E402
+
+
+def _lines(p, w):
+    return round(p.wrap(w, 1000)[1] / p.style.leading)
+
+
+@pytest.mark.parametrize("cols", [3, 4])
+def test_tile_values_keep_words_whole_and_size_each_tile(cols):
+    w = (FRAME_W - 12) / cols - 12
+    row = ["$24,027.91", "+881.5%", "Golf Tournament", "$1,234,567.89", "Annual Spring Gala and Silent Auction"][:cols + 1]
+    for text, p in zip(row, tile_values(row, w)):
+        size = p.style.fontSize
+        assert all(stringWidth(word, _FONT_BOLD, size) <= w for word in text.split()), (text, size)   # no word split
+        assert _lines(p, w) <= 3 and size >= 10
+        if text.startswith(("$", "+")) and len(text) < 12:
+            assert size == 17                                  # a long name beside it doesn't shrink the figures
+    gt = tile_values(["Golf Tournament"], (FRAME_W - 12) / 4 - 12)[0]
+    assert _lines(gt, (FRAME_W - 12) / 4 - 12) == 2 and gt.style.fontSize >= 16      # "Golf" / "Tournament"
+
+
+def test_fy_report_pdf_top_fundraiser_name_is_not_split(env, years):
+    rep = _report(env, years).json()
+    rep["top"]["name"] = "Golf Tournament"                    # Kyle's case: "Tournament" alone was wider than the box
+    pdf, _doc = fyrep.build_pdf("Sample Org", rep)
+    t = pdf_text(pdf)
+    assert "Golf Tournament" in t and "Tourna ment" not in t
