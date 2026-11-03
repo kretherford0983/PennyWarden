@@ -11,6 +11,7 @@ import { Link } from "../router";
 import { LivePreview, PatternInput, PdfViewer, PinToggle, Section, SetupLayout, usePdf, usePin } from "./checkShared";
 import { DocFocus, DocumentEditor } from "./CheckDocuments";
 import { EnvelopeLibrary, ReceiptEnvelopePanel } from "./Envelopes";
+import { LogoChoice } from "../LogoChoice";
 
 /** 2.3.0 (#393): details that include the EIN while it is turned off for donations - confirmed, with a reason. */
 export const usesEin = (text: string) => /\{ORG[._]EIN\}/.test(text || "");
@@ -118,9 +119,9 @@ export default function DonationSetup() {
           </div>
         }>
           {stmtPreview ? <LivePreview key="st" imageUrl="/api/donations/setup/statement-preview-image" pdfUrl="/api/donations/setup/statement-preview" body={{ config: cfg }}
-                                      title="Year-end statement preview" aspect={8.5 / 11} deps={[JSON.stringify(cfg)]} />
+                                      title="Year-end statement preview" aspect={8.5 / 11} deps={[JSON.stringify(cfg), JSON.stringify(s.logos)]} />
             : <LivePreview key="rc" imageUrl="/api/donations/setup/preview-image" pdfUrl="/api/donations/setup/preview" body={{ config: cfg }}
-                           title="Donation receipt preview" aspect={8.5 / 11} deps={[JSON.stringify(cfg)]} />}
+                           title="Donation receipt preview" aspect={8.5 / 11} deps={[JSON.stringify(cfg), JSON.stringify(s.logos)]} />}
         </Section>
       }>
           <Section id="org" scope="pw-donations" title="Organization">
@@ -138,6 +139,15 @@ export default function DonationSetup() {
               the date received, the receipt number and the goods or services statement – these can't be removed.</p>
           </Section>
           <Section id="tpl" scope="pw-donations" title="Receipt letter">
+            {/* 2.4.0 polish (#503): the organization logo, the receipt letter's own, or none */}
+            <LogoChoice id="receipt" source={cfg.logo_source || "NONE"} onSource={(v) => set("logo_source", v)}
+              own={s.logos?.receipt} ownSrc={s.logos?.receipt ? `/api/donations/setup/logo/receipt?v=${s.logos.receipt.version}` : undefined}
+              onUpload={async (f) => setS(await api.upload("/api/donations/setup/logo/receipt", f))}
+              onRemove={async () => setS(await api.post("/api/donations/setup/logo/receipt/remove"))}
+              sizeHint="PNG or JPEG, at most 1 MB. It prints above the organization's name (with a window envelope: at the top right, clear of the windows). Adding or removing the receipt's own logo takes effect at once.">
+              <Field label="Logo position"><select value={cfg.logo_position} onChange={(e) => set("logo_position", e.target.value)}>
+                <option value="LEFT">Top left</option><option value="CENTER">Top center</option><option value="RIGHT">Top right</option></select></Field>
+            </LogoChoice>
             <div className="row form-row">
               <Field label="Font"><select value={cfg.font} onChange={(e) => set("font", e.target.value)}>{FONTS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Field>
               <Field label="Size"><input type="number" min={8} max={14} step={0.5} value={cfg.size} onChange={(e) => set("size", Number(e.target.value))} /></Field>
@@ -192,6 +202,11 @@ export default function DonationSetup() {
             <p className="hint">The letter printed with each donor's year-end giving statement (Donations page → <i>Year-end statements</i>). Put
               <code>{" {DONATION_TABLE} "}</code> in a paragraph of its own where the table of the year's donations goes (without it the table prints after
               the text). The organization, EIN, donor, year, total and the goods or services statement are always printed.</p>
+            <LogoChoice id="statement" source={cfg.statement_logo_source || "FOLLOW"} onSource={(v) => set("statement_logo_source", v)} followLabel="Same as the receipt letter"
+              own={s.logos?.statement} ownSrc={s.logos?.statement ? `/api/donations/setup/logo/statement?v=${s.logos.statement.version}` : undefined}
+              onUpload={async (f) => setS(await api.upload("/api/donations/setup/logo/statement", f))}
+              onRemove={async () => setS(await api.post("/api/donations/setup/logo/statement/remove"))}
+              sizeHint="Printed where the receipt letter's logo position says. PNG or JPEG, at most 1 MB." />
             <PatternInput id="st-title" label="Title" value={cfg.statement_title} variables={s.statement_variables} hint={false} maxLength={120} onChange={(v) => set("statement_title", v)} />
             <PatternInput id="st-salutation" label="Salutation" value={cfg.statement_salutation} variables={s.statement_variables} hint={false} onChange={(v) => set("statement_salutation", v)} />
             <PatternInput id="st-body" label="Statement text" value={cfg.statement_body} variables={s.statement_variables} multiline maxLength={2000} onChange={(v) => set("statement_body", v)} />
@@ -243,7 +258,7 @@ export default function DonationSetup() {
           <div className="actions left">
             <button className="primary" onClick={save} disabled={!dirty}>Save</button>
             <button onClick={testPrint}>Test print (sample data)</button>
-            <button onClick={() => { setCfg({ ...s.defaults, signer_id: cfg.signer_id, signature_mode: cfg.signature_mode, statement_signer_id: cfg.statement_signer_id, statement_signature_mode: cfg.statement_signature_mode, signer_choice: cfg.signer_choice, statement_signer_choice: cfg.statement_signer_choice }); setSaved(false); }}>Default wording</button>
+            <button onClick={() => { setCfg({ ...s.defaults, signer_id: cfg.signer_id, signature_mode: cfg.signature_mode, statement_signer_id: cfg.statement_signer_id, statement_signature_mode: cfg.statement_signature_mode, signer_choice: cfg.signer_choice, statement_signer_choice: cfg.statement_signer_choice, logo_source: cfg.logo_source, logo_position: cfg.logo_position, statement_logo_source: cfg.statement_logo_source }); setSaved(false); }}>Default wording</button>
             {saved && !dirty ? <span className="hint" role="status">Saved.</span> : dirty ? <span className="hint">Unsaved changes</span> : null}
           </div>
       </SetupLayout>

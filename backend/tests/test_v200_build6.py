@@ -65,10 +65,12 @@ def test_logo_upload_validation_and_audit(env, letter):
         assert upload(c, did, img()).status_code == 403
         assert c.get(f"/api/checks/documents/{did}/logo").status_code == 403
     envelope = env.admin.post("/api/checks/documents", {"kind": "ENVELOPE"}).json()
-    assert upload(env.admin, envelope["id"], img()).status_code == 404
+    # 2.4.0 polish (#503): envelopes take their own logo too (it then uses it, "Its own logo")
+    r = upload(env.admin, envelope["id"], img())
+    assert r.status_code == 200 and r.json()["logo"] and r.json()["config"]["logo_source"] == "OWN"
     # audit: the fingerprint, never the image
     ev = env.admin.get("/api/audit-events?action=CHECK_DOCUMENT_LOGO_SET").json()["items"]
-    assert len(ev) == 2 and "logo_png" not in str(ev)
+    assert len(ev) == 3 and "logo_png" not in str(ev)          # two for the letter, one for the envelope (#503)
     r = env.admin.post(f"/api/checks/documents/{did}/logo/remove", {})
     assert r.status_code == 200 and r.json()["logo"] is None
     assert env.admin.get(f"/api/checks/documents/{did}/logo").status_code == 404
@@ -82,7 +84,7 @@ def test_logo_prints_left_or_centred(env, letter):
     assert has_image(pdf)
     t = {txt: (x, y) for txt, x, y in _texts(pdf)}
     assert t["Sample Organization"][0] < 1.2                                     # left: lines at the margin
-    cfg = {**letter["config"], "logo_position": "CENTER"}
+    cfg = {**letter["config"], "logo_position": "CENTER", "logo_source": "OWN"}   # #503: the editor sends its choice
     pdf = env.admin.post(f"/api/checks/documents/{did}/preview", {"config": cfg}).content
     t = {txt: (x, y) for txt, x, y in _texts(pdf)}
     assert t["Sample Organization"][0] > 3.0                                     # centred with the logo
@@ -106,7 +108,7 @@ def test_logo_top_right_beside_the_letterhead(env, letter):
     did = letter["id"]
     base = {t: (x, y) for t, x, y in _texts(env.admin.post(f"/api/checks/documents/{did}/preview",
                                                            {"config": letter["config"]}).content)}
-    cfg = {**letter["config"], "logo_position": "RIGHT"}
+    cfg = {**letter["config"], "logo_position": "RIGHT", "logo_source": "OWN"}
     upload(env.admin, did, img(size=(600, 120)))                                 # 2.5 x 0.5 in
     pdf = env.admin.post(f"/api/checks/documents/{did}/preview", {"config": cfg}).content
     t = {txt: (x, y) for txt, x, y in _texts(pdf)}

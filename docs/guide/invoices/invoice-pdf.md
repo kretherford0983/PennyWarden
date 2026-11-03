@@ -2,7 +2,7 @@ The **Invoice PDF** section of Invoices Setup designs every invoice. The preview
 as you type.
 
 - **Font**, **size** and **accent color**.
-- **Logo** and its position: **Left, above the letterhead**, **Center, between the letterhead and the title**, or
+- **Logo** — the [organization logo](../system-about/organization-logos.md), its own, or none — and its position: **Left, above the letterhead**, **Center, between the letterhead and the title**, or
   **Right, above the title**.
 - **Letterhead** and **Bill to** lines — one per row, up to 6, with **Remove** and **+ Add line**. Type `{` to choose a
   variable such as `{ORG.ADDRESS}` or `{CUSTOMER.NAME}`. The **Title**, **Bill to heading** and **Footer** suggest

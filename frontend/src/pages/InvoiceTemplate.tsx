@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { ErrorBox, Field, Loading } from "../components";
 import { Lines, LivePreview, PatternInput } from "./checkShared";
+import { LogoChoice } from "../LogoChoice";
 
 type Col = { key: string; heading: string };
 
@@ -44,10 +45,6 @@ export function InvoiceTemplateEditor() {
     const clean = { ...cfg, letterhead: cfg.letterhead.filter((x: string) => x.trim()), bill_to: cfg.bill_to.filter((x: string) => x.trim()) };
     try { const x = await api.put("/api/invoices/setup/template", clean); setT(x); setCfg(x.config); setSaved(true); } catch (x) { setErr(x); }
   };
-  const logo = async (f: File | null) => {
-    setErr(null);
-    try { setT(f ? await api.upload("/api/invoices/setup/template/logo", f) : await api.post("/api/invoices/setup/template/logo/remove")); setLogoV(logoV + 1); } catch (x) { setErr(x); }
-  };
   return (
     <section className="card" aria-labelledby="inv-tpl-h" data-testid="invoice-template">
       <h2 id="inv-tpl-h">Invoice PDF</h2>
@@ -60,11 +57,14 @@ export function InvoiceTemplateEditor() {
             <Field label="Size"><input type="number" min={8} max={12} step={0.5} value={cfg.size} onChange={(e) => set("size", Number(e.target.value))} style={{ width: "5em" }} /></Field>
             <Field label="Accent color"><input type="color" value={cfg.accent} onChange={(e) => set("accent", e.target.value.toUpperCase())} /></Field>
           </div>
-          <div className="row fields">
-            <Field label="Logo">{t.has_logo ? <span><img src={`/api/invoices/setup/template/logo?v=${logoV}`} alt="Current logo" style={{ maxHeight: 40, verticalAlign: "middle" }} /> <button type="button" className="small" onClick={() => logo(null)}>Remove</button></span>
-              : <input type="file" accept="image/png,image/jpeg" onChange={(e) => logo(e.target.files?.[0] || null)} />}</Field>
+          {/* 2.4.0 polish (#503): the organization logo, the invoice PDF's own, or none */}
+          <LogoChoice id="invoice" source={cfg.logo_source || "NONE"} onSource={(v) => set("logo_source", v)}
+            own={t.has_logo ? { version: logoV } : null} ownSrc={`/api/invoices/setup/template/logo?v=${logoV}`}
+            onUpload={async (f) => { setT(await api.upload("/api/invoices/setup/template/logo", f)); setLogoV(logoV + 1); }}
+            onRemove={async () => { setT(await api.post("/api/invoices/setup/template/logo/remove")); setLogoV(logoV + 1); }}
+            sizeHint="PNG or JPEG, at most 1 MB. Adding or removing the invoice PDF's own logo takes effect at once.">
             <Field label="Logo position"><select value={cfg.logo_position} onChange={(e) => set("logo_position", e.target.value)}><option value="LEFT">Left, above the letterhead</option><option value="CENTER">Center, between the letterhead and the title</option><option value="RIGHT">Right, above the title</option><option value="NONE">Don't print it</option></select></Field>
-          </div>
+          </LogoChoice>
           {lines("letterhead")}
           <div className="row fields">
             <PatternInput id="inv-title" label="Title" maxLength={40} value={cfg.title} variables={t.variables} hint={false} onChange={(v) => set("title", v)} />

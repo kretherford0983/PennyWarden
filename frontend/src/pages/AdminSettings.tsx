@@ -4,6 +4,7 @@ import { Fragment, useEffect, useState } from "react";
 import { api } from "../api";
 import { ErrorBox, Field, Loading, Modal, RowMenu, useConfirmable } from "../components";
 import { formatPhone } from "./Entities";
+import { loadOrgLogos } from "../LogoChoice";
 
 /** #126 the name; 2.1.0 (#314) the organization profile - the organization's own entity: address, phone, email, EIN.
  * Used by letters, envelopes and receipts ({ORG.*}); the entity can be chosen in the register like any other. */
@@ -379,6 +380,59 @@ export function SecurityOverviewPanel() {
           </table>
         </>
       ) : null}
+    </section>
+  );
+}
+
+/** 2.4.0 polish (#503): the organization's logos - used by cover letters, envelopes, the invoice PDF, donation letters and
+ * Branding wherever their Logo is set to "Organization logo". Removing one in use lists the places and asks first. */
+const ORG_LOGO_SLOTS: [string, string, string][] = [
+  ["full", "Logo", "Letters, envelopes, invoices and report headers. PNG or JPEG, at most 2 MB."],
+  ["mark", "Small mark (optional)", "Report and slide footers (Branding)."],
+  ["dark_full", "Logo on dark backgrounds (optional)", "Dark slides and pages (Branding)."],
+  ["dark_mark", "Small mark on dark backgrounds (optional)", "Dark slides and pages (Branding)."],
+];
+
+export function OrganizationLogosPanel() {
+  const [d, setD] = useState<any>(null);
+  const [err, setErr] = useState<unknown>(null);
+  const { run, dialog } = useConfirmable();
+  const load = () => api.get("/api/system/organization/logos").then(setD, setErr);
+  useEffect(() => { load(); }, []);
+  const changed = (x: any) => { if (x) { setD(x); loadOrgLogos(true).then(() => window.dispatchEvent(new Event("pw:org-logos-changed"))); } };
+  const act = async (fn: () => Promise<any>) => { setErr(null); try { changed(await fn()); } catch (x) { setErr(x); } };
+  if (!d) return <section className="card"><h2>Organization logos</h2><ErrorBox error={err} />{err ? null : <Loading />}</section>;
+  return (
+    <section className="card" aria-labelledby="org-logos-h" data-testid="org-logos">
+      <h2 id="org-logos-h">Organization logos</h2>
+      <p className="hint">Upload your logo once here. Cover letters, envelopes, the invoice PDF, donation letters and Branding print it wherever their
+        <i> Logo</i> is set to <i>Organization logo</i>; each of them can still use its own logo or none instead. Replacing a logo here changes all of them.</p>
+      <ErrorBox error={err} />
+      {ORG_LOGO_SLOTS.map(([slot, label, hint]) => {
+        const info = d.logos[slot];
+        const used: string[] = d.usage?.[slot] || [];
+        return (
+          <fieldset className="lines" key={slot} data-testid={`org-logo-${slot}`}>
+            <legend>{label}</legend>
+            {info ? (
+              <div className="row form-row">
+                <img className="logo-thumb" src={`/api/system/organization/logos/${slot}?v=${info.version}`} alt={label} />
+                <span className="muted">{info.width} × {info.height} px</span>
+                <button type="button" className="small" onClick={() => act(() => run((c) => api.post(`/api/system/organization/logos/${slot}/remove`, { confirmations: c })))}>Remove</button>
+              </div>
+            ) : <p className="muted">None.</p>}
+            <label className="button small">{info ? "Replace…" : "Add…"}
+              <input type="file" accept="image/png,image/jpeg" hidden aria-label={`${label} image`} onChange={(ev) => {
+                const f = ev.target.files?.[0];
+                ev.target.value = "";
+                if (f) act(() => api.upload(`/api/system/organization/logos/${slot}`, f));
+              }} />
+            </label>
+            <p className="hint">{hint} {used.length ? <>Used by: {used.join("; ")}.</> : "Not used anywhere yet."}</p>
+          </fieldset>
+        );
+      })}
+      {dialog}
     </section>
   );
 }
