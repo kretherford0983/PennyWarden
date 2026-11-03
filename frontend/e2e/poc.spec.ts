@@ -346,23 +346,35 @@ test("AC-FY-VIS-006 / AC-REG-001 / AC-SEC-011: Register User allocates to Draft 
   expect(await page.evaluate(() => (window as any).__xss)).toBeUndefined();
 });
 
-test("#473 AC-DOC-001..004: Help opens the bundled guide at the page's section, for every role, with no outside requests", async ({ page }) => {
+test("#473 / #488 AC-DOC-001..004: Help opens the bundled book at the page for this screen, for every role, with no outside requests", async ({ page }) => {
   const outside: string[] = [];
   page.on("request", (r) => { const h = new URL(r.url()).hostname; if (!["127.0.0.1", "localhost"].includes(h)) outside.push(r.url()); });
   await login(page, "ru1");
   const nav = page.getByRole("navigation", { name: "Main navigation" });
   await nav.getByRole("link", { name: "Register" }).click();
-  // AC-DOC-001: the top bar's help opens the guide at this page's section
+  // AC-DOC-001: the top bar's help opens the guide page about this screen, with its version
   await page.getByRole("link", { name: "Help for this page" }).click();
-  await expect(page).toHaveURL(/\/help#register$/);
-  await expect(page.getByRole("heading", { level: 2, name: "Register" })).toBeInViewport();
-  // a link to another bundled guide stays in the app
-  await page.getByTestId("help-doc").getByRole("link", { name: "Check printing", exact: true }).first().click();
-  await expect(page).toHaveURL(/\/help\/check-printing$/);
-  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
-  // AC-DOC-002: Help in the menu opens the start of the guide
+  await expect(page).toHaveURL(/\/help\/register\/read-register$/);
+  const doc = page.getByTestId("help-doc");
+  await expect(doc.getByRole("heading", { level: 1, name: "Reading the register" })).toBeVisible();
+  await expect(doc.getByText(/^Applies to PennyWarden \d+\.\d+$/)).toBeVisible();
+  await expect(doc.locator("img.help-img").first()).toBeVisible();                     // #488: pictures in the page
+  // the next page of the chapter, and the chapter itself
+  await doc.getByRole("link", { name: /Entering a transaction →/ }).click();
+  await expect(page).toHaveURL(/\/help\/register\/enter-transaction$/);
+  await doc.getByRole("navigation", { name: "Breadcrumb" }).getByRole("link", { name: "Register" }).click();
+  await expect(doc.getByRole("heading", { level: 1, name: "Register" })).toBeVisible();
+  // #488: search
+  await doc.getByLabel("Search the guide").fill("void");
+  await doc.getByRole("button", { name: "Search" }).click();
+  await expect(page.getByTestId("help-results").getByRole("link", { name: "Voiding or deleting a transaction" })).toBeVisible();
+  // the 2.4.0 address of a reference guide still opens it
+  await page.goto("/help/check-printing");
+  await expect(doc.getByRole("heading", { level: 1, name: "Check printing" })).toBeVisible();
+  // AC-DOC-002: Help in the menu opens the contents
   await nav.getByRole("link", { name: "Help", exact: true }).click();
-  await expect(page.getByRole("heading", { level: 1, name: "PennyWarden user guide" })).toBeVisible();
+  await expect(doc.getByRole("heading", { level: 1, name: "PennyWarden user guide" })).toBeVisible();
+  await expect(doc.getByRole("link", { name: "Setting up sales tax" })).toBeVisible();
   // AC-DOC-003: the guide came from the app itself
   expect(outside).toEqual([]);
   await logout(page);
@@ -371,8 +383,8 @@ test("#473 AC-DOC-001..004: Help opens the bundled guide at the page's section, 
   await expect(nav.getByRole("link", { name: "Help", exact: true })).toBeVisible();
   await nav.getByRole("link", { name: "Users" }).click();
   await page.getByRole("link", { name: "Help for this page" }).click();
-  await expect(page).toHaveURL(/\/help#users$/);
-  // AC-DOC-004: on a module the Administrator can't open, help points at the start of the guide, not the module
+  await expect(page).toHaveURL(/\/help\/users\/manage-users$/);
+  // AC-DOC-004: on a module the Administrator can't open, help points at the contents, not the module
   await page.goto("/register");
   await expect(page.getByText("You are not authorized to view this module.")).toBeVisible();
   await expect(page.getByRole("link", { name: "Help for this page" })).toHaveAttribute("href", "/help");

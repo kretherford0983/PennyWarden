@@ -1,0 +1,553 @@
+{
+ "schema": 1,
+ "version": "2.4",
+ "title": "PennyWarden user guide",
+ "chapters": [
+  {
+   "id": "getting-started",
+   "title": "Getting started",
+   "summary": "What PennyWarden is for, who does what, signing in and finding your way around.",
+   "pages": [
+    {
+     "id": "welcome",
+     "title": "Welcome to PennyWarden",
+     "summary": "What PennyWarden does and how this guide is organized."
+    },
+    {
+     "id": "who-does-what",
+     "title": "Who does what",
+     "summary": "The roles and why duties are separated."
+    },
+    {
+     "id": "first-start",
+     "title": "The first start",
+     "summary": "Setting up a new installation with the Initialization Wizard."
+    },
+    {
+     "id": "sign-in",
+     "title": "Signing in",
+     "summary": "Signing in, two-step verification and the password rules."
+    },
+    {
+     "id": "forgot-password",
+     "title": "Forgot your password?",
+     "summary": "Resetting a forgotten password with your security questions."
+    },
+    {
+     "id": "finding-your-way",
+     "title": "Finding your way",
+     "summary": "The menu, the top bar and how PennyWarden shows things."
+    }
+   ]
+  },
+  {
+   "id": "my-account",
+   "title": "My account",
+   "summary": "Your password, two-step verification, security questions and display choices.",
+   "pages": [
+    {
+     "id": "my-account",
+     "title": "Your account page",
+     "summary": "What you can change on My account."
+    },
+    {
+     "id": "change-password",
+     "title": "Changing your password",
+     "summary": "Choosing a new password."
+    },
+    {
+     "id": "two-step-verification",
+     "title": "Two-step verification",
+     "summary": "Setting up an authenticator app and using recovery codes."
+    }
+   ]
+  },
+  {
+   "id": "dashboard",
+   "title": "Dashboard",
+   "summary": "The page that opens after you sign in.",
+   "pages": [
+    {
+     "id": "dashboard",
+     "title": "What the Dashboard shows",
+     "summary": "Balances, budgets, attention items and charts."
+    },
+    {
+     "id": "customize-dashboard",
+     "title": "Customizing the Dashboard",
+     "summary": "Choosing which sections and charts you see."
+    }
+   ]
+  },
+  {
+   "id": "fiscal-years",
+   "title": "Fiscal Years",
+   "summary": "Creating, approving and closing the years your budgets cover.",
+   "pages": [
+    {
+     "id": "about-fiscal-years",
+     "title": "About Fiscal Years",
+     "summary": "Draft, Approved and Closed, and how quarters work."
+    },
+    {
+     "id": "create-fiscal-year",
+     "title": "Creating a Fiscal Year",
+     "summary": "Budget Managers: a new year, optionally with last year's budgets."
+    },
+    {
+     "id": "fiscal-year-page",
+     "title": "The Fiscal Year page",
+     "summary": "Budgets by quarter, documents, the documentation review and closure readiness."
+    },
+    {
+     "id": "approve-fiscal-year",
+     "title": "Approving a Fiscal Year",
+     "summary": "Budget Managers: locking the year's budgets."
+    },
+    {
+     "id": "close-fiscal-year",
+     "title": "Closing a Fiscal Year",
+     "summary": "Budget Managers: what must be done first and what closing does."
+    },
+    {
+     "id": "planning-sheet",
+     "title": "Planning the next year",
+     "summary": "The planning sheet for the budget meeting."
+    }
+   ]
+  },
+  {
+   "id": "budgets",
+   "title": "Budgets",
+   "summary": "Income and expense budgets, sub-budgets, history across years and Invoiced Income.",
+   "pages": [
+    {
+     "id": "about-budgets",
+     "title": "About budgets",
+     "summary": "Codes, sub-budgets, Other, gross amounts and status marks."
+    },
+    {
+     "id": "manage-budgets",
+     "title": "Managing budgets",
+     "summary": "Budget Managers: new budgets, unlocking, rejecting, inactivating and deleting."
+    },
+    {
+     "id": "budget-history",
+     "title": "History across years",
+     "summary": "Linking budgets across years and entering years before PennyWarden."
+    },
+    {
+     "id": "invoiced-income-budgets",
+     "title": "Invoiced Income budgets",
+     "summary": "Budget Managers: the budgets invoice money goes to."
+    }
+   ]
+  },
+  {
+   "id": "bank-accounts",
+   "title": "Bank Accounts",
+   "summary": "Accounts, balances and closing an account.",
+   "pages": [
+    {
+     "id": "set-up-account",
+     "title": "Setting up a bank account",
+     "summary": "Budget Managers: a new account and its register."
+    },
+    {
+     "id": "balances",
+     "title": "Balances",
+     "summary": "Current and Available balances, and accounts without a register."
+    },
+    {
+     "id": "close-account",
+     "title": "Closing an account",
+     "summary": "When an account can be closed."
+    }
+   ]
+  },
+  {
+   "id": "entities",
+   "title": "Entities",
+   "summary": "The people and organizations you pay or receive money from.",
+   "pages": [
+    {
+     "id": "entities",
+     "title": "About entities",
+     "summary": "What an entity is and who looks after them."
+    },
+    {
+     "id": "add-entity",
+     "title": "Adding or editing an entity",
+     "summary": "Names, addresses, phone numbers and duplicates."
+    },
+    {
+     "id": "special-entities",
+     "title": "Financial Institutions and your organization",
+     "summary": "Entities with special rules."
+    }
+   ]
+  },
+  {
+   "id": "register",
+   "title": "Register",
+   "summary": "Recording deposits and withdrawals for each bank account.",
+   "pages": [
+    {
+     "id": "read-register",
+     "title": "Reading the register",
+     "summary": "Balances, filters, sorting and a transaction's details."
+    },
+    {
+     "id": "enter-transaction",
+     "title": "Entering a transaction",
+     "summary": "Register Users: a deposit or a withdrawal."
+    },
+    {
+     "id": "split-transaction",
+     "title": "Split transactions",
+     "summary": "One bank entry over several budgets."
+    },
+    {
+     "id": "transfer",
+     "title": "Transfers between accounts",
+     "summary": "Moving money between two of your accounts."
+    },
+    {
+     "id": "change-transaction",
+     "title": "Changing a transaction",
+     "summary": "What can be edited and how."
+    },
+    {
+     "id": "void-or-delete",
+     "title": "Voiding or deleting a transaction",
+     "summary": "Taking a transaction back."
+    },
+    {
+     "id": "reviews-and-missing-checks",
+     "title": "Reviews and missing checks",
+     "summary": "Cross-year allocations and gaps in the check sequence."
+    },
+    {
+     "id": "print-register",
+     "title": "Printing the register",
+     "summary": "A clean portrait printout of what you see."
+    }
+   ]
+  },
+  {
+   "id": "attachments",
+   "title": "Attachments",
+   "summary": "Receipts, invoices and other documents on records.",
+   "pages": [
+    {
+     "id": "attachments",
+     "title": "Attaching documents",
+     "summary": "File types, the viewer and 'No attachment will be provided'."
+    }
+   ]
+  },
+  {
+   "id": "reports",
+   "title": "Reports",
+   "summary": "The report catalog and what each report is for.",
+   "pages": [
+    {
+     "id": "reports-catalog",
+     "title": "Running a report",
+     "summary": "Finding, running and re-running reports."
+    },
+    {
+     "id": "report-list",
+     "title": "The reports",
+     "summary": "What each report is for."
+    }
+   ]
+  },
+  {
+   "id": "events",
+   "title": "Events & Fundraisers",
+   "summary": "Gathering everything spent and received for an event.",
+   "pages": [
+    {
+     "id": "about-events",
+     "title": "About Events & Fundraisers",
+     "summary": "What the module does and the two types."
+    },
+    {
+     "id": "set-up-event",
+     "title": "Setting up an event",
+     "summary": "Budget Managers: a new fundraiser or event."
+    },
+    {
+     "id": "manage-event",
+     "title": "Managing an event",
+     "summary": "Buckets, cash floats, exclusions and documents."
+    },
+    {
+     "id": "event-reports",
+     "title": "Event reports",
+     "summary": "The stakeholder report, the presentation and the yearly report."
+    }
+   ]
+  },
+  {
+   "id": "payments",
+   "title": "Payments and check printing",
+   "summary": "Paying bills and printing checks on pre-printed check stock.",
+   "pages": [
+    {
+     "id": "payments-overview",
+     "title": "About payments",
+     "summary": "What the Payments module does and who does what."
+    },
+    {
+     "id": "print-a-check",
+     "title": "Printing a check",
+     "summary": "Register Users: entering a bill and printing its check."
+    },
+    {
+     "id": "payments-setup",
+     "title": "Payments Setup",
+     "summary": "Administrators: check styles, test prints and calibration."
+    },
+    {
+     "id": "cover-letters",
+     "title": "Cover letters",
+     "summary": "Administrators: the payment letter printed with a check."
+    }
+   ]
+  },
+  {
+   "id": "donations",
+   "title": "Donations",
+   "summary": "Donation receipts, year-end statements and the donor report.",
+   "pages": [
+    {
+     "id": "donations-setup",
+     "title": "Donations Setup",
+     "summary": "Administrators: receipt and statement letters."
+    },
+    {
+     "id": "donation-receipts",
+     "title": "Donation receipts",
+     "summary": "Register Users: marking donations and printing receipts."
+    },
+    {
+     "id": "year-end-statements",
+     "title": "Year-end statements and the donor report",
+     "summary": "Each donor's giving for the year."
+    }
+   ]
+  },
+  {
+   "id": "invoices",
+   "title": "Invoices",
+   "summary": "Billing members and customers from a product catalog, with sales tax and payments.",
+   "pages": [
+    {
+     "id": "about-invoices",
+     "title": "About invoices",
+     "summary": "What the module does, who does what, and the order to set it up."
+    },
+    {
+     "id": "invoices-setup",
+     "title": "Invoices Setup",
+     "summary": "Administrators: numbering, terms, fields and the invoice PDF."
+    },
+    {
+     "id": "invoice-pdf",
+     "title": "The invoice PDF",
+     "summary": "Administrators: letterhead, logo, columns, fold marks and window envelopes."
+    },
+    {
+     "id": "catalog",
+     "title": "The product catalog",
+     "summary": "Invoice Managers: what the catalog holds."
+    },
+    {
+     "id": "categories",
+     "title": "Categories",
+     "summary": "Invoice Managers: a category's budget and product code pattern."
+    },
+    {
+     "id": "set-up-tax",
+     "title": "Setting up sales tax",
+     "summary": "Invoice Managers: tax rates, tax groups and assigning them to products."
+    },
+    {
+     "id": "add-product",
+     "title": "Adding a product",
+     "summary": "Invoice Managers: choose the category first, then the rest."
+    },
+    {
+     "id": "custom-fields",
+     "title": "Custom fields",
+     "summary": "Extra details on invoices, on every line, or on lines of chosen products."
+    },
+    {
+     "id": "tax-exempt-customers",
+     "title": "Tax-exempt customers",
+     "summary": "Customers who are charged no sales tax."
+    },
+    {
+     "id": "create-invoice",
+     "title": "Creating an invoice",
+     "summary": "Invoice Managers: a draft from catalog products."
+    },
+    {
+     "id": "send-revise-void",
+     "title": "Sending, revising and voiding",
+     "summary": "Invoice Managers: from draft to sent, and correcting it."
+    },
+    {
+     "id": "record-payment",
+     "title": "Recording a payment",
+     "summary": "Register Users: the deposit from an invoice."
+    },
+    {
+     "id": "batches",
+     "title": "Many customers at once",
+     "summary": "Invoice Managers: a batch of invoices for dues and the like."
+    },
+    {
+     "id": "email-invoices",
+     "title": "Emailing invoices",
+     "summary": "Sending invoices and statements by email."
+    },
+    {
+     "id": "invoice-reports",
+     "title": "Invoice reports",
+     "summary": "Open invoices, aging, statements, sales tax and more."
+    }
+   ]
+  },
+  {
+   "id": "notifications",
+   "title": "Reminders and notifications",
+   "summary": "Reminders for you or the whole organization.",
+   "pages": [
+    {
+     "id": "reminders",
+     "title": "Reminders",
+     "summary": "Creating, resolving and repeating reminders."
+    }
+   ]
+  },
+  {
+   "id": "envelopes-and-signers",
+   "title": "Envelopes and signers",
+   "summary": "Shared by Payments, Donations and Invoices.",
+   "pages": [
+    {
+     "id": "envelopes",
+     "title": "Envelopes",
+     "summary": "Administrators: #10 envelope templates."
+    },
+    {
+     "id": "signers",
+     "title": "Signers",
+     "summary": "Administrators: who signs checks and letters."
+    }
+   ]
+  },
+  {
+   "id": "users",
+   "title": "Users",
+   "summary": "User accounts and roles.",
+   "pages": [
+    {
+     "id": "manage-users",
+     "title": "Managing users",
+     "summary": "Administrators: new users, roles and resets."
+    }
+   ]
+  },
+  {
+   "id": "audit-log",
+   "title": "Audit Log",
+   "summary": "Every change, who made it and when.",
+   "pages": [
+    {
+     "id": "audit-log",
+     "title": "The Audit Log",
+     "summary": "Reading, filtering and exporting the log."
+    }
+   ]
+  },
+  {
+   "id": "system-about",
+   "title": "System/About",
+   "summary": "Looking after the installation.",
+   "pages": [
+    {
+     "id": "system-about-tabs",
+     "title": "The System/About tabs",
+     "summary": "What each tab is for."
+    },
+    {
+     "id": "optional-modules",
+     "title": "Optional modules",
+     "summary": "Administrators: turning modules on and off."
+    },
+    {
+     "id": "branding",
+     "title": "Branding",
+     "summary": "Administrators: colors and logos for reports and presentations."
+    }
+   ]
+  },
+  {
+   "id": "backup-and-restore",
+   "title": "Backup and restore",
+   "summary": "Keeping copies of your data and bringing them back.",
+   "pages": [
+    {
+     "id": "backups",
+     "title": "Making backups",
+     "summary": "Administrators: manual and scheduled backups."
+    },
+    {
+     "id": "restore",
+     "title": "Restoring a backup",
+     "summary": "Administrators: bringing a backup back."
+    }
+   ]
+  },
+  {
+   "id": "installing",
+   "title": "Installing and the demo",
+   "summary": "Downloads, server installs, upgrading and the demo.",
+   "pages": [
+    {
+     "id": "installing",
+     "title": "Installing and upgrading",
+     "summary": "Where to find the installers and the server guides."
+    },
+    {
+     "id": "demo",
+     "title": "The demo",
+     "summary": "Trying PennyWarden with a made-up organization."
+    }
+   ]
+  },
+  {
+   "id": "reference",
+   "title": "Reference",
+   "summary": "The full technical guides for check printing and backups.",
+   "pages": [
+    {
+     "id": "check-printing",
+     "title": "Check printing",
+     "summary": "The complete check printing guide.",
+     "source": "../check-printing.md"
+    },
+    {
+     "id": "backup-restore",
+     "title": "Backup and restore (full guide)",
+     "summary": "The complete backup and restore guide.",
+     "source": "../backup-restore.md"
+    }
+   ]
+  }
+ ]
+}
