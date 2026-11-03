@@ -14,11 +14,12 @@ def ib(env, base):
     im = env.user("invmgr", "FINANCIAL", ["INVOICE_MANAGER"])
     assert env.bm.put(f"/api/budgets/{base['inc']['id']}/invoiced-income", {"invoiced_income": True}).status_code == 200
     units = {u["name"]: u["id"] for u in im.get("/api/invoices/catalog/unit-types").json()}
-    dues = im.post("/api/invoices/catalog/products", {"name": "Dues", "unit_price": "100.00", "unit_type_id": units["Year"],
-                                                     "budget_id": base["inc_leaf"], "taxable": True}).json()["id"]
     tax = im.post("/api/invoices/catalog/tax-rates", {"name": "Tax", "rate": "10", "budget_id": base["inc_leaf"]}).json()["id"]
+    group = im.post("/api/invoices/catalog/tax-groups", {"name": "Taxed", "rate_ids": [tax]}).json()["id"]   # #487
+    dues = im.post("/api/invoices/catalog/products", {"name": "Dues", "unit_price": "100.00", "unit_type_id": units["Year"],
+                                                     "budget_id": base["inc_leaf"], "tax_group_id": group}).json()["id"]
     cust = env.entity("Paying Customer", client=im)["id"]
-    i = im.post("/api/invoices", {"customer_entity_id": cust, "invoice_date": "2026-09-15", "tax_rate_id": tax,
+    i = im.post("/api/invoices", {"customer_entity_id": cust, "invoice_date": "2026-09-15",
                                   "lines": [{"product_id": dues, "quantity": "2"}]}).json()       # 200 + 20 tax = 220
     assert im.post(f"/api/invoices/{i['id']}/send").json()["status"] == "SENT"
     return {"im": im, "inv": i["id"], "cust": cust, "acct": base["acct"]["id"], "dues": dues, "tax": tax}
@@ -162,11 +163,11 @@ def test_revision_cannot_go_below_paid_and_void_refused_with_payments(env, ib):
     r = ib["im"].post(f"/api/invoices/{ib['inv']}/revise", {"reason": "Fewer items"}).json()
     lines = [{"id": r["lines"][0]["id"], "product_id": ib["dues"], "quantity": "1"}]     # 110 total < 150 paid
     u = ib["im"].put(f"/api/invoices/{ib['inv']}", {"customer_entity_id": ib["cust"], "invoice_date": "2026-09-15",
-                                                     "tax_rate_id": ib["tax"], "lines": lines})
+                                                     "lines": lines})
     assert u.status_code == 422
     lines[0]["quantity"] = "3"
     u = ib["im"].put(f"/api/invoices/{ib['inv']}", {"customer_entity_id": ib["cust"], "invoice_date": "2026-09-15",
-                                                     "tax_rate_id": ib["tax"], "lines": lines})
+                                                     "lines": lines})
     assert u.status_code == 200
     s = ib["im"].post(f"/api/invoices/{ib['inv']}/send").json()
     assert s["status"] == "PARTLY_PAID" and s["payments"]["open"] == "180.00"

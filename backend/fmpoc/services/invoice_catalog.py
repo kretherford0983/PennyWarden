@@ -19,8 +19,8 @@ from sqlalchemy.orm import Session
 
 from .. import audit
 from ..errors import AppError, conflict, not_found, validation
-from ..models import (Budget, FiscalYear, InvoiceProduct, InvoiceProductCategory, InvoiceTaxRate, InvoiceUnitType,
-                      utcnow)
+from ..models import (Budget, FiscalYear, InvoiceProduct, InvoiceProductCategory, InvoiceTaxGroup, InvoiceTaxRate,
+                      InvoiceUnitType, utcnow)
 from ..money import fmt, parse_amount
 from . import budgets as bsvc
 from . import invoices as inv
@@ -364,7 +364,8 @@ def set_simple_active(db: Session, ctx, kind: str, oid: int, active: bool) -> di
 def product_snapshot(p: InvoiceProduct) -> dict:
     return {"id": p.id, "name": p.name, "code": p.code, "description": p.description,
             "unit_price": fmt(p.unit_price_cents), "unit_type_id": p.unit_type_id, "category_id": p.category_id,
-            "taxable": bool(p.taxable), "budget_id": p.budget_id, "is_system": bool(p.is_system),
+            "taxable": bool(p.tax_group_id), "tax_group_id": p.tax_group_id,          # 2.4.0 polish (#487)
+            "budget_id": p.budget_id, "is_system": bool(p.is_system),
             "custom_field_ids": _field_ids(p), "active": bool(p.active)}
 
 
@@ -381,6 +382,8 @@ def product_out(db: Session, p: InvoiceProduct, fy: FiscalYear | None) -> dict:
     return {**product_snapshot(p), "unit_type": u.name if u else None, "category": c.name if c else None,
             "budget": _budget_brief(db, eff),
             "own_budget": p.budget_id is not None,                       # 2.4.0 polish (#483): else the category's
+            "tax_group": (lambda g: {"id": g.id, "name": g.name, "label": group_out(db, g)["label"]} if g else None)(
+                db.get(InvoiceTaxGroup, p.tax_group_id) if p.tax_group_id else None),
             "category_budget": _budget_brief(db, c.budget_id) if c is not None else None,
             "current_budget": _budget_brief(db, now.id) if now is not None else None,
             "needs_budget": needs_budget(db, p, fy)}
@@ -421,6 +424,9 @@ def save_product(db: Session, ctx, pid: int | None, body) -> dict:
         raise conflict("SYSTEM_ITEM", "The built-in Discount item can't be changed.")
     unit = _ref(db, ctx, InvoiceUnitType, body.unit_type_id, "unit_type_id", "unit type")
     cat = _ref(db, ctx, InvoiceProductCategory, body.category_id, "category_id", "category")
+    gid = getattr(body, "tax_group_id", None)                   # 2.4.0 polish (#487)
+    if gid is not None and (p is None or gid != p.tax_group_id):
+        _ref(db, ctx, InvoiceTaxGroup, gid, "tax_group_id", "tax group")
     # 2.4.0 polish (#483): no budget of its own = the category's (which then must have one)
     if body.budget_id is None and (cat is None or cat.budget_id is None):
         raise validation("Choose the Invoiced Income budget the money goes to, or a category that has one.", "budget_id")
@@ -446,7 +452,8 @@ def save_product(db: Session, ctx, pid: int | None, body) -> dict:
         db.add(p)
     p.name, p.code, p.description = name, code, (body.description or "").strip() or None
     p.unit_price_cents, p.unit_type_id, p.category_id = price, unit.id, cat.id if cat else None
-    p.taxable, p.budget_id, p.updated_by_user_id = bool(body.taxable), body.budget_id, ctx.user.id
+    p.tax_group_id, p.taxable = gid, gid is not None
+    p.budget_id, p.updated_by_user_id = body.budget_id, ctx.user.id
     p.custom_field_ids = json.dumps(want) if want else None
     db.flush()
     after = product_snapshot(p)
@@ -550,6 +557,88 @@ def set_tax_active(db: Session, ctx, tid: int, active: bool) -> dict:
         audit.record(db, ctx, "INVOICE_TAX_RATE_RESTORED" if active else "INVOICE_TAX_RATE_INACTIVATED",
                      "invoice_tax_rate", t.id, before, tax_snapshot(t))
     return tax_out(db, t, current_fiscal_year(db, ctx.workspace_id))
+
+
+# ------------------------------------------------------------------ 2.4.0 polish (#487): tax groups
+def _group_ids(g: InvoiceTaxGroup) -> list[int]:
+    try:
+        return [int(x) for x in json.loads(g.rate_ids or "[]")]
+    except (ValueError, TypeError):
+        return []
+
+
+def group_rates(db: Session, gid: int | None, active_only: bool = True) -> list[InvoiceTaxRate]:
+    """The rates of a tax group in their order (inactive rates no longer apply)."""
+    g = db.get(InvoiceTaxGroup, gid) if gid else None
+    if g is None:
+        return []
+    out = []
+    for rid in _group_ids(g):
+        t = db.get(InvoiceTaxRate, rid)
+        if t is not None and t.workspace_id == g.workspace_id and (t.active or not active_only):
+            out.append(t)
+    return out
+
+
+def group_snapshot(g: InvoiceTaxGroup) -> dict:
+    return {"id": g.id, "name": g.name, "rate_ids": _group_ids(g), "active": bool(g.active)}
+
+
+def group_out(db: Session, g: InvoiceTaxGroup) -> dict:
+    rates = group_rates(db, g.id, active_only=False)
+    return {**group_snapshot(g),
+            "rates": [{"id": t.id, "name": t.name, "rate": rate_text(t.rate_milli_pct), "active": bool(t.active)} for t in rates],
+            "label": " + ".join(f"{t.name} {rate_text(t.rate_milli_pct)} %" for t in rates if t.active) or "—",
+            "products": db.scalar(select(func.count(InvoiceProduct.id)).where(InvoiceProduct.tax_group_id == g.id)) or 0}
+
+
+def list_tax_groups(db: Session, ctx, include_inactive: bool) -> list[dict]:
+    _require_view(db, ctx)
+    q = select(InvoiceTaxGroup).where(InvoiceTaxGroup.workspace_id == ctx.workspace_id).order_by(
+        func.lower(InvoiceTaxGroup.name))
+    if not include_inactive:
+        q = q.where(InvoiceTaxGroup.active.is_(True))
+    return [group_out(db, g) for g in db.scalars(q)]
+
+
+def save_tax_group(db: Session, ctx, gid: int | None, body) -> dict:
+    """A named set of one or more active tax rates (audited; inactivated, never deleted)."""
+    _require_manage(db, ctx)
+    name = _name(body.name, "name", 80)
+    g = None if gid is None else _get(db, ctx, InvoiceTaxGroup, gid, "Tax group")
+    _unique(db, InvoiceTaxGroup, ctx.workspace_id, name, g.id if g else None, "tax group")
+    ids = list(dict.fromkeys(body.rate_ids or []))
+    if not ids:
+        raise validation("Choose at least one tax rate.", "rate_ids")
+    kept = set(_group_ids(g)) if g is not None else set()
+    for rid in ids:
+        t = db.get(InvoiceTaxRate, rid)
+        if t is None or t.workspace_id != ctx.workspace_id or (not t.active and rid not in kept):
+            raise validation("Choose active tax rates from the list.", "rate_ids")
+    before = None if g is None else group_snapshot(g)
+    if g is None:
+        g = InvoiceTaxGroup(workspace_id=ctx.workspace_id, created_by_user_id=ctx.user.id)
+        db.add(g)
+    g.name, g.rate_ids, g.updated_by_user_id = name, json.dumps(ids), ctx.user.id
+    db.flush()
+    after = group_snapshot(g)
+    if before is None:
+        audit.record(db, ctx, "INVOICE_TAX_GROUP_CREATED", "invoice_tax_group", g.id, None, after)
+    elif after != before:
+        audit.record(db, ctx, "INVOICE_TAX_GROUP_UPDATED", "invoice_tax_group", g.id, before, after)
+    return group_out(db, g)
+
+
+def set_tax_group_active(db: Session, ctx, gid: int, active: bool) -> dict:
+    _require_manage(db, ctx)
+    g = _get(db, ctx, InvoiceTaxGroup, gid, "Tax group")
+    if bool(g.active) != active:
+        before = group_snapshot(g)
+        g.active, g.updated_by_user_id = active, ctx.user.id
+        db.flush()
+        audit.record(db, ctx, "INVOICE_TAX_GROUP_RESTORED" if active else "INVOICE_TAX_GROUP_INACTIVATED",
+                     "invoice_tax_group", g.id, before, group_snapshot(g))
+    return group_out(db, g)
 
 
 __all__ = ["AppError", "utcnow"]

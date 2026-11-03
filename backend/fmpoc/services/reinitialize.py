@@ -37,7 +37,7 @@ from ..models import (Donation, Attachment, AuditEvent, BankAccount, BankAccount
                       FundraiserFyReportNote, FundraiserSeries, FundraiserSeriesResult,
                       FundraiserClassification, FundraiserExclusion, FundraiserLineContributor, RegisterTransaction, Reminder,
                       RequestKey,
-                      TransactionAllocation, User, Workspace, utcnow, InvoiceProduct, InvoiceProductCategory, InvoiceTaxRate, InvoiceUnitType,
+                      TransactionAllocation, User, Workspace, utcnow, InvoiceProduct, InvoiceProductCategory, InvoiceTaxGroup, InvoiceTaxRate, InvoiceUnitType,
                       Invoice, InvoiceBatch, InvoiceLine, InvoicePayment, InvoiceRevision, EmailLog)
 from . import backup as bk
 from . import server_recovery
@@ -54,7 +54,7 @@ WIPE = (InvoicePayment,   # 2.4.0 (#254): before the allocations it references
         FundraiserSeries, FundraiserFyReportNote, BudgetProjectionChoice, BudgetInclusion, BudgetHistoryEntry, FormerBudget,
         EmailLog,                                                                    # 2.4.0 (#249): before invoices
         InvoiceRevision, InvoiceLine, Invoice, InvoiceBatch,                         # 2.4.0 (#253, #248): invoices
-        InvoiceProduct, InvoiceTaxRate, InvoiceProductCategory, InvoiceUnitType,     # 2.4.0 (#252): the catalog
+        InvoiceProduct, InvoiceTaxGroup, InvoiceTaxRate, InvoiceProductCategory, InvoiceUnitType,   # 2.4.0 (#252, #487)
         Budget, FiscalYear,
         CheckDocument, CheckSigner, CheckStyle, DonationSettings, RequestKey)   # 2.1.0 (#312): donations
 

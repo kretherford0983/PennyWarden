@@ -38,8 +38,9 @@ export default function Invoices() {
 }
 
 // ------------------------------------------------------------------ 2.4.0 (#252): the product catalog
-type Tab = "products" | "tax-rates" | "unit-types" | "categories";
-const TABS: [Tab, string][] = [["products", "Products"], ["tax-rates", "Tax rates"], ["unit-types", "Unit types"], ["categories", "Categories"]];
+type Tab = "products" | "tax-rates" | "tax-groups" | "unit-types" | "categories";
+// 2.4.0 polish (#487): tax groups - a product picks one; every rate in it applies to the product's lines
+const TABS: [Tab, string][] = [["products", "Products"], ["tax-rates", "Tax rates"], ["tax-groups", "Tax groups"], ["unit-types", "Unit types"], ["categories", "Categories"]];
 
 function Catalog({ manage }: { manage: boolean }) {
   const [tab, setTab] = useState<Tab>("products");
@@ -70,8 +71,9 @@ function Catalog({ manage }: { manage: boolean }) {
         <table className="table compact">
           <thead><tr>
             <th>Name</th>
-            {tab === "products" ? <><th>Code</th><th className="num">Price</th><th>Unit</th><th>Category</th><th>Taxable</th><th>Budget</th></> : null}
+            {tab === "products" ? <><th>Code</th><th className="num">Price</th><th>Unit</th><th>Category</th><th>Tax group</th><th>Budget</th></> : null}
             {tab === "tax-rates" ? <><th className="num">Rate</th><th>Budget</th></> : null}
+            {tab === "tax-groups" ? <><th>Rates</th><th className="num">Products</th></> : null}
             {tab === "categories" ? <><th>Budget</th><th>Product code pattern</th><th>Next code</th></> : null}
             <th>Status</th>{manage ? <th /> : null}
           </tr></thead>
@@ -80,9 +82,10 @@ function Catalog({ manage }: { manage: boolean }) {
               <td>{r.name}{r.is_system ? <span className="badge grey">Built in</span> : null}</td>
               {tab === "products" ? <>
                 <td>{r.code || ""}</td><td className="num">{r.is_system ? "—" : money(r.unit_price)}</td><td>{r.unit_type || "—"}</td>
-                <td>{r.category || "—"}</td><td>{r.taxable ? "Yes" : "No"}</td>
+                <td>{r.category || "—"}</td><td>{r.tax_group ? <span title={r.tax_group.label}>{r.tax_group.name}</span> : "Not taxed"}</td>
                 <td>{r.budget ? r.budget.label : "—"}{r.budget && !r.own_budget ? <span className="badge grey" title="Follows its category's budget">Category's</span> : null}{r.needs_budget ? <span className="badge red" title="No Invoiced Income budget continues it into the current Fiscal Year">Needs budget</span> : null}</td>
               </> : null}
+              {tab === "tax-groups" ? <><td>{r.label}</td><td className="num">{r.products}</td></> : null}
               {tab === "categories" ? <>
                 <td>{r.budget ? r.budget.label : "—"}</td><td>{r.code_pattern ? <code>{r.code_pattern}</code> : "—"}</td><td>{r.next_code || "—"}</td>
               </> : null}
@@ -105,7 +108,8 @@ function Catalog({ manage }: { manage: boolean }) {
 
 function CatalogForm({ tab, row, onClose, onSaved }: { tab: Tab; row: any; onClose: () => void; onSaved: () => void }) {
   const [v, setV] = useState<any>({ name: row.name || "", code: row.code || "", description: row.description || "", unit_price: row.unit_price || "",
-    unit_type_id: row.unit_type_id ? String(row.unit_type_id) : "", category_id: row.category_id ? String(row.category_id) : "", taxable: !!row.taxable,
+    unit_type_id: row.unit_type_id ? String(row.unit_type_id) : "", category_id: row.category_id ? String(row.category_id) : "",
+    tax_group_id: row.tax_group_id ? String(row.tax_group_id) : "", rate_ids: (row.rate_ids || []) as number[],
     budget_id: row.budget_id ? String(row.budget_id) : "", rate: row.rate || "", code_pattern: row.code_pattern || "",
     field_ids: (row.custom_field_ids || []) as number[],
     // 2.4.0 polish (#483): a product follows its category's budget unless it has its own
@@ -116,14 +120,18 @@ function CatalogForm({ tab, row, onClose, onSaved }: { tab: Tab; row: any; onClo
   const [cats, setCats] = useState<any[]>([]);
   const [budgets, setBudgets] = useState<any[]>([]);
   const [pfields, setPfields] = useState<any[]>([]);          // 2.4.0 polish (#484): product-scope custom fields
+  const [groups, setGroups] = useState<any[]>([]);            // 2.4.0 polish (#487)
+  const [rates, setRates] = useState<any[]>([]);
   const [err, setErr] = useState<unknown>(null);
   useEffect(() => {
     if (tab === "products") {
       api.get("/api/invoices/catalog/unit-types").then(setUnits, setErr);
       api.get("/api/invoices/catalog/categories").then(setCats, setErr);
       api.get("/api/invoices/fields").then((f) => setPfields(f.filter((x: any) => x.level === "PRODUCT")), () => setPfields([]));
+      api.get("/api/invoices/catalog/tax-groups").then(setGroups, setErr);
     }
-    if (tab !== "unit-types") api.get("/api/invoices/catalog/budget-options").then(setBudgets, setErr);
+    if (tab === "tax-groups") api.get("/api/invoices/catalog/tax-rates").then(setRates, setErr);
+    if (tab !== "unit-types" && tab !== "tax-groups") api.get("/api/invoices/catalog/budget-options").then(setBudgets, setErr);
   }, [tab]);
   const set = (k: string) => (e: any) => setV({ ...v, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value });
   const category = cats.find((c) => String(c.id) === v.category_id);
@@ -152,9 +160,10 @@ function CatalogForm({ tab, row, onClose, onSaved }: { tab: Tab; row: any; onClo
     setErr(null);
     const num = (x: string) => (x ? Number(x) : null);
     const body = tab === "products" ? { name: v.name, code: v.code || null, description: v.description || null, unit_price: v.unit_price,
-      unit_type_id: num(v.unit_type_id), category_id: num(v.category_id), taxable: v.taxable,
+      unit_type_id: num(v.unit_type_id), category_id: num(v.category_id), tax_group_id: num(v.tax_group_id),
       budget_id: v.own || !category?.budget ? num(v.budget_id) : null, custom_field_ids: v.field_ids }
       : tab === "tax-rates" ? { name: v.name, rate: v.rate, budget_id: num(v.budget_id) }
+      : tab === "tax-groups" ? { name: v.name, rate_ids: v.rate_ids }
       : tab === "categories" ? { name: v.name, budget_id: num(v.budget_id), code_pattern: v.code_pattern.trim() || null } : { name: v.name };
     try {
       if (row.id) await api.put(`/api/invoices/catalog/${tab}/${row.id}`, body); else await api.post(`/api/invoices/catalog/${tab}`, body);
@@ -191,7 +200,11 @@ function CatalogForm({ tab, row, onClose, onSaved }: { tab: Tab; row: any; onClo
             <Field label="Unit price"><input required inputMode="decimal" maxLength={20} value={v.unit_price} onChange={set("unit_price")} placeholder="e.g. 120.00" /></Field>
             <Field label="Unit type"><select required value={v.unit_type_id} onChange={set("unit_type_id")}><option value="">— choose —</option>{units.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</select></Field>
           </div>
-          <label className="check"><input type="checkbox" checked={v.taxable} onChange={set("taxable")} /> Taxable</label>
+          <Field label="Tax group" hint="Every tax rate in the group is charged on this product's invoice lines. None = not taxed.">
+            <select value={v.tax_group_id} onChange={set("tax_group_id")}><option value="">— none (not taxed) —</option>
+              {groups.map((g) => <option key={g.id} value={g.id}>{g.name} — {g.label}</option>)}
+              {v.tax_group_id && !groups.some((g) => String(g.id) === v.tax_group_id) && row.tax_group ? <option value={v.tax_group_id}>{row.tax_group.name} (inactive)</option> : null}</select>
+          </Field>
           {category?.budget ? (
             <fieldset className="choices" aria-label="Budget">
               <label className="check"><input type="radio" name="own" checked={!v.own} onChange={() => setV({ ...v, own: false })} /> Use the category's budget: <b>{category.budget.label}</b></label>
@@ -212,6 +225,15 @@ function CatalogForm({ tab, row, onClose, onSaved }: { tab: Tab; row: any; onClo
           <Field label="Rate (%)" hint="For example 7 or 7.25."><input required inputMode="decimal" maxLength={12} value={v.rate} onChange={set("rate")} /></Field>
           {budgetPicker()}
         </> : null}
+        {tab === "tax-groups" ? (
+          <fieldset className="choices" aria-label="Tax rates in this group">
+            <legend>Tax rates in this group</legend>
+            {rates.map((t) => <label key={t.id} className="check"><input type="checkbox" checked={v.rate_ids.includes(t.id)}
+              onChange={(e) => setV({ ...v, rate_ids: e.target.checked ? [...v.rate_ids, t.id] : v.rate_ids.filter((x: number) => x !== t.id) })} /> {t.name} ({t.rate} %)</label>)}
+            {!rates.length ? <span className="field-warn" role="note">Add the tax rates first (Tax rates tab).</span> : null}
+            <span className="hint">Each rate is charged on the lines of the products in this group, worked out once per invoice, and goes to the rate's own budget.</span>
+          </fieldset>
+        ) : null}
         {/* 2.4.0 polish (#483, #486): a category's optional budget and product code pattern */}
         {tab === "categories" ? <>
           {budgetPicker(true, "Invoiced Income budget (optional)", "Products in this category use it unless they have their own budget. Changing it moves those products too.")}
@@ -385,7 +407,7 @@ export function InvoiceDetail({ id }: { id: number }) {
         <thead><tr><th>Description</th><th className="num">Qty</th><th className="num">Unit price</th><th className="num">Amount</th><th className="num">Net</th><th>Budget</th></tr></thead>
         <tbody>{i.lines.map((l: any) => (
           <tr key={l.id}>
-            <td>{l.description}{l.unit_type ? <span className="muted"> ({l.unit_type})</span> : null}{l.taxable ? <span className="badge grey">Taxable</span> : null}
+            <td>{l.description}{l.unit_type ? <span className="muted"> ({l.unit_type})</span> : null}{(l.taxes || []).map((t: string) => <span key={t} className="badge grey">{t}</span>)}
               {(l.fields || []).length ? <div className="muted">{l.fields.map((x: any) => `${x.name}: ${x.value}`).join("; ")}</div> : null}
               {l.discount ? <div className="muted">Discount {l.discount.kind === "PERCENT" ? `${l.discount.value} %` : money(l.discount.value)} — {l.discount.reason} (−{money(l.discount.amount)})</div> : null}</td>
             <td className="num">{l.quantity}</td><td className="num">{money(l.unit_price)}</td><td className="num">{money(l.gross)}</td><td className="num">{money(l.net)}</td>
@@ -397,7 +419,7 @@ export function InvoiceDetail({ id }: { id: number }) {
         <dt>Subtotal</dt><dd>{money(i.totals.subtotal)}</dd>
         {Number(i.totals.line_discounts) ? <><dt>Line discounts</dt><dd>−{money(i.totals.line_discounts)}</dd></> : null}
         {i.discount ? <><dt>Invoice discount</dt><dd>−{money(i.totals.invoice_discount)} ({i.discount.kind === "PERCENT" ? `${i.discount.value} %` : "fixed"} — {i.discount.reason})</dd></> : null}
-        {i.tax ? <><dt>{i.tax.name} ({i.tax.rate} %)</dt><dd>{money(i.totals.tax)}</dd></> : null}
+        {(i.taxes || []).map((t: any) => <Fragment key={t.label}><dt>{t.label}</dt><dd>{money(t.tax)}</dd></Fragment>)}
         <dt><b>Total</b></dt><dd><b>{money(i.totals.total)}</b></dd>
       </dl>
       {i.versions.length ? (
@@ -434,11 +456,10 @@ function InvoiceForm({ current, batch, onClose, onSaved }: { current?: any; batc
   const [find, setFind] = useState("");
   const [batchName, setBatchName] = useState("");
   const [products, setProducts] = useState<any[]>([]);
-  const [taxes, setTaxes] = useState<any[]>([]);
   const [entities, setEntities] = useState<any[]>([]);
   const [err, setErr] = useState<unknown>(null);
   const [v, setV] = useState({ customer: current?.customer ? String(current.customer.id) : "", invoice_date: current?.invoice_date || new Date().toISOString().slice(0, 10),
-    due_date: current?.due_date || "", tax_rate_id: current?.tax ? String(current.tax.id) : "", notes: current?.notes ?? "", terms_text: current?.terms_text ?? "",
+    due_date: current?.due_date || "", notes: current?.notes ?? "", terms_text: current?.terms_text ?? "",
     discount_kind: current?.discount?.kind || "", discount_value: current?.discount?.value || "", discount_reason: current?.discount?.reason || "" });
   const [lines, setLines] = useState<LineV[]>(current ? current.lines.map((l: any) => ({ id: l.id, product_id: String(l.product_id), quantity: l.quantity,
     discount_kind: l.discount?.kind || "", discount_value: l.discount?.value || "", discount_reason: l.discount?.reason || "", custom: { ...(l.custom_values || {}) } })) : [{ product_id: "", quantity: "1", discount_kind: "", discount_value: "", discount_reason: "", custom: {} }]);
@@ -446,7 +467,6 @@ function InvoiceForm({ current, batch, onClose, onSaved }: { current?: any; batc
   const [custom, setCustom] = useState<Record<string, string>>({ ...(current?.custom_values || {}) });
   useEffect(() => {
     api.get("/api/invoices/catalog/products").then((p) => setProducts(p.filter((x: any) => !x.is_system)), () => setProducts([]));
-    api.get("/api/invoices/catalog/tax-rates").then(setTaxes, () => setTaxes([]));
     api.get("/api/entities").then(setEntities, setErr);
     api.get("/api/invoices/fields").then(setFields, () => setFields([]));
   }, []);
@@ -461,7 +481,7 @@ function InvoiceForm({ current, batch, onClose, onSaved }: { current?: any; batc
     e.preventDefault();
     setErr(null);
     const body: any = { customer_entity_id: Number(v.customer), invoice_date: v.invoice_date, due_date: v.due_date || null,
-      tax_rate_id: v.tax_rate_id ? Number(v.tax_rate_id) : null, notes: v.notes, terms_text: v.terms_text,
+      notes: v.notes, terms_text: v.terms_text,
       discount: v.discount_kind ? { kind: v.discount_kind, value: v.discount_value, reason: v.discount_reason } : null,
       lines: lines.map((l) => ({ ...(l.id ? { id: l.id } : {}), product_id: Number(l.product_id), quantity: l.quantity,
         discount_kind: l.discount_kind || null, discount_value: l.discount_kind ? l.discount_value : null, discount_reason: l.discount_kind ? l.discount_reason : null,
@@ -484,7 +504,7 @@ function InvoiceForm({ current, batch, onClose, onSaved }: { current?: any; batc
         <div className="row fields">
           <Field label="Invoice date"><input type="date" required value={v.invoice_date} onChange={set("invoice_date")} /></Field>
           <Field label="Due date" hint="Empty = from the terms."><input type="date" value={v.due_date} onChange={set("due_date")} /></Field>
-          <Field label="Sales tax"><select value={v.tax_rate_id} onChange={set("tax_rate_id")}><option value="">— none —</option>{taxes.map((t) => <option key={t.id} value={t.id}>{t.name} ({t.rate} %)</option>)}</select></Field>
+          {/* 2.4.0 polish (#487): tax comes from each product's tax group, not one rate per invoice */}
         </div>
         <fieldset><legend>Lines (from the catalog)</legend>
           {lines.map((l, k) => (

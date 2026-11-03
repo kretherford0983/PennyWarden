@@ -160,10 +160,19 @@ def _r(x: Decimal) -> int:
 def apportion(i: Invoice, cumulative: int) -> tuple[list[int], int]:
     """How a cumulative amount paid is spread: the tax in proportion, the rest over the lines in order (each up to its
     net). Differences of two calls give one payment's parts, so successive payments always add up exactly."""
+    parts, taxes = apportion_rates(i, cumulative)
+    return parts, sum(taxes)
+
+
+def apportion_rates(i: Invoice, cumulative: int) -> tuple[list[int], list[int]]:
+    """2.4.0 polish (#487): as `apportion`, with the tax part split over the invoice's rates - filled in the order
+    the rates appear (each up to its tax), like the lines - so each rate's money goes to its own budget and the
+    parts never go down from one payment to the next."""
     t = docs.totals_of(i)
     total = t["total"]
+    rates = t["taxes"]
     if total <= 0:
-        return [0] * len(t["rows"]), 0
+        return [0] * len(t["rows"]), [0] * len(rates)
     cumulative = min(cumulative, total)
     tax = _r(Decimal(cumulative) * Decimal(t["tax"]) / Decimal(total)) if t["tax"] else 0
     rest = cumulative - tax
@@ -174,7 +183,14 @@ def apportion(i: Invoice, cumulative: int) -> tuple[list[int], int]:
         rest -= take
     if rest:                                   # rounding: whatever is left goes to the tax
         tax += rest
-    return parts, tax
+    out, left = [], tax
+    for x in rates:
+        take = min(left, x["tax"])
+        out.append(take)
+        left -= take
+    if left and out:                           # cannot happen once paid in full; keeps the sum exact
+        out[-1] += left
+    return parts, out
 
 
 def _deposit_fy(db: Session, ws_id: int, d: dt.date) -> FiscalYear | None:
@@ -217,9 +233,10 @@ def record_payment(db: Session, ctx, i: Invoice, body) -> RegisterTransaction:
                                                   "details": {}}])
     d = body.transaction_date or dt.date.today()
     fy = _deposit_fy(db, ctx.workspace_id, d)
-    before, before_tax = apportion(i, f["paid"])
-    after, after_tax = apportion(i, f["paid"] + pay)
-    lines = list(docs.totals_of(i)["rows"])
+    before, before_tax = apportion_rates(i, f["paid"])
+    after, after_tax = apportion_rates(i, f["paid"] + pay)
+    tt = docs.totals_of(i)
+    lines = list(tt["rows"])
     allocs: list[tuple[AllocationIn, str]] = []
     num = docs.display_number(i)
     for r, b0, b1 in zip(lines, before, after):
@@ -228,12 +245,13 @@ def record_payment(db: Session, ctx, i: Invoice, body) -> RegisterTransaction:
             allocs.append((AllocationIn(budget_id=_budget_in(db, r["line"].budget_id, fy), amount=fmt(part),
                                         entity_id=i.customer_entity_id, fiscal_year_id=None,
                                         description=f"{num}: {r['line'].description}"[:500]), "PAYMENT"))
-    if after_tax - before_tax > 0:
-        allocs.append((AllocationIn(budget_id=_budget_in(db, i.tax_budget_id, fy), amount=fmt(after_tax - before_tax),
-                                    entity_id=i.customer_entity_id, description=f"{num}: {i.tax_name or 'Sales tax'}"[:500]),
-                       "PAYMENT"))
+    for x, b0, b1 in zip(tt["taxes"], before_tax, after_tax):        # 2.4.0 polish (#487): each rate to its budget
+        if b1 - b0 > 0:
+            allocs.append((AllocationIn(budget_id=_budget_in(db, x["budget_id"], fy), amount=fmt(b1 - b0),
+                                        entity_id=i.customer_entity_id, description=f"{num}: {x['name']}"[:500]),
+                           "PAYMENT"))
     if over > 0:
-        first = lines[0]["line"].budget_id if lines else i.tax_budget_id
+        first = lines[0]["line"].budget_id if lines else (tt["taxes"][0]["budget_id"] if tt["taxes"] else None)
         if over > 0 and not body.confirm_overpayment and pay > 0:
             raise AppError(409, "CONFIRMATION_REQUIRED", f"{fmt(over)} more than the open balance: it will be recorded "
                            "as an overpayment (it can be refunded).",

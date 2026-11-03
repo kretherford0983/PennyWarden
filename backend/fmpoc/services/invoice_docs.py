@@ -8,9 +8,10 @@ Calculation (to the cent; all amounts in cents, quantities in thousandths, rates
   invoice disc.  = fixed amount, or round(sum of nets x %)      (never more than the sum of nets)
                    spread over the lines in proportion to their nets, the leftover cent(s) to the largest line, so
                    every line (and later every deposit allocation) stays >= 0 on its own budget
-  taxable base   = sum of the final nets of taxable lines (tax applies after discounts)
-  tax            = round(taxable base x rate), once per invoice
-  total          = sum of final nets + tax
+  per tax rate   = (2.4.0 polish, #487) each line carries the rates of its product's tax group; for each rate:
+                   base = the final nets of the lines carrying it (tax applies after discounts),
+                   tax = round(base x rate), once per rate per invoice
+  total          = sum of final nets + the taxes
 Rounding is half up.
 
 Numbers come from the Administrator's pattern ({YYYY}/{YY} of the invoice date, {SEQ} or {SEQ:n}) and one sequence
@@ -82,7 +83,15 @@ def _discount(kind, value, reason, field: str) -> tuple[str | None, int | None, 
 
 
 # ------------------------------------------------------------------ calculation
-def compute(lines: list[InvoiceLine], discount_kind, discount_value, tax_milli: int | None) -> dict:
+def line_taxes(ln) -> list[dict]:
+    """2.4.0 polish (#487): the rates on a line ({rate_id, name, milli, budget_id})."""
+    try:
+        return json.loads(ln.taxes) if ln.taxes else []
+    except ValueError:
+        return []
+
+
+def compute(lines: list[InvoiceLine], discount_kind, discount_value, exempt: bool = False) -> dict:
     rows = []
     for ln in lines:
         gross = _r(Decimal(ln.quantity_milli) * Decimal(ln.unit_price_cents) / 1000)
@@ -118,16 +127,47 @@ def compute(lines: list[InvoiceLine], discount_kind, discount_value, tax_milli: 
             rest -= take
     for r in rows:
         r["final"] = r["net"] - r["share"]
-    base = sum(r["final"] for r in rows if r["line"].taxable)
-    tax = _r(Decimal(base) * Decimal(tax_milli) / 100000) if tax_milli else 0
+    # 2.4.0 polish (#487): one tax per rate, on the lines carrying it, rounded once per invoice (in the order the
+    # rates first appear); (#485) a tax-exempt customer is charged none
+    taxes: dict[tuple, dict] = {}
+    for r in rows:
+        for x in ([] if exempt else line_taxes(r["line"])):
+            k = (x.get("rate_id"), x["milli"], x["name"])
+            taxes.setdefault(k, {**x, "base": 0})["base"] += r["final"]
+    for t in taxes.values():
+        t["tax"] = _r(Decimal(t["base"]) * Decimal(t["milli"]) / 100000)
+    base = sum(r["final"] for r in rows if not exempt and line_taxes(r["line"]))
+    tax = sum(t["tax"] for t in taxes.values())
     subtotal = sum(r["gross"] for r in rows)
     return {"rows": rows, "subtotal": subtotal, "line_discounts": sum(r["line_discount"] for r in rows),
-            "invoice_discount": idisc, "taxable_base": base, "tax": tax,
+            "invoice_discount": idisc, "taxable_base": base, "tax": tax, "taxes": list(taxes.values()),
             "total": sum(r["final"] for r in rows) + tax}
 
 
 def totals_of(i: Invoice) -> dict:
-    return compute(list(i.lines), i.discount_kind, i.discount_value, i.tax_rate_milli_pct)
+    return compute(list(i.lines), i.discount_kind, i.discount_value)
+
+
+def tax_label(t: dict) -> str:
+    return f"{t['name']} ({cat.rate_text(t['milli'])} %)"
+
+
+def refresh_taxes(db: Session, i: Invoice, fy) -> None:
+    """2.4.0 polish (#487): each line takes the current rates of its product's tax group (a draft or a revision being
+    prepared; a sent version keeps what it was sent with). A rate needs an Invoiced Income budget in the invoice's
+    Fiscal Year, like a product."""
+    for ln in i.lines:
+        p = db.get(InvoiceProduct, ln.product_id)
+        rates = cat.group_rates(db, p.tax_group_id) if p is not None and p.tax_group_id else []
+        out = []
+        for tr in rates:
+            tb = cat.budget_for_year(db, tr.budget_id, fy)
+            if tb is None:
+                raise AppError(422, "NEEDS_BUDGET", f"The tax rate \"{tr.name}\" has no Invoiced Income budget in "
+                               f"{fy.display_name}. An Invoice Manager updates it in the catalog.")
+            out.append({"rate_id": tr.id, "name": tr.name, "milli": tr.rate_milli_pct, "budget_id": tb.id})
+        ln.taxes = json.dumps(out) if out else None
+        ln.taxable = bool(out)
 
 
 # ------------------------------------------------------------------ setup (Administrator)
@@ -232,11 +272,11 @@ def snapshot(i: Invoice) -> dict:
     t = totals_of(i)
     return {"id": i.id, "number": display_number(i), "status": i.status, "customer_entity_id": i.customer_entity_id,
             "invoice_date": i.invoice_date.isoformat(), "due_date": i.due_date.isoformat(),
-            "terms_text": i.terms_text, "notes": i.notes, "tax_rate_id": i.tax_rate_id,
+            "terms_text": i.terms_text, "notes": i.notes,
             "discount": None if not i.discount_kind else {"kind": i.discount_kind, "value": i.discount_value,
                                                           "reason": i.discount_reason},
             "lines": [{"product_id": ln.product_id, "description": ln.description, "quantity": qty_text(ln.quantity_milli),
-                       "unit_price": fmt(ln.unit_price_cents), "budget_id": ln.budget_id,
+                       "unit_price": fmt(ln.unit_price_cents), "budget_id": ln.budget_id, "taxes": line_taxes(ln),
                        "discount": None if not ln.discount_kind else {"kind": ln.discount_kind, "value": ln.discount_value,
                                                                       "reason": ln.discount_reason}}
                       for ln in i.lines],
@@ -268,13 +308,15 @@ def out(db: Session, ctx, i: Invoice, brief: bool = False) -> dict:
     revs = list(db.scalars(select(InvoiceRevision).where(InvoiceRevision.invoice_id == i.id)
                            .order_by(InvoiceRevision.revision)))
     return {**base, "terms_text": i.terms_text, "notes": i.notes,
-            "tax": None if i.tax_rate_milli_pct is None else {"id": i.tax_rate_id, "name": i.tax_name,
-                                                              "rate": cat.rate_text(i.tax_rate_milli_pct)},
+            # 2.4.0 polish (#487): one entry per rate (the invoice no longer picks one)
+            "taxes": [{"rate_id": x.get("rate_id"), "name": x["name"], "rate": cat.rate_text(x["milli"]),
+                       "label": tax_label(x), "base": fmt(x["base"]), "tax": fmt(x["tax"])} for x in t["taxes"]],
             "discount": None if not i.discount_kind else {"kind": i.discount_kind, "value": _disc_out(i.discount_kind, i.discount_value),
                                                           "reason": i.discount_reason},
             "lines": [{"id": r["line"].id, "product_id": r["line"].product_id, "description": r["line"].description,
                        "unit_type": r["line"].unit_type, "quantity": qty_text(r["line"].quantity_milli),
-                       "unit_price": fmt(r["line"].unit_price_cents), "taxable": bool(r["line"].taxable),
+                       "unit_price": fmt(r["line"].unit_price_cents), "taxable": bool(line_taxes(r["line"])),
+                       "taxes": [x["name"] for x in line_taxes(r["line"])],
                        "budget": cat._budget_brief(db, r["line"].budget_id),
                        "gross": fmt(r["gross"]),
                        "discount": None if not r["line"].discount_kind else {
@@ -368,20 +410,8 @@ def _apply(db: Session, ctx, i: Invoice, body, creating: bool) -> None:
     i.notes = (body.notes if body.notes is not None else (s.default_notes if creating else i.notes))
     i.notes = (i.notes or "").strip() or None
     fy = _fy_for(db, ctx.workspace_id, i.invoice_date)
-    # tax rate (copied, like prices)
-    if body.tax_rate_id:
-        tr = db.get(InvoiceTaxRate, body.tax_rate_id)
-        if tr is None or tr.workspace_id != ctx.workspace_id:
-            raise validation("Unknown tax rate.", "tax_rate_id")
-        if not tr.active and tr.id != i.tax_rate_id:
-            raise validation("That tax rate is inactive.", "tax_rate_id")
-        tb = cat.budget_for_year(db, tr.budget_id, fy)
-        if tb is None:
-            raise AppError(422, "NEEDS_BUDGET", f"The tax rate \"{tr.name}\" has no Invoiced Income budget in "
-                           f"{fy.display_name}. An Invoice Manager updates it in the catalog.")
-        i.tax_rate_id, i.tax_name, i.tax_rate_milli_pct, i.tax_budget_id = tr.id, tr.name, tr.rate_milli_pct, tb.id
-    else:
-        i.tax_rate_id = i.tax_name = i.tax_rate_milli_pct = i.tax_budget_id = None
+    # 2.4.0 polish (#487): no invoice-level tax rate any more - each line takes its product's tax group's rates
+    i.tax_rate_id = i.tax_name = i.tax_rate_milli_pct = i.tax_budget_id = None
     d = body.discount
     i.discount_kind, i.discount_value, i.discount_reason = _discount(
         d.kind if d else None, d.value if d else None, d.reason if d else None, "discount")
@@ -424,7 +454,8 @@ def _apply(db: Session, ctx, i: Invoice, body, creating: bool) -> None:
         if ln not in i.lines:
             i.lines.append(ln)
     i.lines.sort(key=lambda x: x.position)
-    compute(list(i.lines), i.discount_kind, i.discount_value, i.tax_rate_milli_pct)   # validates the discounts
+    refresh_taxes(db, i, fy)                                                    # 2.4.0 polish (#487)
+    totals_of(i)                                                                # validates the discounts
     # 2.4.0 (#253 part 2): custom fields
     i.custom_values = custom_values(db, ctx.workspace_id, "INVOICE", getattr(body, "custom_values", None),
                                     i.custom_values)
@@ -476,6 +507,7 @@ def send(db: Session, ctx, settings, i: Invoice) -> Invoice:
     if i.status != "DRAFT":
         raise conflict("NOT_DRAFT", "Only a draft (or a revision being prepared) can be marked as sent.")
     from . import attachments as att_svc
+    refresh_taxes(db, i, _fy_for(db, ctx.workspace_id, i.invoice_date))        # 2.4.0 polish (#487): current rates
     pdf = invoice_pdf(db, ctx.workspace_id, i)
     before = snapshot(i)
     t = totals_of(i)
@@ -636,8 +668,7 @@ def _pdf_data(db: Session, i: Invoice) -> dict:
             "lines": lines, "subtotal": _money(t["subtotal"] - t["line_discounts"]),
             "invoice_discount": _money(t["invoice_discount"]) if t["invoice_discount"] else None,
             "invoice_discount_reason": i.discount_reason or "",
-            "tax": _money(t["tax"]) if i.tax_rate_milli_pct else None,
-            "tax_label": f"{i.tax_name} ({cat.rate_text(i.tax_rate_milli_pct)} %)" if i.tax_rate_milli_pct else "",
+            "taxes": [(tax_label(x), _money(x["tax"])) for x in t["taxes"]],          # 2.4.0 polish (#487)
             "total": _money(t["total"]), "terms": i.terms_text, "notes": i.notes,
             **_paid_part(db, i, t["total"]),
             "fields": [(x["name"], x["value"]) for x in values_out(db, i.workspace_id, "INVOICE", i.custom_values,
@@ -661,7 +692,7 @@ def _sample_data() -> dict:
                       {"description": "Sample service", "unit": "Hour", "code": "SAMPLE-2", "qty": "2.5", "price": "$40.00",
                        "amount": "$100.00", "discount": "$10.00", "net": "$90.00", "discount_reason": "Sample discount"}],
             "subtotal": "$210.00", "invoice_discount": None, "invoice_discount_reason": "",
-            "tax": "$15.23", "tax_label": "Sample tax (7.25 %)", "total": "$225.23", "terms": "Net 30",
+            "taxes": [("Sample tax (7.25 %)", "$15.23")], "total": "$225.23", "terms": "Net 30",
             "notes": "This is a test print with sample data.", "fields": [("Purchase order", "SAMPLE-PO-1")]}
 
 

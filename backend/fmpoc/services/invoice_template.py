@@ -384,8 +384,8 @@ def _render(cfg: TemplateConfig, data: dict, values: dict[str, str], logo: bytes
     tot = [["Subtotal", data["subtotal"]]]
     if data.get("invoice_discount"):
         tot.append([f"Discount — {data['invoice_discount_reason']}", f"-{data['invoice_discount']}"])
-    if data.get("tax"):
-        tot.append([data["tax_label"], data["tax"]])
+    for label, amount in data.get("taxes") or []:          # 2.4.0 polish (#487): one line per tax rate
+        tot.append([label, amount])
     tot.append(["Total due", data["total"]])
     if data.get("paid"):
         tot.append(["Paid", f"-{data['paid']}"])

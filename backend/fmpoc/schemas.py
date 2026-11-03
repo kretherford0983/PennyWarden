@@ -536,9 +536,14 @@ class InvoiceProductIn(In):                  # 2.4.0 (#252)
     unit_price: Amount
     unit_type_id: int | None = None
     category_id: int | None = None
-    taxable: bool = False
+    tax_group_id: int | None = None          # 2.4.0 polish (#487): replaces `taxable`
     budget_id: int | None = None
     custom_field_ids: list[int] = Field(default_factory=list, max_length=20)   # 2.4.0 polish (#484)
+
+
+class InvoiceTaxGroupIn(In):                 # 2.4.0 polish (#487)
+    name: Str(80)
+    rate_ids: list[int] = Field(default_factory=list, max_length=10)
 
 
 class InvoiceTaxRateIn(In):                  # 2.4.0 (#252)
@@ -569,7 +574,6 @@ class InvoiceIn(In):                         # 2.4.0 (#253)
     due_date: OptDate = None
     terms_text: OptStr(200) = None
     notes: OptStr(2000) = None
-    tax_rate_id: int | None = None
     discount: InvoiceDiscountIn | None = None
     lines: list[InvoiceLineIn] = Field(default_factory=list, max_length=200)
     custom_values: dict[str, str | None] | None = None    # 2.4.0 (#253 part 2)
@@ -582,7 +586,6 @@ class InvoiceBatchIn(In):                    # 2.4.0 (#248): one draft per custo
     due_date: OptDate = None
     terms_text: OptStr(200) = None
     notes: OptStr(2000) = None
-    tax_rate_id: int | None = None
     discount: InvoiceDiscountIn | None = None
     lines: list[InvoiceLineIn] = Field(default_factory=list, max_length=200)
     custom_values: dict[str, str | None] | None = None
