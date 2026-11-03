@@ -4616,3 +4616,47 @@ test("#315 / #316: first and last name, a display name and mailing address; each
                      page.getByLabel("Show people's names as").selectOption("FIRST_LAST")]);
   await logout(page);
 });
+
+// ---------------------------------------------------------------- 2.4.0 polish: module switch, invoice setup
+test("2.4.0 polish (#482, #481, #477, #480): turning Invoices on shows Invoices Setup at once; Next invoice follows the pattern; the PDF editor suggests variables and lines up its columns", async ({ page }) => {
+  await login(page, "admin");
+  await page.goto("/about/general");
+  const nav = page.getByRole("navigation", { name: "Main navigation" });
+  const box = page.getByLabel("Invoices module");
+  const wasOn = await box.isChecked();
+  if (wasOn) {
+    await box.uncheck();
+    await expect(nav.getByRole("link", { name: "Invoices Setup" })).toHaveCount(0);
+  }
+  await box.check();                                       // #482: no reload needed
+  await expect(nav.getByRole("link", { name: "Invoices Setup" })).toBeVisible();
+  await nav.getByRole("link", { name: "Invoices Setup" }).click();
+  // #481: the example follows the pattern while typing
+  const pattern = page.getByLabel("Invoice number pattern");
+  await pattern.fill("INV-{SEQ:6}");
+  await expect(page.getByTestId("inv-next-number")).toHaveText(/^INV-\d{6}$/);
+  await pattern.fill("INV-{YYYY}");
+  await expect(page.getByTestId("inv-next-number-error")).toContainText("{SEQ}");
+  // #477: letterhead lines one per row, with {VARIABLE} suggestions
+  const tpl = page.getByTestId("invoice-template");
+  const lh = tpl.locator("fieldset").filter({ has: page.locator("legend", { hasText: /^Letterhead$/ }) });
+  await expect(lh.getByLabel("Letterhead line 1", { exact: true })).toHaveValue("{ORG}");
+  await lh.getByRole("button", { name: "+ Add line" }).click();
+  const added = lh.locator("input").last();
+  await added.fill("{ORG.E");
+  await expect(tpl.locator("ul.autocomplete [role=option]").first()).toContainText("{ORG.EMAIL}");
+  const boxes = await lh.locator("input").all();
+  const ys = await Promise.all(boxes.map(async (b) => (await b.boundingBox())!.y));
+  expect(new Set(ys.map((y) => Math.round(y))).size).toBe(ys.length);      // one row each
+  // #480: every column heading box starts at the same x
+  const heads = await page.getByTestId("inv-columns").locator("input").all();
+  const xs = await Promise.all(heads.map(async (h) => Math.round((await h.boundingBox())!.x)));
+  expect(new Set(xs).size).toBe(1);
+  await page.screenshot({ path: "e2e-screenshots/light-invoice-pdf-setup.png" });
+  if (!wasOn) {                                            // leave the module as it was
+    await page.goto("/about/general");
+    await page.getByLabel("Invoices module").uncheck();
+    await expect(nav.getByRole("link", { name: "Invoices Setup" })).toHaveCount(0);
+  }
+  await logout(page);
+});

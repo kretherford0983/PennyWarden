@@ -123,6 +123,7 @@ export function PageTabs<K extends string>({ label, tabs, current, onSelect }: {
 
 /** v1.6.0 CR-033: optional modules, switched on/off by an Administrator (data is kept when a module is off). */
 function ModulesPanel() {
+  const { refresh } = useMe();
   const [m, setM] = useState<any>(null);
   const [err, setErr] = useState<unknown>(null);
   const [saved, setSaved] = useState(false);
@@ -132,7 +133,11 @@ function ModulesPanel() {
     setSaved(false);
     const before = m;
     setM({ ...m, [key]: on }); // shown at once; reverted if saving fails
-    try { setM(await api.put("/api/system/modules", { [key]: on })); setSaved(true); } catch (x) { setM(before); setErr(x); }
+    try {
+      setM(await api.put("/api/system/modules", { [key]: on }));
+      setSaved(true);
+      await refresh();            // 2.4.0 polish (#482): the menu and module pages follow at once, no reload
+    } catch (x) { setM(before); setErr(x); }
   };
   return (
     <section className="card" aria-labelledby="modules-h">

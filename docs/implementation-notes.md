@@ -162,6 +162,22 @@ item; the site's version list starts at 1.10 (the first public release); part of
   bundling incl. the Dockerfile, no links to moved files, no other raw HTML, the site build and `versions.json`); E2E
   "#473 AC-DOC-001..004"; `test_v170_rename.py`'s allow-list no longer names the moved notes.
 
+**2.4.0 polish — quick fixes #481, #482, #489, #490 (Kyle 2026-11-02).**
+- #481: `GET /api/invoices/setup/number-example?pattern=` (`invoice.setup`) runs `check_pattern` + `format_number`
+  with today's year and `_next_seq` (nothing stored; 422 with the reason). InvoiceSetup fetches it 250 ms after typing
+  and shows the example or the error. Test `test_v240_invoices.py::test_number_example_for_an_unsaved_pattern`.
+- #482: About → Optional modules calls the Me context's `refresh()` (`/api/auth/me`, which carries `modules`) after a
+  successful `PUT /api/system/modules`.
+- #489: the Stakeholder report card's own Report… button removed (the page header's stays).
+- #490 (Kyle: both): `fundraiser_deck.py` - non-doughnut charts set the category axis `tickLblPos=low`; `_labels`
+  adds a `c:spPr` solid fill in the slide color (`_label_backing`, doughnut percentages excluded); `C.SERIES` and
+  `_lighter` pass through `visible()` (WCAG contrast >= 3:1 against the slide, stepping toward black or white).
+  Test `test_v210_fundraiser_deck.py::test_chart_text_off_chart_elements_and_colors_visible`. The stakeholder report
+  PDF charts are unchanged (not reported).
+- E2E "2.4.0 polish (#482, #481, #477, #480)" (end of poc.spec.ts): module on → Invoices Setup in the menu without a
+  reload, live Next invoice and its error, letterhead rows + suggestions, column boxes aligned; the module is left as
+  it was.
+
 **2.4.0 polish — Invoice PDF setup (#477–#480, Kyle 2026-11-02).** `InvoiceTemplate.tsx` uses `PatternInput` for the
 title, Bill to heading and footer, and the shared `Lines` (moved from CheckDocuments.tsx to checkShared.tsx) for the
 letterhead and Bill to (one row each, max 6); `ROLE_GROUPS` gains CUSTOMER/INVOICE. `TemplateConfig.logo_position`

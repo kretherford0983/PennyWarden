@@ -85,6 +85,11 @@ PennyWarden 2.4.0 (in progress).
   get **fold marks** (front or back) and the **#10 double-window layout** (letterhead and Bill to in the windows, the
   invoice below the first fold; the preview draws the windows), as on the cover letter. The line-table columns line
   up in a grid and can be **dragged** into order (↑/↓ stay for the keyboard).
+- **Next invoice follows the pattern as you type (#481)**, or says what is wrong with it, before you save.
+
+### Optional modules
+- **Turning a module on or off updates the menu at once (#482)** — no page reload (for the Administrator who changes
+  it; other users see it at their next sign-in or reload, as before).
 
 ### Events & Fundraisers
 - **The Fundraisers module is now Events & Fundraisers (#429).** The menu item is **Events**; the module setting and
@@ -104,6 +109,12 @@ PennyWarden 2.4.0 (in progress).
 - **Reports:** the stakeholder report and presentation work for both (an Event's report says "event" and has no goal);
   the Fiscal Year fundraising report and presentation list Events in a **separate section**, not in the fundraising
   totals; the Quarterly/Annual report shows no goal for an Event.
+- **One Report… button (#489).** The fundraiser page's Stakeholder report card no longer repeats the Report… button
+  from the page header.
+- **Presentation charts stay readable in any color scheme (#490).** Category names sit below the chart (a negative bar
+  can't cover them), value labels sit on a small box in the slide's color (a line or bar behind them never touches
+  the text), and a scheme color too close to the slide background is darkened or lightened in the presentation until
+  it stands out (at least 3:1). Your branding settings don't change.
 
 ### Attachments
 - **Identical files are stored once (#425).** When you attach a file that is already stored anywhere in PennyWarden,
