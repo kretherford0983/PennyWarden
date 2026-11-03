@@ -831,7 +831,8 @@ button.info-tip-btn { background: none; border: 0; padding: 0 2px; min-height: 0
    spacing; a drag handle per row */
 ol.column-order { list-style: none; padding: 0; margin: 4px 0; display: grid; grid-template-columns: auto minmax(10em, max-content) minmax(8em, 1fr) auto auto; gap: 6px 8px; align-items: center; }
 ol.column-order li.column-row { display: contents; }
-ol.column-order .drag-handle { cursor: grab; color: var(--muted); padding: 0 2px; user-select: none; }
+ol.column-order .drag-handle { cursor: grab; color: var(--muted); padding: 2px 4px; user-select: none; -webkit-user-drag: element; }
+ol.column-order li.dragging > * { opacity: .5; }   /* 2.4.0 polish (#501) */
 ol.column-order label { margin: 0; }
 /* 2.4.0 (#488): the user guide as a book - contents, chapters, pages, search, pictures */
 .help-search { display: flex; gap: 8px; margin: 0 0 12px; max-width: 520px; }

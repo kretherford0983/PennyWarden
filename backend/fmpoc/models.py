@@ -832,6 +832,9 @@ class BrandingSettings(Base):
     logo_dark_mark_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     logo_dark_mark_width: Mapped[int | None] = mapped_column(Integer, nullable=True)
     logo_dark_mark_height: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 2.4.0 polish (#503): per slot, where the logo comes from - {"full": "ORG" | "OWN" | "NONE", ...}; a slot not
+    # listed is OWN (the logo uploaded here, if any), as before
+    logo_sources: Mapped[str | None] = mapped_column(Text, nullable=True)
     updated_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     updated_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("app_user.id"), nullable=True)
 
@@ -1189,6 +1192,12 @@ class DonationSettings(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), unique=True)
     config_json: Mapped[str] = mapped_column(Text)
+    # 2.4.0 polish (#503): the receipt letter's and the year-end statement's own logos (used when their Logo choice
+    # is "Its own logo"; PNG, validated and re-encoded)
+    receipt_logo_png: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    receipt_logo_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    statement_logo_png: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    statement_logo_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
     updated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
@@ -1600,3 +1609,21 @@ class InvoicePayment(Base):
     removed_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     removed_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     remove_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+
+# ---------------------------------------------------------------- 2.4.0 polish (#503) organization logos
+class OrganizationLogo(Base):
+    """The organization's logos (System/About -> General -> Organization logos): the logo, the small mark and their
+    dark-background versions. Cover letters, envelopes, the invoice PDF, donation letters and Branding can each use
+    them ("Organization logo"), their own upload, or none. Organization settings (BR-003), not financial data."""
+    __tablename__ = "organization_logo"
+    __table_args__ = (UniqueConstraint("workspace_id", "slot", name="uq_organization_logo_slot"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
+    slot: Mapped[str] = mapped_column(String(10))                 # full | mark | dark_full | dark_mark
+    png: Mapped[bytes] = mapped_column(LargeBinary)
+    sha256: Mapped[str] = mapped_column(String(64))
+    width: Mapped[int] = mapped_column(Integer)
+    height: Mapped[int] = mapped_column(Integer)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    updated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)

@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import datetime as dt
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, File, Request, UploadFile
+from fastapi.responses import Response
 from fastapi.responses import Response
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
@@ -80,6 +81,35 @@ def save_setup(body: SetupIn, db: Session = Depends(get_db), ctx: Ctx = Depends(
     svc.save_config(db, ctx, body.config)
     db.commit()
     return svc.setup_out(db, ctx)
+
+
+# 2.4.0 polish (#503): the receipt letter's and the year-end statement's own logos
+@router.post("/setup/logo/{which}")
+async def letter_logo(which: str, file: UploadFile = File(...), db: Session = Depends(get_db),
+                      ctx: Ctx = Depends(setup_ctx)):
+    from ..services.checkprint.service import MAX_LOGO_BYTES
+    data = await file.read(MAX_LOGO_BYTES + 1)
+    if len(data) > MAX_LOGO_BYTES:
+        raise AppError(413, "FILE_TOO_LARGE", "A logo may not exceed 1 MB.")
+    svc.set_letter_logo(db, ctx, which, data)
+    db.commit()
+    return svc.setup_out(db, ctx)
+
+
+@router.post("/setup/logo/{which}/remove")
+def letter_logo_remove(which: str, db: Session = Depends(get_db), ctx: Ctx = Depends(setup_ctx)):
+    svc.set_letter_logo(db, ctx, which, None)
+    db.commit()
+    return svc.setup_out(db, ctx)
+
+
+@router.get("/setup/logo/{which}")
+def letter_logo_image(which: str, db: Session = Depends(get_db), ctx: Ctx = Depends(setup_ctx)):
+    row = svc._settings_row(db, ctx.workspace_id)
+    png = getattr(row, f"{which}_logo_png", None) if row is not None and which in ("receipt", "statement") else None
+    if not png:
+        raise AppError(404, "NOT_FOUND", "Logo not found.")
+    return Response(png, media_type="image/png", headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
 
 
 @router.post("/setup/preview")

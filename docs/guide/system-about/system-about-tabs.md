@@ -3,7 +3,8 @@
 Administrators look after the installation here; Auditors and financial users see parts of it read-only. Each tab has
 its own address.
 - **About** — version and build, license, the update check (**Check now**).
-- **General** — the **organization** (name, address, phone, email, EIN) and the **Optional modules**.
+- **General** — the **organization** (name, address, phone, email, EIN), the
+  [Organization logos](organization-logos.md) and the **Optional modules**.
 - **Settings** — every setting in effect and where it comes from. On a server, security and session settings can be
   changed here; **Update channel** chooses which releases the update notice reports; **Email** sets up the mail server.
 - **Branding** — see [Branding](branding.md).

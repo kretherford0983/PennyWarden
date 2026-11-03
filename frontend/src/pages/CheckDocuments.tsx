@@ -6,6 +6,7 @@ import { Link } from "../router";
 import { ErrorBox, Field, RowMenu } from "../components";
 import { LivePreview, Lines, PatternInput, PdfViewer, PinToggle, Section, SetupLayout, usePdf, usePin, viewState } from "./checkShared";
 import { EnvelopeLibrary, SharedNotice } from "./Envelopes";
+import { LogoChoice } from "../LogoChoice";
 
 const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
 const DOC_FONTS: [string, string][] = [["CARLITO", "Carlito (Calibri-compatible)"], ["SANS", "Liberation Sans (Arial-compatible)"], ["SERIF", "Liberation Serif (Times-compatible)"]];
@@ -198,11 +199,6 @@ function LetterEditor({ setup, doc, focus, onClose, onSaved }: EditorProps) {
   const move = (i: number, d: number) => e.change((x) => { const [it] = x.columns.splice(i, 1); x.columns.splice(i + d, 0, it); });
   // #176: the logo is uploaded and removed at once (not part of Save); the preview redraws with it
   const [logo, setLogo] = useState<any>(doc.logo || null);
-  const [logoErr, setLogoErr] = useState<unknown>(null);
-  const logoAct = async (fn: () => Promise<any>) => {
-    setLogoErr(null);
-    try { const d = await fn(); setLogo(d.logo || null); } catch (x) { setLogoErr(x); }
-  };
   const windowed = c.window !== "NONE";
   const off = (k: string) => (ev: any) => e.change((x) => { x[k] = Number(ev.target.value) || 0; });
   return (
@@ -225,32 +221,16 @@ function LetterEditor({ setup, doc, focus, onClose, onSaved }: EditorProps) {
           {c.preprinted ? " On pre-printed paper these lines are used only as the return address in a window envelope." : ""}</p>
         <fieldset className="lines">
           <legend>Logo</legend>
-          <ErrorBox error={logoErr} />
-          {e.isDraft ? (
-            logo?.from ? (
-              <div className="row form-row">
-                <img className="logo-thumb" src={`/api/checks/documents/${logo.from}/logo?v=${logo.version}`} alt="The letter's logo" />
-                <Field label="Logo position"><select value={c.logo_position} onChange={(ev) => e.change((x) => { x.logo_position = ev.target.value; })}>
-                  <option value="LEFT">Top left</option><option value="CENTER">Top center (the letterhead lines are centered too)</option><option value="RIGHT">Top right, beside the letterhead (the letter text stays where it is)</option></select></Field>
-                <p className="hint">The copied letter's logo; it is copied when you save.</p>
-              </div>
-            ) : <p className="muted">No logo. Save the letter first, then add one here.</p>
-          ) : logo ? (
-            <div className="row form-row">
-              <img className="logo-thumb" src={`/api/checks/documents/${doc.id}/logo?v=${logo.version}`} alt="The letter's logo" />
-              <Field label="Logo position"><select value={c.logo_position} onChange={(ev) => e.change((x) => { x.logo_position = ev.target.value; })}>
-                <option value="LEFT">Top left</option><option value="CENTER">Top center (the letterhead lines are centered too)</option><option value="RIGHT">Top right, beside the letterhead (the letter text stays where it is)</option></select></Field>
-              <button type="button" className="small" onClick={() => logoAct(() => api.post(`/api/checks/documents/${doc.id}/logo/remove`, {}))}>Remove logo</button>
-            </div>
-          ) : <p className="muted">No logo.</p>}
-          {e.isDraft ? null : <label className="button small">{logo ? "Replace logo…" : "Add a logo…"}
-            <input type="file" accept="image/png,image/jpeg" hidden aria-label="Logo image" onChange={(ev) => {
-              const f = ev.target.files?.[0];
-              ev.target.value = "";
-              if (f) logoAct(() => api.upload(`/api/checks/documents/${doc.id}/logo`, f));
-            }} />
-          </label>}
-          <p className="hint">PNG or JPEG, at most 1 MB. It prints above the letterhead lines, scaled to fit 2.5 × 1 in. Adding or removing the logo takes effect at once.</p>
+          {/* 2.4.0 polish (#503): the organization logo, this letter's own, or none */}
+          <LogoChoice id="letter" source={c.logo_source || "NONE"} onSource={(v) => e.change((x) => { x.logo_source = v; })}
+            own={logo} ownSrc={logo ? `/api/checks/documents/${logo.from ?? doc.id}/logo?v=${logo.version}` : undefined}
+            onUpload={e.isDraft ? undefined : async (f) => { const d = await api.upload(`/api/checks/documents/${doc.id}/logo`, f); setLogo(d.logo || null); }}
+            onRemove={e.isDraft ? undefined : async () => { const d = await api.post(`/api/checks/documents/${doc.id}/logo/remove`, {}); setLogo(d.logo || null); }}
+            uploadNote={logo?.from ? "The copied letter's logo; it is copied when you save." : "Save the letter first, then add its own logo here."}
+            sizeHint="PNG or JPEG, at most 1 MB. It prints above the letterhead lines, scaled to fit 2.5 × 1 in. Adding or removing this letter's own logo takes effect at once.">
+            <Field label="Logo position"><select value={c.logo_position} onChange={(ev) => e.change((x) => { x.logo_position = ev.target.value; })}>
+              <option value="LEFT">Top left</option><option value="CENTER">Top center (the letterhead lines are centered too)</option><option value="RIGHT">Top right, beside the letterhead (the letter text stays where it is)</option></select></Field>
+          </LogoChoice>
         </fieldset>
         <label className="check"><input type="checkbox" checked={c.show_date} onChange={(ev) => e.change((x) => { x.show_date = ev.target.checked; })} /> Print today's date under the letterhead</label>
       </Section>
@@ -392,8 +372,9 @@ function EnvelopeEditor({ setup, doc, focus, onClose, onSaved, onOpen, feature =
   const winLetter = letters.find((d: any) => d.config?.window !== "NONE") || letters.find((d: any) => d.is_default) || letters[0];
   const openWindow = () => { if (!e.dirty || window.confirm("Leave without saving your changes?")) onOpen(winLetter, "window"); };
   const n = (k: string) => (ev: any) => e.change((x) => { x[k] = Number(ev.target.value) || 0; });
+  const [logo, setLogo] = useState<any>(doc.logo || null);          // 2.4.0 polish (#503): the envelope's own logo
   return (
-    <EditorFrame title={`Envelope: ${doc.name}`} e={e} onClose={onClose} singleFeed backLabel={backLabel} preview={<PreviewSection doc={doc} e={e} scope="pw-envelope" />}>
+    <EditorFrame title={`Envelope: ${doc.name}`} e={e} onClose={onClose} singleFeed backLabel={backLabel} preview={<PreviewSection doc={doc} e={e} scope="pw-envelope" version={logo?.version || ""} />}>
       <SharedNotice doc={doc} feature={feature} onOpen={(d) => { if (!e.dirty || window.confirm("Leave without saving your changes?")) onOpen(d); }} />
       {feature === "PAYMENTS" ? (
         <div className="alert info" data-testid="window-pointer">
@@ -419,6 +400,16 @@ function EnvelopeEditor({ setup, doc, focus, onClose, onSaved, onOpen, feature =
       <Section id="eret" scope="pw-envelope" title="Return address">
         <label className="check"><input type="checkbox" checked={c.return_address} onChange={(ev) => e.change((x) => { x.return_address = ev.target.checked; })} /> Print the return address (turn off for envelopes with a pre-printed return address; it can be switched for one print)</label>
         <Lines label="Return address" idBase="ret" lines={c.return_lines} max={5} variables={setup.envelope_variables} onChange={(l) => e.change((x) => { x.return_lines = l; })} />
+        <fieldset className="lines">
+          <legend>Logo</legend>
+          {/* 2.4.0 polish (#503): printed at the return-address corner, the return address beside it */}
+          <LogoChoice id="envelope" source={c.logo_source || "NONE"} onSource={(v) => e.change((x) => { x.logo_source = v; })}
+            own={logo} ownSrc={logo ? `/api/checks/documents/${logo.from ?? doc.id}/logo?v=${logo.version}` : undefined}
+            onUpload={e.isDraft ? undefined : async (f) => { const d = await api.upload(`/api/checks/documents/${doc.id}/logo`, f); setLogo(d.logo || null); }}
+            onRemove={e.isDraft ? undefined : async () => { const d = await api.post(`/api/checks/documents/${doc.id}/logo/remove`, {}); setLogo(d.logo || null); }}
+            uploadNote="Save the envelope first, then add its own logo here."
+            sizeHint="PNG or JPEG, at most 1 MB. It prints at the return-address corner, scaled to fit 1.25 × 0.6 in, with the return address beside it." />
+        </fieldset>
       </Section>
       <Section id="epos" scope="pw-envelope" title="Positions (inches from the envelope's top-left corner)">
         <div className="row form-row">

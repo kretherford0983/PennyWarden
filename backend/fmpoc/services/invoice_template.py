@@ -64,6 +64,7 @@ class TemplateConfig(_M):
     font: str = "CARLITO"
     size: float = Field(default=10, ge=8, le=12)
     accent: str = "#1F3A5F"
+    logo_source: str = "NONE"                            # 2.4.0 polish (#503): ORG | OWN | NONE
     logo_position: str = "LEFT"                          # NONE | LEFT | CENTER (2.4.0 polish, #478) | RIGHT
     letterhead: list[str] = Field(default_factory=lambda: ["{ORG}", "{ORG.ADDRESS}", "{ORG.PHONE}"], max_length=6)
     title: str = Field(default="INVOICE", max_length=40)
@@ -102,6 +103,13 @@ class TemplateConfig(_M):
         if not HEX.match(v):
             raise ValueError("The accent color is #RRGGBB.")
         return v.upper()
+
+    @field_validator("logo_source")
+    @classmethod
+    def _ls(cls, v):
+        if v not in ("NONE", "ORG", "OWN"):
+            raise ValueError("The logo is the organization logo, this invoice PDF's own logo, or none.")
+        return v
 
     @field_validator("logo_position")
     @classmethod
@@ -176,6 +184,12 @@ def stored(s: InvoiceSettings) -> TemplateConfig:
         return TemplateConfig()
 
 
+def logo_for(db: Session, s: InvoiceSettings) -> bytes | None:
+    """#503: the logo the invoice PDF prints - the organization logo, its own upload, or none."""
+    from . import org_logos
+    return org_logos.resolve(db, s.workspace_id, stored(s).logo_source, s.logo_png)
+
+
 def out(s: InvoiceSettings) -> dict:
     return {"config": stored(s).model_dump(), "has_logo": bool(s.logo_png), "logo_sha256": s.logo_sha256,
             "columns": [{"key": k, "label": COLUMN_LABELS[k]} for k in COLUMN_KEYS],
@@ -197,13 +211,18 @@ def save(db: Session, ctx, s: InvoiceSettings, data: dict) -> dict:
 def set_logo(db: Session, ctx, s: InvoiceSettings, data: bytes | None) -> dict:
     from .checkprint.service import normalize_logo
     before = {"logo_sha256": s.logo_sha256}
+    cfg = stored(s)
     if data is None:
         s.logo_png = s.logo_sha256 = None
         action = "INVOICE_LOGO_REMOVED"
+        if cfg.logo_source == "OWN":                     # #503: nothing of its own left to print
+            cfg.logo_source = "NONE"
     else:
         png, _w, _h = normalize_logo(data)
         s.logo_png, s.logo_sha256 = png, hashlib.sha256(png).hexdigest()
         action = "INVOICE_LOGO_SET"
+        cfg.logo_source = "OWN"                          # #503: uploading here means "use this one"
+    s.template_json = json.dumps(cfg.model_dump(), sort_keys=True)
     db.flush()
     audit.record(db, ctx, action, "invoice_settings", s.id, before, {"logo_sha256": s.logo_sha256})
     return out(s)

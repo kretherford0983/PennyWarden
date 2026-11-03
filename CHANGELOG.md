@@ -115,6 +115,16 @@ PennyWarden 2.4.0 (in progress).
   been collected beside them. **Show customer names** can be turned off (*Customer 1, 2, …*), and a commentary is
   printed on the first page and on its own slide.
 
+### Organization logos
+- **One logo for everything (#503).** **System/About → General → Organization logos** holds the organization's logo,
+  small mark and their dark-background versions. Every place that prints a logo has a **Logo** choice: the
+  **Organization logo** (replace it once and every such place prints the new one), **Its own logo**, or **No logo**:
+  each cover letter, the invoice PDF and the four Branding logos, and now also the **donation receipt letter**, the
+  **year-end statement** (the same as the receipt, or its own choice) and **envelopes** (at the return-address corner,
+  with the return address beside it). New templates start with no logo. Removing an organization logo lists the places
+  that use it and asks first; they then print none. After the upgrade, Branding's logos are the organization logos and
+  letters or the invoice PDF with the same file use them, so nothing prints differently.
+
 ### Optional modules
 - **Turning a module on or off updates the menu at once (#482)** — no page reload (for the Administrator who changes
   it; other users see it at their next sign-in or reload, as before).

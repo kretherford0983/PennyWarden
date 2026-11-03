@@ -190,6 +190,44 @@ a simple built-in search; in 2.4.0.
   **AC-DOC-007** every picture exists, is used and is made by the script; **AC-DOC-008** the site offers each book
   version and the 1.10-2.3 documents. Tests `test_v240_user_guide.py` (10) and the E2E "#473 / #488 AC-DOC".
 
+**2.4.0 polish — organization logos (#503, decided with Kyle 2026-11-03).** Kyle's decisions: in 2.4.0; each place
+chooses Organization / Own / None (the organization logo is read at print time, so a change reaches every such place);
+the organization section holds the same four slots as Branding; donation receipt and statement letters get a logo (the
+statement follows the receipt or has its own choice); envelopes get one too; the upgrade seeds the organization logos
+from Branding and switches identical letter / invoice logos to them; default No logo; removing one in use warns,
+lists the places, and those places print none (their choice stays).
+- New rules (spec documents unchanged): **BR-ORG-LOGO-001** one set of organization logos per organization (logo, small
+  mark, dark versions), managed by Administrators; **BR-ORG-LOGO-002** each printing place has a Logo choice ORG / OWN /
+  NONE, default NONE; uploading a place's own logo selects OWN, removing it while OWN selects NONE; **BR-ORG-LOGO-003**
+  removing an organization logo that places use needs the confirmation `ORG_LOGO_IN_USE` (409 `CONFIRMATION_REQUIRED`
+  listing them); they then print none. **AC-ORG-LOGO-001** a place set to ORG prints the current organization logo;
+  **AC-ORG-LOGO-002** replacing it changes every such place at the next print; **AC-ORG-LOGO-003** receipt and statement
+  letters and envelopes print the chosen logo; **AC-ORG-LOGO-004** after the upgrade nothing prints differently;
+  **AC-ORG-LOGO-005** removal warns and lists the places.
+- Respected: BR-003 (organization settings; `system.manage` for the organization logos, each setup screen's own
+  permission for its logo), BR-096/BR-100/BR-101 (`normalize_logo`: content-checked PNG/JPEG, re-encoded, no metadata;
+  2 MB for the organization slots like Branding, 1 MB for a place's own), audit (`ORGANIZATION_LOGO_SET/REMOVED`,
+  `BRANDING_LOGO_SOURCE_SET`, `DONATION_LETTER_LOGO_SET/REMOVED`, fingerprints only).
+- Data: migration `0086_organization_logos` - table `organization_logo` (workspace, slot, png, sha256, size; unique per
+  slot); `branding_settings.logo_sources` (JSON per slot; a slot not listed is OWN, as before); `donation_settings`
+  `receipt_logo_*` / `statement_logo_*`; `logo_source` in the cover letter and envelope config JSON, the invoice
+  template JSON and the donation ReceiptConfig (`logo_source`, `logo_position`, `statement_logo_source` FOLLOW). The
+  migration copies Branding's logos into `organization_logo`, sets Branding's slots to ORG and drops its copies; a
+  letter or invoice logo with the same SHA-256 as Branding's full logo becomes ORG (copy dropped), another OWN, none NONE.
+  `organization_logo` is in the selective-restore *Settings → General* part; Reinitialize keeps it.
+- Code: `services/org_logos.py` (`resolve`, `usage`, `set_logo`, `branding_sources`, `statement_source`);
+  `checkprint.service.doc_logo` for letters and envelopes (`envelope_pdf(logo=)`, 1.25 × 0.6 in at the return corner,
+  return lines shifted right); `invoice_docs` resolves from the (possibly unsaved) template; `donations.letter_logo` +
+  `donor_letter_pdf(logo=)` (flowable above the organization name at LEFT/CENTER/RIGHT; with a window letter, top right
+  on the canvas); `branding.slot_logo` in `load()` and the editor's logo image. UI: `LogoChoice.tsx` (shared choice,
+  own upload, organization thumbnail or a note when there is none) in the cover letter, envelope, invoice PDF, Donations
+  Setup and Branding editors; `OrganizationLogosPanel` on System/About → General with "Used by:" per slot.
+- Tests: `test_v240_org_logos.py` (8: permissions and audit, letter follows/replaced/own/none, envelope, invoice PDF,
+  receipt + statement FOLLOW/own, Branding slot, removal warning, the upgrade on 2.4.0-test-build data);
+  `test_v200_build6.py` updated (envelopes take a logo; previews send `logo_source`); E2E "2.4.0 polish (#503)" and the
+  cover letter / Branding steps use the Logo choice. User guide: new page *System/About → Organization logos*, updated
+  cover letters, invoice PDF, Donations Setup, envelopes, Branding and System/About tabs.
+
 **2.4.0 polish — tax-exempt customers (#485, decided with Kyle 2026-11-02).** Migration `0085_entity_tax_exempt`:
 `entity.tax_exempt` (bool, default false) and `tax_exempt_certificate` (60). Part of the entity FIELDS, so creating
 and editing (whoever may edit entities) and the `ENTITY_*` audit snapshots include them; the certificate is cleared

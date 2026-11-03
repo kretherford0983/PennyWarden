@@ -165,3 +165,31 @@ def test_who_can_send(env, eb, outbox):
         assert c.post("/api/invoice-statements/email", {**body, "customer_entity_id": eb["cust"], "date_from": "2026-07-01",
                                                         "date_to": "2026-09-30"}).status_code == 403
     assert outbox == []
+
+
+def test_506_test_email_failures_are_quick_and_in_plain_words(env, base, outbox, monkeypatch):
+    """2.4.0 polish (#506): a server that never answers fails after DEADLINE seconds (not 100 s of one slow address
+    after another), and each failure says what to check."""
+    import socket
+    import threading
+    assert _setup(env, security="SSL", port=587).status_code == 200
+    gate = threading.Event()
+
+    def hang(s, km, msg):
+        gate.wait(5)                      # a server that doesn't answer (released at the end of the test)
+    monkeypatch.setattr(email_svc, "_smtp_send", hang)
+    monkeypatch.setattr(email_svc, "DEADLINE", 0.3)
+    r = env.admin.post("/api/system/email/test", {"to": "me@example.org"})
+    gate.set()
+    assert r.status_code == 200 and r.json()["status"] == "FAILED"
+    msg = r.json()["error"]
+    assert "didn't answer within" in msg and "STARTTLS" in msg and "587" in msg       # the port/security mismatch
+    monkeypatch.setattr(email_svc, "_smtp_send", outbox.fake)
+    for err, words in ((socket.gaierror(-2, "Name or service not known"), "name wasn't found"),
+                       (ConnectionRefusedError(111, "Connection refused"), "refused the connection"),
+                       (OSError(101, "Network is unreachable"), "Network is unreachable")):
+        outbox.fake.fail = err
+        out = env.admin.post("/api/system/email/test", {"to": "me@example.org"}).json()
+        assert out["status"] == "FAILED" and words in out["error"], out
+    outbox.fake.fail = None
+    assert env.admin.post("/api/system/email/test", {"to": "me@example.org"}).json()["status"] == "SENT"

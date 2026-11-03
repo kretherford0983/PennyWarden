@@ -8,7 +8,7 @@ import { useMe } from "../App";
 import { MaintenancePanel } from "./Maintenance";
 import { ReinitializePanel } from "./Reinitialize";
 import { TestingPanel } from "./Testing";
-import { BackupWarningSetting, DiagnosticsPanel, HealthPanel, OrganizationPanel, OrganizationView, SecurityOverviewPanel, SessionsPanel, SettingsPanel } from "./AdminSettings";
+import { BackupWarningSetting, DiagnosticsPanel, HealthPanel, OrganizationLogosPanel, OrganizationPanel, OrganizationView, SecurityOverviewPanel, SessionsPanel, SettingsPanel } from "./AdminSettings";
 import { EmailSettingsPanel } from "./Email";
 
 /** 2.0.0 build 11 (#216, docs/ui-standards.md): System/About in tabs, each at its own address (/about/<tab>, so it can
@@ -64,6 +64,7 @@ export default function About() {
     general: () => !admin ? <><OrganizationView /><ModulesStatus /></> : (
       <>
         {org != null ? <OrganizationPanel name={org} onRenamed={(n) => { setOrg(n); window.dispatchEvent(new CustomEvent("pw:workspace-renamed", { detail: n })); }} /> : null}
+        <OrganizationLogosPanel />{/* 2.4.0 polish (#503) */}
         <ModulesPanel />
       </>
     ),

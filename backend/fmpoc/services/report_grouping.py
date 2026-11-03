@@ -34,7 +34,7 @@ DEFAULTS: dict[str, list[dict]] = {
         {"id": "audit", "name": "Audit and year-end close", "short": "Audit and close", "reports": ["audit", "close", "fundraiser-detail"]},
         {"id": "analyze", "name": "Analyze activity", "short": "Analyze", "reports": ["entity", "flow"]},
         {"id": "plan", "name": "Plan budgets", "short": "Plan", "reports": ["budget-review", "planning-sheet"]},
-        {"id": "fundraisers", "name": "Fundraisers", "short": "Fundraisers", "reports": ["count-sheet"]},
+        {"id": "fundraisers", "name": "Events & Fundraisers", "short": "Events & Fundraisers", "reports": ["count-sheet"]},   # 2.4.0 polish (#511): the module's name since #429
         {"id": "invoices", "name": "Invoices", "short": "Invoices", "reports": ["inv-open", "inv-aging", "inv-statement", "inv-sales-tax", "inv-register", "inv-sales", "inv-activity"]},   # 2.4.0 (#255)
     ],
     "SUBJECT": [
@@ -43,7 +43,7 @@ DEFAULTS: dict[str, list[dict]] = {
         {"id": "accounts", "name": "Accounts / Register", "reports": ["flow"]},
         {"id": "entities", "name": "Entities", "reports": ["entity"]},
         {"id": "invoices", "name": "Invoices", "reports": ["inv-open", "inv-aging", "inv-statement", "inv-sales-tax", "inv-register", "inv-sales", "inv-activity", "inv-sales-formal", "inv-overview"]},   # 2.4.0 (#513)
-        {"id": "fundraisers", "name": "Fundraisers", "reports": ["fundraising-fy", "fundraiser-detail", "count-sheet"]},
+        {"id": "fundraisers", "name": "Events & Fundraisers", "reports": ["fundraising-fy", "fundraiser-detail", "count-sheet"]},
         {"id": "system", "name": "System", "reports": []},
     ],
     "AUDIENCE": [
