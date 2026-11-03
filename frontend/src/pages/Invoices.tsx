@@ -72,6 +72,7 @@ function Catalog({ manage }: { manage: boolean }) {
             <th>Name</th>
             {tab === "products" ? <><th>Code</th><th className="num">Price</th><th>Unit</th><th>Category</th><th>Taxable</th><th>Budget</th></> : null}
             {tab === "tax-rates" ? <><th className="num">Rate</th><th>Budget</th></> : null}
+            {tab === "categories" ? <><th>Budget</th><th>Product code pattern</th><th>Next code</th></> : null}
             <th>Status</th>{manage ? <th /> : null}
           </tr></thead>
           <tbody>{rows.map((r) => (
@@ -80,7 +81,10 @@ function Catalog({ manage }: { manage: boolean }) {
               {tab === "products" ? <>
                 <td>{r.code || ""}</td><td className="num">{r.is_system ? "—" : money(r.unit_price)}</td><td>{r.unit_type || "—"}</td>
                 <td>{r.category || "—"}</td><td>{r.taxable ? "Yes" : "No"}</td>
-                <td>{r.budget ? r.budget.label : "—"}{r.needs_budget ? <span className="badge red" title="No Invoiced Income budget continues it into the current Fiscal Year">Needs budget</span> : null}</td>
+                <td>{r.budget ? r.budget.label : "—"}{r.budget && !r.own_budget ? <span className="badge grey" title="Follows its category's budget">Category's</span> : null}{r.needs_budget ? <span className="badge red" title="No Invoiced Income budget continues it into the current Fiscal Year">Needs budget</span> : null}</td>
+              </> : null}
+              {tab === "categories" ? <>
+                <td>{r.budget ? r.budget.label : "—"}</td><td>{r.code_pattern ? <code>{r.code_pattern}</code> : "—"}</td><td>{r.next_code || "—"}</td>
               </> : null}
               {tab === "tax-rates" ? <>
                 <td className="num">{r.rate} %</td>
@@ -102,7 +106,11 @@ function Catalog({ manage }: { manage: boolean }) {
 function CatalogForm({ tab, row, onClose, onSaved }: { tab: Tab; row: any; onClose: () => void; onSaved: () => void }) {
   const [v, setV] = useState<any>({ name: row.name || "", code: row.code || "", description: row.description || "", unit_price: row.unit_price || "",
     unit_type_id: row.unit_type_id ? String(row.unit_type_id) : "", category_id: row.category_id ? String(row.category_id) : "", taxable: !!row.taxable,
-    budget_id: row.budget_id ? String(row.budget_id) : "", rate: row.rate || "" });
+    budget_id: row.budget_id ? String(row.budget_id) : "", rate: row.rate || "", code_pattern: row.code_pattern || "",
+    // 2.4.0 polish (#483): a product follows its category's budget unless it has its own
+    own: tab !== "products" || !row.id || !!row.own_budget });
+  const [codeTouched, setCodeTouched] = useState(!!row.id);
+  const [example, setExample] = useState<{ text: string; error: string }>({ text: row.next_code || "", error: "" });
   const [units, setUnits] = useState<any[]>([]);
   const [cats, setCats] = useState<any[]>([]);
   const [budgets, setBudgets] = useState<any[]>([]);
@@ -112,26 +120,49 @@ function CatalogForm({ tab, row, onClose, onSaved }: { tab: Tab; row: any; onClo
       api.get("/api/invoices/catalog/unit-types").then(setUnits, setErr);
       api.get("/api/invoices/catalog/categories").then(setCats, setErr);
     }
-    if (tab === "products" || tab === "tax-rates") api.get("/api/invoices/catalog/budget-options").then(setBudgets, setErr);
+    if (tab !== "unit-types") api.get("/api/invoices/catalog/budget-options").then(setBudgets, setErr);
   }, [tab]);
   const set = (k: string) => (e: any) => setV({ ...v, [k]: e.target.type === "checkbox" ? e.target.checked : e.target.value });
+  const category = cats.find((c) => String(c.id) === v.category_id);
+  // 2.4.0 polish (#486): picking the category fills in its next product code (until the code is typed by hand)
+  const pickCategory = async (e: any) => {
+    const id = e.target.value;
+    const c = cats.find((x) => String(x.id) === id);
+    const next = { ...v, category_id: id, own: c?.budget ? v.own && !!v.budget_id : true };
+    if (!codeTouched && !row.id) next.code = c?.next_code || "";
+    setV(next);
+  };
+  // the category form: Next code for the pattern being typed
+  useEffect(() => {
+    if (tab !== "categories") return;
+    let live = true;
+    const t = window.setTimeout(() => {
+      if (!v.code_pattern.trim()) { setExample({ text: "", error: "" }); return; }
+      api.get(`/api/invoices/catalog/code-example${qs({ pattern: v.code_pattern, category_id: row.id })}`).then(
+        (x) => { if (live) setExample({ text: x.next_code || "", error: "" }); },
+        (x) => { if (live) setExample({ text: "", error: (x as Error)?.message || "Not a valid pattern." }); });
+    }, 250);
+    return () => { live = false; window.clearTimeout(t); };
+  }, [tab, v.code_pattern, row.id]);
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     setErr(null);
     const num = (x: string) => (x ? Number(x) : null);
     const body = tab === "products" ? { name: v.name, code: v.code || null, description: v.description || null, unit_price: v.unit_price,
-      unit_type_id: num(v.unit_type_id), category_id: num(v.category_id), taxable: v.taxable, budget_id: num(v.budget_id) }
-      : tab === "tax-rates" ? { name: v.name, rate: v.rate, budget_id: num(v.budget_id) } : { name: v.name };
+      unit_type_id: num(v.unit_type_id), category_id: num(v.category_id), taxable: v.taxable,
+      budget_id: v.own || !category?.budget ? num(v.budget_id) : null }
+      : tab === "tax-rates" ? { name: v.name, rate: v.rate, budget_id: num(v.budget_id) }
+      : tab === "categories" ? { name: v.name, budget_id: num(v.budget_id), code_pattern: v.code_pattern.trim() || null } : { name: v.name };
     try {
       if (row.id) await api.put(`/api/invoices/catalog/${tab}/${row.id}`, body); else await api.post(`/api/invoices/catalog/${tab}`, body);
       onSaved();
     } catch (x) { setErr(x); }
   };
   const what = TABS.find((t) => t[0] === tab)![1].toLowerCase().replace(/s$/, "");
-  const budgetPicker = (
-    <Field label="Invoiced Income budget" hint="Where the money goes. Only Invoiced Income budgets are listed (a Budget Manager marks them).">
-      <select required value={v.budget_id} onChange={set("budget_id")}>
-        <option value="">— choose —</option>
+  const budgetPicker = (optional = false, label = "Invoiced Income budget", hint = "Where the money goes. Only Invoiced Income budgets are listed (a Budget Manager marks them).") => (
+    <Field label={label} hint={hint}>
+      <select required={!optional} value={v.budget_id} onChange={set("budget_id")}>
+        <option value="">{optional ? "— none —" : "— choose —"}</option>
         {budgets.map((g) => <optgroup key={g.fiscal_year.id} label={g.fiscal_year.display_name}>
           {g.budgets.map((b: any) => <option key={b.id} value={b.id}>{b.label}</option>)}
         </optgroup>)}
@@ -144,21 +175,40 @@ function CatalogForm({ tab, row, onClose, onSaved }: { tab: Tab; row: any; onClo
     <Modal title={row.id ? `Edit ${what}` : `New ${what}`} onClose={onClose}>
       <GuardedForm onSubmit={submit}>
         <ErrorBox error={err} />
+        {/* 2.4.0 polish (#486): the category first, so its defaults (budget, code) fill in before the rest */}
+        {tab === "products" ? <Field label="Category (optional)" hint="Choose it first: its budget and next product code fill in.">
+          <select value={v.category_id} onChange={pickCategory}><option value="">— none —</option>{cats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select>
+        </Field> : null}
         <Field label="Name"><input required maxLength={tab === "products" ? 120 : 80} value={v.name} onChange={set("name")} /></Field>
         {tab === "products" ? <>
-          <Field label="Code (optional)"><input maxLength={30} value={v.code} onChange={set("code")} /></Field>
+          <Field label="Code (optional)" hint={category?.code_pattern ? `Suggested from the category's pattern ${category.code_pattern}.` : undefined}>
+            <input maxLength={30} value={v.code} onChange={(e) => { setCodeTouched(true); set("code")(e); }} /></Field>
           <Field label="Description (optional)"><textarea rows={2} maxLength={1000} value={v.description} onChange={set("description")} /></Field>
           <div className="row fields">
             <Field label="Unit price"><input required inputMode="decimal" maxLength={20} value={v.unit_price} onChange={set("unit_price")} placeholder="e.g. 120.00" /></Field>
             <Field label="Unit type"><select required value={v.unit_type_id} onChange={set("unit_type_id")}><option value="">— choose —</option>{units.map((u) => <option key={u.id} value={u.id}>{u.name}</option>)}</select></Field>
-            <Field label="Category (optional)"><select value={v.category_id} onChange={set("category_id")}><option value="">— none —</option>{cats.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</select></Field>
           </div>
           <label className="check"><input type="checkbox" checked={v.taxable} onChange={set("taxable")} /> Taxable</label>
-          {budgetPicker}
+          {category?.budget ? (
+            <fieldset className="choices" aria-label="Budget">
+              <label className="check"><input type="radio" name="own" checked={!v.own} onChange={() => setV({ ...v, own: false })} /> Use the category's budget: <b>{category.budget.label}</b></label>
+              <label className="check"><input type="radio" name="own" checked={v.own} onChange={() => setV({ ...v, own: true })} /> Its own budget</label>
+            </fieldset>
+          ) : null}
+          {v.own || !category?.budget ? budgetPicker() : null}
         </> : null}
         {tab === "tax-rates" ? <>
           <Field label="Rate (%)" hint="For example 7 or 7.25."><input required inputMode="decimal" maxLength={12} value={v.rate} onChange={set("rate")} /></Field>
-          {budgetPicker}
+          {budgetPicker()}
+        </> : null}
+        {/* 2.4.0 polish (#483, #486): a category's optional budget and product code pattern */}
+        {tab === "categories" ? <>
+          {budgetPicker(true, "Invoiced Income budget (optional)", "Products in this category use it unless they have their own budget. Changing it moves those products too.")}
+          <Field label="Product code pattern (optional)" hint="The code new products in this category start with. {YY} or {YYYY} = the year, {SEQ} = the number ({SEQ:4} pads to 4 digits; it restarts each year when the year is in the pattern).">
+            <input maxLength={40} value={v.code_pattern} onChange={set("code_pattern")} placeholder="e.g. MBRSHP-{YY}-{SEQ:4}" />
+          </Field>
+          {example.error ? <p className="warn-text" role="status" data-testid="cat-next-code-error">{example.error}</p>
+            : example.text ? <p className="hint">Next code: <b data-testid="cat-next-code">{example.text}</b></p> : null}
         </> : null}
         <div className="actions"><button type="button" onClick={onClose}>Cancel</button><button className="primary" type="submit">Save</button></div>
       </GuardedForm>

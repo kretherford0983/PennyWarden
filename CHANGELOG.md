@@ -86,6 +86,11 @@ PennyWarden 2.4.0 (in progress).
   invoice below the first fold; the preview draws the windows), as on the cover letter. The line-table columns line
   up in a grid and can be **dragged** into order (↑/↓ stay for the keyboard).
 - **Next invoice follows the pattern as you type (#481)**, or says what is wrong with it, before you save.
+- **Category defaults (#483, #486).** A product category can have an **Invoiced Income budget** — its products use it
+  unless they have their own, and changing it moves them too — and a **product code pattern** such as
+  `MBRSHP-{YY}-{SEQ:4}`. On the product form **Category comes first**: picking it fills in the next code (editable)
+  and offers the category's budget. Each category counts its own numbers, starting again each year when the pattern
+  shows the year; a number is used only when a product is saved with it, and a code already in use is skipped.
 
 ### Optional modules
 - **Turning a module on or off updates the menu at once (#482)** — no page reload (for the Administrator who changes

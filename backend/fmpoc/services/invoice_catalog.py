@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import json
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -136,10 +137,19 @@ def budget_for_year(db: Session, budget_id: int | None, fy: FiscalYear | None) -
     return cur
 
 
+def product_budget_id(db: Session, p: InvoiceProduct) -> int | None:
+    """2.4.0 polish (#483): the budget a product uses - its own, else its category's current one."""
+    if p.budget_id is not None or p.category_id is None:
+        return p.budget_id
+    c = db.get(InvoiceProductCategory, p.category_id)
+    return c.budget_id if c is not None else None
+
+
 def needs_budget(db: Session, p: InvoiceProduct | InvoiceTaxRate, fy: FiscalYear | None) -> bool:
     if getattr(p, "is_system", False) or not p.active:
         return False
-    return budget_for_year(db, p.budget_id, fy) is None
+    bid = product_budget_id(db, p) if isinstance(p, InvoiceProduct) else p.budget_id
+    return budget_for_year(db, bid, fy) is None
 
 
 # ------------------------------------------------------------------ shared
@@ -182,16 +192,136 @@ def _simple(x) -> dict:
 
 
 # ------------------------------------------------------------------ unit types and categories
+def category_snapshot(c: InvoiceProductCategory) -> dict:
+    return {**_simple(c), "budget_id": c.budget_id, "code_pattern": c.code_pattern}
+
+
+def category_out(db: Session, c: InvoiceProductCategory) -> dict:
+    """A category with its budget (code and name) and the next product code its pattern gives (#483, #486)."""
+    return {**category_snapshot(c), "budget": _budget_brief(db, c.budget_id),
+            "next_code": next_code(db, c) if c.code_pattern else None,
+            "products_following": db.scalar(select(func.count(InvoiceProduct.id)).where(
+                InvoiceProduct.category_id == c.id, InvoiceProduct.budget_id.is_(None),
+                InvoiceProduct.is_system.is_(False))) or 0}
+
+
 def list_simple(db: Session, ctx, kind: str, include_inactive: bool) -> list[dict]:
     _require_view(db, ctx)
     model = KINDS[kind]
     q = select(model).where(model.workspace_id == ctx.workspace_id).order_by(func.lower(model.name))
     if not include_inactive:
         q = q.where(model.active.is_(True))
+    if kind == "categories":
+        return [category_out(db, x) for x in db.scalars(q)]
     return [_simple(x) for x in db.scalars(q)]
 
 
-def save_simple(db: Session, ctx, kind: str, oid: int | None, name: str) -> dict:
+# ------------------------------------------------------------------ 2.4.0 polish (#486): product code patterns
+def check_code_pattern(p: str | None) -> str | None:
+    """Like the invoice number pattern: exactly one {SEQ} / {SEQ:n}, optional {YY} / {YYYY}, and a code that fits."""
+    from .invoice_docs import check_pattern, format_number
+    p = (p or "").strip()
+    if not p:
+        return None
+    try:
+        p = check_pattern(p)
+    except AppError as e:
+        raise validation(str(e.message).replace("pattern needs", "code pattern needs"), "code_pattern") from None
+    if len(format_number(p, dt.date(2099, 1, 1), 99999)) > 30:
+        raise validation("The codes this pattern makes would be longer than 30 characters.", "code_pattern")
+    return p
+
+
+def _period(pattern: str, d: dt.date) -> str:
+    """The counter a pattern uses: one per year when the pattern shows the year, else one that never restarts."""
+    return str(d.year) if ("{YY}" in pattern or "{YYYY}" in pattern) else "0"
+
+
+def _counters(c: InvoiceProductCategory) -> dict:
+    try:
+        return json.loads(c.code_counters) if c.code_counters else {}
+    except ValueError:
+        return {}
+
+
+def _code_taken(db: Session, ws_id: int, code: str, exclude_id: int | None = None) -> bool:
+    q = select(InvoiceProduct.id).where(InvoiceProduct.workspace_id == ws_id, func.lower(InvoiceProduct.code) == code.lower())
+    if exclude_id is not None:
+        q = q.where(InvoiceProduct.id != exclude_id)
+    return db.scalar(q) is not None
+
+
+def _next(db: Session, c: InvoiceProductCategory, pattern: str, today: dt.date | None = None) -> tuple[str, int]:
+    from .invoice_docs import format_number
+    today = today or dt.date.today()
+    n = int(_counters(c).get(_period(pattern, today), 1)) if c.id is not None and pattern == c.code_pattern else 1
+    while True:                                          # skip a number whose code another product already has
+        code = format_number(pattern, today, n)
+        if not _code_taken(db, c.workspace_id, code):
+            return code, n
+        n += 1
+
+
+def next_code(db: Session, c: InvoiceProductCategory, pattern: str | None = None) -> str | None:
+    p = pattern if pattern is not None else c.code_pattern
+    return _next(db, c, p)[0] if p else None
+
+
+def code_example(db: Session, ctx, category_id: int | None, pattern: str | None) -> dict:
+    """The next product code for a category (its saved pattern) or for a pattern being typed."""
+    _require_view(db, ctx)
+    c = _get(db, ctx, InvoiceProductCategory, category_id, "Category") if category_id else \
+        InvoiceProductCategory(workspace_id=ctx.workspace_id)
+    p = check_code_pattern(pattern) if pattern is not None else c.code_pattern
+    return {"pattern": p, "next_code": next_code(db, c, p) if p else None,
+            "budget": _budget_brief(db, c.budget_id) if category_id else None}
+
+
+def _use_code(db: Session, c: InvoiceProductCategory | None, code: str | None) -> None:
+    """A product was saved with the code the category suggested: that number is used, the next one is offered next."""
+    if c is None or not c.code_pattern or not code:
+        return
+    sug, n = _next(db, c, c.code_pattern)
+    if code.lower() != sug.lower():
+        return
+    k = _counters(c)
+    k[_period(c.code_pattern, dt.date.today())] = n + 1
+    c.code_counters = json.dumps(k, sort_keys=True)
+
+
+def save_category(db: Session, ctx, oid: int | None, body) -> dict:
+    """#483 / #486: a category's name, optional budget and optional code pattern (audited)."""
+    _require_manage(db, ctx)
+    name = _name(body.name, "name", 80)
+    _unique(db, InvoiceProductCategory, ctx.workspace_id, name, oid, "category")
+    pattern = check_code_pattern(getattr(body, "code_pattern", None))
+    budget_id = getattr(body, "budget_id", None)
+    c = None if oid is None else _get(db, ctx, InvoiceProductCategory, oid, "Category")
+    if budget_id is not None and (c is None or budget_id != c.budget_id):
+        _leaf_ok(db, db.get(Budget, budget_id), ctx.workspace_id)
+    if c is not None and c.budget_id is not None and budget_id is None:
+        following = db.scalar(select(func.count(InvoiceProduct.id)).where(
+            InvoiceProduct.category_id == c.id, InvoiceProduct.budget_id.is_(None), InvoiceProduct.is_system.is_(False)))
+        if following:
+            raise conflict("CATEGORY_BUDGET_IN_USE", f"{following} product{'s' if following != 1 else ''} use this "
+                           "category's budget. Give them their own budget, or choose another budget for the category.")
+    before = None if c is None else category_snapshot(c)
+    if c is None:
+        c = InvoiceProductCategory(workspace_id=ctx.workspace_id, created_by_user_id=ctx.user.id)
+        db.add(c)
+    c.name, c.budget_id, c.code_pattern, c.updated_by_user_id = name, budget_id, pattern, ctx.user.id
+    db.flush()
+    after = category_snapshot(c)
+    if before is None:
+        audit.record(db, ctx, "INVOICE_CATEGORY_CREATED", "invoice_product_category", c.id, None, after)
+    elif after != before:
+        audit.record(db, ctx, "INVOICE_CATEGORY_UPDATED", "invoice_product_category", c.id, before, after)
+    return category_out(db, c)
+
+
+def save_simple(db: Session, ctx, kind: str, oid: int | None, name: str, body=None) -> dict:
+    if kind == "categories":
+        return save_category(db, ctx, oid, body)
     _require_manage(db, ctx)
     model = KINDS[kind]
     what = "unit type" if kind == "unit-types" else "category"
@@ -227,7 +357,7 @@ def set_simple_active(db: Session, ctx, kind: str, oid: int, active: bool) -> di
     tag = "INVOICE_UNIT_TYPE" if kind == "unit-types" else "INVOICE_CATEGORY"
     audit.record(db, ctx, f"{tag}_{'RESTORED' if active else 'INACTIVATED'}", model.__tablename__, x.id, before,
                  _simple(x))
-    return _simple(x)
+    return category_out(db, x) if kind == "categories" else _simple(x)
 
 
 # ------------------------------------------------------------------ products
@@ -241,9 +371,12 @@ def product_snapshot(p: InvoiceProduct) -> dict:
 def product_out(db: Session, p: InvoiceProduct, fy: FiscalYear | None) -> dict:
     u = db.get(InvoiceUnitType, p.unit_type_id) if p.unit_type_id else None
     c = db.get(InvoiceProductCategory, p.category_id) if p.category_id else None
-    now = budget_for_year(db, p.budget_id, fy)
+    eff = product_budget_id(db, p)
+    now = budget_for_year(db, eff, fy)
     return {**product_snapshot(p), "unit_type": u.name if u else None, "category": c.name if c else None,
-            "budget": _budget_brief(db, p.budget_id),
+            "budget": _budget_brief(db, eff),
+            "own_budget": p.budget_id is not None,                       # 2.4.0 polish (#483): else the category's
+            "category_budget": _budget_brief(db, c.budget_id) if c is not None else None,
             "current_budget": _budget_brief(db, now.id) if now is not None else None,
             "needs_budget": needs_budget(db, p, fy)}
 
@@ -283,15 +416,16 @@ def save_product(db: Session, ctx, pid: int | None, body) -> dict:
         raise conflict("SYSTEM_ITEM", "The built-in Discount item can't be changed.")
     unit = _ref(db, ctx, InvoiceUnitType, body.unit_type_id, "unit_type_id", "unit type")
     cat = _ref(db, ctx, InvoiceProductCategory, body.category_id, "category_id", "category")
-    if body.budget_id is None:
-        raise validation("Choose the Invoiced Income budget the money goes to.", "budget_id")
-    if p is None or body.budget_id != p.budget_id:
+    # 2.4.0 polish (#483): no budget of its own = the category's (which then must have one)
+    if body.budget_id is None and (cat is None or cat.budget_id is None):
+        raise validation("Choose the Invoiced Income budget the money goes to, or a category that has one.", "budget_id")
+    if body.budget_id is not None and (p is None or body.budget_id != p.budget_id):
         _leaf_ok(db, db.get(Budget, body.budget_id), ctx.workspace_id)
     code = (body.code or "").strip() or None
-    if code and db.scalar(select(InvoiceProduct.id).where(
-            InvoiceProduct.workspace_id == ctx.workspace_id, func.lower(InvoiceProduct.code) == code.lower(),
-            InvoiceProduct.id != (p.id if p else -1))) is not None:
+    if code and _code_taken(db, ctx.workspace_id, code, p.id if p else None):
         raise conflict("DUPLICATE_CODE", f"Another product already uses the code {code}.")
+    if p is None or (code or "") != (p.code or ""):
+        _use_code(db, cat, code)                         # #486: the category's suggested number is used up
     before = None if p is None else product_snapshot(p)
     if p is None:
         p = InvoiceProduct(workspace_id=ctx.workspace_id, created_by_user_id=ctx.user.id)

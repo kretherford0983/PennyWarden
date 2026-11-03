@@ -100,6 +100,13 @@ def tax_active(tid: int, action: Literal["inactivate", "restore"], db: Session =
     return out
 
 
+@router.get("/catalog/code-example")
+def catalog_code_example(category_id: int | None = None, pattern: str | None = None, db: Session = Depends(get_db),
+                         ctx: Ctx = Depends(require("invoice.catalog_view"))):
+    """2.4.0 polish (#486): the next product code of a category, or of a pattern being typed (nothing is used up)."""
+    return cat.code_example(db, ctx, category_id, pattern)
+
+
 @router.get("/catalog/{kind}")
 def simple_list(kind: Simple, include_inactive: bool = False, db: Session = Depends(get_db),
                 ctx: Ctx = Depends(require("invoice.catalog_view"))):
@@ -109,7 +116,7 @@ def simple_list(kind: Simple, include_inactive: bool = False, db: Session = Depe
 @router.post("/catalog/{kind}", status_code=201)
 def simple_create(kind: Simple, body: CatalogNameIn, db: Session = Depends(get_db),
                   ctx: Ctx = Depends(require("invoice.catalog_manage"))):
-    out = cat.save_simple(db, ctx, kind, None, body.name)
+    out = cat.save_simple(db, ctx, kind, None, body.name, body)
     db.commit()
     return out
 
@@ -117,7 +124,7 @@ def simple_create(kind: Simple, body: CatalogNameIn, db: Session = Depends(get_d
 @router.put("/catalog/{kind}/{oid}")
 def simple_update(kind: Simple, oid: int, body: CatalogNameIn, db: Session = Depends(get_db),
                   ctx: Ctx = Depends(require("invoice.catalog_manage"))):
-    out = cat.save_simple(db, ctx, kind, oid, body.name)
+    out = cat.save_simple(db, ctx, kind, oid, body.name, body)
     db.commit()
     return out
 
