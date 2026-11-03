@@ -122,7 +122,7 @@ test("AC-INIT-001..007: fresh install wizard bootstraps a working Administrator"
   // 1.9.0 (#54): on a local install the first user holds every role - one account runs the organization's books
   const nav = page.getByRole("navigation", { name: "Main navigation" });
   await expect(nav.getByRole("link")).toHaveText(["Dashboard", "Fiscal Years", "Budgets", "Bank Accounts", "Register",
-    "Entities", "Reports", "Users", "Audit Log", "System/About"]);
+    "Entities", "Reports", "Users", "Audit Log", "System/About", "Help"]);   // 2.4.0 (#473): Help is last for every role
   await nav.getByRole("link", { name: "Users" }).click();
   const row = page.getByRole("row", { name: /admin/ });
   await expect(row).toContainText("COMBINED");
@@ -144,7 +144,7 @@ test("AC-INIT-001..007: fresh install wizard bootstraps a working Administrator"
   await expect(ed).toHaveCount(0);
   await page.reload();
   await expect(page.getByRole("heading", { name: "Users" })).toBeVisible();
-  await expect(nav.getByRole("link")).toHaveText(["Dashboard", "Users", "Audit Log", "System/About"]);
+  await expect(nav.getByRole("link")).toHaveText(["Dashboard", "Users", "Audit Log", "System/About", "Help"]);
   await expect(page.getByRole("row", { name: /admin/ })).toContainText("ADMINISTRATOR");
   await nav.getByRole("link", { name: "Audit Log" }).click();
   await expect(page.locator(".audit-action", { hasText: "Application initialized" })).toBeVisible();   // 2.0.0 (#133)
@@ -344,6 +344,38 @@ test("AC-FY-VIS-006 / AC-REG-001 / AC-SEC-011: Register User allocates to Draft 
   await row.getByRole("button", { name: /Details/ }).click();
   await expect(page.getByRole("cell", { name: "FY2027", exact: true })).toBeVisible();
   expect(await page.evaluate(() => (window as any).__xss)).toBeUndefined();
+});
+
+test("#473 AC-DOC-001..004: Help opens the bundled guide at the page's section, for every role, with no outside requests", async ({ page }) => {
+  const outside: string[] = [];
+  page.on("request", (r) => { const h = new URL(r.url()).hostname; if (!["127.0.0.1", "localhost"].includes(h)) outside.push(r.url()); });
+  await login(page, "ru1");
+  const nav = page.getByRole("navigation", { name: "Main navigation" });
+  await nav.getByRole("link", { name: "Register" }).click();
+  // AC-DOC-001: the top bar's help opens the guide at this page's section
+  await page.getByRole("link", { name: "Help for this page" }).click();
+  await expect(page).toHaveURL(/\/help#register$/);
+  await expect(page.getByRole("heading", { level: 2, name: "Register" })).toBeInViewport();
+  // a link to another bundled guide stays in the app
+  await page.getByTestId("help-doc").getByRole("link", { name: "Check printing", exact: true }).first().click();
+  await expect(page).toHaveURL(/\/help\/check-printing$/);
+  await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
+  // AC-DOC-002: Help in the menu opens the start of the guide
+  await nav.getByRole("link", { name: "Help", exact: true }).click();
+  await expect(page.getByRole("heading", { level: 1, name: "PennyWarden user guide" })).toBeVisible();
+  // AC-DOC-003: the guide came from the app itself
+  expect(outside).toEqual([]);
+  await logout(page);
+
+  await login(page, "admin");
+  await expect(nav.getByRole("link", { name: "Help", exact: true })).toBeVisible();
+  await nav.getByRole("link", { name: "Users" }).click();
+  await page.getByRole("link", { name: "Help for this page" }).click();
+  await expect(page).toHaveURL(/\/help#users$/);
+  // AC-DOC-004: on a module the Administrator can't open, help points at the start of the guide, not the module
+  await page.goto("/register");
+  await expect(page.getByText("You are not authorized to view this module.")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Help for this page" })).toHaveAttribute("href", "/help");
 });
 
 test("AC-AUTH-SELF-001/004: self-service password change", async ({ page }) => {
@@ -727,6 +759,8 @@ test("#373: the Quarterly / Annual financial report - period choice, commentary,
 
 // ---------------------------------------------------------------- v1.3 enhancements
 const PDF = Buffer.from("%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[]/Count 0>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n");
+// 2.4.0 (#425): a PDF with content of its own (the same file twice on one record asks first)
+const pdfOf = (tag: string) => Buffer.from(PDF.toString("latin1").replace("%PDF-1.4\n", `%PDF-1.4\n% ${tag}\n`), "latin1");
 
 async function pickTravel(dlg: any, i = 1) {
   await dlg.getByLabel(`Allocation ${i} Fiscal Year`).selectOption({ label: "FY2027 — Draft" });
@@ -817,7 +851,7 @@ test("CR-007 / CR-008: Fiscal Year document types, approval rules and the Close 
   await dlg.getByRole("button", { name: "Approve" }).click();
   await expect(page.getByRole("heading", { name: /FY2031/, level: 1 })).toContainText("Approved");
   // an "other" document can be re-labelled as the Audit Signoff
-  await page.getByLabel(/Add other document/).setInputFiles({ name: "auditor-letter.pdf", mimeType: "application/pdf", buffer: PDF });
+  await page.getByLabel(/Add other document/).setInputFiles({ name: "auditor-letter.pdf", mimeType: "application/pdf", buffer: pdfOf("auditor-letter") });
   await page.getByLabel("Document type of auditor-letter.pdf").selectOption("AUDIT_SIGNOFF");
   const signoff = page.locator(".fy-docs section.attachments", { has: page.getByRole("heading", { name: /Audit Signoff/ }) });
   await expect(signoff).toContainText("auditor-letter.pdf");
@@ -983,10 +1017,20 @@ test("2.1.0 (#262, #260, #259): register sort, electronic payment, reorder attac
   // #259: two attachments, reordered
   await row.getByRole("button", { name: /Details for transaction/ }).click();
   const files = page.locator("section.attachments").filter({ hasText: "Transaction attachments" }).first();
-  for (const n of ["first-invoice.pdf", "second-receipt.pdf"]) {
-    await files.locator("input[type=file]").setInputFiles({ name: n, mimeType: "application/pdf", buffer: PDF });
-    await expect(files).toContainText(n);
-  }
+  await files.locator("input[type=file]").setInputFiles({ name: "first-invoice.pdf", mimeType: "application/pdf", buffer: PDF });
+  await expect(files).toContainText("first-invoice.pdf");
+  // 2.4.0 (#425): the identical file again on the same transaction asks first - Cancel adds nothing
+  await files.locator("input[type=file]").setInputFiles({ name: "second-receipt.pdf", mimeType: "application/pdf", buffer: PDF });
+  let same = page.getByRole("dialog", { name: "Same file already attached" });
+  await expect(same).toContainText("first-invoice.pdf");
+  await same.getByRole("button", { name: "Cancel" }).click();
+  await expect(same).toHaveCount(0);
+  await expect(files).not.toContainText("second-receipt.pdf");
+  // ... Attach anyway adds it
+  await files.locator("input[type=file]").setInputFiles({ name: "second-receipt.pdf", mimeType: "application/pdf", buffer: PDF });
+  same = page.getByRole("dialog", { name: "Same file already attached" });
+  await same.getByRole("button", { name: "Attach anyway" }).click();
+  await expect(files).toContainText("second-receipt.pdf");
   await files.getByRole("button", { name: "Reorder…" }).click();
   const order = page.locator("section.attachments").filter({ hasText: "set the order" });
   await order.getByRole("button", { name: "Move second-receipt.pdf up" }).click();
@@ -1695,6 +1739,30 @@ test("#56 / #57: the Register shows Opening, Current (bank) and Available; the b
     allocations: [{ budget_id: opts[0].id, amount: "1.00" }] } });
   expect(bad.status()).toBe(422);
   await page.screenshot({ path: "e2e-screenshots/light-register-balances.png" });
+  // 2.4.0 polish (#468): the system Print - a short header (title, applied filters, balances) instead of the screen's
+  // header, filters and tiles
+  await page.emulateMedia({ media: "print" });
+  const head = page.getByTestId("register-print-head");
+  await expect(head).toBeVisible();
+  await expect(head).toContainText("Register — ");
+  await expect(head).toContainText("Fiscal Year: ");
+  await expect(head).toContainText("Available (incl. uncleared)");
+  await expect(page.locator(".register-sticky")).toBeHidden();
+  expect((await head.boundingBox())!.height).toBeLessThanOrEqual(1.5 * 96);
+  // two lines per transaction (Kyle, 2026-11-02): Date … Balance, then Entity, Description, Status; no 📎
+  await expect(page.locator(".register-page .table-wrap")).toBeHidden();
+  const pt = page.getByTestId("register-print-table");
+  await expect(pt).toBeVisible();
+  for (const h of ["Date", "Cleared", "Check #", "Invoice #", "Deposit", "Withdrawal", "Entity", "Description", "Status"])
+    await expect(pt.locator("thead th", { hasText: h }).first()).toBeVisible();
+  await expect(pt.locator("thead th", { hasText: "📎" })).toHaveCount(0);
+  expect(await pt.locator("tbody tr").count()).toBe(2 * await page.locator("table.register tbody tr[id^='txn-']").count());
+  // long entity names and descriptions are shortened with an ellipsis (whole text in the title)
+  for (const cell of await pt.locator("td.rp-entity, td.rp-desc").all())
+    expect(((await cell.textContent()) || "").length).toBeLessThanOrEqual(45);
+  await page.pdf({ path: "e2e-screenshots/register-print.pdf" });
+  await page.emulateMedia({ media: "screen" });
+  await expect(head).toBeHidden();
 });
 
 // ---------------------------------------------------------------- 1.7.3 #104/#105: Budget filter and Budgets links
@@ -2107,16 +2175,19 @@ test("CR-033: Administrator turns on fundraisers; Budget Manager creates, filter
   await login(page, "admin");
   await page.getByRole("link", { name: "System/About" }).click();
   await aboutTab(page, "General");
-  await page.getByLabel("Fundraiser module").check();
+  await page.getByLabel("Events & Fundraisers module").check();
   await expect(page.getByRole("status").filter({ hasText: "Saved." })).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Fundraisers" })).toHaveCount(0);
+  await expect(page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Events", exact: true })).toHaveCount(0);
   await logout(page);
 
   await login(page, "bm1");
-  await page.getByRole("link", { name: "Fundraisers" }).click();
-  await page.getByRole("button", { name: "New fundraiser" }).click();
-  let dlg = page.getByRole("dialog", { name: "New fundraiser" });
+  await page.getByRole("link", { name: "Events", exact: true }).click();
+  await page.getByRole("button", { name: "New event or fundraiser" }).click();
+  let dlg = page.getByRole("dialog", { name: "New event or fundraiser" });
   await dlg.getByLabel("Name").fill("Harvest Dinner");
+  // 2.4.0 (#429): a dinner that isn't a fundraiser - an Event needs only an Expense budget
+  await dlg.getByRole("combobox", { name: /^Type/ }).selectOption("EVENT");
+  await expect(dlg.getByLabel("Goal (optional)")).toHaveCount(0);
   await dlg.getByLabel("Event start date").fill("2026-10-15");
   const exp = dlg.getByLabel("Expense budget (FY2027)");
   await exp.selectOption({ label: "1000 Operations" });
@@ -2125,33 +2196,39 @@ test("CR-033: Administrator turns on fundraisers; Budget Manager creates, filter
   await exp.selectOption(travel!);
   await expect(dlg.getByRole("note").filter({ hasText: "includes all of its sub-budgets" })).toHaveCount(0);
   await expect(dlg.getByTestId("fr-preview")).toContainText("will be included");
-  await dlg.getByRole("button", { name: "Create fundraiser" }).click();
+  await dlg.getByRole("button", { name: "Create event" }).click();
   await expect(page.getByRole("heading", { name: /Harvest Dinner/ })).toBeVisible();
+  await expect(page.getByTestId("fr-type")).toHaveText("Event");
   await expect(page.getByTestId("fr-event")).toHaveText("2026-10-15");
   await expect(page.getByRole("row", { name: /FY2027 Expense 1000-01 Travel/ })).toBeVisible();
   // a filter that matches nothing: warning + no lines
   await page.getByRole("button", { name: "Edit" }).click();
-  dlg = page.getByRole("dialog", { name: "Edit fundraiser" });
+  dlg = page.getByRole("dialog", { name: "Edit event" });
   await dlg.getByLabel("Description filter (optional)").fill("zzz-no-match");
-  await dlg.getByLabel("Goal (optional)").fill("500");   // 2.3.0 (#372)
   await expect(dlg.getByText("Filter in use:")).toBeVisible();
   await expect(dlg.getByTestId("fr-preview")).toContainText("0 of");
   await dlg.getByRole("button", { name: "Save" }).click();
   await expect(page.locator("[data-code=FILTER]")).toBeVisible();
   await expect(page.getByTestId("fr-totals")).toContainText("$0.00");
-  await expect(page.getByTestId("fr-goal")).toContainText("$500.00");
-  await expect(page.getByTestId("fr-goal")).toContainText("$500.00 to go");
+  await expect(page.getByTestId("fr-goal")).toHaveCount(0);
   await page.screenshot({ path: "e2e-screenshots/light-fundraiser-detail.png", fullPage: true });
   // a shell for an event beyond every Fiscal Year: no budgets yet, listed as upcoming
-  await page.getByRole("link", { name: "← Fundraisers" }).click();
-  await page.getByRole("button", { name: "New fundraiser" }).click();
-  dlg = page.getByRole("dialog", { name: "New fundraiser" });
+  await page.getByRole("link", { name: "← Events & Fundraisers" }).click();
+  await page.getByRole("button", { name: "New event or fundraiser" }).click();
+  dlg = page.getByRole("dialog", { name: "New event or fundraiser" });
   await dlg.getByLabel("Name").fill("Spring Fair 2028");
   await dlg.getByLabel("Event start date").fill("2028-03-04");
   await expect(dlg.getByText("No open Fiscal Year is within 3 months of the event yet")).toBeVisible();
   await dlg.getByRole("button", { name: "Create fundraiser" }).click();
   await expect(page.locator("[data-code=NO_BUDGETS]")).toBeVisible();
-  await page.getByRole("link", { name: "← Fundraisers" }).click();
+  // 2.3.0 (#372): a Fundraiser's goal (a shell is allowed with no budgets, #429)
+  await page.getByRole("button", { name: "Edit" }).click();
+  dlg = page.getByRole("dialog", { name: "Edit fundraiser" });
+  await dlg.getByLabel("Goal (optional)").fill("500");
+  await dlg.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByTestId("fr-goal")).toContainText("$500.00");
+  await expect(page.getByTestId("fr-goal")).toContainText("$500.00 to go");
+  await page.getByRole("link", { name: "← Events & Fundraisers" }).click();
   await expect(page.getByTestId("fundraiser-list")).toContainText("Harvest Dinner");
   await page.getByLabel("Fundraisers Fiscal Year").selectOption({ label: "Upcoming — no Fiscal Year yet" });
   await expect(page.getByTestId("fundraiser-list")).toContainText("Spring Fair 2028");
@@ -2160,8 +2237,8 @@ test("CR-033: Administrator turns on fundraisers; Budget Manager creates, filter
 
   // viewers see it, without management buttons
   await login(page, "ru1", "Brand-New-Pass-99");
-  await page.getByRole("link", { name: "Fundraisers" }).click();
-  await expect(page.getByRole("button", { name: "New fundraiser" })).toHaveCount(0);
+  await page.getByRole("link", { name: "Events", exact: true }).click();
+  await expect(page.getByRole("button", { name: "New event or fundraiser" })).toHaveCount(0);
   await page.getByRole("link", { name: "Harvest Dinner" }).click();
   await expect(page.getByRole("heading", { name: /Harvest Dinner/ })).toBeVisible();
   await expect(page.getByRole("button", { name: "Edit" })).toHaveCount(0);
@@ -2172,10 +2249,10 @@ test("CR-033: Administrator turns on fundraisers; Budget Manager creates, filter
 test("CR-034: buckets, cash float, exclusion and fundraiser documents", async ({ page }) => {
   // Budget Manager: no filter, the whole Operations budget (so the fundraiser has expense lines)
   await login(page, "bm1");
-  await page.getByRole("link", { name: "Fundraisers" }).click();
+  await page.getByRole("link", { name: "Events", exact: true }).click();
   await page.getByRole("link", { name: "Harvest Dinner" }).click();
   await page.getByRole("button", { name: "Edit" }).click();
-  let dlg = page.getByRole("dialog", { name: "Edit fundraiser" });
+  let dlg = page.getByRole("dialog", { name: "Edit event" });
   await dlg.getByLabel("Description filter (optional)").fill("");
   await dlg.getByLabel("Expense budget (FY2027)").selectOption({ label: "1000 Operations" });
   await dlg.getByRole("button", { name: "Save" }).click();
@@ -2184,7 +2261,7 @@ test("CR-034: buckets, cash float, exclusion and fundraiser documents", async ({
 
   // Register User manages the lines
   await login(page, "ru1", "Brand-New-Pass-99");
-  await page.getByRole("link", { name: "Fundraisers" }).click();
+  await page.getByRole("link", { name: "Events", exact: true }).click();
   await page.getByRole("link", { name: "Harvest Dinner" }).click();
   await page.getByRole("button", { name: "New bucket" }).click();
   dlg = page.getByRole("dialog", { name: "New bucket" });
@@ -2217,15 +2294,15 @@ test("CR-034: buckets, cash float, exclusion and fundraiser documents", async ({
   await expect(page.getByTestId("fr-lines").locator("tr.fr-excluded")).toContainText("Excluded: Not for the dinner");
   await expect(page.getByTestId("fr-adjustments")).toContainText("1 excluded line");
   // fundraiser document
-  await page.locator("section.attachments").filter({ hasText: "Fundraiser documents" }).locator("input[type=file]")
+  await page.locator("section.attachments").filter({ hasText: "Event documents" }).locator("input[type=file]")
     .setInputFiles({ name: "flyer.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[]/Count 0>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n") });
-  await expect(page.getByRole("heading", { name: "Fundraiser documents (1)" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Event documents (1)" })).toBeVisible();
   await page.screenshot({ path: "e2e-screenshots/light-fundraiser-manage.png", fullPage: true });
   await logout(page);
 
   // a fundraiser in use cannot be deleted
   await login(page, "bm1");
-  await page.getByRole("link", { name: "Fundraisers" }).click();
+  await page.getByRole("link", { name: "Events", exact: true }).click();
   await page.getByRole("link", { name: "Harvest Dinner" }).click();
   await page.getByRole("button", { name: "Delete…" }).click();
   await page.getByRole("dialog", { name: "Delete fundraiser" }).getByRole("button", { name: "Delete" }).click();
@@ -2235,7 +2312,7 @@ test("CR-034: buckets, cash float, exclusion and fundraiser documents", async ({
 
 test("2.1.0 (#278): bucket categories with subtotals, reorder, and Charge / Less on a line", async ({ page }) => {
   await login(page, "ru1", "Brand-New-Pass-99");
-  await page.getByRole("link", { name: "Fundraisers" }).click();
+  await page.getByRole("link", { name: "Events", exact: true }).click();
   await page.getByRole("link", { name: "Harvest Dinner" }).click();
   await page.getByRole("button", { name: "New category" }).click();
   let dlg = page.getByRole("dialog", { name: "New category" });
@@ -2288,18 +2365,18 @@ test("2.1.0 (#278): bucket categories with subtotals, reorder, and Charge / Less
 
 test("2.1.0 (#277): next year's fundraiser continues the series, prior years entered, Fiscal Year report and deck", async ({ page }) => {
   await login(page, "bm1");
-  await page.getByRole("link", { name: "Fundraisers" }).click();
+  await page.getByRole("link", { name: "Events", exact: true }).click();
   await page.getByRole("link", { name: "Harvest Dinner" }).click();
   await page.getByRole("button", { name: "Create next year's…" }).click();
-  let dlg = page.getByRole("dialog", { name: "New fundraiser (next year)" });
+  let dlg = page.getByRole("dialog", { name: "New event or fundraiser (next year)" });
   await expect(dlg.getByLabel("Name")).not.toHaveValue("");
-  await expect(dlg.getByLabel("Continues from (previous fundraiser)")).not.toHaveValue("");
+  await expect(dlg.getByLabel("Continues from (previous year)")).not.toHaveValue("");
   await dlg.getByLabel("Name").fill("Harvest Dinner next year");
-  await dlg.getByRole("button", { name: "Create fundraiser" }).click();
+  await dlg.getByRole("button", { name: "Create event" }).click();
   await expect(page.getByTestId("fr-series")).toContainText("continues Harvest Dinner");
   // the series list: enter a year before PennyWarden
-  await page.getByRole("link", { name: "Fundraisers" }).first().click();
-  await page.getByRole("link", { name: "Fundraiser series" }).click();
+  await page.getByRole("link", { name: "Events", exact: true }).first().click();
+  await page.getByRole("link", { name: "Series", exact: true }).click();
   await page.getByRole("button", { name: "Enter a prior year…" }).first().click();
   dlg = page.getByRole("dialog", { name: /Enter a prior year/ });
   await dlg.getByLabel("Fiscal Year (include the year)").fill("FY2019");
@@ -2308,7 +2385,7 @@ test("2.1.0 (#277): next year's fundraiser continues the series, prior years ent
   await expect(page.locator("section.card").first()).toContainText("FY2019");
   await page.screenshot({ path: "e2e-screenshots/light-fundraiser-series.png", fullPage: true });
   // the Fiscal Year report for the ticked fundraisers
-  await page.getByRole("link", { name: "← Fundraisers" }).click();
+  await page.getByRole("link", { name: "← Events & Fundraisers" }).click();
   await expect(page.getByTestId("fundraiser-list")).toBeVisible();
   await page.getByRole("button", { name: "Fiscal Year report…" }).click();
   // 2.3.0 (#375): a shortcut to the report's page in Reports, with this year and the ticked fundraisers
@@ -2331,7 +2408,7 @@ test("2.1.0 (#277): next year's fundraiser continues the series, prior years ent
 test("2.1.0 (#292): prior years for an event with nothing earlier in PennyWarden - Start a series, Enter prior years", async ({ page }) => {
   await login(page, "bm1");
   // on a fundraiser already in a series, Enter prior years… opens that series' entry
-  await page.getByRole("link", { name: "Fundraisers" }).click();
+  await page.getByRole("link", { name: "Events", exact: true }).click();
   await page.getByRole("link", { name: "Harvest Dinner", exact: true }).click();
   await page.getByRole("button", { name: "Enter prior years…" }).click();
   let dlg = page.getByRole("dialog", { name: "Enter a prior year — Harvest Dinner" });
@@ -2369,9 +2446,9 @@ test("2.1.0 (#292): prior years for an event with nothing earlier in PennyWarden
 test("2.2.0 (#302, #351): add a second same-year fundraiser to a series; years newest first, flipped and remembered", async ({ page }) => {
   await login(page, "bm1");
   // a second Spring Fair in the same year: nothing earlier to continue from, so Add to a series…
-  await page.getByRole("link", { name: "Fundraisers" }).click();
-  await page.getByRole("button", { name: "New fundraiser" }).click();
-  let dlg = page.getByRole("dialog", { name: "New fundraiser" });
+  await page.getByRole("link", { name: "Events", exact: true }).click();
+  await page.getByRole("button", { name: "New event or fundraiser" }).click();
+  let dlg = page.getByRole("dialog", { name: "New event or fundraiser" });
   await dlg.getByLabel("Name").fill("Spring Fair Encore 2028");
   await dlg.getByLabel("Event start date").fill("2028-05-06");
   await dlg.getByRole("button", { name: "Create fundraiser" }).click();
@@ -2382,8 +2459,8 @@ test("2.2.0 (#302, #351): add a second same-year fundraiser to a series; years n
   await dlg.getByRole("button", { name: "Add to series" }).click();
   await expect(page.getByTestId("fr-series")).toContainText("Spring Fair");
   // the series page: one list, newest year first (same year: newest start first), with the hint
-  await page.getByRole("link", { name: "← Fundraisers" }).click();
-  await page.getByRole("link", { name: "Fundraiser series" }).click();
+  await page.getByRole("link", { name: "← Events & Fundraisers" }).click();
+  await page.getByRole("link", { name: "Series", exact: true }).click();
   await expect(page.getByTestId("series-twice-hint")).toContainText("more than once a year");
   const card = page.locator("section.card").filter({ has: page.getByRole("heading", { name: "Spring Fair", exact: true }) });
   const rows = card.locator("tbody tr");
@@ -2400,8 +2477,8 @@ test("2.2.0 (#302, #351): add a second same-year fundraiser to a series; years n
   for (const th of await page.locator("section.card thead th").filter({ hasText: "Year" }).all()) await expect(th).toHaveAttribute("aria-sort", "ascending");
   await logout(page);
   await login(page, "bm1");
-  await page.getByRole("link", { name: "Fundraisers" }).click();
-  await page.getByRole("link", { name: "Fundraiser series" }).click();
+  await page.getByRole("link", { name: "Events", exact: true }).click();
+  await page.getByRole("link", { name: "Series", exact: true }).click();
   await expect(rows.nth(0)).toContainText("FY2025");
   await page.getByRole("button", { name: "Reset to default" }).click();
   await expect(page.locator(".sort-note")).toHaveCount(0);
@@ -2412,7 +2489,7 @@ test("2.2.0 (#302, #351): add a second same-year fundraiser to a series; years n
 // ---------------------------------------------------------------- v1.6.2 CR-035: fundraiser report
 test("CR-035: fundraiser report PDF; Audit and Close reports can include fundraisers", async ({ page }) => {
   await login(page, "bm1");
-  await page.getByRole("link", { name: "Fundraisers" }).click();
+  await page.getByRole("link", { name: "Events", exact: true }).click();
   await page.getByRole("link", { name: "Harvest Dinner" }).click();
   // 2.1.0 (#275): the page's Report… is the stakeholder report (PDF or Word), with options
   await page.getByRole("button", { name: "Report…" }).first().click();
@@ -2557,7 +2634,7 @@ test("1.6.7: a recurring organization reminder creates its next occurrence when 
 // ---------------------------------------------------------------- v1.6.4 CR-037 / CR-038
 test("CR-037 / CR-038: cash count sheet PDF; mark a fundraiser as cancelled and reinstate it", async ({ page }) => {
   await login(page, "bm1");
-  await page.getByRole("link", { name: "Fundraisers" }).click();
+  await page.getByRole("link", { name: "Events", exact: true }).click();
   await page.getByRole("link", { name: "Harvest Dinner" }).click();
   await page.getByRole("button", { name: "Cash count sheet…" }).click();
   // 2.3.0 (#375): a shortcut to the count sheet's page in Reports, with this fundraiser chosen
@@ -2604,7 +2681,7 @@ test("CR-037 / CR-038: cash count sheet PDF; mark a fundraiser as cancelled and 
   await expect(page.getByTestId("fr-cancelled")).toContainText("Hall double-booked");
   await expect(page.getByRole("heading", { name: /Harvest Dinner/ })).toContainText("Cancelled");
   await expect(page.getByTestId("fr-lines")).toBeVisible(); // transactions still listed
-  await page.getByRole("link", { name: "← Fundraisers" }).click();
+  await page.getByRole("link", { name: "← Events & Fundraisers" }).click();
   await expect(page.getByRole("row", { name: /Harvest Dinner/ })).toContainText("Cancelled");
   await page.getByRole("link", { name: "Harvest Dinner" }).click();
   await page.getByRole("button", { name: "Reinstate" }).click();
@@ -4436,7 +4513,7 @@ test("#376: an Administrator groups the Reports catalog by Subject, renames and 
   await card.getByLabel("Category of Financial Flow").selectOption({ label: "This Fiscal Year" });
   // removing a category with reports asks where they go
   await card.getByRole("button", { name: "Remove…" }).last().click();       // System: no reports, removed at once
-  await expect(card.getByTestId("rs-category")).toHaveCount(5);
+  await expect(card.getByTestId("rs-category")).toHaveCount(6)   // 2.4.0 (#255): + Invoices;
   await card.getByRole("button", { name: "Remove…" }).nth(3).click();       // Entities: has a report
   await expect(card.getByRole("group", { name: "Remove Entities" })).toBeVisible();
   await card.getByRole("button", { name: "Keep it" }).click();
@@ -4460,7 +4537,7 @@ test("#376: an Administrator groups the Reports catalog by Subject, renames and 
   page.once("dialog", (d) => d.accept());
   await card.getByRole("button", { name: "Reset to defaults" }).click();
   await expect(card.getByRole("status")).toHaveText("Saved.");
-  await expect(card.getByTestId("rs-category")).toHaveCount(6);
+  await expect(card.getByTestId("rs-category")).toHaveCount(7);
   await card.getByRole("radio", { name: /Purpose/ }).check();
   await card.getByRole("button", { name: "Save and group by Purpose" }).click();
   await expect(card.getByRole("status")).toHaveText("Saved.");

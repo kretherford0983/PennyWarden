@@ -53,7 +53,7 @@ export default function Fundraisers() {
   return (
     <div>
       <div className="page-head">
-        <h1>Fundraisers</h1>
+        <h1>Events &amp; Fundraisers</h1>
         <Field label="Fiscal Year">
           <select aria-label="Fundraisers Fiscal Year" value={fy} onChange={(e) => setFy(e.target.value)}>
             {fys.map((y) => <option key={y.id} value={y.id}>{y.label}</option>)}
@@ -63,21 +63,22 @@ export default function Fundraisers() {
         <label className="check"><input type="checkbox" checked={archived} onChange={(e) => setArchived(e.target.checked)} /> Show archived</label>
         {/* 2.3.0 (#375): a shortcut to the report in Reports, with this year and the ticked fundraisers filled in */}
         {fy !== UPCOMING && rows?.length ? <button onClick={() => navigate(`${reportPath("fundraising-fy")}${qs({ fiscal_year_id: fy, ids: shown.map((r) => r.id).join(",") })}`)} disabled={!shown.length}>Fiscal Year report…</button> : null}
-        {can("fundraiser.manage") ? <Link className="button" to="/fundraiser-series">Fundraiser series</Link> : null}
-        {can("fundraiser.manage") ? <button className="primary" onClick={() => setCreating(true)}>New fundraiser</button> : null}
+        {can("fundraiser.manage") ? <Link className="button" to="/fundraiser-series">Series</Link> : null}
+        {can("fundraiser.manage") ? <button className="primary" onClick={() => setCreating(true)}>New event or fundraiser</button> : null}
       </div>
       <ErrorBox error={err} />
       {!rows ? <Loading /> : !rows.length ? (
-        <p className="muted">{fy === UPCOMING ? "No fundraisers for events beyond the Fiscal Years set up so far." : "No fundraisers in this Fiscal Year."}</p>
+        <p className="muted">{fy === UPCOMING ? "No events or fundraisers beyond the Fiscal Years set up so far." : "No events or fundraisers in this Fiscal Year."}</p>
       ) : (
         <table className="table" data-testid="fundraiser-list">
           <thead><tr>{fy !== UPCOMING ? <th><span className="sr-only">In the report</span>
-            <button className="small" onClick={() => setPicked(new Set(rows.map((r) => r.id)))}>All</button> <button className="small" onClick={() => setPicked(new Set())}>None</button></th> : null}<th>Fundraiser</th><th>Event</th><th>Status</th><th>Fiscal Years</th><th className="num">Income</th><th className="num">Expenses</th><th className="num">Net</th></tr></thead>
+            <button className="small" onClick={() => setPicked(new Set(rows.map((r) => r.id)))}>All</button> <button className="small" onClick={() => setPicked(new Set())}>None</button></th> : null}<th>Name</th><th>Type</th><th>Dates</th><th>Status</th><th>Fiscal Years</th><th className="num">Income</th><th className="num">Expenses</th><th className="num">Net</th></tr></thead>
           <tbody>
             {rows.map((f) => (
               <tr key={f.id}>
                 {fy !== UPCOMING ? <td><input type="checkbox" aria-label={`Include ${f.name} in the Fiscal Year report`} checked={picked.has(f.id)} onChange={() => toggle(f.id)} /></td> : null}
                 <td><Link to={`/fundraisers/${f.id}`}>{f.name}</Link></td>
+                <td>{typeLabel(f.event_type)}</td>
                 <td>{eventDates(f)}</td>
                 <td><FundraiserStatus status={f.status} /></td>
                 <td>{f.fiscal_years.length ? f.fiscal_years.map((y: any) => y.display_name).join(" – ") : <span className="muted">No budgets yet</span>}</td>
@@ -206,9 +207,9 @@ export function FundraiserDetail({ id }: { id: number }) {
   const attachments = f.lines.flatMap((l: any) => l.attachments.map((a: any) => ({ ...a, line: l })));
   return (
     <div className="fundraiser">
-      <p><Link to="/fundraisers">← Fundraisers</Link></p>
+      <p><Link to="/fundraisers">← Events &amp; Fundraisers</Link></p>
       <div className="page-head">
-        <h1>{f.name} <FundraiserStatus status={f.status} /></h1>
+        <h1>{f.name} <span className="badge grey" data-testid="fr-type">{typeLabel(f.event_type)}</span> <FundraiserStatus status={f.status} /></h1>
         <button onClick={() => setReporting(true)}>Report…</button>
         <button onClick={() => navigate(`${reportPath("count-sheet")}${qs({ fundraiser_id: f.id })}`)}>Cash count sheet…</button>
         {manage ? (
@@ -248,6 +249,15 @@ export function FundraiserDetail({ id }: { id: number }) {
 
       <section className="card">
         <h2>Budgets</h2>
+        {/* 2.4.0 (#429): one Income and one Expense figure for the event, however many Fiscal Years it uses */}
+        {Object.keys(f.combined_budgets || {}).length ? (
+          <dl className="dl" data-testid="fr-combined-budgets">
+            {(["income", "expense"] as const).map((k) => f.combined_budgets[k] ? (
+              <Fragment key={k}><dt>{k === "income" ? "Income budget" : "Expense budget"}</dt>
+                <dd>{money(f.combined_budgets[k].budgeted)}{f.combined_budgets[k].fiscal_years > 1 ? <span className="muted"> (combined: {f.combined_budgets[k].labels.join(" + ")})</span> : null}</dd></Fragment>
+            ) : null)}
+          </dl>
+        ) : null}
         {f.budgets.length ? (
           <table className="table compact">
             <thead><tr><th>Fiscal Year</th><th>Kind</th><th>Budget</th></tr></thead>
@@ -297,7 +307,7 @@ export function FundraiserDetail({ id }: { id: number }) {
         ) : <p className="muted">No buckets yet.</p>}
       </section>
 
-      {me.modules?.donations && can("donation.view") && f.buckets.items.some((b: any) => b.is_donation) ? <Unreceipted fid={f.id} /> : null}
+      {me.modules?.donations && can("donation.view") && !isEvent(f) && f.buckets.items.some((b: any) => b.is_donation) ? <Unreceipted fid={f.id} /> : null}
 
       {f.per_fiscal_year.length > 1 ? (
         <section className="card">
@@ -358,7 +368,7 @@ export function FundraiserDetail({ id }: { id: number }) {
       </section>
 
       <section className="card">
-        <Attachments ownerType="fundraiser" ownerId={id} canUpload={canLines} canRemove={canLines} canReorder={canLines} title="Fundraiser documents"
+        <Attachments ownerType="fundraiser" ownerId={id} canUpload={canLines} canRemove={canLines} canReorder={canLines} title={isEvent(f) ? "Event documents" : "Fundraiser documents"}
           hint={<p className="hint">Documents about the fundraiser itself — flyers, permits, tally sheets.</p>} />
       </section>
 
@@ -397,6 +407,10 @@ export function FundraiserDetail({ id }: { id: number }) {
   );
 }
 
+// 2.4.0 (#429): Fundraiser or Event
+export const typeLabel = (t?: string) => (t === "EVENT" ? "Event" : "Fundraiser");
+const isEvent = (f: any) => f?.event_type === "EVENT";
+
 // ------------------------------------------------------------------ create / edit (Budget Manager)
 function FundraiserForm({ current, prefill, onClose, onSaved }: { current?: any; prefill?: any; onClose: () => void; onSaved: (f: any) => void }) {
   const src = current || prefill;
@@ -405,6 +419,7 @@ function FundraiserForm({ current, prefill, onClose, onSaved }: { current?: any;
     start_date: src?.start_date || "", end_date: src?.end_date || "",
     filter_text: src?.filter_text || "", filter_regex: !!src?.filter_regex,
     goal_amount: current?.goal_amount || "",   // 2.3.0 (#372); not copied into next year's
+    event_type: src?.event_type || "FUNDRAISER",   // 2.4.0 (#429)
   });
   // 2.1.0 (#277): "Continues from (previous fundraiser)"
   const [cont, setCont] = useState<string>(src?.continues_from_id ? String(src.continues_from_id) : "");
@@ -423,8 +438,8 @@ function FundraiserForm({ current, prefill, onClose, onSaved }: { current?: any;
   }, [v.start_date, end]);
   useEffect(() => {
     if (!v.start_date) { setContOpts([]); return; }
-    api.get(`/api/fundraisers/continue-options?start_date=${v.start_date}${current ? `&fundraiser_id=${current.id}` : ""}`).then(setContOpts, () => setContOpts([]));
-  }, [v.start_date]); // eslint-disable-line react-hooks/exhaustive-deps
+    api.get(`/api/fundraisers/continue-options?start_date=${v.start_date}&event_type=${v.event_type}${current ? `&fundraiser_id=${current.id}` : ""}`).then(setContOpts, () => setContOpts([]));
+  }, [v.start_date, v.event_type]); // eslint-disable-line react-hooks/exhaustive-deps
   // "Create next year's from this one": the continuing budgets, once next year's options are known
   const prefilled = useRef(false);
   useEffect(() => {
@@ -467,7 +482,8 @@ function FundraiserForm({ current, prefill, onClose, onSaved }: { current?: any;
     setErr(null);
     const body: any = { name: v.name, description: v.description || null, start_date: v.start_date, end_date: v.end_date || null,
                    budget_ids: ids, filter_text: v.filter_text || null, filter_regex: v.filter_regex,
-                   continues_from_id: cont ? Number(cont) : null, goal_amount: v.goal_amount.trim() || null };
+                   continues_from_id: cont ? Number(cont) : null, event_type: v.event_type,
+                   ...(v.event_type === "EVENT" ? {} : { goal_amount: v.goal_amount.trim() || null }) };   // an Event keeps its stored goal
     if (!current && prefill?.copy_buckets_from_id) body.copy_buckets_from_id = prefill.copy_buckets_from_id;
     try {
       onSaved(current ? await api.put(`/api/fundraisers/${current.id}`, body) : await api.post("/api/fundraisers", body));
@@ -476,12 +492,22 @@ function FundraiserForm({ current, prefill, onClose, onSaved }: { current?: any;
   const optionWarnings = (opts: any[], id?: number) => (opts.find((o) => o.id === id)?.warnings || []);
 
   return (
-    <Modal title={current ? "Edit fundraiser" : prefill ? "New fundraiser (next year)" : "New fundraiser"} onClose={onClose} wide>
+    <Modal title={current ? `Edit ${typeLabel(v.event_type).toLowerCase()}` : prefill ? "New event or fundraiser (next year)" : "New event or fundraiser"} onClose={onClose} wide>
       <GuardedForm onSubmit={submit}>
         <ErrorBox error={err} />
         <Field label="Name"><input required maxLength={120} value={v.name} onChange={set("name")} /></Field>
+        {/* 2.4.0 (#429) */}
+        <Field label="Type" hint={v.event_type === "EVENT"
+          ? "An event that is not a fundraiser (e.g. a Summer Cookout): income, expenses and net, without a goal or donation receipts. Once budgets are chosen, it needs an Expense budget in each Fiscal Year it uses; Income is optional."
+          : "Raises money: goal and donation receipts available. Once budgets are chosen, it needs an Income and an Expense budget in each Fiscal Year it uses."}>
+          <select value={v.event_type} onChange={set("event_type")}>
+            <option value="FUNDRAISER">Fundraiser</option>
+            <option value="EVENT">Event</option>
+          </select>
+        </Field>
+        {current && current.event_type !== v.event_type && current.series_link?.series ? <div className="alert warn" role="note">A series holds only one type. If other events are in this one's series, take it out of the series (Continues from: none) before changing its type.</div> : null}
         <Field label="Description"><textarea rows={2} maxLength={2000} value={v.description} onChange={set("description")} /></Field>
-        <Field label="Goal (optional)" hint="What the fundraiser aims to raise, compared with its net (income minus expenses). Informational only."><input inputMode="decimal" pattern="\d+(\.\d{1,2})?" maxLength={20} value={v.goal_amount} onChange={set("goal_amount")} placeholder="e.g. 5000" /></Field>
+        {v.event_type === "EVENT" ? null : <Field label="Goal (optional)" hint="What the fundraiser aims to raise, compared with its net (income minus expenses). Informational only."><input inputMode="decimal" pattern="\d+(\.\d{1,2})?" maxLength={20} value={v.goal_amount} onChange={set("goal_amount")} placeholder="e.g. 5000" /></Field>}
         <div className="row fields">
           <Field label="Event start date" hint="The day(s) the event takes place."><input type="date" required value={v.start_date} onChange={set("start_date")} /></Field>
           <Field label="Event end date" hint="Leave empty for a one-day event."><input type="date" min={v.start_date || undefined} value={v.end_date} onChange={set("end_date")} /></Field>
@@ -517,7 +543,7 @@ function FundraiserForm({ current, prefill, onClose, onSaved }: { current?: any;
             </div>
           ))}
         </fieldset>
-        <Field label="Continues from (previous fundraiser)" hint="Links this fundraiser with the same event in an earlier year, for the Fiscal Year fundraising report. Leave empty for a new, unlinked fundraiser.">
+        <Field label="Continues from (previous year)" hint="Links this with the same event in an earlier year (same type only), for the Fiscal Year report. Leave empty for a new, unlinked one.">
           <select value={cont} onChange={(e) => setCont(e.target.value)}>
             <option value="">— none (new event) —</option>
             {contOpts.map((o) => <option key={o.id} value={o.id}>{o.name} ({o.year}){o.series_name ? ` — ${o.series_name}` : ""}</option>)}
@@ -539,7 +565,7 @@ function FundraiserForm({ current, prefill, onClose, onSaved }: { current?: any;
         ) : null}
         <div className="actions">
           <button type="button" onClick={onClose}>Cancel</button>
-          <button className="primary" type="submit">{current ? "Save" : "Create fundraiser"}</button>
+          <button className="primary" type="submit">{current ? "Save" : `Create ${typeLabel(v.event_type).toLowerCase()}`}</button>
         </div>
       </GuardedForm>
     </Modal>
@@ -557,7 +583,7 @@ function BucketDialog({ f, bucket, onClose, onSaved }: { f: any; bucket: any; on
     e.preventDefault();
     setErr(null);
     const body = { name: v.name, description: v.description || null, category_id: v.category_id ? Number(v.category_id) : null,
-      ...(me.modules?.donations ? { is_donation: v.is_donation } : {}) };
+      ...(me.modules?.donations && !isEvent(f) ? { is_donation: v.is_donation } : {}) };   // 2.4.0 (#429): kept, hidden for an Event
     try {
       onSaved(bucket.id ? await api.put(`/api/fundraisers/${f.id}/buckets/${bucket.id}`, body) : await api.post(`/api/fundraisers/${f.id}/buckets`, body));
     } catch (x) { setErr(x); }
@@ -575,7 +601,7 @@ function BucketDialog({ f, bucket, onClose, onSaved }: { f: any; bucket: any; on
           </select>
         </Field>
         {/* 2.2.0 (#256): deposits in a donation bucket get the Donation box ticked as a suggestion */}
-        {me.modules?.donations ? <label className="check"><input type="checkbox" checked={v.is_donation} onChange={(e) => setV({ ...v, is_donation: e.target.checked })} /> Donations
+        {me.modules?.donations && !isEvent(f) ? <label className="check"><input type="checkbox" checked={v.is_donation} onChange={(e) => setV({ ...v, is_donation: e.target.checked })} /> Donations
           <span className="hint"> – deposits in this bucket are suggested as donations for receipts (the Register User confirms)</span></label> : null}
         <div className="actions"><button type="button" onClick={onClose}>Cancel</button><button className="primary" type="submit">Save</button></div>
       </GuardedForm>

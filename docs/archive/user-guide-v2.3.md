@@ -1,6 +1,6 @@
 # What's new in 2.3 — quick guide
 
-*2.3.0 is in progress. The full list is in the [changelog](../CHANGELOG.md).*
+*2.3.0 is in progress. The full list is in the [changelog](../../CHANGELOG.md).*
 
 ## Reports
 

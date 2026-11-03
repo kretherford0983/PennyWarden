@@ -38,6 +38,11 @@ export default function Budgets() {
     onInactivate: (r: any) => setModal({ kind: "reason", row: r, action: "inactivate", title: `Inactivate ${r.label}` }),
     onUnlock: (r: any) => setModal({ kind: "reason", row: r, action: "unlock", title: `Unlock ${r.label}` }),
     onLock: async (r: any) => { try { await api.post(`/api/budgets/${r.id}/lock`); load(); } catch (e) { setErr(e); } },
+    // 2.4.0 (#250): a locked budget shows no menu item for it (unlock with a reason first)
+    onInvoicedIncome: async (r: any, on: boolean) => {
+      if (!window.confirm(on ? `Mark ${r.label} as Invoiced Income? Its sub-budgets and Other carry it; it still counts as income everywhere.` : `Clear Invoiced Income on ${r.label}?`)) return;
+      try { await api.put(`/api/budgets/${r.id}/invoiced-income`, { invoiced_income: on }); load(); } catch (e) { setErr(e); }
+    },
   } : undefined;
   const done = () => { setModal(null); load(); };
   return (

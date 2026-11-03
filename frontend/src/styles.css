@@ -198,6 +198,34 @@ tr.child td.indent { padding-left: 28px; }
   .print-only { display: block !important; }
 }
 .print-only { display: none; }
+/* 2.4.0 polish (#468): the register on paper (the system Print) - portrait, a short header (title, applied filters,
+   balances: RegisterPrintHead) instead of the screen's header, filters and tiles, then RegisterPrintTable (two lines
+   per transaction, no details or attachment column) instead of the screen table */
+@page register { size: letter portrait; margin: 0.5in; }
+@media print {
+  .register-page { page: register; }
+  .register-page .register-sticky, .register-page .sort-note { display: none !important; }
+  .register-print-head { font-size: 9pt; line-height: 1.3; margin: 0 0 6pt; padding-bottom: 4pt; border-bottom: 1px solid #000; }
+  .register-print-head .rph-title { display: flex !important; justify-content: space-between; font-size: 11pt; margin-bottom: 2pt; }
+  table.register-print { display: table !important; width: 100%; font-size: 8.5pt; border-collapse: collapse; table-layout: fixed; }
+  table.register-print td { overflow-wrap: anywhere; }
+  /* fixed shares, so a long payment reference wraps instead of squeezing Invoice # */
+  table.register-print thead tr:first-child th:nth-child(1), table.register-print thead tr:first-child th:nth-child(2) { width: 12%; }
+  table.register-print thead tr:first-child th:nth-child(3), table.register-print thead tr:first-child th:nth-child(4) { width: 16%; }
+  table.register-print thead tr:first-child th:nth-child(5), table.register-print thead tr:first-child th:nth-child(6) { width: 14%; }
+  table.register-print thead tr:first-child th:nth-child(7) { width: 16%; }
+  table.register-print th, table.register-print td { padding: 1pt 4pt; text-align: left; vertical-align: top; }
+  table.register-print .num { text-align: right; white-space: nowrap; }
+  table.register-print tbody tr:first-child td:nth-child(-n+2) { white-space: nowrap; }
+  table.register-print thead th { font-size: 8pt; }
+  table.register-print thead tr.rp2 th { border-bottom: 1pt solid #000; font-weight: normal; font-style: italic; }
+  table.register-print tbody { break-inside: avoid; }
+  table.register-print tbody tr.rp2 td { border-bottom: 0.5pt solid #999; padding-bottom: 2pt; }
+  table.register-print tbody.void td { text-decoration: line-through; color: #444 !important; }
+  table.register-print tbody.void td.rp-status { text-decoration: none; }
+  table.register-print .badge { display: inline-block; margin-left: 3pt; padding: 0 2pt; font-size: 7.5pt; background: none !important;
+    border: 0.5pt solid #666; color: #000 !important; }
+}
 a.button { display: inline-block; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--border); background: var(--surface-2); color: var(--text); text-decoration: none; }
 a.button.primary { background: var(--primary); color: var(--primary-text); border-color: var(--primary); }
 
@@ -783,3 +811,19 @@ button.info-tip-btn { background: none; border: 0; padding: 0 2px; min-height: 0
 .multi-filter > summary { cursor: pointer; display: inline-flex; align-items: center; height: var(--control-h); padding: 0 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface); list-style: none; }
 .multi-filter > summary::after { content: "▾"; margin-left: 8px; color: var(--muted); }
 .multi-filter[open] > fieldset { position: absolute; z-index: 8; top: calc(100% + 4px); left: 0; min-width: 220px; margin: 0; padding: 8px 10px; background: var(--surface); border: 1px solid var(--border); border-radius: 6px; box-shadow: 0 4px 14px rgba(0,0,0,.15); display: flex; flex-direction: column; gap: 4px; }
+
+/* 2.4.0 (#473): Help - the bundled user guide */
+.help-link { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; border-radius: 50%;
+  border: 1px solid var(--border); background: var(--surface-2); color: var(--text); text-decoration: none; font-weight: 600; }
+.help-doc { max-width: 860px; line-height: 1.55; }
+.help-doc .help-heading { scroll-margin-top: 8px; }
+.help-doc h2.help-heading { margin-top: 28px; padding-top: 12px; border-top: 1px solid var(--border); }
+.help-doc h3.help-heading { margin-top: 18px; }
+.help-doc li { margin: 3px 0; }
+.help-doc code { background: var(--surface-2); padding: 1px 4px; border-radius: 4px; overflow-wrap: anywhere; }
+.help-doc pre { background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; overflow-x: auto; }
+.help-doc pre code { background: none; padding: 0; }
+.help-doc blockquote { margin: 12px 0; padding: 4px 14px; border-left: 4px solid var(--border); background: var(--surface); }
+.help-table { border-collapse: collapse; margin: 8px 0; }
+.help-table th, .help-table td { border: 1px solid var(--border); padding: 5px 8px; text-align: left; vertical-align: top; }
+.help-table th { background: var(--surface-2); }

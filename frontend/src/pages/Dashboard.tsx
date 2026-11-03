@@ -31,6 +31,7 @@ export default function Dashboard() {
     );
   const fy = d.current_fiscal_year;
   // v1.5.0 CR-031: every section is a block that can be hidden and moved; the order is saved per user.
+  const invoices = !!me.modules?.invoices && me.permissions.includes("invoice.view");     // 2.4.0 (#255)
   const sections: Record<string, ReactNode> = {
     notifications: <DashboardNotifications />, // v1.6.3 CR-036: due reminders (nothing when there are none)
     fiscal_year: (
@@ -57,6 +58,7 @@ export default function Dashboard() {
         ))}
       </div>
     ) : null,
+    invoices: invoices ? <OverdueInvoices /> : null,
     review: d.review_summary ? (
       <section className="card">
         <h2>Review summary</h2>
@@ -111,8 +113,9 @@ export default function Dashboard() {
       </Suspense>
     ),
   };
-  // Sections this user can have: the Review summary exists for Auditors only.
-  const available = SECTIONS.filter((s) => s.key !== "review" || d.review_summary).map((s) => s.key);
+  // Sections this user can have: the Review summary exists for Auditors only; the overdue invoices card (2.4.0, #255)
+  // when the Invoices module is on and the user can view invoices.
+  const available = SECTIONS.filter((s) => (s.key !== "review" || d.review_summary) && (s.key !== "invoices" || invoices)).map((s) => s.key);
   return <FinancialDashboard title={me.security_domain === "AUDITOR" ? "Auditor dashboard" : "Dashboard"} sections={sections} available={available} />;
 }
 
@@ -123,6 +126,7 @@ const SECTIONS = [
   { key: "review", title: "Review summary" },
   { key: "bank", title: "Bank account balances" },
   { key: "attention", title: "Attention" },
+  { key: "invoices", title: "Overdue invoices" },
   { key: "charts", title: "Charts" },
 ];
 const titleOf = (k: string) => SECTIONS.find((s) => s.key === k)?.title ?? k;
@@ -204,4 +208,31 @@ function FinancialDashboard({ title, sections, available }: { title: string; sec
 
 function Tile({ label, v }: { label: string; v: any }) {
   return <div className="tile"><div className="tile-label">{label}</div><div className="tile-value">{v}</div></div>;
+}
+
+/** 2.4.0 (#255): invoices past their due date with a balance open, for everyone who can view invoices. */
+export function OverdueInvoices({ reminders = false }: { reminders?: boolean }) {
+  const [o, setO] = useState<any>(null);
+  useEffect(() => { api.get("/api/invoices/overdue").then(setO, () => setO(false)); }, []);
+  if (o === null) return <section className="card"><h2>Overdue invoices</h2><Loading /></section>;
+  if (o === false) return null;
+  if (reminders) {
+    if (!o.reminders.length) return null;
+    return (
+      <div className="alert warn" role="note" data-testid="inv-reminders">
+        <b>Invoice reminders</b> ({o.reminder_days ? `${o.reminder_days} days after the due date` : "from the due date"}):
+        <ul>{o.reminders.map((x: any) => <li key={x.id}><Link to={`/invoices/${x.id}`}>{x.number}</Link> — {x.customer}, due {x.due_date}, open {money(x.open)}</li>)}</ul>
+      </div>
+    );
+  }
+  return (
+    <section className="card" data-testid="dash-overdue">
+      <h2>Overdue invoices</h2>
+      {o.count ? <>
+        <p><b>{o.count}</b> overdue, {money(o.open)} open. <Link to="/reports/inv-aging">Aging report</Link></p>
+        <table className="table"><thead><tr><th>Invoice</th><th>Customer</th><th>Due</th><th className="num">Days</th><th className="num">Open</th></tr></thead>
+          <tbody>{o.items.map((x: any) => <tr key={x.id}><td><Link to={`/invoices/${x.id}`}>{x.number}</Link></td><td>{x.customer}</td><td>{x.due_date}</td><td className="num">{x.days}</td><td className="num">{money(x.open)}</td></tr>)}</tbody></table>
+      </> : <p className="muted">No overdue invoices.</p>}
+    </section>
+  );
 }

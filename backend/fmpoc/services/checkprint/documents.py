@@ -21,7 +21,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.lib.utils import ImageReader
-from reportlab.platypus import Image, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import Flowable, Image, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from .. import letter_fit
 from ..letter_fit import FixedSpacer
@@ -93,7 +93,8 @@ class LetterConfig(_M):
     signature_mode: Literal["NONE", "PRINTED", "IMAGE", "SPACE"] = "PRINTED"
     include_by_default: bool = True
     # #176: logo position (the logo itself is stored with the template) and pre-printed letterhead paper
-    logo_position: Literal["LEFT", "CENTER"] = "LEFT"
+    # 2.4.0 polish: RIGHT - top right, level with the letterhead's first line; the letter text is not pushed down
+    logo_position: Literal["LEFT", "CENTER", "RIGHT"] = "LEFT"
     preprinted: bool = False
     preprinted_margin: float = Field(default=2.0, ge=1.0, le=4.0)      # inches kept blank at the top
     # #177: #10 double-window envelope - the address on the letter itself, or on a separate address page
@@ -264,6 +265,22 @@ def _logo_size(png: bytes) -> tuple[float, float]:
     return iw * scale, ih * scale
 
 
+class _ClearBelow(Flowable):
+    """2.4.0 polish (logo top right): space only as far as needed for what follows to start `depth` below the top
+    of the first page's text area - clear of a logo drawn beside the letterhead. Zero once already past it."""
+
+    def __init__(self, depth: float):
+        super().__init__()
+        self.depth = depth
+
+    def wrap(self, avail_width, avail_height):
+        used = (9 * inch - 12) - avail_height          # the first frame: 9 in tall, 6 pt padding top and bottom
+        return avail_width, max(0.0, self.depth - used)
+
+    def draw(self):
+        pass
+
+
 def fold_ticks(c, cfg: LetterConfig) -> None:
     """2.1.0 (#247): four short ticks, at the left and right edges on each fold line (even thirds). The thirds are
     symmetric, so the same positions are right on the back of the sheet too, whichever edge the printer flips."""
@@ -329,9 +346,14 @@ def _letter_once(cfg: LetterConfig, data: LetterData, title: str, logo: bytes | 
     base = ParagraphStyle("base", fontName=reg, fontSize=size, leading=size * 1.25)
     strong = ParagraphStyle("strong", parent=base, fontName=bold)
     centred = cfg.logo_position == "CENTER" and logo is not None
-    head = ParagraphStyle("head", parent=base, alignment=1 if centred else 0)
-    head_b = ParagraphStyle("head_b", parent=strong, alignment=1 if centred else 0)
     windowed = cfg.window != "NONE"
+    # 2.4.0 polish: top right, beside the letterhead (drawn on the page, so the text is not pushed down); the
+    # letterhead and date lines wrap short of it
+    beside = cfg.logo_position == "RIGHT" and logo is not None and not windowed and not cfg.preprinted
+    logo_wh = _logo_size(logo) if beside else (0.0, 0.0)
+    indent = logo_wh[0] + 0.25 * inch if beside else 0
+    head = ParagraphStyle("head", parent=base, alignment=1 if centred else 0, rightIndent=indent)
+    head_b = ParagraphStyle("head_b", parent=strong, alignment=1 if centred else 0, rightIndent=indent)
     blocks = window_blocks(cfg, texts, data.payee_lines) if windowed else []
     org = data.values.get("ORG", "")
     check_no = data.values.get("CHECK_NUMBER", "")
@@ -344,6 +366,9 @@ def _letter_once(cfg: LetterConfig, data: LetterData, title: str, logo: bytes | 
         later_page(c, doc)
         if fold == "FRONT":
             fold_ticks(c, cfg)
+        if beside:
+            w, h = logo_wh                                   # level with the first letterhead line, at the right margin
+            c.drawImage(ImageReader(io.BytesIO(logo)), 7.5 * PT - w, 10 * PT - 6 - h, w, h, mask="auto")
         if not windowed and not test:
             return
         c.saveState()
@@ -388,7 +413,7 @@ def _letter_once(cfg: LetterConfig, data: LetterData, title: str, logo: bytes | 
     elif cfg.preprinted:
         story.append(FixedSpacer(1, (cfg.preprinted_margin - 1) * inch))  # the paper's own letterhead is above
     else:
-        if logo is not None:
+        if logo is not None and not beside:
             w, h = _logo_size(logo)
             story.append(Image(io.BytesIO(logo), width=w, height=h, hAlign="CENTER" if centred else "LEFT"))
             story.append(Spacer(1, size * 0.6))
@@ -396,7 +421,10 @@ def _letter_once(cfg: LetterConfig, data: LetterData, title: str, logo: bytes | 
             if line.strip():
                 story.append(Paragraph(escape(line), head_b if i == 0 else head))
     if cfg.show_date:
-        story.append(Paragraph(escape(data.values.get("TODAY", "")), base))
+        story.append(Paragraph(escape(data.values.get("TODAY", "")),
+                               ParagraphStyle("date", parent=base, rightIndent=indent) if beside else base))
+    if beside:
+        story.append(_ClearBelow(logo_wh[1]))
     story.append(Spacer(1, size * 1.4))
     if data.payee_lines and cfg.window != "LETTER":
         story.append(Paragraph(f"<font name='{bold}'>To:</font><br/>{'<br/>'.join(escape(x) for x in data.payee_lines)}",

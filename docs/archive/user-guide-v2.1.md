@@ -4,7 +4,7 @@
 year over year, and a Fiscal Year fundraising report), the Budget Review and the Fiscal Year Planning Sheet, electronic
 payments and other register improvements, fold marks on cover letters, more voucher check layouts, and the optional
 Donations module for donation receipt letters. The full list is
-in the [changelog](../CHANGELOG.md).*
+in the [changelog](../../CHANGELOG.md).*
 
 ## Register
 
@@ -36,7 +36,7 @@ physical check)** on the withdrawal and choose how it was paid. If there is a nu
 The register shows an **Electronic** badge, and the **Payment** filter lists checks, electronic payments, or
 withdrawals with no check number. The Audit and Close reports show *Electronic (method)* where the check number would
 be. With the Payments module, an electronic payment is saved without printing a check — see
-[check-printing.md](check-printing.md#for-register-users-payments).
+[check-printing.md](../check-printing.md#for-register-users-payments).
 
 ### Reorder attachments
 On a transaction, each allocation of a split, a fundraiser, or a Fiscal Year's **Other documents**, click
@@ -346,5 +346,5 @@ The installer's last lines tell you where to point your Cloudflare Tunnel or rev
   machine's address in `trusted_proxies`.
 - one specific address: that address. (Before 2.1.0 such an install was reported as failed.)
 
-The installer still never changes your `config.toml`. Details: [Upgrading](upgrade.md#210-after-the-upgrade) and
-[Configuration](configuration.md).
+The installer still never changes your `config.toml`. Details: [Upgrading](../upgrade.md#210-after-the-upgrade) and
+[Configuration](../configuration.md).

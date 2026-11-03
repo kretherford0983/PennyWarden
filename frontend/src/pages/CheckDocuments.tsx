@@ -245,7 +245,7 @@ function LetterEditor({ setup, doc, focus, onClose, onSaved }: EditorProps) {
               <div className="row form-row">
                 <img className="logo-thumb" src={`/api/checks/documents/${logo.from}/logo?v=${logo.version}`} alt="The letter's logo" />
                 <Field label="Logo position"><select value={c.logo_position} onChange={(ev) => e.change((x) => { x.logo_position = ev.target.value; })}>
-                  <option value="LEFT">Top left</option><option value="CENTER">Top center (the letterhead lines are centered too)</option></select></Field>
+                  <option value="LEFT">Top left</option><option value="CENTER">Top center (the letterhead lines are centered too)</option><option value="RIGHT">Top right, beside the letterhead (the letter text stays where it is)</option></select></Field>
                 <p className="hint">The copied letter's logo; it is copied when you save.</p>
               </div>
             ) : <p className="muted">No logo. Save the letter first, then add one here.</p>
@@ -253,7 +253,7 @@ function LetterEditor({ setup, doc, focus, onClose, onSaved }: EditorProps) {
             <div className="row form-row">
               <img className="logo-thumb" src={`/api/checks/documents/${doc.id}/logo?v=${logo.version}`} alt="The letter's logo" />
               <Field label="Logo position"><select value={c.logo_position} onChange={(ev) => e.change((x) => { x.logo_position = ev.target.value; })}>
-                <option value="LEFT">Top left</option><option value="CENTER">Top center (the letterhead lines are centered too)</option></select></Field>
+                <option value="LEFT">Top left</option><option value="CENTER">Top center (the letterhead lines are centered too)</option><option value="RIGHT">Top right, beside the letterhead (the letter text stays where it is)</option></select></Field>
               <button type="button" className="small" onClick={() => logoAct(() => api.post(`/api/checks/documents/${doc.id}/logo/remove`, {}))}>Remove logo</button>
             </div>
           ) : <p className="muted">No logo.</p>}

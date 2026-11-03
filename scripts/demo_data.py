@@ -323,8 +323,9 @@ def main(base: str) -> dict:
         al = t["allocations"][i]
         bm.put(f"/api/fundraisers/{spring['id']}/lines/{al['id']}",
                {"buckets": [{"bucket_id": bucket[name], "amount": al["amount"]}]})
+    # 2.4.0 (#429): a Fundraiser with budgets needs Income and Expense; its yard signs are in Fundraising costs
     bm.post("/api/fundraisers", {"name": "Fall Mattress Sale", "start_date": d(9, 27), "end_date": d(9, 27),
-                                 "budget_ids": [b_fall["id"]]})
+                                 "budget_ids": [b_fall["id"], b_costs["id"]], "filter_text": "mattress"})
 
     # ---- reminders
     month_end = (today.replace(day=1) + dt.timedelta(days=32)).replace(day=1) - dt.timedelta(days=1)

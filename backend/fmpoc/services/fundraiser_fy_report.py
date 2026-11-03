@@ -110,6 +110,17 @@ def build_pdf(org: str, rep: dict) -> tuple[bytes, _AuditDoc]:
     data.append([_b("Total"), "", "", "", "", P(money(rep["year_total"]), "fs_rb"), "", P("100.0%", "fs_rb")])
     f.append(_table(data, [W - 5.9 * inch, 1.1 * inch, 0.9 * inch, 0.85 * inch, 0.8 * inch, 0.85 * inch, 0.65 * inch, 0.75 * inch],
                     bold_rows=[len(data) - 1]))
+    if rep.get("events"):           # 2.4.0 (#429): Events, separate from the fundraising figures
+        f += [Spacer(1, 8), *heading("Events (not fundraisers)")]
+        data = [_h(["Event", "Dates", "Status", "Income", "Expenses", "Net"])]
+        for r in rep["events"]:
+            ev = _us(r["start_date"]) if r["start_date"] == r["end_date"] else f"{_us(r['start_date'])}–{_us(r['end_date'])}"
+            data.append([P(r["name"], "cell"), P(ev, "cell"), P(r["status"], "cell"), P(money(r["income"]), "cellr"),
+                         P(money(r["expenses"]), "cellr"), P(money(r["net"]), "cellr")])
+        data.append([_b("Total"), "", "", "", "", P(money(rep["events_net"]), "fs_rb")])
+        f.append(_table(data, [W - 4.6 * inch, 1.1 * inch, 0.9 * inch, 0.85 * inch, 0.85 * inch, 0.9 * inch],
+                        bold_rows=[len(data) - 1]))
+        f.append(P("Events are not counted in the fundraising totals, shares or history above.", "small"))
     # annual trend (table; the deck has the chart)
     f += [Spacer(1, 8), *heading("Annual trend")]
     if rep["linked_history"]:
@@ -239,6 +250,17 @@ def build_pptx(org: str, rep: dict) -> bytes:
                     bold_rows=[i + 1 for i, r in enumerate(part) if r[0] == "Total"])
         deck._notes(sl, ["Each row is that fundraiser's stakeholder report: net proceeds = net revenue − expenses; margin = "
                          "net ÷ net revenue; share = its net ÷ the year's total."])
+    # 3b. 2.4.0 (#429): Events, a section of their own
+    if rep.get("events"):
+        rows = [[r["name"], money(r["income"]), money(r["expenses"]), money(r["net"])] for r in rep["events"]]
+        rows.append(["Total", "", "", money(rep["events_net"])])
+        for k, part in enumerate(deck._chunks(rows, deck.TABLE_ROWS)):
+            sl = prs.slides.add_slide(blank)
+            deck._title(sl, f"{fyn} events" + (" (continued)" if k else ""), "Not counted in the fundraising figures")
+            deck._table(sl, Inches(0.6), Inches(1.7), Inches(12.1), [["Event", "Income", "Expenses", "Net"]] + part,
+                        [6.1, 2.0, 2.0, 2.0], {1, 2, 3}, bold_rows=[i + 1 for i, r in enumerate(part) if r[0] == "Total"])
+            deck._notes(sl, ["Events (not fundraisers): income, expenses and net for each; they are listed separately "
+                             "and do not count in the year's fundraising total."])
     # 4. annual trend
     sl = prs.slides.add_slide(blank)
     deck._title(sl, "Annual trend", "Net raised per year")

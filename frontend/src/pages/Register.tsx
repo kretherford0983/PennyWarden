@@ -1,6 +1,6 @@
 import { Fragment, useEffect, useRef, useState, type FormEvent } from "react";
 import { api, money, newRequestKey, qs, todayIso } from "../api";
-import { allocationLabel, Attachments, EntityPicker, ErrorBox, Field, Loading, Modal, PendingFiles, useConfirmable, GuardedForm } from "../components";
+import { allocationLabel, Attachments, EntityPicker, ErrorBox, Field, Loading, Modal, PendingFiles, useConfirmable, GuardedForm, useAttachmentUpload } from "../components";
 import { useMe } from "../App";
 import { EntityForm } from "./Entities";
 import { NO_PAYMENT_DOCUMENTS, PrintCheckDialog } from "./CheckPrint";
@@ -147,6 +147,8 @@ export default function Register() {
         <BalanceTiles data={data} explicitEnd={!!f.date_to} onRecon={(title: string, r: any, label: string) => setModal({ kind: "recon", title, recon: r, label })} />
       ) : null}
       </div>
+      {data && acct ? <RegisterPrintHead data={data} acct={acct} f={f} fys={fys} budgetChoices={budgetChoices}
+        sortNote={sortKey !== DEFAULT_SORT ? `Sorted by ${sortCol === "clear_date" ? "Cleared" : "Date"}, ${sortDir === "asc" ? "oldest first" : "newest first"}` : ""} /> : null}
       <ErrorBox error={err} />
       {showReviews ? (
         <Reviews canResolve={can("review.resolve")} canManage={manage && acct?.status === "ACTIVE"} account={acct} reloadKey={data}
@@ -159,11 +161,12 @@ export default function Register() {
           {sortKey !== DEFAULT_SORT ? (
             <p className="muted sort-note">
               Sorted by {sortCol === "clear_date" ? "Cleared" : "Date"}, {sortDir === "asc" ? "oldest first" : "newest first"}
-              {sortCol === "clear_date" ? " (uncleared transactions " + (sortDir === "asc" ? "last" : "first") + "; the balance column is the bank balance)" : ""}.{" "}
+              {sortCol === "clear_date" ? " (uncleared transactions " + (sortDir === "asc" ? "last" : "first") + "; a void that never cleared by its date; the balance column is the bank balance)" : ""}.{" "}
               <button type="button" className="link" onClick={() => chooseSort(DEFAULT_SORT)}>Reset to default</button>
             </p>
           ) : null}
-          <div className="table-wrap">
+          <RegisterPrintTable data={data} byBudget={byBudget} missing={f.attachments === "missing"} />
+          <div className="table-wrap no-print">
             <table className="table register">
               <thead>
                 <tr><th /><SortTh col="transaction_date" label="Date" sortCol={sortCol} sortDir={sortDir} onSort={clickSort} /><SortTh col="clear_date" label="Cleared" sortCol={sortCol} sortDir={sortDir} onSort={clickSort} /><th>Entity</th><th>Check #</th><th>Invoice #</th><th>Description</th><th className="num">Deposit</th><th className="num">Withdrawal</th><th className="num" title={data.running_balance_kind === "cleared" ? "Sorted by Cleared: the bank (cleared) balance after each cleared item; blank while uncleared" : "Running balance in Date order (everything written or deposited)"}>{data.running_balance_kind === "cleared" ? "Cleared balance" : "Balance"}</th><th>Status</th><th title="Attachments">📎</th></tr>
@@ -176,12 +179,12 @@ export default function Register() {
                       <td><button className="small" aria-expanded={open === t.id} aria-label={`Details for transaction ${t.id}`} onClick={() => setOpen(open === t.id ? null : t.id)}>{open === t.id ? "▾" : "▸"}</button></td>
                       <td>{t.transaction_date}</td><td>{t.clear_date || ""}</td><td>{t.entity?.display_name || ""}</td><td>{t.check_number || ""}{t.payment_reference ? <span className="muted" title="Payment reference"> ref. {t.payment_reference}</span> : null}</td>
                       <td>{t.invoice_numbers.join(", ")}</td>
-                      <td>{t.is_split ? `Split (${t.allocations.length})` : t.allocations[0]?.description || t.allocations[0]?.budget.label}</td>
+                      <td>{txnDescription(t)}</td>
                       {/* 1.7.3 (#104): with the Budget filter, the budget's share of the transaction ("$40.00 of $100.00") */}
                       <td className="num">{t.deposit ? (byBudget ? <Share part={t.budget_share} total={t.deposit} /> : money(t.deposit)) : ""}</td>
                       <td className="num">{t.withdrawal ? (byBudget ? <Share part={t.budget_share} total={t.withdrawal} /> : money(t.withdrawal)) : ""}</td>
                       <td className="num">{t.running_balance == null ? "" : money(t.running_balance)}</td>
-                      <td>{t.status === "DELETED" ? <span className="badge grey">Deleted</span> : t.status === "VOID" ? <span className="badge red">VOID</span> : t.cleared ? "Cleared" : "Uncleared"}{t.has_pending_review ? <span className="badge yellow">Review</span> : null}{t.transfer ? <span className="badge blue">Transfer</span> : null}{t.electronic_payment ? <span className="badge blue" title={`Paid electronically: ${t.payment_method_label}`}>Electronic</span> : null}{t.check_printed ? <span className="badge green" title="A check was printed for this transaction (record copy attached)">Check printed</span> : null}{t.no_attachment ? <span className="badge grey" title={t.no_attachment_reason || ""}>No attachment</span> : null}{f.attachments === "missing" && t.documentation ? <span className="badge yellow" title="Listed in the Fiscal Year documentation review">{t.documentation === "NO_ATTACHMENT_MARKED" ? "Marked: no reason" : "Missing attachment"}</span> : null}</td>
+                      <td><TxnStatus t={t} missing={f.attachments === "missing"} /></td>
                       <td>{t.attachment_count ? <span aria-label={`${t.attachment_count} attachments`}>📎{t.attachment_count}</span> : ""}</td>
                     </tr>
                     {open === t.id ? (
@@ -336,6 +339,7 @@ export function TxnForm({ account, txn, initial, fys, onClose, onSaved, payment,
   const [typeDlg, setTypeDlg] = useState<string | null>(null);
   const [newEnt, setNewEnt] = useState(false);
   const { run, dialog } = useConfirmable();
+  const dup = useAttachmentUpload();   // 2.4.0 (#425): the same file twice on one record - Cancel / Attach anyway
   const requestKey = useRef(newRequestKey()).current; // CR-011: repeated submits of this form create one transaction
   const loadEntities = () => api.get("/api/entities?status=active").then(setEntities);
   useEffect(() => { loadEntities(); }, []);
@@ -417,7 +421,7 @@ export function TxnForm({ account, txn, initial, fys, onClose, onSaved, payment,
       }
       const failed: string[] = [];
       for (const [ot, oid, f] of jobs) {
-        try { await api.upload(`/api/attachments${qs({ owner_type: ot, owner_id: oid })}`, f); }
+        try { await dup.upload(`/api/attachments${qs({ owner_type: ot, owner_id: oid })}`, f); }   // #425: Cancel = skip
         catch (x: any) { failed.push(`${f.name}: ${x?.message || "upload failed"}`); }
       }
       if (failed.length) { setUploadIssues({ id: saved.id, failed }); setSavedTxn(saved); }
@@ -547,6 +551,7 @@ export function TxnForm({ account, txn, initial, fys, onClose, onSaved, payment,
         <div className="actions">{!isNew ? <DeleteTxnButton txn={txn} onDeleted={onSaved} /> : null}<button type="button" onClick={onClose}>Cancel</button><button className="primary" type="submit">{payment ? (h.electronic_payment ? "Save payment" : "Save and print check") : "Save"}</button></div>
       </GuardedForm>
       {dialog}
+      {dup.dialog}
       {noAttDlg !== null ? (
         <Modal title="No attachment?" onClose={() => setNoAttDlg(null)}>
           <div className="alert warn" role="alert">Transactions should have supporting documentation (receipt, invoice, statement). Only mark this when no document is available — for example interest or other amounts deposited directly by the bank. The transaction will be listed as a Fiscal Year review warning.</div>
@@ -801,7 +806,7 @@ function Reviews({ canResolve, canManage, account, reloadKey, onEnterCheck, onZe
     try { await api.post(`/api/fiscal-year-reviews/${target.id}/confirm`, { note: note || null }); setTarget(null); setNote(""); load(); onChange(); } catch (x) { setErr(x); }
   };
   return (
-    <section className="card">
+    <section className="card no-print">
       <h2>Pending Fiscal Year reviews</h2>
       <ErrorBox error={err} />
       {!items ? <Loading /> : items.length === 0 ? <p className="muted">No unresolved review items.</p> : (
@@ -902,6 +907,88 @@ function AckChecks({ account, item, onClose, onDone }: any) {
 // 1.7.2 (#56/#57): Current = the bank balance (cleared only); Available = everything written or deposited (Register
 // only). An open Fiscal Year (or no Fiscal Year) shows Opening, Current and Available; a Closed one Opening and Ending.
 // Opening and Ending show the bank balance on that date and the outstanding items that make up the difference.
+const txnDescription = (t: any) => t.is_split ? `Split (${t.allocations.length})` : t.allocations[0]?.description || t.allocations[0]?.budget.label;
+
+function TxnStatus({ t, missing }: { t: any; missing: boolean }) {
+  return <>{t.status === "DELETED" ? <span className="badge grey">Deleted</span> : t.status === "VOID" ? <span className="badge red">VOID</span> : t.cleared ? "Cleared" : "Uncleared"}{t.has_pending_review ? <span className="badge yellow">Review</span> : null}{t.transfer ? <span className="badge blue">Transfer</span> : null}{t.electronic_payment ? <span className="badge blue" title={`Paid electronically: ${t.payment_method_label}`}>Electronic</span> : null}{t.check_printed ? <span className="badge green" title="A check was printed for this transaction (record copy attached)">Check printed</span> : null}{t.no_attachment ? <span className="badge grey" title={t.no_attachment_reason || ""}>No attachment</span> : null}{missing && t.documentation ? <span className="badge yellow" title="Listed in the Fiscal Year documentation review">{t.documentation === "NO_ATTACHMENT_MARKED" ? "Marked: no reason" : "Missing attachment"}</span> : null}</>;
+}
+
+// 2.4.0 polish (#468, Kyle 2026-11-02): on paper, the entity and description are shortened to these lengths (about
+// what fits their columns on one line at 8.5 pt), ending in an ellipsis
+const ENTITY_MAX = 30, DESC_MAX = 45;
+
+/** `text` cut to at most `max` characters with an ellipsis: at the last word break when that keeps most of it,
+ *  without trailing punctuation or spaces. */
+function clip(text: string, max: number): string {
+  const s = text.replace(/\s+/g, " ").trim();
+  if (s.length <= max) return s;
+  let cut = s.slice(0, max - 1);
+  const sp = cut.lastIndexOf(" ");
+  if (sp >= max * 0.6) cut = cut.slice(0, sp);
+  return cut.replace(/[\s,;:.\-–—/&]+$/, "") + "…";
+}
+
+function Clipped({ text, max, span, className }: { text: string; max: number; span: number; className: string }) {
+  const c = clip(text, max);
+  return <td colSpan={span} className={className} title={c === text ? undefined : text}>{c}</td>;
+}
+
+/** 2.4.0 polish (#468, Kyle 2026-11-02): the register table on paper - two lines per transaction (1: Date, Cleared,
+ *  Check #, Invoice #, Deposit, Withdrawal, Balance; 2: Entity, Description, Status); no details, no 📎. */
+function RegisterPrintTable({ data, byBudget, missing }: { data: any; byBudget: boolean; missing: boolean }) {
+  const amt = (v: any, t: any) => v ? (byBudget ? <Share part={t.budget_share} total={v} /> : money(v)) : "";
+  return (
+    <table className="print-only register-print" data-testid="register-print-table">
+      <thead>
+        <tr><th>Date</th><th>Cleared</th><th>Check #</th><th>Invoice #</th><th className="num">Deposit</th><th className="num">Withdrawal</th>
+          <th className="num">{data.running_balance_kind === "cleared" ? "Cleared balance" : "Balance"}</th></tr>
+        <tr className="rp2"><th colSpan={2}>Entity</th><th colSpan={3}>Description</th><th colSpan={2}>Status</th></tr>
+      </thead>
+      {data.transactions.length === 0 ? <tbody><tr><td colSpan={7}>No transactions match.</td></tr></tbody> : null}
+      {data.transactions.map((t: any) => (
+        <tbody key={t.id} className={t.status === "VOID" || t.status === "DELETED" ? "void" : ""}>
+          <tr><td>{t.transaction_date}</td><td>{t.clear_date || ""}</td><td>{t.check_number || ""}{t.payment_reference ? ` ref. ${t.payment_reference}` : ""}</td>
+            <td>{t.invoice_numbers.join(", ")}</td><td className="num">{amt(t.deposit, t)}</td><td className="num">{amt(t.withdrawal, t)}</td>
+            <td className="num">{t.running_balance == null ? "" : money(t.running_balance)}</td></tr>
+          <tr className="rp2"><Clipped className="rp-entity" span={2} text={t.entity?.display_name || ""} max={ENTITY_MAX} />
+            <Clipped className="rp-desc" span={3} text={txnDescription(t) || ""} max={DESC_MAX} />
+            <td colSpan={2} className="rp-status"><TxnStatus t={t} missing={missing} /></td></tr>
+        </tbody>
+      ))}
+    </table>
+  );
+}
+
+/** 2.4.0 polish (#468): the register's printed header - only on paper (the system Print). One title line, the
+ *  filters that are applied (the Fiscal Year always, as the date range), the balances on one line; the screen's
+ *  header, filters and tiles are not printed. */
+function RegisterPrintHead({ data, acct, f, fys, budgetChoices, sortNote }: { data: any; acct: any; f: any; fys: any[];
+  budgetChoices: any[]; sortNote: string }) {
+  const closed = data.fiscal_year?.status === "CLOSED";
+  const opt = (v: string, m: Record<string, string>) => m[v] || v;
+  const parts: string[] = [];
+  parts.push(`Fiscal Year: ${f.fiscal_year_id ? fys.find((y) => String(y.id) === f.fiscal_year_id)?.label || data.fiscal_year?.label || f.fiscal_year_id : "All dates"}`);
+  if (f.transaction_type) parts.push(`Type: ${opt(f.transaction_type, { DEPOSIT: "Deposits", WITHDRAWAL: "Withdrawals" })}`);
+  if (f.status) parts.push(`Status: ${opt(f.status, { cleared: "Cleared", uncleared: "Uncleared", void: "Void", deleted: "Deleted" })}`);
+  if (f.budget_id) parts.push(`Budget: ${budgetChoices.find((b) => String(b.id) === f.budget_id)?.label || data.budget?.label || f.budget_id}`);
+  if (f.payment) parts.push(`Payment: ${opt(f.payment, { check: "Check", electronic: "Electronic", none: "No check #" })}`);
+  if (f.attachments) parts.push(`Attachments: ${opt(f.attachments, { yes: "Yes", missing: "Missing", marked: "Marked" })}`);
+  if (f.date_from || f.date_to) parts.push(`Dates: ${f.date_from || "…"} to ${f.date_to || "…"}`);
+  if (f.search) parts.push(`Search: “${f.search}”`);
+  if (sortNote) parts.push(sortNote);
+  const op = data.opening_reconciliation;
+  const bal: string[] = [`Opening${op ? ` (end of ${op.as_of})` : ""} ${money(data.starting_balance)}`];
+  if (closed || f.date_to) bal.push(`Ending${data.date_to ? ` (${data.date_to})` : ""} ${money(data.ending_balance)}`);
+  if (!closed) bal.push(`Current (cleared) ${money(data.current_balance)}`, `Available (incl. uncleared) ${money(data.available_balance)}`);
+  return (
+    <div className="print-only register-print-head" data-testid="register-print-head">
+      <div className="rph-title"><b>Register — {acct.label}</b><span>Printed {todayIso()}</span></div>
+      <div className="rph-line">{parts.join(" · ")}</div>
+      <div className="rph-line">{bal.join(" · ")}</div>
+    </div>
+  );
+}
+
 function BalanceTiles({ data, explicitEnd, onRecon }: { data: any; explicitEnd: boolean; onRecon: (title: string, r: any, label: string) => void }) {
   const closed = data.fiscal_year?.status === "CLOSED";
   const reconLink = (r: any, title: string, label: string) => r ? (

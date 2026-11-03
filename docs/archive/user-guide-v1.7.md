@@ -119,7 +119,7 @@ missing, the same way as for each bank account's transactions.
 - **Entities:** on the Entity form the Email and Phone boxes are level, with a shorter hint under Phone.
 - **Bank Accounts:** creating an institution from the New bank account form no longer clears what you typed
   while it was being added.
-- **Installing on a Mac:** a new page, [Installing PennyWarden on a Mac](install-macos.md), shows each step with
+- **Installing on a Mac:** a new page, [Installing PennyWarden on a Mac](../install-macos.md), shows each step with
   a picture — including the one-time *Open Anyway* in System Settings.
 
 ## 1.7.0: a new name — PennyWarden
@@ -138,7 +138,7 @@ What you may notice:
 ## If you look after the installation
 - **Server (Linux):** run the usual upgrade command. The installer moves the installation to the new name by
   itself and leaves the old one in place until you remove it. Steps, going back and the cleanup checklist:
-  [upgrade.md](upgrade.md), *1.7.0: the rename to PennyWarden*.
+  [upgrade.md](../upgrade.md), *1.7.0: the rename to PennyWarden*.
 - **Windows PC:** download the new `PennyWarden-<version>-windows-x64.exe` (or the zip) and start it. Your data
   folder is renamed by itself at the first start; delete the old program when you no longer want it.
 - **Mac:** download the new `.dmg` and drag **PennyWarden** to Applications. macOS sees a new app, so the *Open

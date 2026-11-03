@@ -20,7 +20,7 @@ import datetime as dt
 from collections import defaultdict
 
 import re2
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from .. import audit
@@ -217,6 +217,50 @@ def _validate_budgets(db: Session, ctx, f: Fundraiser | None, start: dt.date, en
     return chosen
 
 
+# ------------------------------------------------------------------ 2.4.0 (#429): Fundraiser or Event
+EVENT_TYPES = ("FUNDRAISER", "EVENT")
+TYPE_LABEL = {"FUNDRAISER": "Fundraiser", "EVENT": "Event"}
+# the budget kinds each type needs in every Fiscal Year it uses (once any budget is chosen; a shell needs none)
+REQUIRED_KINDS = {"FUNDRAISER": ("INCOME", "EXPENSE"), "EVENT": ("EXPENSE",)}
+KIND_WORD = {"INCOME": "Income", "EXPENSE": "Expense"}
+
+
+def is_event(f: Fundraiser) -> bool:
+    return (f.event_type or "FUNDRAISER") == "EVENT"
+
+
+def budget_gaps(db: Session, event_type: str, chosen: list[tuple[int, str]]) -> list[dict]:
+    """The Fiscal Years used by these (fiscal_year_id, kind) budgets that lack a kind the type requires."""
+    used: dict[int, set[str]] = {}
+    for fy_id, kind in chosen:
+        used.setdefault(fy_id, set()).add(kind)
+    out = []
+    for fy_id, kinds in used.items():
+        missing = [k for k in REQUIRED_KINDS[event_type] if k not in kinds]
+        if missing:
+            fy = db.get(FiscalYear, fy_id)
+            out.append({"fiscal_year_id": fy_id, "fiscal_year": fy.display_name if fy else None, "missing": missing})
+    return sorted(out, key=lambda g: g["fiscal_year"] or "")
+
+
+def gaps_message(event_type: str, gaps: list[dict]) -> str:
+    parts = [f"{' and '.join(KIND_WORD[k] for k in g['missing'])} budget for {g['fiscal_year']}" for g in gaps]
+    need = "an Income and an Expense budget" if event_type == "FUNDRAISER" else "an Expense budget (Income is optional)"
+    return (f"A{'n' if event_type == 'EVENT' else ''} {TYPE_LABEL[event_type]} needs {need} in each Fiscal Year it "
+            f"uses. Missing: {'; '.join(parts)}.")
+
+
+def required_budget_gaps(db: Session, f: Fundraiser) -> list[dict]:
+    return budget_gaps(db, f.event_type or "FUNDRAISER", [(fb.fiscal_year_id, fb.kind) for fb in f.budgets])
+
+
+def _series_others(db: Session, f: Fundraiser) -> int:
+    if f.series_id is None:
+        return 0
+    return db.scalar(select(func.count(Fundraiser.id)).where(Fundraiser.series_id == f.series_id,
+                                                             Fundraiser.id != f.id)) or 0
+
+
 # ------------------------------------------------------------------ CRUD
 def snapshot(f: Fundraiser) -> dict:
     return {"id": f.id, "name": f.name, "description": f.description, "start_date": f.start_date.isoformat(),
@@ -226,7 +270,7 @@ def snapshot(f: Fundraiser) -> dict:
             "cancelled_at": f.cancelled_at.isoformat() + "Z" if f.cancelled_at else None,
             "summary_notes": f.summary_notes, "results_final": f.results_final_at is not None,
             "series_id": f.series_id, "continues_from_id": f.continues_from_id,
-            "goal_amount": fmt(f.goal_amount_cents)}
+            "goal_amount": fmt(f.goal_amount_cents), "event_type": f.event_type or "FUNDRAISER"}
 
 
 def goal_vs_actual(goal_cents: int | None, net_cents: int) -> dict | None:
@@ -259,6 +303,21 @@ def _apply(db: Session, ctx, f: Fundraiser, body, creating: bool) -> None:
         check_event_dates(db, ctx.workspace_id, start, end)
     compile_filter(body.filter_text, bool(body.filter_regex))
     chosen = _validate_budgets(db, ctx, None if creating else f, start, end, body.budget_ids)
+    # 2.4.0 (#429): the type, and the budgets it requires. Checked when the event is created and whenever its budgets
+    # or type change, so an upgraded record missing one can still be edited otherwise (it shows a warning and can't
+    # be marked final). A shell (no budgets) is always allowed.
+    old_type = None if creating else (f.event_type or "FUNDRAISER")
+    new_type = getattr(body, "event_type", None) or old_type or "FUNDRAISER"
+    if not creating and new_type != old_type and _series_others(db, f):
+        raise AppError(409, "SERIES_TYPE", "This event is in a series with other events, and a series holds only one "
+                       "type. Take it out of the series (Continues from: none) first, then change its type.")
+    new_pairs = sorted((fy.id, b.budget_type) for b, fy in chosen)
+    old_pairs = None if creating else sorted((fb.fiscal_year_id, fb.kind) for fb in f.budgets)
+    if creating or new_type != old_type or new_pairs != old_pairs:
+        gaps = budget_gaps(db, new_type, new_pairs)
+        if gaps:
+            raise AppError(422, "REQUIRED_BUDGETS", gaps_message(new_type, gaps), gaps=gaps)
+    f.event_type = new_type
     if not creating:  # moving the event must keep frozen (closed-FY) budgets valid
         for fb in f.budgets:
             fy = db.get(FiscalYear, fb.fiscal_year_id)
@@ -538,6 +597,11 @@ def notices(db: Session, ws_id: int, f: Fundraiser) -> list[dict]:
         b = db.get(Budget, fb.budget_id)
         for w in budget_warnings(db, b):
             out.append({**w, "budget_id": b.id})
+    gaps = required_budget_gaps(db, f)                # 2.4.0 (#429): e.g. a record from before the upgrade
+    if gaps:
+        out.append({"code": "REQUIRED_BUDGET_MISSING", "gaps": gaps,
+                    "message": gaps_message(f.event_type or "FUNDRAISER", gaps)
+                    + " Results can't be marked final until it is added (or the type is changed)."})
     if f.filter_text:
         out.append({"code": "FILTER", "message": "A description filter is used: only lines whose description contains "
                     "the filter are included. Lines entered without it are left out, which affects the validity of the "
@@ -642,17 +706,27 @@ def detail(db: Session, ctx, f: Fundraiser) -> dict:
     for fb in f.budgets:
         b = db.get(Budget, fb.budget_id)
         selected.append({**budget_brief(db, b), "kind": fb.kind, "fiscal_year": fy_brief(db.get(FiscalYear, fb.fiscal_year_id))})
+    combined = {}                                   # 2.4.0 (#429): one Income and one Expense figure for the event
+    for kind in ("INCOME", "EXPENSE"):
+        mine = [fb for fb in f.budgets if fb.kind == kind]
+        if mine:
+            combined[kind.lower()] = {
+                "budgeted": fmt(sum(db.get(Budget, fb.budget_id).amount_cents for fb in mine)),
+                "labels": [x["label"] for x in selected if x["kind"] == kind],
+                "fiscal_years": len({fb.fiscal_year_id for fb in mine})}
     all_closed = bool(fys) and all(fy.status == "CLOSED" for fy in fys)
     if not fys:
         all_closed = any(fy.status == "CLOSED" for fy in covering_fiscal_years(db, ctx.workspace_id, f.start_date))
     return {
         **snapshot(f), "status": status_of(f), "fiscal_years": [fy_brief(y) for y in fys],
         "budgets": sorted(selected, key=lambda x: (x["fiscal_year"]["start_date"], x["kind"] != "INCOME")),
+        "combined_budgets": combined, "required_budget_gaps": required_budget_gaps(db, f),
         "read_only": all_closed,
         "notices": notices(db, ctx.workspace_id, f),
         "totals": {"income": fmt(t["income"]), "expense": fmt(t["expense"]), "net": fmt(t["net"]),
                    "roi": roi(t["income"], t["expense"]),
-                   "goal": goal_vs_actual(f.goal_amount_cents, t["net"]),       # 2.3.0 (#372)
+                   # 2.3.0 (#372); 2.4.0 (#429): an Event has no goal on screen (the stored goal is kept)
+                   "goal": None if is_event(f) else goal_vs_actual(f.goal_amount_cents, t["net"]),
                    "cash_float_out": fmt(sum(r["classified"] for r in rows if r["kind"] == "EXPENSE")),
                    "cash_float_returned": fmt(sum(r["classified"] for r in rows if r["kind"] == "INCOME")),
                    "excluded_income": fmt(sum(r["a"].amount_cents for r in rows if r["excluded"] and r["kind"] == "INCOME")),
@@ -1064,6 +1138,10 @@ def set_results_final(db: Session, ctx, f: Fundraiser, final: bool) -> Fundraise
     """Mark results final (reversible). The report reads Final when marked, or when every Fiscal Year is Closed."""
     if final == (f.results_final_at is not None):
         return f
+    gaps = required_budget_gaps(db, f) if final else []
+    if gaps:                                      # 2.4.0 (#429)
+        raise AppError(409, "REQUIRED_BUDGETS", gaps_message(f.event_type or "FUNDRAISER", gaps)
+                       + " Add them (or change the type) before marking the results final.", gaps=gaps)
     before = {"results_final": f.results_final_at is not None,
               "results_final_at": f.results_final_at.isoformat() + "Z" if f.results_final_at else None}
     f.results_final_at = utcnow() if final else None

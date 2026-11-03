@@ -34,7 +34,7 @@ def test_changes_stay_with_administrators(env, base):
 def test_module_status_lists_every_module_and_the_viewers_access(env, base):
     assert env.admin.put("/api/system/modules", {"checks": True}).status_code == 200
     rows = {m["key"]: m for m in env.ru.get("/api/system/modules/status").json()}
-    assert list(rows) == ["fundraisers", "checks", "donations"]
+    assert list(rows) == ["fundraisers", "checks", "donations", "invoices"]   # 2.4.0 (#251)
     assert rows["checks"]["enabled"] is True and rows["checks"]["name"] == "Payments"
     assert rows["checks"]["used_by"] == ["Register Users", "Administrators (setup)"]
     assert rows["donations"]["enabled"] is False
