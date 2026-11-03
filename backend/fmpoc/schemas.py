@@ -525,6 +525,8 @@ class FundraiserIn(In):
 
 class CatalogNameIn(In):                     # 2.4.0 (#252): a unit type or category
     name: Str(80)
+    budget_id: int | None = None             # 2.4.0 polish (#483): categories only
+    code_pattern: OptStr(40) = None          # 2.4.0 polish (#486): categories only
 
 
 class InvoiceProductIn(In):                  # 2.4.0 (#252)

@@ -162,6 +162,27 @@ item; the site's version list starts at 1.10 (the first public release); part of
   bundling incl. the Dockerfile, no links to moved files, no other raw HTML, the site build and `versions.json`); E2E
   "#473 AC-DOC-001..004"; `test_v170_rename.py`'s allow-list no longer names the moved notes.
 
+**2.4.0 polish — category budget and product code pattern (#483, #486, decided with Kyle 2026-11-02).** Migration
+`0082_category_defaults`: `invoice_product_category.budget_id` (FK budget), `code_pattern` (40), `code_counters`
+(JSON `{"<year>|0": next}`) - on the category row, so Reinitialize/selective restore need no new table.
+- **BR-INV-CAT-005 (#483):** a product with no budget of its own uses its category's current budget
+  (`invoice_catalog.product_budget_id`, used by `needs_budget`, `product_out` and invoice line creation); saving a
+  product needs its own budget or a category that has one (422 `budget_id`); a category whose budget is followed by
+  products can't drop it (409 `CATEGORY_BUDGET_IN_USE`); changing the category's budget moves the followers (they
+  read it live). Category budgets pass the same Invoiced Income leaf check (`_leaf_ok`). `product_out` adds
+  `own_budget`, `category_budget`; `budget` = the effective one.
+- **BR-INV-CAT-006 (#486):** `code_pattern` uses the invoice-number tokens (`check_pattern`, exactly one `{SEQ}`; the
+  codes it makes must fit 30 characters). `{SEQ}` counts per category, per year when the pattern has `{YY}`/`{YYYY}`
+  (else one counter, key "0"). The suggestion is the counter's number, skipping numbers whose code exists
+  (case-insensitive, any product). A product saved with exactly the suggested code advances the counter
+  (`_use_code`); an edited or blank code leaves it. Changing an existing product's category never changes its code.
+  `GET /api/invoices/catalog/code-example?category_id=&pattern=` (view) previews; categories list `next_code`,
+  `budget`, `products_following`. Category create/update audited with `budget_id`/`code_pattern`.
+- UI: product form starts with Category (fills the code until it's typed by hand, and offers "Use the category's
+  budget" / "Its own budget"); the category form has the optional budget and the pattern with a live Next code.
+- Tests: `test_v240_invoice_catalog.py::test_category_budget_is_followed_unless_the_product_sets_its_own`,
+  `::test_category_code_pattern_suggests_codes_and_counts_only_used_ones`. ACs **AC-INV-CAT-007/008** (as tested).
+
 **2.4.0 polish — quick fixes #481, #482, #489, #490 (Kyle 2026-11-02).**
 - #481: `GET /api/invoices/setup/number-example?pattern=` (`invoice.setup`) runs `check_pattern` + `format_number`
   with today's year and `_next_seq` (nothing stored; 422 with the reason). InvoiceSetup fetches it 250 ms after typing

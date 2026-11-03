@@ -403,7 +403,7 @@ def _apply(db: Session, ctx, i: Invoice, body, creating: bool) -> None:
                 raise validation("Use the discount fields for a discount.", "lines")
             if not p.active:
                 raise validation(f"\"{p.name}\" is inactive.", "lines")
-            b = cat.budget_for_year(db, p.budget_id, fy)
+            b = cat.budget_for_year(db, cat.product_budget_id(db, p), fy)     # 2.4.0 polish (#483): own or category's
             if b is None:
                 raise AppError(422, "NEEDS_BUDGET", f"\"{p.name}\" has no Invoiced Income budget in {fy.display_name}. "
                                "An Invoice Manager updates the product in the catalog.")

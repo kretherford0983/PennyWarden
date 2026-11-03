@@ -1332,6 +1332,11 @@ class InvoiceProductCategory(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
     name: Mapped[str] = mapped_column(String(80))
+    # 2.4.0 polish (#483): the Invoiced Income budget its products follow unless they set their own; (#486) the
+    # default product code pattern ({YY}/{YYYY}, {SEQ}/{SEQ:n}) and its counters as JSON {"<year or 0>": next}
+    budget_id: Mapped[int | None] = mapped_column(ForeignKey("budget.id"), nullable=True)
+    code_pattern: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    code_counters: Mapped[str | None] = mapped_column(Text, nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=sa_true(), nullable=False)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
     created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
