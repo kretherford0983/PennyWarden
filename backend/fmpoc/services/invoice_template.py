@@ -24,6 +24,8 @@ from .. import audit
 from ..errors import AppError, validation
 from ..models import InvoiceSettings
 from .checkprint import fonts, patterns
+from .checkprint.documents import (FOLD_LINES, FOLD_SHADES, FOLD_WEIGHTS, WINDOW_OFFSET_MAX, WINDOW_PRESET, PT,
+                                   fold_ticks, _with_back_pages)
 
 CTX = patterns.INVOICE_DOC
 COLUMN_KEYS = ("DESCRIPTION", "CODE", "UNIT", "QUANTITY", "UNIT_PRICE", "AMOUNT", "DISCOUNT", "NET")
@@ -62,7 +64,7 @@ class TemplateConfig(_M):
     font: str = "CARLITO"
     size: float = Field(default=10, ge=8, le=12)
     accent: str = "#1F3A5F"
-    logo_position: str = "LEFT"                          # NONE | LEFT | RIGHT
+    logo_position: str = "LEFT"                          # NONE | LEFT | CENTER (2.4.0 polish, #478) | RIGHT
     letterhead: list[str] = Field(default_factory=lambda: ["{ORG}", "{ORG.ADDRESS}", "{ORG.PHONE}"], max_length=6)
     title: str = Field(default="INVOICE", max_length=40)
     bill_to_heading: str = Field(default="Bill to", max_length=40)
@@ -74,6 +76,18 @@ class TemplateConfig(_M):
     show_terms: bool = True
     show_notes: bool = True
     footer: str = Field(default="", max_length=2000)
+    # 2.4.0 polish (#479): fold marks and the #10 double-window layout, as on the check cover letter (#247, #177)
+    fold_marks: str = "NONE"                                       # NONE | FRONT | BACK
+    fold_length: float = Field(default=0.15, ge=0.1, le=0.5)
+    fold_edge: float = Field(default=0.25, ge=0.1, le=0.5)
+    fold_weight: str = "HAIRLINE"
+    fold_shade: str = "LIGHT"
+    window: str = "NONE"                                           # NONE | LETTER
+    window_return: bool = True
+    return_dx: float = Field(default=0, ge=-WINDOW_OFFSET_MAX, le=WINDOW_OFFSET_MAX)
+    return_dy: float = Field(default=0, ge=-WINDOW_OFFSET_MAX, le=WINDOW_OFFSET_MAX)
+    payee_dx: float = Field(default=0, ge=-WINDOW_OFFSET_MAX, le=WINDOW_OFFSET_MAX)
+    payee_dy: float = Field(default=0, ge=-WINDOW_OFFSET_MAX, le=WINDOW_OFFSET_MAX)
 
     @field_validator("font")
     @classmethod
@@ -92,8 +106,36 @@ class TemplateConfig(_M):
     @field_validator("logo_position")
     @classmethod
     def _lp(cls, v):
-        if v not in ("NONE", "LEFT", "RIGHT"):
-            raise ValueError("The logo goes left, right or nowhere.")
+        if v not in ("NONE", "LEFT", "CENTER", "RIGHT"):
+            raise ValueError("The logo goes left, center, right or nowhere.")
+        return v
+
+    @field_validator("fold_marks")
+    @classmethod
+    def _fm(cls, v):
+        if v not in ("NONE", "FRONT", "BACK"):
+            raise ValueError("Fold marks: none, front or back.")
+        return v
+
+    @field_validator("fold_weight")
+    @classmethod
+    def _fw(cls, v):
+        if v not in FOLD_WEIGHTS:
+            raise ValueError("Unknown fold mark weight.")
+        return v
+
+    @field_validator("fold_shade")
+    @classmethod
+    def _fs(cls, v):
+        if v not in FOLD_SHADES:
+            raise ValueError("Unknown fold mark shade.")
+        return v
+
+    @field_validator("window")
+    @classmethod
+    def _w(cls, v):
+        if v not in ("NONE", "LETTER"):
+            raise ValueError("Window envelope: none or on the invoice.")
         return v
 
     @field_validator("letterhead", "bill_to")
@@ -170,6 +212,17 @@ def set_logo(db: Session, ctx, s: InvoiceSettings, data: bytes | None) -> dict:
 # ------------------------------------------------------------------ rendering
 def render(cfg: TemplateConfig, data: dict, values: dict[str, str], logo: bytes | None, watermark: str | None,
            author: str) -> bytes:
+    """2.4.0 polish (#479): fold marks on the front (first page) or on a back page; with the window layout the
+    letterhead (return address) and Bill to print where a #10 double-window envelope shows them and the invoice body
+    starts below the first fold. A sample (watermarked) PDF also draws the windows and labels the folds."""
+    pdf = _render(cfg, data, values, logo, watermark, author)
+    if cfg.fold_marks == "BACK":
+        return _with_back_pages(pdf, cfg, f"Invoice {data['number']}")
+    return pdf
+
+
+def _render(cfg: TemplateConfig, data: dict, values: dict[str, str], logo: bytes | None, watermark: str | None,
+            author: str) -> bytes:
     """data: number/date/due, lines (description, code, unit, qty, price, amount, discount, net, discount_reason),
     totals, terms, notes, fields; values: the {VARIABLES}."""
     from reportlab.lib import colors
@@ -177,7 +230,7 @@ def render(cfg: TemplateConfig, data: dict, values: dict[str, str], logo: bytes 
     from reportlab.lib.pagesizes import letter
     from reportlab.lib.styles import ParagraphStyle
     from reportlab.lib.units import inch
-    from reportlab.platypus import Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    from reportlab.platypus import Flowable, Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
     reg, bold = fonts.ps_name(cfg.font), fonts.ps_name(cfg.font, True)
     addMapping(reg, 0, 0, reg)
@@ -205,6 +258,47 @@ def render(cfg: TemplateConfig, data: dict, values: dict[str, str], logo: bytes 
         return patterns.resolve(p, values, CTX).text
 
     buf = io.BytesIO()
+    windowed = cfg.window == "LETTER"
+    sample = watermark == "SAMPLE"                       # previews / test prints only, never a real (or draft) invoice
+    lh = lines(cfg.letterhead)
+    bill = lines(cfg.bill_to)
+
+    def first(canvas, doc):
+        mark(canvas, doc)
+        if cfg.fold_marks == "FRONT":
+            fold_ticks(canvas, cfg)
+        if windowed:
+            canvas.saveState()
+            blocks = []
+            if cfg.window_return and lh:
+                p = WINDOW_PRESET["return"]
+                blocks.append(("return", p["x"] + cfg.return_dx, p["y"] + cfg.return_dy, lh[:4]))
+            if bill:
+                p = WINDOW_PRESET["payee"]
+                blocks.append(("payee", p["x"] + cfg.payee_dx, p["y"] + cfg.payee_dy, bill[:5]))
+            for which, x, y, ls in blocks:
+                yy = (11 - y) * PT - sz
+                for k, line in enumerate(ls):
+                    canvas.setFont(bold if (which == "return" and k == 0) else reg, sz)
+                    canvas.drawString(x * PT, yy, line)
+                    yy -= sz * 1.2
+            if sample:                                   # the windows and the folds, to check against an envelope
+                canvas.setStrokeGray(0.45)
+                canvas.setLineWidth(0.6)
+                canvas.setDash(3, 2)
+                for key in ("return", "payee"):
+                    if key == "return" and not cfg.window_return:
+                        continue
+                    left, top, w, h = WINDOW_PRESET[key]["window"]
+                    canvas.rect(left * PT, (11 - top - h) * PT, w * PT, h * PT, stroke=1, fill=0)
+                canvas.setDash()
+                canvas.setFont("Helvetica", 6.5)
+                for fl in FOLD_LINES:
+                    y = (11 - fl) * PT
+                    canvas.line(0.25 * PT, y, 0.6 * PT, y)
+                    canvas.line(7.9 * PT, y, 8.25 * PT, y)
+                    canvas.drawString(0.65 * PT, y - 2, "fold")
+            canvas.restoreState()
 
     def mark(canvas, _doc):
         if watermark:
@@ -219,22 +313,34 @@ def render(cfg: TemplateConfig, data: dict, values: dict[str, str], logo: bytes 
     width = letter[0] - 1.5 * inch
     doc = SimpleDocTemplate(buf, pagesize=letter, leftMargin=0.75 * inch, rightMargin=0.75 * inch, topMargin=0.6 * inch,
                             bottomMargin=0.7 * inch, title=f"Invoice {data['number']}", author=author)
-    lh = lines(cfg.letterhead)
     left: list = []
     if logo and cfg.logo_position == "LEFT":
         left.append(_logo(logo, Image))
-    left += [Paragraph(escape(x), bodyb if k == 0 else body) for k, x in enumerate(lh)]
+    if not windowed:                                     # with the window layout the letterhead is the return address
+        left += [Paragraph(escape(x), bodyb if k == 0 else body) for k, x in enumerate(lh)]
     rcol: list = []
     if logo and cfg.logo_position == "RIGHT":
         rcol.append(_logo(logo, Image, align="RIGHT"))
     rcol += [Paragraph(escape(text(cfg.title) or "INVOICE"), title), Paragraph(f"<b>{escape(data['number'])}</b>", right),
              Paragraph(f"Date: {escape(data['date'])}", right), Paragraph(f"Due: {escape(data['due'])}", right)]
-    head = Table([[left or "", rcol]], colWidths=[width * 0.55, width * 0.45])
+    # 2.4.0 polish (#478): the logo cell is aligned itself (an image's own hAlign is ignored in a table cell), so
+    # RIGHT sits at the right margin over the title; CENTER puts the logo in a middle column between the letterhead
+    # and the title block
+    if logo and cfg.logo_position == "CENTER":
+        head = Table([[left or "", _logo(logo, Image, align="CENTER", max_w=1.7), rcol]],
+                     colWidths=[width * 0.37, width * 0.26, width * 0.37])
+        aligns = [("ALIGN", (1, 0), (1, 0), "CENTER"), ("ALIGN", (2, 0), (2, 0), "RIGHT")]
+    else:
+        head = Table([[left or "", rcol]], colWidths=[width * 0.55, width * 0.45])
+        aligns = [("ALIGN", (1, 0), (1, 0), "RIGHT")]
     head.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0),
-                              ("RIGHTPADDING", (0, 0), (-1, -1), 0)]))
-    f: list = [head, Spacer(1, 14)]
-    bill = lines(cfg.bill_to)
-    if bill:
+                              ("RIGHTPADDING", (0, 0), (-1, -1), 0)] + aligns))
+    f: list = [head]
+    if windowed:                                         # the body starts below the address panel (the first fold)
+        f.append(_ClearTo((FOLD_LINES[0] + 0.15) * inch - doc.topMargin - 6, Flowable))
+    else:
+        f.append(Spacer(1, 14))
+    if bill and not windowed:
         f.append(Paragraph(f"<b>{escape(text(cfg.bill_to_heading))}</b>", ParagraphStyle("bh", parent=body, textColor=accent)))
         f += [Paragraph(escape(x), body) for x in bill]
     if cfg.show_fields:
@@ -278,8 +384,8 @@ def render(cfg: TemplateConfig, data: dict, values: dict[str, str], logo: bytes 
     tot = [["Subtotal", data["subtotal"]]]
     if data.get("invoice_discount"):
         tot.append([f"Discount — {data['invoice_discount_reason']}", f"-{data['invoice_discount']}"])
-    if data.get("tax"):
-        tot.append([data["tax_label"], data["tax"]])
+    for label, amount in data.get("taxes") or []:          # 2.4.0 polish (#487): one line per tax rate
+        tot.append([label, amount])
     tot.append(["Total due", data["total"]])
     if data.get("paid"):
         tot.append(["Paid", f"-{data['paid']}"])
@@ -291,6 +397,8 @@ def render(cfg: TemplateConfig, data: dict, values: dict[str, str], logo: bytes 
     tt.setStyle(TableStyle([("LINEABOVE", (0, total_row), (-1, total_row), 0.8, accent),
                             ("BOTTOMPADDING", (0, 0), (-1, -1), 2)]))
     f.append(tt)
+    if data.get("tax_exempt"):                              # 2.4.0 polish (#485): under the totals
+        f.append(Paragraph(escape(data["tax_exempt"]), ParagraphStyle("tx", parent=right, fontSize=sz - 1)))
     if cfg.show_terms and data.get("terms"):
         f += [Spacer(1, 12), Paragraph(f"<b>Terms:</b> {escape(data['terms'])}", body)]
     if cfg.show_notes and data.get("notes"):
@@ -298,16 +406,31 @@ def render(cfg: TemplateConfig, data: dict, values: dict[str, str], logo: bytes 
     foot = text(cfg.footer).strip() if cfg.footer else ""
     if foot:
         f += [Spacer(1, 16), Paragraph(escape(foot).replace("\n", "<br/>"), small)]
-    doc.build(f, onFirstPage=mark, onLaterPages=mark)
+    doc.build(f, onFirstPage=first, onLaterPages=mark)
     return buf.getvalue()
 
 
-def _logo(png: bytes, Image, align: str = "LEFT"):
+def _ClearTo(depth: float, Flowable):
+    """Space until `depth` below the top of the first frame's content (none once past it)."""
+    class ClearTo(Flowable):
+        def wrap(self, aw, ah):
+            used = self._frame_h - ah
+            return aw, max(0.0, depth - used)
+
+        def draw(self):
+            pass
+    c = ClearTo()
+    from reportlab.lib.pagesizes import letter
+    c._frame_h = letter[1] - 0.6 * 72 - 0.7 * 72 - 12      # SimpleDocTemplate frame (margins 0.6 / 0.7 in, 6 pt padding)
+    return c
+
+
+def _logo(png: bytes, Image, align: str = "LEFT", max_w: float = 2.2):
     from PIL import Image as PImage
     from reportlab.lib.units import inch
     im = PImage.open(io.BytesIO(png))
     w, h = im.size
-    scale = min(2.2 * inch / w, 0.9 * inch / h)
+    scale = min(max_w * inch / w, 0.9 * inch / h)
     img = Image(io.BytesIO(png), width=w * scale, height=h * scale)
     img.hAlign = align
     return img

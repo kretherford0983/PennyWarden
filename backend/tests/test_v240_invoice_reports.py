@@ -28,11 +28,12 @@ def rb(env, base):
     env.bm.put(f"/api/budgets/{base['inc']['id']}/invoiced-income", {"invoiced_income": True})
     units = {u["name"]: u["id"] for u in im.get("/api/invoices/catalog/unit-types").json()}
     catg = im.post("/api/invoices/catalog/categories", {"name": "Membership"}).json()["id"]
+    tax = im.post("/api/invoices/catalog/tax-rates", {"name": "State tax", "rate": "10", "budget_id": base["inc_leaf"]}).json()["id"]
+    group = im.post("/api/invoices/catalog/tax-groups", {"name": "State", "rate_ids": [tax]}).json()["id"]   # #487
     dues = im.post("/api/invoices/catalog/products", {"name": "Dues", "code": "D1", "unit_price": "100.00", "unit_type_id": units["Year"],
-                                                     "budget_id": base["inc_leaf"], "taxable": True, "category_id": catg}).json()["id"]
+                                                     "budget_id": base["inc_leaf"], "tax_group_id": group, "category_id": catg}).json()["id"]
     hours = im.post("/api/invoices/catalog/products", {"name": "Hall hours", "unit_price": "40.00", "unit_type_id": units["Hour"],
                                                       "budget_id": base["inc_leaf"]}).json()["id"]
-    tax = im.post("/api/invoices/catalog/tax-rates", {"name": "State tax", "rate": "10", "budget_id": base["inc_leaf"]}).json()["id"]
     a = env.entity("Acme Club", client=im)["id"]
     b = env.entity("Bravo Group", client=im)["id"]
 
@@ -40,7 +41,7 @@ def rb(env, base):
         i = im.post("/api/invoices", {"customer_entity_id": cust, "invoice_date": date, "lines": lines, **kw})
         assert i.status_code == 201, i.text
         return i.json()["id"]
-    ia = make(a, "2026-08-01", [{"product_id": dues, "quantity": "2"}], tax_rate_id=tax)
+    ia = make(a, "2026-08-01", [{"product_id": dues, "quantity": "2"}])
     ib_ = make(b, "2026-09-01", [{"product_id": hours, "quantity": "3", "discount_kind": "AMOUNT", "discount_value": "10.00",
                                   "discount_reason": "Regulars"}])
     draft = make(a, "2026-09-02", [{"product_id": hours, "quantity": "1"}])

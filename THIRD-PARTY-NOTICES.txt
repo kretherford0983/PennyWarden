@@ -37,8 +37,8 @@ Python packages (server):
   opentelemetry-api 1.45.1 - Apache-2.0
   pillow 13.0.0 - MIT-CMU
   pycparser 3.11 - BSD-3-Clause
-  pydantic 2.14.1 - MIT
-  pydantic_core 2.50.1 - MIT
+  pydantic 2.14.2 - MIT
+  pydantic_core 2.50.2 - MIT
   PyOTP 2.10.0 - MIT
   pypdf 6.21.4 - BSD-3-Clause
   pypdfium2 5.14.0 - BSD-3-Clause, Apache-2.0, dependency licenses
@@ -52,7 +52,7 @@ Python packages (server):
   typing-inspection 0.4.4 - MIT
   typing_extensions 4.16.0 - PSF-2.0
   uvicorn 0.54.0 - BSD-3-Clause
-  xlsxwriter 3.3.0 - BSD-2-Clause
+  xlsxwriter 3.3.1 - BSD-2-Clause
 JavaScript packages (web interface):
   @material/material-color-utilities 0.4.0 - Apache-2.0
   @reduxjs/toolkit 2.13.0 - MIT
@@ -3107,7 +3107,7 @@ OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ----------------------------------------------------------------------------------------------------
 
-pydantic 2.14.1
+pydantic 2.14.2
 License: MIT
 Source: https://github.com/pydantic/pydantic
 
@@ -3136,7 +3136,7 @@ SOFTWARE.
 
 ----------------------------------------------------------------------------------------------------
 
-pydantic_core 2.50.1
+pydantic_core 2.50.2
 License: MIT
 Source: https://github.com/pydantic
 
@@ -6855,7 +6855,7 @@ OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 ----------------------------------------------------------------------------------------------------
 
-xlsxwriter 3.3.0
+xlsxwriter 3.3.1
 License: BSD-2-Clause
 Source: https://github.com/jmcnamara/XlsxWriter
 

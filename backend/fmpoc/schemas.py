@@ -254,6 +254,8 @@ class EntityFields(In):
     mailing_postal_code: OptStr(20) = None
     mailing_country: OptStr(100) = None
     ein: OptStr(12) = None                # organizations only, 12-3456789
+    tax_exempt: bool | None = None         # 2.4.0 polish (#485)
+    tax_exempt_certificate: OptStr(60) = None
     address_line1: OptStr(200) = None
     address_line2: OptStr(200) = None
     city: OptStr(100) = None
@@ -525,6 +527,8 @@ class FundraiserIn(In):
 
 class CatalogNameIn(In):                     # 2.4.0 (#252): a unit type or category
     name: Str(80)
+    budget_id: int | None = None             # 2.4.0 polish (#483): categories only
+    code_pattern: OptStr(40) = None          # 2.4.0 polish (#486): categories only
 
 
 class InvoiceProductIn(In):                  # 2.4.0 (#252)
@@ -534,8 +538,14 @@ class InvoiceProductIn(In):                  # 2.4.0 (#252)
     unit_price: Amount
     unit_type_id: int | None = None
     category_id: int | None = None
-    taxable: bool = False
+    tax_group_id: int | None = None          # 2.4.0 polish (#487): replaces `taxable`
     budget_id: int | None = None
+    custom_field_ids: list[int] = Field(default_factory=list, max_length=20)   # 2.4.0 polish (#484)
+
+
+class InvoiceTaxGroupIn(In):                 # 2.4.0 polish (#487)
+    name: Str(80)
+    rate_ids: list[int] = Field(default_factory=list, max_length=10)
 
 
 class InvoiceTaxRateIn(In):                  # 2.4.0 (#252)
@@ -566,7 +576,6 @@ class InvoiceIn(In):                         # 2.4.0 (#253)
     due_date: OptDate = None
     terms_text: OptStr(200) = None
     notes: OptStr(2000) = None
-    tax_rate_id: int | None = None
     discount: InvoiceDiscountIn | None = None
     lines: list[InvoiceLineIn] = Field(default_factory=list, max_length=200)
     custom_values: dict[str, str | None] | None = None    # 2.4.0 (#253 part 2)
@@ -579,7 +588,6 @@ class InvoiceBatchIn(In):                    # 2.4.0 (#248): one draft per custo
     due_date: OptDate = None
     terms_text: OptStr(200) = None
     notes: OptStr(2000) = None
-    tax_rate_id: int | None = None
     discount: InvoiceDiscountIn | None = None
     lines: list[InvoiceLineIn] = Field(default_factory=list, max_length=200)
     custom_values: dict[str, str | None] | None = None
@@ -616,7 +624,7 @@ class StatementEmailIn(EmailSendIn):
 
 
 class InvoiceFieldIn(In):                    # 2.4.0 (#253 part 2): an Administrator-defined field
-    level: Literal["INVOICE", "LINE"] | None = None
+    level: Literal["INVOICE", "LINE", "PRODUCT"] | None = None        # 2.4.0 polish (#484): PRODUCT
     field_type: Literal["TEXT", "NUMBER", "DATE", "PICKLIST"] | None = None
     name: Str(60)
     options: list[Str(80)] = Field(default_factory=list, max_length=50)

@@ -8,7 +8,7 @@ const MAILING = ["mailing_address_line1", "mailing_address_line2", "mailing_city
 // 2.2.0 (#315, #316): first and last name; the display name and mailing address are kept only when "same as" is unticked
 const EMPTY: Record<string, any> = { entity_type: "ORGANIZATION", organization_name: "", first_name: "", last_name: "", position: "", address_line1: "", address_line2: "", city: "",
   state_region: "", postal_code: "", country: "", phone: "", email: "", notes: "", is_financial_institution: false,
-  display_name_custom: "", ein: "", ...Object.fromEntries(MAILING.map((k) => [k, ""])) };
+  display_name_custom: "", ein: "", tax_exempt: false, tax_exempt_certificate: "", ...Object.fromEntries(MAILING.map((k) => [k, ""])) };
 
 export default function Entities() {
   const { can } = useMe();
@@ -86,6 +86,7 @@ export function formatPhone(typed: string): string {
 
 export function EntityForm({ entity, onClose, onSaved, forceFi }: { entity: any; onClose: () => void; onSaved: (e: any) => void; forceFi?: boolean }) {
   const isNew = !entity.id;
+  const { me } = useMe();
   const [f, setF] = useState<any>({ ...EMPTY, ...Object.fromEntries(Object.entries(entity).map(([k, v]) => [k, v ?? (k in EMPTY ? EMPTY[k] : v)])),
     phone: entity.phone_display || entity.phone || "", ...(forceFi ? { is_financial_institution: true } : {}) });
   const [dnSame, setDnSame] = useState<boolean>(entity.display_name_same !== false);
@@ -100,6 +101,7 @@ export function EntityForm({ entity, onClose, onSaved, forceFi }: { entity: any;
     Object.keys(EMPTY).forEach((k) => { body[k] = typeof f[k] === "string" ? (f[k].trim() || null) : f[k]; });
     if (body.entity_type !== "INDIVIDUAL") body.position = null;   // 1.6.7: a position belongs to a person
     if (body.entity_type !== "ORGANIZATION") body.ein = null;
+    if (!body.tax_exempt) body.tax_exempt_certificate = null;      // 2.4.0 polish (#485)
     if (dnSame) body.display_name_custom = null;                    // "same as": nothing extra is kept (#315)
     if (mailSame) MAILING.forEach((k) => { body[k] = null; });
     try {
@@ -127,6 +129,11 @@ export function EntityForm({ entity, onClose, onSaved, forceFi }: { entity: any;
         {!dnSame ? <Field label="Display name" hint="Shown in the register, pickers, lists and reports. Checks, envelopes, letters and receipts print the name.">
           <input maxLength={200} value={f.display_name_custom || ""} onChange={set("display_name_custom")} /></Field> : null}
         {f.entity_type === "ORGANIZATION" ? <Field label="EIN (optional)" hint="Written as 12-3456789."><input maxLength={12} value={f.ein || ""} onChange={set("ein")} /></Field> : null}
+        {/* 2.4.0 polish (#485): invoices to a tax-exempt customer charge no sales tax */}
+        {me.modules?.invoices || f.tax_exempt ? <>
+          <label className="check"><input type="checkbox" checked={!!f.tax_exempt} onChange={(e) => setF({ ...f, tax_exempt: e.target.checked })} /> Tax-exempt customer (invoices charge no sales tax)</label>
+          {f.tax_exempt ? <Field label="Exemption certificate # (optional)" hint="Printed on the invoice."><input maxLength={60} value={f.tax_exempt_certificate || ""} onChange={set("tax_exempt_certificate")} /></Field> : null}
+        </> : null}
         {f.entity_type === "INDIVIDUAL" ? (
           <Field label="Position in the organization (optional)" hint="Filled in as this person's title when they are chosen as a signer on the audit review signature page or the cash count sheet.">
             <input maxLength={60} value={f.position || ""} placeholder="e.g. Treasurer" onChange={set("position")} />

@@ -288,7 +288,7 @@ export function FundraiserDetail({ id }: { id: number }) {
         </p>
       ) : null}
 
-      <StakeholderReport f={f} manage={manage} onChanged={setF} onOpen={() => setReporting(true)} />
+      <StakeholderReport f={f} manage={manage} onChanged={setF} />
 
       <section className="card" aria-labelledby="fr-buckets-h">
         <div className="charts-head">
@@ -653,7 +653,7 @@ function SeriesLinkDialog({ f, onClose, onSaved }: { f: any; onClose: () => void
 }
 
 // 2.1.0 (#275): the stakeholder report - status, Mark results final and summary notes (Budget Managers)
-function StakeholderReport({ f, manage, onChanged, onOpen }: { f: any; manage: boolean; onChanged: (f: any) => void; onOpen: () => void }) {
+function StakeholderReport({ f, manage, onChanged }: { f: any; manage: boolean; onChanged: (f: any) => void }) {
   const st = f.report_status;
   const [notes, setNotes] = useState<string>(f.summary_notes || "");
   const [err, setErr] = useState<unknown>(null);
@@ -665,10 +665,8 @@ function StakeholderReport({ f, manage, onChanged, onOpen }: { f: any; manage: b
   };
   return (
     <section className="card" aria-labelledby="fr-report-h">
-      <div className="charts-head">
-        <h2 id="fr-report-h">Stakeholder report</h2>
-        <button className="small" onClick={onOpen}>Report…</button>
-      </div>
+      {/* 2.4.0 polish (#489): the report opens from the Report… button in the page header (no second button here) */}
+      <h2 id="fr-report-h">Stakeholder report</h2>
       <p className="hint">A clean Financial &amp; Proceeds Statement for the committee and stakeholders — headline figures, breakdowns by category and bucket, key takeaways. It has no transaction numbers, accounts, budgets or attachments; the audit detail is under Reports → Fundraiser detail (audit).</p>
       <ErrorBox error={err} />
       <p data-testid="fr-report-status"><b>Report status:</b> {st.text}

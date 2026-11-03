@@ -42,7 +42,7 @@ def test_invoice_manager_maintains_everything_audited_never_deleted(env, cat):
     im = cat["im"]
     c = im.post("/api/invoices/catalog/categories", {"name": "Membership"})
     assert c.status_code == 201
-    p = _product(im, cat, category_id=c.json()["id"], code="DUES", taxable=True)
+    p = _product(im, cat, category_id=c.json()["id"], code="DUES")
     assert p.status_code == 201, p.text
     pj = p.json()
     assert pj["unit_type"] == "Year" and pj["category"] == "Membership" and pj["needs_budget"] is False
@@ -140,3 +140,52 @@ def test_object_scope_unknown_ids(env, cat):
                                                              "budget_id": cat["budget"]}).status_code == 404
     assert _product(im, cat, unit_type_id=999999).status_code == 422
     assert im.post("/api/invoices/catalog/categories/999999/inactivate").status_code == 404
+
+
+# ------------------------------------------------------------------ 2.4.0 polish (#483, #486)
+def test_category_budget_is_followed_unless_the_product_sets_its_own(env, cat):
+    """#483: a product without a budget of its own uses its category's current budget; a category whose budget is
+    followed can't drop it; a product needs a budget one way or the other."""
+    im = cat["im"]
+    plain = im.post("/api/invoices/catalog/categories", {"name": "Plain"}).json()
+    r = _product(im, cat, name="No budget anywhere", budget_id=None, category_id=plain["id"])
+    assert r.status_code == 422 and r.json()["error"]["errors"][0]["field"] == "budget_id"
+    c = im.post("/api/invoices/catalog/categories", {"name": "Dues", "budget_id": cat["budget"]})
+    assert c.status_code == 201 and c.json()["budget"]["id"] == cat["budget"]
+    c = c.json()
+    p = _product(im, cat, name="Family dues", budget_id=None, category_id=c["id"])
+    assert p.status_code == 201, p.text
+    p = p.json()
+    assert p["own_budget"] is False and p["budget"]["id"] == cat["budget"] and p["needs_budget"] is False
+    assert im.get("/api/invoices/catalog/categories").json()[0]["products_following"] in (0, 1)
+    r = im.put(f"/api/invoices/catalog/categories/{c['id']}", {"name": "Dues", "budget_id": None})
+    assert r.status_code == 409 and r.json()["error"]["code"] == "CATEGORY_BUDGET_IN_USE"
+    own = _product(im, cat, name="Single dues", category_id=c["id"]).json()          # its own budget
+    assert own["own_budget"] is True
+    assert env.admin.get("/api/invoices/catalog/categories").status_code == 403       # BR-003
+    ev = env.auditor.get("/api/audit-events?action=INVOICE_CATEGORY_CREATED").json()["items"]
+    assert any("budget_id" in str(e) for e in ev)
+
+
+def test_category_code_pattern_suggests_codes_and_counts_only_used_ones(env, cat):
+    """#486: {SEQ} counts per category (per year when the pattern shows it); a number is used only when a product is
+    saved with the suggested code; a code already taken is skipped; a bad pattern is refused."""
+    import datetime as dt
+    im = cat["im"]
+    yy = f"{dt.date.today().year % 100:02d}"
+    bad = im.post("/api/invoices/catalog/categories", {"name": "Bad", "code_pattern": "MB-{YY}"})
+    assert bad.status_code == 422 and bad.json()["error"]["errors"][0]["field"] == "code_pattern"
+    ex = im.get("/api/invoices/catalog/code-example?pattern=MBRSHP-{YY}-{SEQ:4}").json()
+    assert ex["next_code"] == f"MBRSHP-{yy}-0001"
+    c = im.post("/api/invoices/catalog/categories", {"name": "Memberships", "code_pattern": "MBRSHP-{YY}-{SEQ:4}",
+                                                    "budget_id": cat["budget"]}).json()
+    assert c["next_code"] == f"MBRSHP-{yy}-0001"
+    _product(im, cat, name="Hand-coded", code="CUSTOM-1", category_id=c["id"], budget_id=None)
+    assert im.get(f"/api/invoices/catalog/code-example?category_id={c['id']}").json()["next_code"] == f"MBRSHP-{yy}-0001"
+    _product(im, cat, name="Gold", code=f"MBRSHP-{yy}-0001", category_id=c["id"], budget_id=None)
+    assert im.get(f"/api/invoices/catalog/code-example?category_id={c['id']}").json()["next_code"] == f"MBRSHP-{yy}-0002"
+    other = im.post("/api/invoices/catalog/categories", {"name": "Other", "budget_id": cat["budget"]}).json()
+    _product(im, cat, name="Squatter", code=f"MBRSHP-{yy}-0002", category_id=other["id"], budget_id=None)
+    assert im.get(f"/api/invoices/catalog/code-example?category_id={c['id']}").json()["next_code"] == f"MBRSHP-{yy}-0003"
+    nyr = im.post("/api/invoices/catalog/categories", {"name": "Lockers", "code_pattern": "LCK-{SEQ:3}"}).json()
+    assert nyr["next_code"] == "LCK-001"

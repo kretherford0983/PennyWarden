@@ -4,7 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { Link } from "../router";
 import { ErrorBox, Field, RowMenu } from "../components";
-import { LivePreview, PatternInput, PdfViewer, PinToggle, Section, SetupLayout, usePdf, usePin, viewState } from "./checkShared";
+import { LivePreview, Lines, PatternInput, PdfViewer, PinToggle, Section, SetupLayout, usePdf, usePin, viewState } from "./checkShared";
 import { EnvelopeLibrary, SharedNotice } from "./Envelopes";
 
 const clone = <T,>(x: T): T => JSON.parse(JSON.stringify(x));
@@ -179,20 +179,6 @@ function PreviewSection({ doc, e, scope, version = "" }: { doc: any; e: ReturnTy
   );
 }
 
-function Lines({ label, lines, max, onChange, variables, idBase, addLabel = "+ Add line" }: { label: string; lines: string[]; max: number; onChange: (l: string[]) => void; variables: any[]; idBase: string; addLabel?: string }) {
-  return (
-    <fieldset className="lines">
-      <legend>{label}</legend>
-      {lines.map((l, i) => (
-        <div key={i} className="row form-row">
-          <PatternInput id={`${idBase}-${i}`} label={`${label} line ${i + 1}`} value={l} variables={variables} hint={false} onChange={(v) => onChange(lines.map((x, j) => (j === i ? v : x)))} />
-          <button type="button" className="small" onClick={() => onChange(lines.filter((_, j) => j !== i))} aria-label={`Remove ${label.toLowerCase()} line ${i + 1}`}>Remove</button>
-        </div>
-      ))}
-      {lines.length < max ? <button type="button" className="small" onClick={() => onChange([...lines, ""])}>{addLabel}</button> : null}
-    </fieldset>
-  );
-}
 
 function LetterEditor({ setup, doc, focus, onClose, onSaved }: EditorProps) {
   if (focus === "window") viewState.set("pw-letter-lwin", true);   // #217: arrive at an open Window envelope section

@@ -79,6 +79,37 @@ PennyWarden 2.4.0 (in progress).
   Approved budget it can be changed only after unlocking the budget with a reason. Each change is in the audit log.
   The budget still counts as income everywhere; the designation is groundwork for the Invoices module later in 2.4.0
   and has no effect on the Register until that module is turned on.
+- **Invoice PDF setup polish (#477–#480).** The letterhead and Bill to lines are listed one per row (Remove, + Add
+  line), and every text suggests `{VARIABLES}` as you type, as on the cover letter. The logo can go **left**,
+  **center** (between the letterhead and the title) or **right** (now at the right margin, over the title). Invoices
+  get **fold marks** (front or back) and the **#10 double-window layout** (letterhead and Bill to in the windows, the
+  invoice below the first fold; the preview draws the windows), as on the cover letter. The line-table columns line
+  up in a grid and can be **dragged** into order (↑/↓ stay for the keyboard).
+- **Next invoice follows the pattern as you type (#481)**, or says what is wrong with it, before you save.
+- **Category defaults (#483, #486).** A product category can have an **Invoiced Income budget** — its products use it
+  unless they have their own, and changing it moves them too — and a **product code pattern** such as
+  `MBRSHP-{YY}-{SEQ:4}`. On the product form **Category comes first**: picking it fills in the next code (editable)
+  and offers the category's budget. Each category counts its own numbers, starting again each year when the pattern
+  shows the year; a number is used only when a product is saved with it, and a code already in use is skipped.
+- **Tax groups — several taxes per item (#487).** Sales tax is no longer one rate per invoice. The Invoice Manager
+  sets up **tax rates** (name, %, budget), groups them into **tax groups** (for example *Lodging* = Hotel tax +
+  State tax, *Food* = Food tax) and picks a **tax group on each product** (none = not taxed; it replaces the
+  *Taxable* box). Each line is charged every rate of its product's group; each rate is worked out once per invoice
+  on its own lines, shown on its own total line and on the PDF, and paid into its own budget. A night and a meal
+  billed together show three taxes on two lines. Changing a rate or a group reaches drafts (and revisions) when they
+  are saved or sent; sent invoices keep what they were sent with. The Sales tax collected report lists each rate.
+- **Tax-exempt customers (#485).** An entity can be marked **Tax-exempt customer**, with an optional exemption
+  certificate number. Invoices to it charge no sales tax on any line, and the PDF says *Tax exempt — certificate
+  #…*. Turning it on or off reaches drafts (and revisions) when they are saved; sent invoices keep their tax. There is
+  no per-invoice override: change the entity.
+- **Custom fields for chosen products (#484).** The Administrator can define a field *on lines of chosen products*
+  (for example **Serial number**); the Invoice Manager ticks it on those products in the catalog. It is asked on each
+  invoice line that uses such a product — required if the field says so — and prints after the line's description
+  when *show on PDF* is on.
+
+### Optional modules
+- **Turning a module on or off updates the menu at once (#482)** — no page reload (for the Administrator who changes
+  it; other users see it at their next sign-in or reload, as before).
 
 ### Events & Fundraisers
 - **The Fundraisers module is now Events & Fundraisers (#429).** The menu item is **Events**; the module setting and
@@ -98,6 +129,12 @@ PennyWarden 2.4.0 (in progress).
 - **Reports:** the stakeholder report and presentation work for both (an Event's report says "event" and has no goal);
   the Fiscal Year fundraising report and presentation list Events in a **separate section**, not in the fundraising
   totals; the Quarterly/Annual report shows no goal for an Event.
+- **One Report… button (#489).** The fundraiser page's Stakeholder report card no longer repeats the Report… button
+  from the page header.
+- **Presentation charts stay readable in any color scheme (#490).** Category names sit below the chart (a negative bar
+  can't cover them), value labels sit on a small box in the slide's color (a line or bar behind them never touches
+  the text), and a scheme color too close to the slide background is darkened or lightened in the presentation until
+  it stands out (at least 3:1). Your branding settings don't change.
 
 ### Attachments
 - **Identical files are stored once (#425).** When you attach a file that is already stored anywhere in PennyWarden,
@@ -126,20 +163,28 @@ PennyWarden 2.4.0 (in progress).
   bottom. Uncleared transactions that are not voided still stay together as outstanding.
 
 ### Help and the user guide
-- **One user guide (#473).** `docs/user-guide.md` describes the whole app as it works today, one area at a time
-  (Register, Budgets, Fiscal Years, Reports, the optional modules, System/About …), instead of a separate
-  "what's new" note per release. Those notes are kept in `docs/archive/`.
-- **Help in the app.** **Help** at the bottom of the menu opens the guide for every role, and the **?** at the top
-  right opens the section for the page you are on (on a page your roles can't open, the start of the guide). The guide
-  is part of the app, so it matches the version you have installed and works without an internet connection. Links to
-  the check-printing and backup guides open inside Help too.
-- **On pennywarden.org.** The site has a **User guide** page with the current guide and a version list going back to
-  1.10 (each earlier version's "what's new" notes).
+- **The user guide is a book (#473, #488).** A **Contents** page lists the chapters (Getting started, Register,
+  Budgets, Invoices …); each chapter lists its pages, and each page explains one task step by step, with **pictures**
+  of the screens (taken from the made-up demo organization). **Search** on every page finds pages by their words. It
+  replaces the single long guide; the "what's new" notes of earlier releases are kept in `docs/archive/`.
+- **Help in the app.** **Help** at the bottom of the menu opens the contents for every role, and the **?** at the top
+  right opens the page about the screen you are on (on a screen your roles can't open, the contents). Each page says
+  which version it applies to. The guide is part of the app, so it matches the version you have installed and works
+  without an internet connection.
+- **On pennywarden.org.** The **User guide** page has the same book, with an **Applies to** list on every page to
+  switch to another version: the book for 2.4 and later, the single "what's new" document for 1.10 to 2.3.
 
 ### Check printing
 - **Cover letter logo top right (#466).** A third logo position, **Top right, beside the letterhead**: the logo sits
   level with the organization's name at the right margin, and the letter text is not pushed down. The letterhead and
   date lines wrap short of the logo; the address starts below the logo only when the logo is taller than those lines.
+
+### Security
+- **pydantic 2.14.2 (Dependabot #476).** Fixes two pydantic security advisories (GHSA-qpmf-fgh3-ff25: JSON input
+  matching an unused alias or field name was silently dropped instead of refused; GHSA-3r8g-cqwr-jr29: extra data in
+  TypedDicts and pydantic dataclasses with `extra="allow"`). PennyWarden uses neither aliases nor those types - its
+  request models refuse unknown fields - so it was not affected; updated as a precaution. Also XlsxWriter 3.3.1 (used
+  for the presentations' chart data) and, for the tests only, pytest 9.2.0. No change in how PennyWarden behaves.
 
 ## 2.3.0 — 2026-11-01
 PennyWarden 2.3.0 (in progress).

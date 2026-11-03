@@ -228,27 +228,31 @@ def sales_tax(db: Session, ctx, date_from: dt.date | None, date_to: dt.date | No
     """Per tax rate: taxable sales and tax charged on invoices dated in the period, and the tax collected - the tax
     part of each payment dated in the period, apportioned exactly as Record payment splits it."""
     date_from, date_to = _period(date_from, date_to)
-    invs = [i for i in _invoices(db, ctx.workspace_id, LIVE) if i.tax_rate_milli_pct]
+    # 2.4.0 polish (#487): an invoice can carry several rates - each rate's own taxable sales, tax and collections
+    invs = [i for i in _invoices(db, ctx.workspace_id, LIVE) if docs.totals_of(i)["taxes"]]
     links = _links(db, [i.id for i in invs])
     per: dict[tuple, dict] = {}
     for i in invs:
         t = docs.totals_of(i)
-        key = (i.tax_name or "Sales tax", i.tax_rate_milli_pct)
-        r = per.setdefault(key, {"rate": f"{i.tax_name or 'Sales tax'} ({docs.cat.rate_text(i.tax_rate_milli_pct)} %)",
-                                 "invoices": 0, "taxable": 0, "charged": 0, "collected": 0})
-        if date_from <= i.invoice_date <= date_to:
-            r["invoices"] += 1
-            r["taxable"] += t["taxable_base"]
-            r["charged"] += t["tax"]
+        rows_i = []
+        for x in t["taxes"]:
+            key = (x["name"], x["milli"])
+            r = per.setdefault(key, {"rate": docs.tax_label(x), "invoices": 0, "taxable": 0, "charged": 0, "collected": 0})
+            rows_i.append(r)
+            if date_from <= i.invoice_date <= date_to:
+                r["invoices"] += 1
+                r["taxable"] += x["base"]
+                r["charged"] += x["tax"]
         cum = 0
         for link, a, tx in links[i.id]:
             if link.kind != "PAYMENT":
                 continue
-            _p0, tax0 = pay.apportion(i, cum)
+            _p0, tax0 = pay.apportion_rates(i, cum)
             cum += a.amount_cents
-            _p1, tax1 = pay.apportion(i, cum)
+            _p1, tax1 = pay.apportion_rates(i, cum)
             if date_from <= tx.transaction_date <= date_to:
-                r["collected"] += tax1 - tax0
+                for r, b0, b1 in zip(rows_i, tax0, tax1):
+                    r["collected"] += b1 - b0
     rows = [r for _k, r in sorted(per.items()) if r["invoices"] or r["collected"]]
     cols = [("rate", "Tax rate", "text"), ("invoices", "Invoices", "int"), ("taxable", "Taxable sales", "money"),
             ("charged", "Tax charged", "money"), ("collected", "Tax collected", "money")]
