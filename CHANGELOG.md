@@ -179,6 +179,13 @@ PennyWarden 2.4.0 (in progress).
   level with the organization's name at the right margin, and the letter text is not pushed down. The letterhead and
   date lines wrap short of the logo; the address starts below the logo only when the logo is taller than those lines.
 
+### Security
+- **pydantic 2.14.2 (Dependabot #476).** Fixes two pydantic security advisories (GHSA-qpmf-fgh3-ff25: JSON input
+  matching an unused alias or field name was silently dropped instead of refused; GHSA-3r8g-cqwr-jr29: extra data in
+  TypedDicts and pydantic dataclasses with `extra="allow"`). PennyWarden uses neither aliases nor those types - its
+  request models refuse unknown fields - so it was not affected; updated as a precaution. Also XlsxWriter 3.3.1 (used
+  for the presentations' chart data) and, for the tests only, pytest 9.2.0. No change in how PennyWarden behaves.
+
 ## 2.3.0 — 2026-11-01
 PennyWarden 2.3.0 (in progress).
 
