@@ -4592,6 +4592,40 @@ test("#386: light and dark themes - presentations dark for a new setup, a dark p
 });
 
 // ---------------------------------------------------------------- 2.2.0 #315 / #316: entity names
+test("2.4.0 polish (#503): an organization logo used by Branding; removing it lists where it is used", async ({ page }) => {
+  await login(page, "admin");
+  await page.getByRole("link", { name: "System/About" }).click();
+  await aboutTab(page, "General");
+  const logos = page.getByTestId("org-logos");
+  await expect(logos.getByTestId("org-logo-full")).toContainText("Not used anywhere yet.");
+  await logos.getByLabel("Logo image", { exact: true }).setInputFiles({ name: "logo.png", mimeType: "image/png", buffer: BRAND_LOGO });
+  await expect(logos.getByRole("img", { name: "Logo", exact: true })).toBeVisible();
+  // Branding's full logo: the organization logo, shown in the preview
+  await aboutTab(page, "Branding");
+  const card = page.getByRole("region", { name: "Organization branding" });
+  const full = card.getByTestId("logo-choice-branding-full");
+  const before = await full.getByRole("combobox").inputValue();
+  await full.getByRole("combobox").selectOption("ORG");
+  await expect(full.getByRole("img", { name: "The organization logo" })).toBeVisible();
+  await expect(page.getByTestId("branding-preview").getByRole("img", { name: "Full logo" })).toBeVisible();
+  // removing the organization logo asks first and names the places that use it
+  await aboutTab(page, "General");
+  await expect(logos.getByTestId("org-logo-full")).toContainText("Used by: Branding: logo");
+  await logos.getByTestId("org-logo-full").getByRole("button", { name: "Remove" }).click();
+  const dlg = page.getByRole("dialog", { name: "Confirmation required" });
+  await expect(dlg).toContainText("Branding: logo");
+  await dlg.getByLabel(/explicitly confirm/).check();
+  await dlg.getByRole("button", { name: "Confirm and continue" }).click();
+  await expect(logos.getByTestId("org-logo-full")).toContainText("None.");
+  await page.screenshot({ path: "e2e-screenshots/light-organization-logos.png" });
+  // Branding still says Organization logo, and explains there is none now; put it back as it was
+  await aboutTab(page, "Branding");
+  await expect(full.getByRole("note")).toContainText("No organization logo yet");
+  await full.getByRole("combobox").selectOption(before);
+  await expect(full.getByRole("combobox")).toHaveValue(before);
+  await logout(page);
+});
+
 test("#315 / #316: first and last name, a display name and mailing address; each user's name order", async ({ page }) => {
   await login(page, "ru1", "Brand-New-Pass-99");
   await page.getByRole("link", { name: "Entities" }).click();
@@ -4673,39 +4707,5 @@ test("2.4.0 polish (#482, #481, #477, #480): turning Invoices on shows Invoices 
     await page.getByLabel("Invoices module").uncheck();
     await expect(nav.getByRole("link", { name: "Invoices Setup" })).toHaveCount(0);
   }
-  await logout(page);
-});
-
-test("2.4.0 polish (#503): an organization logo used by Branding; removing it lists where it is used", async ({ page }) => {
-  await login(page, "admin");
-  await page.getByRole("link", { name: "System/About" }).click();
-  await aboutTab(page, "General");
-  const logos = page.getByTestId("org-logos");
-  await expect(logos.getByTestId("org-logo-full")).toContainText("Not used anywhere yet.");
-  await logos.getByLabel("Logo image", { exact: true }).setInputFiles({ name: "logo.png", mimeType: "image/png", buffer: BRAND_LOGO });
-  await expect(logos.getByRole("img", { name: "Logo", exact: true })).toBeVisible();
-  // Branding's full logo: the organization logo, shown in the preview
-  await aboutTab(page, "Branding");
-  const card = page.getByRole("region", { name: "Organization branding" });
-  const full = card.getByTestId("logo-choice-branding-full");
-  const before = await full.getByRole("combobox").inputValue();
-  await full.getByRole("combobox").selectOption("ORG");
-  await expect(full.getByRole("img", { name: "The organization logo" })).toBeVisible();
-  await expect(page.getByTestId("branding-preview").getByRole("img", { name: "Full logo" })).toBeVisible();
-  // removing the organization logo asks first and names the places that use it
-  await aboutTab(page, "General");
-  await expect(logos.getByTestId("org-logo-full")).toContainText("Used by: Branding: logo");
-  await logos.getByTestId("org-logo-full").getByRole("button", { name: "Remove" }).click();
-  const dlg = page.getByRole("dialog", { name: "Confirmation required" });
-  await expect(dlg).toContainText("Branding: logo");
-  await dlg.getByLabel(/explicitly confirm/).check();
-  await dlg.getByRole("button", { name: "Confirm and continue" }).click();
-  await expect(logos.getByTestId("org-logo-full")).toContainText("None.");
-  await page.screenshot({ path: "e2e-screenshots/light-organization-logos.png" });
-  // Branding still says Organization logo, and explains there is none now; put it back as it was
-  await aboutTab(page, "Branding");
-  await expect(full.getByRole("note")).toContainText("No organization logo yet");
-  await full.getByRole("combobox").selectOption(before);
-  await expect(full.getByRole("combobox")).toHaveValue(before);
   await logout(page);
 });
