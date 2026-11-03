@@ -16,7 +16,7 @@ export const GROUPS: { id: GroupId; name: string; short: string; why: string }[]
   { id: "audit", name: "Audit and year-end close", short: "Audit and close", why: "the records an auditor reviews" },
   { id: "analyze", name: "Analyze activity", short: "Analyze", why: "where money came from and went" },
   { id: "plan", name: "Plan budgets", short: "Plan", why: "next year's numbers" },
-  { id: "fundraisers", name: "Fundraisers", short: "Fundraisers", why: "event-day paperwork" },
+  { id: "fundraisers", name: "Events & Fundraisers", short: "Events & Fundraisers", why: "event-day paperwork" },   // 2.4.0 polish (#511)
   { id: "invoices", name: "Invoices", short: "Invoices", why: "what customers owe and have paid" },   // 2.4.0 (#255)
 ];
 
