@@ -655,7 +655,8 @@ function Payments({ i, onChanged }: { i: any; onChanged: (i: any) => void }) {
 
 function useAccounts() {
   const [accts, setAccts] = useState<any[]>([]);
-  useEffect(() => { api.get("/api/bank-accounts").then((l: any[]) => setAccts(l.filter((a) => a.status === "ACTIVE"))); }, []);
+  // 2.4.0 polish (#504): only active register accounts take a deposit or a refund, in the Bank Accounts order
+  useEffect(() => { api.get("/api/bank-accounts").then((l: any[]) => setAccts(l.filter((a) => a.status === "ACTIVE" && a.register_enabled))); }, []);
   return accts;
 }
 
@@ -664,7 +665,11 @@ function MoneyForm({ i, refund, onClose, onDone }: { i: any; refund: boolean; on
   const { run, dialog } = useConfirmable();
   const [err, setErr] = useState<unknown>(null);
   const [v, setV] = useState({ bank_account_id: "", amount: refund ? i.payments.refundable : i.payments.open, transaction_date: new Date().toISOString().slice(0, 10), check_number: "", notes: "" });
-  useEffect(() => { if (accts.length === 1 && !v.bank_account_id) setV((x) => ({ ...x, bank_account_id: String(accts[0].id) })); }, [accts]); // eslint-disable-line react-hooks/exhaustive-deps
+  // #504: start on the only account, else the Primary account (as the Register does)
+  useEffect(() => {
+    const start = accts.length === 1 ? accts[0] : accts.find((a) => a.is_primary);
+    if (start && !v.bank_account_id) setV((x) => ({ ...x, bank_account_id: String(start.id) }));
+  }, [accts]); // eslint-disable-line react-hooks/exhaustive-deps
   async function submit(e: FormEvent) {
     e.preventDefault();
     setErr(null);
@@ -684,7 +689,7 @@ function MoneyForm({ i, refund, onClose, onDone }: { i: any; refund: boolean; on
           ? `A withdrawal that reduces the Invoiced Income budget (up to ${money(i.payments.refundable)}).`
           : `A deposit for invoice ${i.number}, spread over its lines' Invoiced Income budgets. Open balance ${money(i.payments.open)}; more than that is recorded as an overpayment.`}</p>
         <Field label="Bank account"><select required value={v.bank_account_id} onChange={(e) => setV({ ...v, bank_account_id: e.target.value })}>
-          <option value="">Choose…</option>{accts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>)}</select></Field>
+          <option value="">Choose…</option>{accts.map((a) => <option key={a.id} value={a.id}>{a.label || `${a.account_name} - ${a.account_number_masked}`}</option>)}</select></Field>
         <Field label="Amount"><input required inputMode="decimal" value={v.amount} onChange={(e) => setV({ ...v, amount: e.target.value })} /></Field>
         <Field label="Date"><input type="date" required value={v.transaction_date} onChange={(e) => setV({ ...v, transaction_date: e.target.value })} /></Field>
         {refund ? <Field label="Check number"><input maxLength={20} value={v.check_number} onChange={(e) => setV({ ...v, check_number: e.target.value })} /></Field> : null}
