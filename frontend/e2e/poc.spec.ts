@@ -4457,6 +4457,64 @@ test("#256: a Register User prints a year-end giving statement; the donor report
   await logout(page);
 });
 
+test("2.4.0 polish (#504): Record payment lists the register accounts by name and starts on the Primary account", async ({ page }) => {
+  // runs before #125 (Reinitialize wipes the financial data this needs: FY2027, the accounts)
+  const caller = async () => {
+    const me = await (await page.request.get("/api/auth/me")).json();
+    const call = async (method: string, url: string, data?: any) => {
+      const r = await page.request.fetch(url, { method, headers: { "X-CSRF-Token": me.csrf_token }, data });
+      expect(r.ok(), `${method} ${url}: ${await r.text()}`).toBeTruthy();
+      return r.status() === 204 ? null : r.json();
+    };
+    return { me, call };
+  };
+  // Administrator: the Invoices module on, and Rae (Register User) also an Invoice Manager for this test
+  await login(page, "admin");
+  let { me, call } = await caller();
+  const wasOn = !!me.modules?.invoices;
+  await call("PUT", "/api/system/modules", { invoices: true });
+  const ru = (await call("GET", "/api/users")).find((u: any) => u.username === "ru1");
+  const ruRoles: string[] = ru.roles;
+  await call("PATCH", `/api/users/${ru.id}`, { roles: [...ruRoles, "INVOICE_MANAGER"] });
+  await logout(page);
+  // Budget Manager: an Invoiced Income budget in FY2027
+  await login(page, "bm1");
+  ({ me, call } = await caller());
+  const fy = (await call("GET", "/api/fiscal-years")).find((f: any) => f.display_name === "FY2027");
+  const bud = await call("POST", "/api/budgets", { fiscal_year_id: fy.id, code: "4950", name: "E2E Dues", amount: "500.00", budget_type: "INCOME" });
+  await call("PUT", `/api/budgets/${bud.id}/invoiced-income`, { invoiced_income: true });
+  await logout(page);
+  // Rae: a product, a customer and a sent invoice, then Record payment…
+  await login(page, "ru1", "Brand-New-Pass-99");          // Rae changed her password earlier in the suite
+  ({ me, call } = await caller());
+  const units = await call("GET", "/api/invoices/catalog/unit-types");
+  const leaf = (await call("GET", `/api/budgets/selectable?fiscal_year_id=${fy.id}&transaction_type=DEPOSIT`)).find((o: any) => o.label.startsWith("4950 E2E Dues"));
+  const prod = await call("POST", "/api/invoices/catalog/products", { name: "E2E Dues", unit_price: "50.00", unit_type_id: units[0].id, budget_id: leaf.id });
+  const cust = await call("POST", "/api/entities", { entity_type: "ORGANIZATION", organization_name: "E2E Paying Member", confirmations: ["DUPLICATE_ENTITY"] });
+  const inv = await call("POST", "/api/invoices", { customer_entity_id: cust.id, invoice_date: "2026-09-15", lines: [{ product_id: prod.id, quantity: "1" }] });
+  await call("POST", `/api/invoices/${inv.id}/send`);
+  const reg = (await call("GET", "/api/bank-accounts")).filter((a: any) => a.status === "ACTIVE" && a.register_enabled);
+  const primary = reg.find((a: any) => a.is_primary) ?? (reg.length === 1 ? reg[0] : null);
+  await page.goto(`/invoices/${inv.id}`);
+  await page.getByRole("button", { name: "Record payment…" }).click();
+  const dlg = page.getByRole("dialog", { name: "Record payment" });
+  const sel = dlg.getByLabel("Bank account");
+  expect(reg.length).toBeGreaterThan(0);
+  await expect(sel.locator("option")).toHaveCount(reg.length + 1);              // the accounts load after the dialog opens
+  const names = (await sel.locator("option").allTextContents()).slice(1);         // after "Choose…"
+  expect(names).toEqual(reg.map((a: any) => a.label));                            // named, register accounts only
+  if (primary) await expect(sel).toHaveValue(String(primary.id));                  // starts on the Primary account
+  await dlg.getByRole("button", { name: "Cancel" }).click();
+  await call("POST", `/api/invoices/${inv.id}/void`, { reason: "E2E test invoice" });
+  await logout(page);
+  // put things back
+  await login(page, "admin");
+  ({ me, call } = await caller());
+  await call("PATCH", `/api/users/${ru.id}`, { roles: ruRoles });
+  if (!wasOn) await call("PUT", "/api/system/modules", { invoices: false });
+  await logout(page);
+});
+
 test("#125: an Administrator reinitializes (keeping the users); everyone sees the notice until it is acknowledged", async ({ page }) => {
   await login(page, "admin");
   await page.getByRole("link", { name: "System/About" }).click();
