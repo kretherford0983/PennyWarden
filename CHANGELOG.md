@@ -122,6 +122,10 @@ PennyWarden 2.4.0 (in progress).
   it; other users see it at their next sign-in or reload, as before).
 
 ### Events & Fundraisers
+- **Highlight boxes keep words whole (#509).** In the Fiscal Year fundraising report (and the fundraiser report and the
+  Quarterly / Annual report), a long name in a highlight box such as *Top fundraiser* moves whole words to the next line
+  and, only if a word still doesn't fit, uses a smaller type - "Golf Tournament" no longer prints as "Golf Tourna-ment".
+  The dollar figures beside it keep their size.
 - **The Fundraisers module is now Events & Fundraisers (#429).** The menu item is **Events**; the module setting and
   the pages read *Events & Fundraisers*, and the setting lists examples (fundraisers, a Summer Cookout, an annual
   picnic…). Nothing moves: every fundraiser, its buckets, reports and history stay where they were.
