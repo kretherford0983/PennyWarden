@@ -14,6 +14,7 @@ export function InvoiceTemplateEditor() {
   const [saved, setSaved] = useState(false);
   const [logoV, setLogoV] = useState(0);
   const dragFrom = useRef<number | null>(null);          // #480: the row being dragged
+  const [dragging, setDragging] = useState<number | null>(null);
   const load = () => api.get("/api/invoices/setup/template").then((x) => { setT(x); setCfg(x.config); }, setErr);
   useEffect(() => { load(); }, []);
   if (!t || !cfg) return <section className="card"><h2>Invoice PDF</h2><ErrorBox error={err} />{err ? null : <Loading />}</section>;
@@ -72,9 +73,13 @@ export function InvoiceTemplateEditor() {
           {lines("bill_to")}
           <fieldset><legend>Line table columns</legend>
             <ol className="plain column-order" data-testid="inv-columns">{cols.map((c, n) => (
-              <li key={c.key} className="column-row" draggable onDragStart={() => { dragFrom.current = n; }}
-                  onDragOver={(e) => e.preventDefault()} onDrop={() => dropAt(n)}>
-                <span className="drag-handle" aria-hidden="true" title="Drag to reorder">⠿</span>
+              // 2.4.0 polish (#501): the row is `display: contents` (so the headings line up in one grid) and has no box
+              // a drag can start from - the handle is what's draggable; dragover/drop still bubble up to the row
+              <li key={c.key} className={`column-row${dragging === n ? " dragging" : ""}`}
+                  onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }} onDrop={(e) => { e.preventDefault(); dropAt(n); }}>
+                <span className="drag-handle" aria-hidden="true" title="Drag to reorder" draggable data-testid={`inv-col-handle-${c.key}`}
+                  onDragStart={(e) => { dragFrom.current = n; setDragging(n); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", c.key); }}
+                  onDragEnd={() => { dragFrom.current = null; setDragging(null); }}>⠿</span>
                 <label htmlFor={`inv-col-${c.key}`}>{t.columns.find((x: any) => x.key === c.key)?.label}</label>
                 <input id={`inv-col-${c.key}`} aria-label={`Heading for ${c.key}`} maxLength={30} value={c.heading} onChange={(e) => set("columns", cols.map((x) => (x.key === c.key ? { ...x, heading: e.target.value } : x)))} />
                 <button type="button" className="small" aria-label={`Move ${c.key} up`} disabled={!n} onClick={() => move(n, -1)}>↑</button>

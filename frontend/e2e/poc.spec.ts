@@ -4664,6 +4664,14 @@ test("2.4.0 polish (#482, #481, #477, #480): turning Invoices on shows Invoices 
   const heads = await page.getByTestId("inv-columns").locator("input").all();
   const xs = await Promise.all(heads.map(async (h) => Math.round((await h.boundingBox())!.x)));
   expect(new Set(xs).size).toBe(1);
+  // #501: dragging a column by its handle reorders the list (the first column moves below the second)
+  const colKeys = async () => (await page.getByTestId("inv-columns").locator("input").evaluateAll((els) => els.map((e) => e.id)));
+  const before = await colKeys();
+  const k0 = before[0].replace("inv-col-", ""), k1 = before[1].replace("inv-col-", "");
+  await page.getByTestId(`inv-col-handle-${k0}`).dragTo(page.getByTestId(`inv-col-handle-${k1}`));
+  await expect.poll(colKeys).toEqual([before[1], before[0], ...before.slice(2)]);
+  await page.getByRole("button", { name: `Move ${k0} up` }).click();      // and back with the arrow
+  await expect.poll(colKeys).toEqual(before);
   await page.screenshot({ path: "e2e-screenshots/light-invoice-pdf-setup.png" });
   if (!wasOn) {                                            // leave the module as it was
     await page.goto("/about/general");
