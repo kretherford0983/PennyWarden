@@ -167,6 +167,7 @@ Looking after the installation.
 
 - [The System/About tabs](system-about/system-about-tabs.md) — What each tab is for.
 - [Optional modules](system-about/optional-modules.md) — Administrators: turning modules on and off.
+- [Organization logos](system-about/organization-logos.md) — One logo for letters, envelopes, invoices, donation letters and Branding.
 - [Branding](system-about/branding.md) — Administrators: colors and logos for reports and presentations.
 
 ## Backup and restore

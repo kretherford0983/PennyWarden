@@ -3339,14 +3339,17 @@ test("#165-#166: Administrator sets up a cover letter and an envelope; a Registe
   await page.getByRole("button", { name: "Signed by" }).click();
   // build 13: a new letter is a draft until saved; a logo can be added once it is saved
   await expect(page.getByTestId("draft-note")).toBeVisible();
-  await expect(page.getByLabel("Logo image")).toHaveCount(0);
+  await expect(page.getByLabel("letter logo image")).toHaveCount(0);
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.getByRole("status").filter({ hasText: "Saved." })).toBeVisible();
   await expect(page.getByTestId("draft-note")).toHaveCount(0);
   // #176: a logo (a tiny PNG made here: synthetic) and #177: the address for a window envelope
   const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAADAAAAAYCAIAAAAzn+mLAAAAN0lEQVR4nO3OMQHAIADAMEDINCERqfv39GRHoiDz2Wf8ybod+BIqQkWoCBWhIlSEilARKkJFqLyoawE+y3CGBgAAAABJRU5ErkJggg==", "base64");
-  await page.getByLabel("Logo image").setInputFiles({ name: "logo.png", mimeType: "image/png", buffer: png });
-  await expect(page.getByRole("img", { name: "The letter's logo" })).toBeVisible();
+  // 2.4.0 polish (#503): Logo - Organization logo / Its own logo / No logo (new letters start with none)
+  await expect(page.getByTestId("logo-choice-letter").getByRole("combobox")).toHaveValue("NONE");
+  await page.getByTestId("logo-choice-letter").getByRole("combobox").selectOption("OWN");
+  await page.getByLabel("letter logo image").setInputFiles({ name: "logo.png", mimeType: "image/png", buffer: png });
+  await expect(page.getByTestId("logo-choice-letter").getByRole("img", { name: "This logo" })).toBeVisible();
   await page.getByLabel("Address for a window envelope").selectOption("LETTER");
   await expect(page.getByLabel("Payee address – right (in)")).toBeVisible();
   await page.getByLabel("Address for a window envelope").selectOption("NONE");
@@ -4505,7 +4508,7 @@ test("#280: an Administrator brands reports - a palette, a custom palette checke
   await card.getByRole("button", { name: "Save branding" }).click();
   await expect(card.getByRole("status")).toHaveText("Saved.");
   // the logo shows in the live preview at once
-  await card.getByLabel("Full logo image").setInputFiles({ name: "logo.png", mimeType: "image/png", buffer: BRAND_LOGO });
+  await card.getByLabel("branding-full logo image").setInputFiles({ name: "logo.png", mimeType: "image/png", buffer: BRAND_LOGO });
   await expect(page.getByTestId("branding-preview").getByRole("img", { name: "Full logo" })).toBeVisible();
   await card.screenshot({ path: "e2e-screenshots/light-branding.png" });
   await card.getByRole("button", { name: "Reset to the PennyWarden palette" }).click();
@@ -4580,7 +4583,7 @@ test("#386: light and dark themes - presentations dark for a new setup, a dark p
   await card.getByLabel("Use a separate logo on dark backgrounds").check();
   await card.getByRole("button", { name: "Save branding" }).click();
   await expect(card.getByRole("status")).toHaveText("Saved.");
-  await card.getByLabel("Full logo for dark backgrounds image").setInputFiles({ name: "logo-dark.png", mimeType: "image/png", buffer: BRAND_LOGO });
+  await card.getByLabel("branding-dark_full logo image").setInputFiles({ name: "logo-dark.png", mimeType: "image/png", buffer: BRAND_LOGO });
   await expect(page.getByTestId("branding-preview-dark").getByRole("img", { name: "Full logo" })).toBeVisible();
   await card.screenshot({ path: "e2e-screenshots/light-branding-dark-theme.png" });
   // the light theme is unchanged
@@ -4670,5 +4673,39 @@ test("2.4.0 polish (#482, #481, #477, #480): turning Invoices on shows Invoices 
     await page.getByLabel("Invoices module").uncheck();
     await expect(nav.getByRole("link", { name: "Invoices Setup" })).toHaveCount(0);
   }
+  await logout(page);
+});
+
+test("2.4.0 polish (#503): an organization logo used by Branding; removing it lists where it is used", async ({ page }) => {
+  await login(page, "admin");
+  await page.getByRole("link", { name: "System/About" }).click();
+  await aboutTab(page, "General");
+  const logos = page.getByTestId("org-logos");
+  await expect(logos.getByTestId("org-logo-full")).toContainText("Not used anywhere yet.");
+  await logos.getByLabel("Logo image", { exact: true }).setInputFiles({ name: "logo.png", mimeType: "image/png", buffer: BRAND_LOGO });
+  await expect(logos.getByRole("img", { name: "Logo", exact: true })).toBeVisible();
+  // Branding's full logo: the organization logo, shown in the preview
+  await aboutTab(page, "Branding");
+  const card = page.getByRole("region", { name: "Organization branding" });
+  const full = card.getByTestId("logo-choice-branding-full");
+  const before = await full.getByRole("combobox").inputValue();
+  await full.getByRole("combobox").selectOption("ORG");
+  await expect(full.getByRole("img", { name: "The organization logo" })).toBeVisible();
+  await expect(page.getByTestId("branding-preview").getByRole("img", { name: "Full logo" })).toBeVisible();
+  // removing the organization logo asks first and names the places that use it
+  await aboutTab(page, "General");
+  await expect(logos.getByTestId("org-logo-full")).toContainText("Used by: Branding: logo");
+  await logos.getByTestId("org-logo-full").getByRole("button", { name: "Remove" }).click();
+  const dlg = page.getByRole("dialog", { name: "Confirmation required" });
+  await expect(dlg).toContainText("Branding: logo");
+  await dlg.getByLabel(/explicitly confirm/).check();
+  await dlg.getByRole("button", { name: "Confirm and continue" }).click();
+  await expect(logos.getByTestId("org-logo-full")).toContainText("None.");
+  await page.screenshot({ path: "e2e-screenshots/light-organization-logos.png" });
+  // Branding still says Organization logo, and explains there is none now; put it back as it was
+  await aboutTab(page, "Branding");
+  await expect(full.getByRole("note")).toContainText("No organization logo yet");
+  await full.getByRole("combobox").selectOption(before);
+  await expect(full.getByRole("combobox")).toHaveValue(before);
   await logout(page);
 });
