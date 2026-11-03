@@ -265,3 +265,26 @@ def test_tax_groups_charge_each_rate_on_its_own_lines(env, ib, base):
     t = p.json()["transaction"]
     descs = {a["description"].split(": ", 1)[1]: a["amount"] for a in t["allocations"] if ": " in (a["description"] or "")}
     assert descs["Hotel tax"] == "6.00" and descs["State tax"] == "5.50" and descs["Food tax"] == "0.60"
+
+
+def test_tax_exempt_customer_is_charged_no_tax(env, ib):
+    """#485: a tax-exempt entity (with an optional certificate #) is charged no tax on any line; the change reaches
+    drafts when saved, not a sent invoice; the PDF says so; the flag is audited with the entity."""
+    im = ib["im"]
+    lines = [{"product_id": ib["hour"], "quantity": "1"}]
+    sent = im.post("/api/invoices", _body(ib, lines)).json()
+    assert im.post(f"/api/invoices/{sent['id']}/send").json()["totals"]["tax"] == "2.90"
+    draft = im.post("/api/invoices", _body(ib, lines)).json()
+    assert draft["totals"]["tax"] == "2.90"
+    r = im.patch(f"/api/entities/{ib['cust']}", {"tax_exempt": True, "tax_exempt_certificate": " EX-77 "})
+    assert r.status_code == 200, r.text
+    assert r.json()["tax_exempt"] is True and r.json()["tax_exempt_certificate"] == "EX-77"
+    again = im.put(f"/api/invoices/{draft['id']}", _body(ib, [{"id": draft["lines"][0]["id"], **lines[0]}])).json()
+    assert again["totals"]["tax"] == "0.00" and again["taxes"] == [] and again["customer"]["tax_exempt"] is True
+    assert im.get(f"/api/invoices/{sent['id']}").json()["totals"]["tax"] == "2.90"            # sent: unchanged
+    pdf = im.get(f"/api/invoices/{draft['id']}/pdf").content
+    assert "Tax exempt — certificate #EX-77" in "".join(p.extract_text() for p in PdfReader(io.BytesIO(pdf)).pages)
+    off = im.patch(f"/api/entities/{ib['cust']}", {"tax_exempt": False, "tax_exempt_certificate": "EX-77"}).json()
+    assert off["tax_exempt"] is False and off["tax_exempt_certificate"] is None
+    ev = env.auditor.get("/api/audit-events?action=ENTITY_UPDATED").json()["items"]
+    assert any("tax_exempt" in str(x) for x in ev)

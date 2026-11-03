@@ -98,6 +98,10 @@ PennyWarden 2.4.0 (in progress).
   on its own lines, shown on its own total line and on the PDF, and paid into its own budget. A night and a meal
   billed together show three taxes on two lines. Changing a rate or a group reaches drafts (and revisions) when they
   are saved or sent; sent invoices keep what they were sent with. The Sales tax collected report lists each rate.
+- **Tax-exempt customers (#485).** An entity can be marked **Tax-exempt customer**, with an optional exemption
+  certificate number. Invoices to it charge no sales tax on any line, and the PDF says *Tax exempt — certificate
+  #…*. Turning it on or off reaches drafts (and revisions) when they are saved; sent invoices keep their tax. There is
+  no per-invoice override: change the entity.
 - **Custom fields for chosen products (#484).** The Administrator can define a field *on lines of chosen products*
   (for example **Serial number**); the Invoice Manager ticks it on those products in the catalog. It is asked on each
   invoice line that uses such a product — required if the field says so — and prints after the line's description

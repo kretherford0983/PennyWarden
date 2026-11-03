@@ -155,10 +155,12 @@ def tax_label(t: dict) -> str:
 def refresh_taxes(db: Session, i: Invoice, fy) -> None:
     """2.4.0 polish (#487): each line takes the current rates of its product's tax group (a draft or a revision being
     prepared; a sent version keeps what it was sent with). A rate needs an Invoiced Income budget in the invoice's
-    Fiscal Year, like a product."""
+    Fiscal Year, like a product. (#485) A tax-exempt customer's lines carry no rates."""
+    e = db.get(Entity, i.customer_entity_id)
+    exempt = bool(e is not None and e.tax_exempt)
     for ln in i.lines:
         p = db.get(InvoiceProduct, ln.product_id)
-        rates = cat.group_rates(db, p.tax_group_id) if p is not None and p.tax_group_id else []
+        rates = cat.group_rates(db, p.tax_group_id) if p is not None and p.tax_group_id and not exempt else []
         out = []
         for tr in rates:
             tb = cat.budget_for_year(db, tr.budget_id, fy)
@@ -296,7 +298,8 @@ def out(db: Session, ctx, i: Invoice, brief: bool = False) -> dict:
     e = db.get(Entity, i.customer_entity_id)
     base = {"id": i.id, "number": display_number(i), "base_number": i.number, "revision": i.revision,
             "status": i.status, "status_label": STATUS_LABEL[i.status],
-            "customer": {"id": e.id, "name": e.display_name} if e else None,
+            "customer": {"id": e.id, "name": e.display_name, "tax_exempt": bool(e.tax_exempt),          # #485
+                         "tax_exempt_certificate": e.tax_exempt_certificate} if e else None,
             "invoice_date": i.invoice_date.isoformat(), "due_date": i.due_date.isoformat(),
             "overdue": i.status in OPEN and i.due_date < dt.date.today(),
             "total": fmt(t["total"]), "write_off_status": i.write_off_status,
@@ -669,10 +672,17 @@ def _pdf_data(db: Session, i: Invoice) -> dict:
             "invoice_discount": _money(t["invoice_discount"]) if t["invoice_discount"] else None,
             "invoice_discount_reason": i.discount_reason or "",
             "taxes": [(tax_label(x), _money(x["tax"])) for x in t["taxes"]],          # 2.4.0 polish (#487)
+            "tax_exempt": _exempt_note(e) if not t["taxes"] else "",                # 2.4.0 polish (#485)
             "total": _money(t["total"]), "terms": i.terms_text, "notes": i.notes,
             **_paid_part(db, i, t["total"]),
             "fields": [(x["name"], x["value"]) for x in values_out(db, i.workspace_id, "INVOICE", i.custom_values,
                                                                   pdf_only=True)]}
+
+
+def _exempt_note(e) -> str:
+    if e is None or not e.tax_exempt:
+        return ""
+    return f"Tax exempt — certificate #{e.tax_exempt_certificate}" if e.tax_exempt_certificate else "Tax exempt"
 
 
 def _paid_part(db: Session, i: Invoice, total: int) -> dict:

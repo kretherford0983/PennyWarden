@@ -397,6 +397,8 @@ def _render(cfg: TemplateConfig, data: dict, values: dict[str, str], logo: bytes
     tt.setStyle(TableStyle([("LINEABOVE", (0, total_row), (-1, total_row), 0.8, accent),
                             ("BOTTOMPADDING", (0, 0), (-1, -1), 2)]))
     f.append(tt)
+    if data.get("tax_exempt"):                              # 2.4.0 polish (#485): under the totals
+        f.append(Paragraph(escape(data["tax_exempt"]), ParagraphStyle("tx", parent=right, fontSize=sz - 1)))
     if cfg.show_terms and data.get("terms"):
         f += [Spacer(1, 12), Paragraph(f"<b>Terms:</b> {escape(data['terms'])}", body)]
     if cfg.show_notes and data.get("notes"):
