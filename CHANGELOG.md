@@ -163,15 +163,16 @@ PennyWarden 2.4.0 (in progress).
   bottom. Uncleared transactions that are not voided still stay together as outstanding.
 
 ### Help and the user guide
-- **One user guide (#473).** `docs/user-guide.md` describes the whole app as it works today, one area at a time
-  (Register, Budgets, Fiscal Years, Reports, the optional modules, System/About …), instead of a separate
-  "what's new" note per release. Those notes are kept in `docs/archive/`.
-- **Help in the app.** **Help** at the bottom of the menu opens the guide for every role, and the **?** at the top
-  right opens the section for the page you are on (on a page your roles can't open, the start of the guide). The guide
-  is part of the app, so it matches the version you have installed and works without an internet connection. Links to
-  the check-printing and backup guides open inside Help too.
-- **On pennywarden.org.** The site has a **User guide** page with the current guide and a version list going back to
-  1.10 (each earlier version's "what's new" notes).
+- **The user guide is a book (#473, #488).** A **Contents** page lists the chapters (Getting started, Register,
+  Budgets, Invoices …); each chapter lists its pages, and each page explains one task step by step, with **pictures**
+  of the screens (taken from the made-up demo organization). **Search** on every page finds pages by their words. It
+  replaces the single long guide; the "what's new" notes of earlier releases are kept in `docs/archive/`.
+- **Help in the app.** **Help** at the bottom of the menu opens the contents for every role, and the **?** at the top
+  right opens the page about the screen you are on (on a screen your roles can't open, the contents). Each page says
+  which version it applies to. The guide is part of the app, so it matches the version you have installed and works
+  without an internet connection.
+- **On pennywarden.org.** The **User guide** page has the same book, with an **Applies to** list on every page to
+  switch to another version: the book for 2.4 and later, the single "what's new" document for 1.10 to 2.3.
 
 ### Check printing
 - **Cover letter logo top right (#466).** A third logo position, **Top right, beside the letterhead**: the logo sits

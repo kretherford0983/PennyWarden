@@ -1,10 +1,10 @@
-/** 2.4.0 (#473): Help - the bundled user guide (and the check-printing and backup guides it links to), shown inside
- * the app for every role. The Markdown is project-authored and bundled at build time; this small renderer turns it into
- * React elements, so all text is escaped and no raw HTML is ever injected (BR-096). The only HTML it understands is the
- * guide's own section marker line `<a id="name"></a>`, which becomes an anchor id. */
-import { Fragment, useEffect, useMemo, useRef, type ReactNode, type MouseEvent } from "react";
+/** 2.4.0 (#473, book #488): Help - the bundled user guide, a book of chapters and task pages (docs/guide), shown inside
+ * the app for every role: the contents, a chapter's pages, a page, and search. The Markdown is project-authored and
+ * bundled at build time; this small renderer turns it into React elements, so all text is escaped and no raw HTML is
+ * ever injected (BR-096). The only HTML it understands is a section marker line `<a id="name"></a>` (anchor ids). */
+import { Fragment, useEffect, useMemo, useRef, useState, type FormEvent, type ReactNode, type MouseEvent } from "react";
 import { REPO_BLOB } from "../help";
-import { HELP_DOCS } from "../helpDocs";
+import { GUIDE, chapterOf, imageUrl, pageOf, pageText, search, sourcePage, type GuideChapter } from "../helpDocs";
 import { Link, useRouter } from "../router";
 
 const ANCHOR_LINE = /^<a id="([a-z0-9-]+)"><\/a>\s*$/;
@@ -16,26 +16,43 @@ export function slug(text: string): string {
 
 type Target = { kind: "anchor"; id: string } | { kind: "app"; to: string } | { kind: "external"; href: string } | null;
 
-/** Where a Markdown link in document `doc` points. Anything that isn't a plain web address, an in-page anchor or a
- * repository file becomes plain text (a "javascript:" link can never be produced). */
-export function resolveLink(href: string, doc: string): Target {
+/** The path of a relative Markdown href, from the file `from` (a repository path such as docs/guide/register/x.md). */
+function joinPath(from: string, href: string): string {
+  const parts = from.split("/").slice(0, -1);
+  for (const p of href.split("/")) {
+    if (p === "..") parts.pop();
+    else if (p && p !== ".") parts.push(p);
+  }
+  return parts.join("/");
+}
+
+/** Where a Markdown link in file `from` points. Anything that isn't a plain web address, an in-page anchor or a
+ * repository file becomes plain text (a "javascript:" link can never be produced). Guide pages and the reference
+ * documents stay in the app; other repository files open on GitHub. */
+export function resolveLink(href: string, from: string): Target {
   if (href.startsWith("#")) return /^#[A-Za-z0-9_-]+$/.test(href) ? { kind: "anchor", id: href.slice(1) } : null;
   if (/^https?:\/\//i.test(href)) return { kind: "external", href };
   if (/^[a-z]+:/i.test(href) || href.startsWith("//") || href.includes("\\")) return null;
   const [file, frag = ""] = href.split("#");
-  const parts: string[] = ["docs"];
-  for (const p of file.split("/")) {
-    if (p === "..") parts.pop();
-    else if (p && p !== ".") parts.push(p);
+  const path = joinPath(from, file);
+  const tail = frag ? `#${frag}` : "";
+  const g = /^docs\/guide\/([a-z0-9-]+)\/([a-z0-9-]+)\.md$/.exec(path);
+  if (g && pageOf(g[1], g[2])) return { kind: "app", to: `/help/${g[1]}/${g[2]}${tail}` };
+  const d = /^docs\/([a-z0-9-]+)\.md$/.exec(path);
+  if (d && d[1] === "user-guide") return { kind: "app", to: "/help" };
+  const ref = d ? sourcePage(d[1]) : undefined;
+  if (ref) {
+    const to = `/help/${ref.chapter}/${ref.page}`;
+    return path === from && frag ? { kind: "anchor", id: frag } : { kind: "app", to: to + tail };
   }
-  const path = parts.join("/");
-  const m = /^docs\/([a-z0-9-]+)\.md$/.exec(path);
-  if (m && HELP_DOCS[m[1]]) {
-    const base = m[1] === "user-guide" ? "/help" : `/help/${m[1]}`;
-    if (m[1] === doc && frag) return { kind: "anchor", id: frag };
-    return { kind: "app", to: frag ? `${base}#${frag}` : base };
-  }
-  return { kind: "external", href: REPO_BLOB + path + (frag ? `#${frag}` : "") };
+  return { kind: "external", href: REPO_BLOB + path + tail };
+}
+
+/** A guide picture: only docs/guide/img/<name>.png, bundled with the app; anything else shows its text. */
+function image(alt: string, href: string, from: string, key: string): ReactNode {
+  const m = /^docs\/guide\/img\/([a-z0-9-]+\.png)$/.exec(joinPath(from, href));
+  const url = m ? imageUrl(m[1]) : undefined;
+  return url ? <img key={key} className="help-img" src={url} alt={alt} loading="lazy" /> : <Fragment key={key}>{alt}</Fragment>;
 }
 
 function scrollToId(id: string) {
@@ -46,7 +63,7 @@ function scrollToId(id: string) {
 /** Inline Markdown: `code`, **bold**, *italic*, [text](link) and backslash escapes. */
 function inline(text: string, doc: string, key = "i"): ReactNode[] {
   const out: ReactNode[] = [];
-  const re = /\\([\\`*_{}[\]()#+\-.!|>])|`([^`]+)`|\*\*(.+?)\*\*|\*([^*\s][^*]*?)\*|\[([^\]]+)\]\(([^)\s]+)\)/g;
+  const re = /\\([\\`*_{}[\]()#+\-.!|>])|`([^`]+)`|\*\*(.+?)\*\*|\*([^*\s][^*]*?)\*|!\[([^\]]*)\]\(([^)\s]+)\)|\[([^\]]+)\]\(([^)\s]+)\)/g;
   let last = 0;
   let n = 0;
   let m: RegExpExecArray | null;
@@ -57,9 +74,10 @@ function inline(text: string, doc: string, key = "i"): ReactNode[] {
     else if (m[2] !== undefined) out.push(<code key={k}>{m[2]}</code>);
     else if (m[3] !== undefined) out.push(<strong key={k}>{inline(m[3], doc, k)}</strong>);
     else if (m[4] !== undefined) out.push(<em key={k}>{inline(m[4], doc, k)}</em>);
+    else if (m[6] !== undefined) out.push(image(m[5], m[6], doc, k));
     else {
-      const label = inline(m[5], doc, k);
-      const t = resolveLink(m[6], doc);
+      const label = inline(m[7], doc, k);
+      const t = resolveLink(m[8], doc);
       if (!t) out.push(<Fragment key={k}>{label}</Fragment>);
       else if (t.kind === "anchor") {
         const onClick = (e: MouseEvent) => { e.preventDefault(); window.history.replaceState({}, "", `#${t.id}`); scrollToId(t.id); };
@@ -177,21 +195,137 @@ export function renderMarkdown(md: string, doc: string): ReactNode[] {
   return out;
 }
 
-export default function Help({ doc = "user-guide" }: { doc?: string }) {
-  const { path } = useRouter();
+function Applies() {
+  return <p className="help-applies muted">Applies to PennyWarden {GUIDE.version}</p>;
+}
+
+function SearchBox({ initial = "" }: { initial?: string }) {
+  const { navigate } = useRouter();
+  const [q, setQ] = useState(initial);
+  const submit = (e: FormEvent) => { e.preventDefault(); if (q.trim()) navigate(`/help/search?q=${encodeURIComponent(q.trim())}`); };
+  return (
+    <form className="help-search" role="search" onSubmit={submit}>
+      <input type="search" aria-label="Search the guide" placeholder="Search the guide" value={q} onChange={(e) => setQ(e.target.value)} />
+      <button type="submit">Search</button>
+    </form>
+  );
+}
+
+function Crumbs({ chapter }: { chapter?: GuideChapter }) {
+  return (
+    <nav className="help-crumbs small" aria-label="Breadcrumb">
+      <Link to="/help">Contents</Link>{chapter ? <> › <Link to={`/help/${chapter.id}`}>{chapter.title}</Link></> : null}
+    </nav>
+  );
+}
+
+function Contents() {
+  return (
+    <>
+      <h1>{GUIDE.title}</h1>
+      <Applies />
+      <p>How to use PennyWarden, one area at a time. Each chapter lists its pages; each page explains one task. The
+        <b> ?</b> button at the top of every screen opens the page about that screen.</p>
+      <div className="help-chapters">
+        {GUIDE.chapters.map((c) => (
+          <section key={c.id} className="help-chapter-card" aria-labelledby={`hc-${c.id}`}>
+            <h2 id={`hc-${c.id}`}><Link to={`/help/${c.id}`}>{c.title}</Link></h2>
+            <p className="muted small">{c.summary}</p>
+            <ul>{c.pages.map((p) => <li key={p.id}><Link to={`/help/${c.id}/${p.id}`}>{p.title}</Link></li>)}</ul>
+          </section>
+        ))}
+      </div>
+    </>
+  );
+}
+
+function Chapter({ chapter }: { chapter: GuideChapter }) {
+  return (
+    <>
+      <Crumbs />
+      <h1>{chapter.title}</h1>
+      <Applies />
+      <p className="help-lead">{chapter.summary}</p>
+      <ul className="help-page-list">
+        {chapter.pages.map((p) => <li key={p.id}><Link to={`/help/${chapter.id}/${p.id}`}><b>{p.title}</b></Link><br /><span className="muted">{p.summary}</span></li>)}
+      </ul>
+    </>
+  );
+}
+
+function Page({ chapter, id }: { chapter: GuideChapter; id: string }) {
+  const hit = pageOf(chapter.id, id)!;
+  const text = pageText(chapter.id, id) || "";
+  const from = hit.page.source ? `docs/${hit.page.source.replace(/^\.\.\//, "")}` : `docs/guide/${chapter.id}/${id}.md`;
+  const content = useMemo(() => {
+    // a reference document carries its own title: show it without repeating ours
+    const md = hit.page.source ? text.replace(/^# .*\n/, "") : text;
+    return renderMarkdown(md, from);
+  }, [text, from, hit.page.source]);
+  const k = chapter.pages.findIndex((p) => p.id === id);
+  const prev = chapter.pages[k - 1];
+  const next = chapter.pages[k + 1];
+  return (
+    <>
+      <Crumbs chapter={chapter} />
+      <h1>{hit.page.title}</h1>
+      <Applies />
+      <p className="help-lead">{hit.page.summary}</p>
+      {content}
+      <nav className="help-prevnext" aria-label="More in this chapter">
+        {prev ? <Link to={`/help/${chapter.id}/${prev.id}`}>← {prev.title}</Link> : <span />}
+        {next ? <Link to={`/help/${chapter.id}/${next.id}`}>{next.title} →</Link> : <span />}
+      </nav>
+    </>
+  );
+}
+
+function Results({ q }: { q: string }) {
+  const hits = useMemo(() => search(q), [q]);
+  return (
+    <>
+      <Crumbs />
+      <h1>Search: {q}</h1>
+      {!hits.length ? <p>No page mentions all of these words. Try fewer or other words, or browse the <Link to="/help">contents</Link>.</p> : (
+        <ol className="help-results" data-testid="help-results">
+          {hits.map((h) => (
+            <li key={`${h.chapter.id}/${h.page.id}`}>
+              <Link to={`/help/${h.chapter.id}/${h.page.id}`}><b>{h.page.title}</b></Link> <span className="muted small">— {h.chapter.title}</span>
+              <br /><span className="small">{h.snippet}</span>
+            </li>
+          ))}
+        </ol>
+      )}
+    </>
+  );
+}
+
+/** /help, /help/<chapter>, /help/<chapter>/<page>, /help/search?q=. The 2.4.0 #473 addresses /help/check-printing and
+ * /help/backup-restore still open those documents. */
+export default function Help({ chapter, page }: { chapter?: string; page?: string }) {
+  const { path, search: qs } = useRouter();
   const ref = useRef<HTMLDivElement>(null);
-  const entry = HELP_DOCS[doc];
-  const content = useMemo(() => (entry ? renderMarkdown(entry.text, doc) : null), [entry, doc]);
   useEffect(() => {
     const id = decodeURIComponent(window.location.hash.slice(1));
-    if (id) scrollToId(id);
+    if (id) window.setTimeout(() => scrollToId(id), 0);
     else ref.current?.scrollIntoView({ block: "start" });
-  }, [path, doc]);
-  if (!entry) return <p>Page not found.</p>;
+  }, [path]);
+  const q = chapter === "search" ? new URLSearchParams(qs).get("q") || "" : "";
+  let body: ReactNode;
+  let title = "Help";
+  const c = chapter ? chapterOf(chapter) : undefined;
+  const legacy = chapter && !c && !page ? sourcePage(chapter) : undefined;
+  if (!chapter || chapter === "user-guide") body = <Contents />;
+  else if (chapter === "search") { body = <Results q={q} />; title = "Search"; }
+  else if (legacy) { const lc = chapterOf(legacy.chapter)!; body = <Page chapter={lc} id={legacy.page} />; }
+  else if (c && !page) { body = <Chapter chapter={c} />; title = c.title; }
+  else if (c && page && pageOf(c.id, page)) { body = <Page chapter={c} id={page} />; title = pageOf(c.id, page)!.page.title; }
+  else body = <><Crumbs /><p>Page not found. See the <Link to="/help">contents</Link>.</p></>;
+  useEffect(() => { document.title = `${title} · PennyWarden`; }, [title]);
   return (
     <div className="help-doc" ref={ref} data-testid="help-doc">
-      {doc !== "user-guide" ? <p className="muted"><Link to="/help">← User guide</Link></p> : null}
-      {content}
+      <SearchBox key={q} initial={q} />
+      {body}
     </div>
   );
 }

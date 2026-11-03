@@ -23,7 +23,7 @@ Windows PC, Mac or Linux server; your data stays in one folder you control. No s
 > receipt letters. 2.0 added
 > the optional
 > [Payments module](#payments-and-check-printing-optional-payments-module-200).
-> [User guide](docs/user-guide.md) · [Try the demo](docs/demo.md) · [Changelog](CHANGELOG.md)
+> [User guide](docs/guide/README.md) · [Try the demo](docs/demo.md) · [Changelog](CHANGELOG.md)
 
 ## Why PennyWarden
 
@@ -163,7 +163,7 @@ tax or legal advice.
 
 ## Documentation
 
-**Using PennyWarden** — [the user guide](docs/user-guide.md) covers every area of the app as it works today; it
+**Using PennyWarden** — [the user guide](docs/guide/README.md) covers every area of the app as it works today, one task per page; it
 is also built into the app (**Help** in the menu) and on [pennywarden.org](https://pennywarden.org/guide/). Payments
 in depth: [docs/check-printing.md](docs/check-printing.md). The notes for earlier releases are in
 [docs/archive/](docs/archive/).
