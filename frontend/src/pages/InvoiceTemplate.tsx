@@ -13,13 +13,14 @@ export function InvoiceTemplateEditor() {
   const [err, setErr] = useState<unknown>(null);
   const [saved, setSaved] = useState(false);
   const [logoV, setLogoV] = useState(0);
+  const dragFrom = useRef<number | null>(null);          // #480: the row being dragged
   const load = () => api.get("/api/invoices/setup/template").then((x) => { setT(x); setCfg(x.config); }, setErr);
   useEffect(() => { load(); }, []);
   if (!t || !cfg) return <section className="card"><h2>Invoice PDF</h2><ErrorBox error={err} />{err ? null : <Loading />}</section>;
   const set = (k: string, v: any) => { setSaved(false); setCfg({ ...cfg, [k]: v }); };
   // 2.4.0 polish (#477): one line per row with {VARIABLE} suggestions, as on the cover letter
   const lines = (k: "letterhead" | "bill_to") => (
-    <Lines label={k === "letterhead" ? "Letterhead (up to 6 lines)" : "Bill to (up to 6 lines)"} idBase={`inv-${k}`} max={6}
+    <Lines label={k === "letterhead" ? "Letterhead" : "Bill to"} idBase={`inv-${k}`} max={6}
       lines={cfg[k]} variables={t.variables} onChange={(l) => set(k, l)} />
   );
   const num = (k: string) => (e: any) => set(k, Number(e.target.value) || 0);
@@ -28,7 +29,6 @@ export function InvoiceTemplateEditor() {
   const toggle = (key: string, label: string, on: boolean) => set("columns", on ? [...cols, { key, heading: label.split(" (")[0] }] : cols.filter((c) => c.key !== key));
   const move = (n: number, d: number) => { const a = [...cols]; [a[n], a[n + d]] = [a[n + d], a[n]]; set("columns", a); };
   // 2.4.0 polish (#480): drag a row by its handle to reorder (↑/↓ stay for the keyboard)
-  const dragFrom = useRef<number | null>(null);
   const dropAt = (n: number) => {
     const from = dragFrom.current;
     dragFrom.current = null;
