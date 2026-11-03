@@ -264,6 +264,9 @@ class Entity(Base):
     # 2.1.0 (#314): the organization itself - one per workspace, maintained by Administrators in System/About
     is_organization: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
     ein: Mapped[str | None] = mapped_column(String(10), nullable=True)       # 12-3456789 (#314; other entities #315)
+    # 2.4.0 polish (#485): invoices to a tax-exempt customer charge no sales tax (drafts and new revisions)
+    tax_exempt: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
+    tax_exempt_certificate: Mapped[str | None] = mapped_column(String(60), nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     name_key: Mapped[str] = mapped_column(String(200), index=True)  # normalized name for duplicate search
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)

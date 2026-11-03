@@ -395,7 +395,7 @@ export function InvoiceDetail({ id }: { id: number }) {
       {i.write_off ? <div className={`alert ${i.write_off.status === "REJECTED" ? "info" : "warn"}`} role="note">Write-off {i.write_off.status.toLowerCase()}: {i.write_off.reason}{i.write_off.note ? ` — ${i.write_off.note}` : ""}{i.write_off.self_approved ? " (self-approved)" : ""}</div> : null}
       {i.void_reason ? <div className="alert info" role="note">Void: {i.void_reason}</div> : null}
       <dl className="dl">
-        <dt>Customer</dt><dd>{i.customer?.name}</dd>
+        <dt>Customer</dt><dd>{i.customer?.name}{i.customer?.tax_exempt ? <span className="badge grey" title={i.customer.tax_exempt_certificate ? `Certificate #${i.customer.tax_exempt_certificate}` : undefined}>Tax exempt</span> : null}</dd>
         {i.batch_id ? <><dt>Batch</dt><dd><Link to={`/invoices/batches/${i.batch_id}`}>Open the batch</Link></dd></> : null}
         <dt>Invoice date</dt><dd>{i.invoice_date}</dd>
         <dt>Due</dt><dd>{i.due_date}{i.overdue ? <span className="badge red">Overdue</span> : null}</dd>

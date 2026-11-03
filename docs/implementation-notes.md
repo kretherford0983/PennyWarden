@@ -162,6 +162,15 @@ item; the site's version list starts at 1.10 (the first public release); part of
   bundling incl. the Dockerfile, no links to moved files, no other raw HTML, the site build and `versions.json`); E2E
   "#473 AC-DOC-001..004"; `test_v170_rename.py`'s allow-list no longer names the moved notes.
 
+**2.4.0 polish — tax-exempt customers (#485, decided with Kyle 2026-11-02).** Migration `0085_entity_tax_exempt`:
+`entity.tax_exempt` (bool, default false) and `tax_exempt_certificate` (60). Part of the entity FIELDS, so creating
+and editing (whoever may edit entities) and the `ENTITY_*` audit snapshots include them; the certificate is cleared
+when the flag is off. **BR-INV-TAX-005:** `refresh_taxes` gives a tax-exempt customer's lines no rates - drafts and
+revisions when saved or sent; sent versions keep theirs; no per-invoice override (Kyle). The PDF prints "Tax exempt -
+certificate #..." (or "Tax exempt") under the totals when the customer is exempt and the invoice has no tax; the
+invoice detail shows a *Tax exempt* badge. The entity form shows the fields when the Invoices module is on (or the
+flag is set). **AC-INV-TAX-005.** Test `test_v240_invoices.py::test_tax_exempt_customer_is_charged_no_tax`.
+
 **2.4.0 polish — tax groups, several rates per item (#487, decided with Kyle 2026-11-02).** Replaces #253's one rate
 per invoice. Migration `0084_tax_groups`: table `invoice_tax_group` (name, `rate_ids` JSON, active; in Reinitialize
 WIPE and selective-restore DATA_TABLES), `invoice_product.tax_group_id`, `invoice_line.taxes` (JSON

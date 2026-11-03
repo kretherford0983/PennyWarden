@@ -254,6 +254,8 @@ class EntityFields(In):
     mailing_postal_code: OptStr(20) = None
     mailing_country: OptStr(100) = None
     ein: OptStr(12) = None                # organizations only, 12-3456789
+    tax_exempt: bool | None = None         # 2.4.0 polish (#485)
+    tax_exempt_certificate: OptStr(60) = None
     address_line1: OptStr(200) = None
     address_line2: OptStr(200) = None
     city: OptStr(100) = None
