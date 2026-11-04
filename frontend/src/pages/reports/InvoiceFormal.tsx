@@ -20,14 +20,20 @@ export function InvoiceFormalReport({ rid, initial, onRun, actions }: Props) {
   const [note, setNote] = useState("");
   const [err, setErr] = useState<unknown>(null);
   useEffect(() => {
+    // the first load (no Fiscal Year yet) picks one and sets it: its options are already here, so don't fetch them
+    // again - a second answer would reset a period chosen meanwhile
+    if (opts && String(opts.fiscal_year_id) === fy) return;
     setErr(null);
+    let stale = false;                                  // an answer for a Fiscal Year no longer chosen is dropped
     api.get(`/api/invoices/formal/options${qs({ fiscal_year_id: fy || null })}`).then((o) => {
+      if (stale) return;
       setOpts(o);
       if (!fy && o.fiscal_year_id) setFy(String(o.fiscal_year_id));
       const ok = o.periods.filter((p: any) => p.selectable && p.id !== "ANNUAL");
       const wanted = String(initial.fiscal_year_id || "") === String(o.fiscal_year_id) && o.periods.find((p: any) => p.id === initial.period && p.selectable);
       setPeriod(wanted ? wanted.id : ok.length ? ok[ok.length - 1].id : (o.periods.find((p: any) => p.selectable)?.id || ""));
-    }, setErr);
+    }, (x) => { if (!stale) setErr(x); });
+    return () => { stale = true; };
   }, [fy]);
   if (!opts) return <><ErrorBox error={err} />{err ? null : <Loading />}</>;
   const sel = opts.periods.find((p: any) => p.id === period);
