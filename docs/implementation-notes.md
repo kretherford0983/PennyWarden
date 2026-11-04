@@ -311,6 +311,36 @@ through the same path. **BR-INV-FLD-004**, **AC-INV-FLD-005**. Test
   reload, live Next invoice and its error, letterhead rows + suggestions, column boxes aligned; the module is left as
   it was.
 
+**2.4.0 — Invoice reports for formal publication (#513, decided with Kyle 2026-11-03).** Two new reports in the
+catalog's *Share with the board and members* group (Subject: Invoices; Audience: Board & members), each a PDF
+(ReportLab, the Fiscal Year fundraising report's band, highlight tiles and tables) and a presentation (python-pptx,
+the fundraiser deck's helpers and Branding for presentations): **Sales by product & category** (`inv-sales-formal`:
+categories, products within each category, Income budgets) and **Sales overview** (`inv-overview`: sales, tax,
+collected and refunded by month, open and overdue at the end, aging, discounts and write-offs, top customers and
+products, sales tax by rate). `services/invoice_formal.py` (figures), `invoice_formal_output.py` (PDF / deck),
+`GET /api/invoices/formal/options` and `GET /api/invoices/formal/{rid}` (`format=json|pdf|pptx`). A saved catalog
+grouping from before gets the two in its Invoices category (`report_grouping._complete`). Frontend:
+`pages/reports/InvoiceFormal.tsx`.
+- **BR-INV-PUB-001 (period):** a Fiscal Year quarter (Q1–Q4) or the year, compared with the same period of the
+  previous Fiscal Year when there is one (a period still in progress is compared with the same stretch last year); or a
+  custom From/Through range, with no comparison. A period that hasn't ended is reported as of today, marked
+  Preliminary (the BR-110 cutoff, as the Quarterly / Annual report).
+- **BR-INV-PUB-002 (figures):** sales are *invoiced* — the invoice lines after discounts, before tax, of issued invoices (sent,
+  partly paid, paid or written off; not draft, not void) dated in the period, the same figures as the basic *Sales by product /
+  category* report — with *collected* beside them: each invoice's payments up to the end of the period, split over its
+  lines and tax rates exactly as Record payment does (`apportion_rates`). The overview's money collected is payments
+  dated in the period less refunds; open and overdue are as of the end.
+- **BR-INV-PUB-003 (who and what is shown):** run by invoice viewers (`invoice.view`: Invoice Managers, Budget
+  Managers, Budget Users, Register Users, Auditors), never the Administrator (BR-003); refused when the Invoices module
+  is off; every run audited (`REPORT_GENERATED`, `INV_SALES_FORMAL` / `INV_OVERVIEW`, `_PRESENTATION` for the deck).
+  **Show customer names** is on by default; off prints *Customer 1, 2, …* in sales order. An optional commentary (up to
+  2,000 characters) is printed as plain text on the first page and on its own slide; like the other reports' free
+  text, it is not remembered with the options.
+- ACs **AC-INV-PUB-001** totals match the basic sales report and collected is exact; **-002** overview figures (months
+  sum to the totals; names hidden); **-003** periods, custom range, invalid range (422), same period last year;
+  **-004** PDF and presentation, audited, also for a period with no invoices; **-005** who can run them; **-006**
+  commentary limit, printed as text. Tests: `backend/tests/test_v240_invoice_formal.py` (8); E2E `#513`.
+
 **2.4.0 polish — Invoice PDF setup (#477–#480, Kyle 2026-11-02).** `InvoiceTemplate.tsx` uses `PatternInput` for the
 title, Bill to heading and footer, and the shared `Lines` (moved from CheckDocuments.tsx to checkShared.tsx) for the
 letterhead and Bill to (one row each, max 6); `ROLE_GROUPS` gains CUSTOMER/INVOICE. `TemplateConfig.logo_position`

@@ -769,6 +769,48 @@ test("#373: the Quarterly / Annual financial report - period choice, commentary,
   await page.screenshot({ path: "e2e-screenshots/light-period-report.png", fullPage: true });
 });
 
+// 2.4.0 (#513): the invoice reports for formal publication, in Share with the board and members
+test("#513: Sales by product & category and the Sales overview - quarter or year, dates of my choice, names hidden, PDF and presentation", async ({ page }) => {
+  const modules = async (on: boolean) => {
+    await login(page, "admin");
+    const me = await (await page.request.get("/api/auth/me")).json();
+    expect((await page.request.put("/api/system/modules", { headers: { "X-CSRF-Token": me.csrf_token }, data: { invoices: on } })).status()).toBe(200);
+    await logout(page);
+  };
+  await modules(true);
+  await login(page, "bm1");
+  await page.getByRole("link", { name: "Reports", exact: true }).click();
+  const share = page.locator("section").filter({ has: page.getByRole("heading", { name: /^Share with the board and members/ }) }).first();
+  await expect(share.getByRole("link", { name: "Sales overview", exact: true })).toBeVisible();
+  await openReport(page, "Sales by product & category");
+  await expect(page.getByLabel("Quarter or year").locator("option")).toHaveCount(5);
+  await page.getByLabel("Quarter or year").selectOption("ANNUAL");
+  await page.getByLabel("Commentary (optional)").fill("Dues renewals came in early.");
+  const href = (await page.getByRole("link", { name: "Open", exact: true }).getAttribute("href"))!;
+  expect(href).toContain("/api/invoices/formal/inv-sales-formal?");
+  expect(href).toContain("period=ANNUAL");
+  const pdf = await page.request.get(href);
+  expect(pdf.status()).toBe(200);
+  expect((await pdf.body()).subarray(0, 5).toString()).toBe("%PDF-");
+  await page.screenshot({ path: "e2e-screenshots/light-invoice-sales-formal.png", fullPage: true });
+  await page.goto("/reports/inv-overview");
+  await page.getByLabel("Dates of my choice").check();
+  await page.getByLabel("From", { exact: true }).fill("2026-09-30");
+  await page.getByLabel("Through", { exact: true }).fill("2026-09-01");
+  await expect(page.getByRole("alert")).toContainText("From must be on or before Through");
+  await expect(page.getByRole("button", { name: "Download PPTX" })).toBeDisabled();
+  await page.getByLabel("From", { exact: true }).fill("2026-07-01");
+  await page.getByLabel("Show customer names").uncheck();
+  const deckHref = (await page.getByRole("link", { name: "Download PPTX" }).getAttribute("href"))!;
+  expect(deckHref).toContain("show_names=false");
+  expect(deckHref).toContain("date_from=2026-07-01");
+  const deck = await page.request.get(deckHref);
+  expect(deck.status()).toBe(200);
+  expect(deck.headers()["content-type"]).toContain("presentationml");
+  await logout(page);
+  await modules(false);                                    // leave the module off, as the later tests expect
+});
+
 // ---------------------------------------------------------------- v1.3 enhancements
 const PDF = Buffer.from("%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[]/Count 0>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n");
 // 2.4.0 (#425): a PDF with content of its own (the same file twice on one record asks first)
