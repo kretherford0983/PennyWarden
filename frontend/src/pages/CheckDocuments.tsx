@@ -229,7 +229,7 @@ function LetterEditor({ setup, doc, focus, onClose, onSaved }: EditorProps) {
             uploadNote={logo?.from ? "The copied letter's logo; it is copied when you save." : "Save the letter first, then add its own logo here."}
             sizeHint="PNG or JPEG, at most 1 MB. It prints above the letterhead lines, scaled to fit 2.5 × 1 in. Adding or removing this letter's own logo takes effect at once.">
             <Field label="Logo position"><select value={c.logo_position} onChange={(ev) => e.change((x) => { x.logo_position = ev.target.value; })}>
-              <option value="LEFT">Top left</option><option value="CENTER">Top center (the letterhead lines are centered too)</option><option value="RIGHT">Top right, beside the letterhead (the letter text stays where it is)</option></select></Field>
+              <option value="LEFT">Top left</option><option value="CENTER">Top center (the letterhead lines are centered too)</option><option value="RIGHT_ABOVE">Top right, above the letterhead (the letter text moves down)</option><option value="RIGHT_BESIDE">Top right, beside the letterhead (the letter text stays where it is)</option></select></Field>
           </LogoChoice>
         </fieldset>
         <label className="check"><input type="checkbox" checked={c.show_date} onChange={(ev) => e.change((x) => { x.show_date = ev.target.checked; })} /> Print today's date under the letterhead</label>

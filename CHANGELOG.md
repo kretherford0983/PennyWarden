@@ -106,6 +106,13 @@ PennyWarden 2.4.0 (in progress).
   (for example **Serial number**); the Invoice Manager ticks it on those products in the catalog. It is asked on each
   invoice line that uses such a product — required if the field says so — and prints after the line's description
   when *show on PDF* is on.
+- **One payment for several invoices (#523).** When one check pays several invoices, a Register User records it once:
+  tick the invoices in the list (**Record payment for N invoices…**) or choose **Record a payment…** and pick the
+  customer — or type an invoice number from a payment stub. The amount received fills the balances oldest due date
+  first and each part can be changed; the Register gets **one deposit** that matches the bank, linked to each invoice.
+  An amount above the balances is an overpayment on the invoice you choose (confirmed). Invoices of different customers
+  can be paid together (a company or parent paying for several members), with a confirmation. Voiding the deposit
+  re-opens every invoice it paid; unlinking on one invoice affects only that invoice.
 - **Invoice reports for the board and members (#513).** Two reports made for publishing, each a PDF report and a
   presentation with charts, in **Reports → Share with the board and members**: **Sales by product & category** (by
   category, by product within each category and by Income budget, with share, collected and last year) and **Sales
@@ -200,6 +207,10 @@ PennyWarden 2.4.0 (in progress).
 - **Cover letter logo top right (#466).** A third logo position, **Top right, beside the letterhead**: the logo sits
   level with the organization's name at the right margin, and the letter text is not pushed down. The letterhead and
   date lines wrap short of the logo; the address starts below the logo only when the logo is taller than those lines.
+- **Top right: above or beside the letterhead (#520).** Donation receipt letters and year-end statements, and payment
+  cover letters, offer the same four logo positions: **Top left**, **Top center**, **Top right, above the
+  letterhead** (the letter text moves down) and **Top right, beside the letterhead** (the text stays where it is).
+  Letters already set to Top right keep their look: above on donation letters, beside on cover letters.
 
 ### Security
 - **pydantic 2.14.2 (Dependabot #476).** Fixes two pydantic security advisories (GHSA-qpmf-fgh3-ff25: JSON input

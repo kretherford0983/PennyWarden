@@ -655,6 +655,24 @@ class InvoicePaymentIn(In):                   # 2.4.0 (#254): Record payment (Re
     confirmations: Confirmations = []
 
 
+class InvoicePaymentItemIn(In):               # 2.4.0 (#523): one invoice's part of a payment
+    invoice_id: int
+    amount: Amount
+
+
+class InvoiceMultiPaymentIn(In):              # 2.4.0 (#523): one deposit paying several invoices (Register User)
+    bank_account_id: int
+    items: Annotated[list[InvoicePaymentItemIn], Field(min_length=1, max_length=50)]
+    payer_entity_id: int | None = None        # default: the invoices' customer when they share one
+    overpayment: Amount | None = None         # above the balances: on overpayment_invoice_id (confirmed)
+    overpayment_invoice_id: int | None = None
+    transaction_date: OptDate = None
+    clear_date: OptDate = None
+    notes: OptStr(4000) = None
+    confirm_overpayment: bool = False
+    confirmations: Confirmations = []
+
+
 class InvoiceLinkIn(In):                      # 2.4.0 (#254)
     allocation_id: int
     confirmations: Confirmations = []
