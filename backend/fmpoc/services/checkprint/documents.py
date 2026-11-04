@@ -94,8 +94,10 @@ class LetterConfig(_M):
     signature_mode: Literal["NONE", "PRINTED", "IMAGE", "SPACE"] = "PRINTED"
     include_by_default: bool = True
     # #176: logo position (the logo itself is stored with the template) and pre-printed letterhead paper
-    # 2.4.0 polish: RIGHT - top right, level with the letterhead's first line; the letter text is not pushed down
-    logo_position: Literal["LEFT", "CENTER", "RIGHT"] = "LEFT"
+    # 2.4.0 polish: RIGHT_BESIDE - top right, level with the letterhead's first line; the letter text is not pushed
+    # down. #520: RIGHT_ABOVE - top right, above the letterhead (the text moves down), as on donation letters. A
+    # letter saved as RIGHT (before #520) was beside the letterhead and stays so.
+    logo_position: Literal["LEFT", "CENTER", "RIGHT_ABOVE", "RIGHT_BESIDE"] = "LEFT"
     # 2.4.0 polish (#503): where the logo comes from - the organization logo, this letter's own upload, or none
     logo_source: Literal["NONE", "ORG", "OWN"] = "NONE"
     preprinted: bool = False
@@ -117,6 +119,11 @@ class LetterConfig(_M):
     # 2.2.0 (#317): the addressee block - up to 6 lines like the letterhead, from {PAYEE.*} (default: name + mailing
     # address, so existing templates print as before)
     addressee: list[str] = Field(default_factory=lambda: list(DEFAULT_ADDRESSEE), max_length=6)
+
+    @field_validator("logo_position", mode="before")
+    @classmethod
+    def _logo_position(cls, v):                    # #520: the earlier RIGHT was beside the letterhead
+        return "RIGHT_BESIDE" if v == "RIGHT" else v
 
     @field_validator("addressee")
     @classmethod
@@ -354,7 +361,7 @@ def _letter_once(cfg: LetterConfig, data: LetterData, title: str, logo: bytes | 
     windowed = cfg.window != "NONE"
     # 2.4.0 polish: top right, beside the letterhead (drawn on the page, so the text is not pushed down); the
     # letterhead and date lines wrap short of it
-    beside = cfg.logo_position == "RIGHT" and logo is not None and not windowed and not cfg.preprinted
+    beside = cfg.logo_position == "RIGHT_BESIDE" and logo is not None and not windowed and not cfg.preprinted
     logo_wh = _logo_size(logo) if beside else (0.0, 0.0)
     indent = logo_wh[0] + 0.25 * inch if beside else 0
     head = ParagraphStyle("head", parent=base, alignment=1 if centred else 0, rightIndent=indent)
@@ -420,7 +427,8 @@ def _letter_once(cfg: LetterConfig, data: LetterData, title: str, logo: bytes | 
     else:
         if logo is not None and not beside:
             w, h = _logo_size(logo)
-            story.append(Image(io.BytesIO(logo), width=w, height=h, hAlign="CENTER" if centred else "LEFT"))
+            story.append(Image(io.BytesIO(logo), width=w, height=h,
+                               hAlign="CENTER" if centred else "RIGHT" if cfg.logo_position.startswith("RIGHT") else "LEFT"))
             story.append(Spacer(1, size * 0.6))
         for i, line in enumerate(texts["letterhead"]):
             if line.strip():

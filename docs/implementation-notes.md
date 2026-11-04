@@ -371,6 +371,16 @@ dropped, "…"; the whole text in the cell's title). Named `@page register` (let
 setup. (The screen table's Date/Cleared headings are sort buttons, which the global print rule hides - one reason
 for a separate print table.) E2E: the "#56 / #57" register test checks the print layout (`emulateMedia print`).
 
+**2.4.0 polish — logo top right, above or beside (#520, Kyle 2026-11-04).** `LetterConfig.logo_position` and
+`ReceiptConfig.logo_position` are both `LEFT | CENTER | RIGHT_ABOVE | RIGHT_BESIDE`. A stored `RIGHT` (before #520)
+is read as it printed: `RIGHT_BESIDE` on cover letters (#466), `RIGHT_ABOVE` on donation letters (#503). Beside on the
+donation letter works as on the cover letter: drawn on page 1 level with the organization's name at the right margin;
+the name, address and date wrap short of it; `_ClearBelow` keeps the donor's address clear of a tall logo. With a
+window layout the logo goes where it did before (donation `LETTER`: top right clear of the windows; on an address
+page layout either Top right prints right-aligned above). The invoice PDF keeps its own choices (text at both top
+corners). Proposed for Kyle: **BR-LOGO-POS-001** both letters offer the same four positions; **-002** a saved RIGHT
+keeps its look. Tests: `backend/tests/test_v240_logo_right.py` (2).
+
 **2.4.0 polish — cover letter logo top right (#466, Kyle 2026-11-02).** `LetterConfig.logo_position` adds `RIGHT`
 (LEFT|CENTER|RIGHT). Drawn on the first page's canvas (not in the story), top level with the text frame's top (1 in
 + 6 pt frame padding), right edge at the 7.5 in margin, so the letterhead is not pushed down. The letterhead and date

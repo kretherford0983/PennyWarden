@@ -110,7 +110,7 @@ def test_ac_org_logo_003_invoice_pdf_uses_the_organization_logo(env, base, org_l
 
 def test_ac_org_logo_003_donation_receipt_and_statement_letters(env, base, org_logo):
     enable_donations(env)
-    out = donation_setup(env, logo_source="ORG", logo_position="RIGHT")
+    out = donation_setup(env, logo_source="ORG", logo_position="RIGHT_ABOVE")
     assert out["config"]["statement_logo_source"] == "FOLLOW"
     assert image_colors(env.admin.post("/api/donations/setup/test-print", {}).content) == {RED}
     # the statement follows the receipt

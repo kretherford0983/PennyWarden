@@ -28,7 +28,7 @@ from dataclasses import dataclass, field
 from typing import Literal
 from xml.sax.saxutils import escape
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.lib.utils import ImageReader
@@ -125,8 +125,16 @@ class ReceiptConfig(BaseModel):
     # 2.4.0 polish (#503): the letters' logo - the organization logo, the receipt letter's own, or none (the default);
     # where it goes; the statement follows the receipt (FOLLOW) or has its own choice (its own logo is stored apart)
     logo_source: Literal["NONE", "ORG", "OWN"] = "NONE"
-    logo_position: Literal["LEFT", "CENTER", "RIGHT"] = "LEFT"
+    # #520: top right above the organization's name (the text moves down) or beside it (the text stays), as on the
+    # cover letters; a setup saved as RIGHT (before #520) was above and stays so
+    logo_position: Literal["LEFT", "CENTER", "RIGHT_ABOVE", "RIGHT_BESIDE"] = "LEFT"
     statement_logo_source: Literal["FOLLOW", "NONE", "ORG", "OWN"] = "FOLLOW"
+
+    @field_validator("logo_position", mode="before")
+    @classmethod
+    def _logo_position(cls, v):                    # #520: the earlier RIGHT was above the organization's name
+        return "RIGHT_ABOVE" if v == "RIGHT" else v
+
     statement_title: str = Field(default="Year-End Giving Statement {YEAR}", max_length=120)
     statement_salutation: str = Field(default="Dear {DONOR_NAME},", max_length=200)
     statement_body: str = Field(default="Thank you for your generous support of {ORG.NAME} during {YEAR}. These are the "
@@ -532,6 +540,8 @@ def _donor_letter_once(cfg: ReceiptConfig, *, org: dict, donor_lines: list[str],
     lcfg = documents.LetterConfig(font=cfg.font, size=cfg.size, window=cfg.window, window_return=cfg.window_return,
                                   fold_marks=cfg.fold_marks)
     windowed = cfg.window != "NONE"
+    beside = cfg.logo_position == "RIGHT_BESIDE" and logo is not None and not windowed      # #520
+    beside_wh = documents._logo_size(logo) if beside else (0.0, 0.0)
     blocks = documents.window_blocks(lcfg, {"letterhead": [org["ORG.NAME"]] + [x for x in org["ORG.ADDRESS"].split("\n")
                                                                                 if x]}, donor_lines) if windowed else []
     label = f"{org['ORG.NAME']} · {doc_title}"
@@ -539,6 +549,9 @@ def _donor_letter_once(cfg: ReceiptConfig, *, org: dict, donor_lines: list[str],
     def first_page(c, doc):
         if cfg.fold_marks == "FRONT":
             documents.fold_ticks(c, lcfg)
+        if beside:                                      # #520: level with the name, at the right margin (as a cover letter)
+            w, h = beside_wh
+            c.drawImage(ImageReader(io.BytesIO(logo)), 7.5 * PT - w, 10 * PT - 6 - h, w, h, mask="auto")
         if logo is not None and cfg.window == "LETTER":   # #503: top right, clear of the windows (as a cover letter)
             w, h = documents._logo_size(logo)
             c.drawImage(ImageReader(io.BytesIO(logo)), (8.5 - 0.5) * PT - w, (11 - 0.5) * PT - h, w, h, mask="auto")
@@ -584,13 +597,20 @@ def _donor_letter_once(cfg: ReceiptConfig, *, org: dict, donor_lines: list[str],
         story += [FixedSpacer(1, (documents.FOLD_LINES[0] + 0.15 - 1) * inch),
                   Paragraph(escape(format_date(today, cfg.date_format)), base)]
     else:
-        if logo is not None:                                    # #503: above the letterhead, where the setup says
+        head, head_b = base, st["strong"]
+        if beside:                                              # #520: the name, address and date wrap short of it
+            head = ParagraphStyle("head", parent=base, rightIndent=beside_wh[0] + 0.25 * inch)
+            head_b = ParagraphStyle("head_b", parent=st["strong"], rightIndent=beside_wh[0] + 0.25 * inch)
+        elif logo is not None:                                  # #503: above the letterhead, where the setup says
             w, h = documents._logo_size(logo)
-            story += [Image(io.BytesIO(logo), width=w, height=h, hAlign=cfg.logo_position), Spacer(1, size * 0.6)]
-        story += [Paragraph(escape(org["ORG.NAME"]), st["strong"])]
-        story += [Paragraph(escape(x), base) for x in org["ORG.ADDRESS"].split("\n") if x]
-        story += [Spacer(1, size * 1.2), Paragraph(escape(format_date(today, cfg.date_format)), base),
-                  Spacer(1, size * 1.2)]
+            align = "RIGHT" if cfg.logo_position.startswith("RIGHT") else cfg.logo_position   # beside: not with windows
+            story += [Image(io.BytesIO(logo), width=w, height=h, hAlign=align), Spacer(1, size * 0.6)]
+        story += [Paragraph(escape(org["ORG.NAME"]), head_b)]
+        story += [Paragraph(escape(x), head) for x in org["ORG.ADDRESS"].split("\n") if x]
+        story += [Spacer(1, size * 1.2), Paragraph(escape(format_date(today, cfg.date_format)), head)]
+        if beside:
+            story.append(documents._ClearBelow(beside_wh[1]))    # what follows starts clear of a tall logo
+        story += [Spacer(1, size * 1.2)]
         story += [Paragraph(escape(x), base) for x in donor_lines]
     story.append(Spacer(1, size * 1.4))
     story += middle

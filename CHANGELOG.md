@@ -200,6 +200,10 @@ PennyWarden 2.4.0 (in progress).
 - **Cover letter logo top right (#466).** A third logo position, **Top right, beside the letterhead**: the logo sits
   level with the organization's name at the right margin, and the letter text is not pushed down. The letterhead and
   date lines wrap short of the logo; the address starts below the logo only when the logo is taller than those lines.
+- **Top right: above or beside the letterhead (#520).** Donation receipt letters and year-end statements, and payment
+  cover letters, offer the same four logo positions: **Top left**, **Top center**, **Top right, above the
+  letterhead** (the letter text moves down) and **Top right, beside the letterhead** (the text stays where it is).
+  Letters already set to Top right keep their look: above on donation letters, beside on cover letters.
 
 ### Security
 - **pydantic 2.14.2 (Dependabot #476).** Fixes two pydantic security advisories (GHSA-qpmf-fgh3-ff25: JSON input
