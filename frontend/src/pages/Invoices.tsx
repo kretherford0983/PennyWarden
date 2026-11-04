@@ -6,6 +6,7 @@ import { useMe } from "../App";
 import { OverdueInvoices } from "./Dashboard";
 import { EmailLog, SendEmail } from "./Email";
 import { InvoiceTemplateEditor } from "./InvoiceTemplate";
+import { MultiPaymentForm, useAccounts } from "./InvoicePayments";
 
 // 2.4.0 (#251): the Invoices module. Its sections (invoices, products, payments, reports) arrive with the later 2.4.0
 // builds (#252-#255); this page says what the module is for and who does what (separation of duties).
@@ -311,6 +312,11 @@ const STATUSES: [string, string][] = [["", "All"], ["OPEN", "Open (sent, partly 
 
 function InvoiceList({ manage }: { manage: boolean }) {
   const { navigate } = useRouter();
+  const { can } = useMe();
+  const payer = can("invoice.record_payment");                   // 2.4.0 (#523): a Register User
+  const [picked, setPicked] = useState<number[]>([]);
+  const [paying, setPaying] = useState<null | "customer" | "picked">(null);
+  const [reload, setReload] = useState(0);
   const [rows, setRows] = useState<any[] | null>(null);
   const [status, setStatus] = useState("");
   const [search, setSearch] = useState("");
@@ -325,7 +331,9 @@ function InvoiceList({ manage }: { manage: boolean }) {
       api.get(`/api/invoices?${p.toString()}`).then(setRows, setErr);
     }, 200);
     return () => clearTimeout(h);
-  }, [status, search]);
+  }, [status, search, reload]);
+  const payable = (r: any) => (r.status === "SENT" || r.status === "PARTLY_PAID") && r.write_off_status !== "PENDING";
+  const ticked = picked.filter((id) => (rows || []).some((r) => r.id === id && payable(r)));     // only what is shown
   return (
     <section className="card" aria-labelledby="inv-list-h">
       <div className="charts-head">
@@ -335,14 +343,18 @@ function InvoiceList({ manage }: { manage: boolean }) {
           <Field label="Search"><input aria-label="Search invoices" maxLength={100} value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Number or customer" /></Field>
           {manage ? <button className="primary" onClick={() => setCreating(true)}>New invoice</button> : null}
           {manage ? <button onClick={() => setBatching(true)}>New batch…</button> : null}
+          {payer ? <button onClick={() => setPaying("customer")}>Record a payment…</button> : null}
+          {payer && ticked.length ? <button className="primary" onClick={() => setPaying("picked")}>Record payment for {ticked.length} invoice{ticked.length > 1 ? "s" : ""}…</button> : null}
         </div>
       </div>
       <ErrorBox error={err} />
       {!rows ? <Loading /> : !rows.length ? <p className="muted">No invoices.</p> : (
         <table className="table" data-testid="invoice-list">
-          <thead><tr><th>Number</th><th>Customer</th><th>Date</th><th>Due</th><th>Status</th><th className="num">Total</th></tr></thead>
+          <thead><tr>{payer ? <th><span className="sr-only">Pay</span></th> : null}<th>Number</th><th>Customer</th><th>Date</th><th>Due</th><th>Status</th><th className="num">Total</th></tr></thead>
           <tbody>{rows.map((r) => (
             <tr key={r.id}>
+              {payer ? <td>{payable(r) ? <input type="checkbox" aria-label={`Pay ${r.number}`} checked={picked.includes(r.id)}
+                onChange={(e) => setPicked(e.target.checked ? [...picked, r.id] : picked.filter((x) => x !== r.id))} /> : null}</td> : null}
               <td><Link to={`/invoices/${r.id}`}>{r.number}</Link></td><td>{r.customer?.name}</td><td>{r.invoice_date}</td>
               <td>{r.due_date}{r.overdue ? <span className="badge red">Overdue</span> : null}</td>
               <td>{r.status_label}{r.write_off_status === "PENDING" ? <span className="badge yellow">Write-off pending</span> : null}</td>
@@ -352,6 +364,9 @@ function InvoiceList({ manage }: { manage: boolean }) {
         </table>
       )}
       {creating ? <InvoiceForm onClose={() => setCreating(false)} onSaved={(i) => navigate(`/invoices/${i.id}`)} /> : null}
+      {paying ? <MultiPaymentForm invoiceIds={paying === "picked" ? ticked : undefined}
+        customerIds={paying === "picked" ? (rows || []).filter((r) => ticked.includes(r.id)).map((r) => r.customer?.id) : undefined}
+        onClose={() => setPaying(null)} onDone={() => { setPaying(null); setPicked([]); setReload(reload + 1); }} /> : null}
       {batching ? <InvoiceForm batch onClose={() => setBatching(false)} onSaved={(b) => navigate(`/invoices/batches/${b.id}`)} /> : null}
       <Batches />
     </section>
@@ -651,13 +666,6 @@ function Payments({ i, onChanged }: { i: any; onChanged: (i: any) => void }) {
       {unlink ? <UnlinkForm i={i} link={unlink} onClose={() => setUnlink(null)} onDone={(x) => { setUnlink(null); onChanged(x); }} /> : null}
     </section>
   );
-}
-
-function useAccounts() {
-  const [accts, setAccts] = useState<any[]>([]);
-  // 2.4.0 polish (#504): only active register accounts take a deposit or a refund, in the Bank Accounts order
-  useEffect(() => { api.get("/api/bank-accounts").then((l: any[]) => setAccts(l.filter((a) => a.status === "ACTIVE" && a.register_enabled))); }, []);
-  return accts;
 }
 
 function MoneyForm({ i, refund, onClose, onDone }: { i: any; refund: boolean; onClose: () => void; onDone: (i: any) => void }) {

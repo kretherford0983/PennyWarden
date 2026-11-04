@@ -4567,6 +4567,79 @@ test("2.4.0 polish (#504): Record payment lists the register accounts by name an
   await logout(page);
 });
 
+test("2.4.0 (#523): a Register User records one payment for several invoices - ticked in the list, or found by invoice number", async ({ page }) => {
+  // runs before #125 (Reinitialize wipes the financial data this needs)
+  const caller = async () => {
+    const me = await (await page.request.get("/api/auth/me")).json();
+    const call = async (method: string, url: string, data?: any) => {
+      const r = await page.request.fetch(url, { method, headers: { "X-CSRF-Token": me.csrf_token }, data });
+      expect(r.ok(), `${method} ${url}: ${await r.text()}`).toBeTruthy();
+      return r.status() === 204 ? null : r.json();
+    };
+    return { me, call };
+  };
+  await login(page, "admin");
+  let { me, call } = await caller();
+  const wasOn = !!me.modules?.invoices;
+  await call("PUT", "/api/system/modules", { invoices: true });
+  const ru = (await call("GET", "/api/users")).find((u: any) => u.username === "ru1");
+  const ruRoles: string[] = ru.roles;
+  await call("PATCH", `/api/users/${ru.id}`, { roles: [...ruRoles, "INVOICE_MANAGER"] });
+  await logout(page);
+  await login(page, "bm1");
+  ({ me, call } = await caller());
+  const fy = (await call("GET", "/api/fiscal-years")).find((f: any) => f.display_name === "FY2027");
+  const bud = await call("POST", "/api/budgets", { fiscal_year_id: fy.id, code: "4951", name: "E2E Fees", amount: "500.00", budget_type: "INCOME" });
+  await call("PUT", `/api/budgets/${bud.id}/invoiced-income`, { invoiced_income: true });
+  await logout(page);
+  await login(page, "ru1", "Brand-New-Pass-99");
+  ({ me, call } = await caller());
+  const units = await call("GET", "/api/invoices/catalog/unit-types");
+  const leaf = (await call("GET", `/api/budgets/selectable?fiscal_year_id=${fy.id}&transaction_type=DEPOSIT`)).find((o: any) => o.label.startsWith("4951 E2E Fees"));
+  const prod = await call("POST", "/api/invoices/catalog/products", { name: "E2E Fee", unit_price: "50.00", unit_type_id: units[0].id, budget_id: leaf.id });
+  const cust = await call("POST", "/api/entities", { entity_type: "ORGANIZATION", organization_name: "E2E Three Invoices", confirmations: ["DUPLICATE_ENTITY"] });
+  const invs: any[] = [];
+  for (const [d, q] of [["2026-09-01", "1"], ["2026-09-10", "1"], ["2026-09-20", "2"]]) {
+    const i = await call("POST", "/api/invoices", { customer_entity_id: cust.id, invoice_date: d, lines: [{ product_id: prod.id, quantity: q }] });
+    await call("POST", `/api/invoices/${i.id}/send`);
+    invs.push(i);
+  }
+  // tick the two oldest in the list: one payment of 75.00 pays the oldest and part of the next
+  await page.goto("/invoices");
+  await page.getByLabel("Search invoices").fill("E2E Three");
+  await page.getByLabel(`Pay ${invs[0].number}`).check();
+  await page.getByLabel(`Pay ${invs[1].number}`).check();
+  await page.getByRole("button", { name: "Record payment for 2 invoices…" }).click();
+  const dlg = page.getByRole("dialog", { name: "Record a payment" });
+  await expect(dlg.getByLabel("Amount received")).toHaveValue("100.00");          // both balances
+  await dlg.getByLabel("Amount received").fill("75.00");
+  await expect(dlg.getByLabel(`Amount for ${invs[0].number}`)).toHaveValue("50.00"); // oldest due first
+  await expect(dlg.getByLabel(`Amount for ${invs[1].number}`)).toHaveValue("25.00");
+  await dlg.getByLabel("Date").fill("2026-09-28");
+  await page.screenshot({ path: "e2e-screenshots/light-invoice-multi-payment.png" });
+  await dlg.getByRole("button", { name: "Record payment" }).click();
+  await expect(dlg).toHaveCount(0);
+  const a = await call("GET", `/api/invoices/${invs[0].id}`);
+  const b = await call("GET", `/api/invoices/${invs[1].id}`);
+  expect([a.status, b.status]).toEqual(["PAID", "PARTLY_PAID"]);
+  const txns = new Set([...a.payments.links, ...b.payments.links].map((x: any) => x.transaction_id));
+  expect(txns.size).toBe(1);                                                       // one deposit
+  // from a payment stub: type the newest invoice's number; the customer's open invoices are listed
+  await page.getByRole("button", { name: "Record a payment…" }).click();
+  const d2 = page.getByRole("dialog", { name: "Record a payment" });
+  await d2.getByLabel("Invoice number").fill(invs[2].number);
+  await d2.getByRole("button", { name: "Find" }).click();
+  await expect(d2.getByTestId("multi-payment-invoices").locator("tbody tr")).toHaveCount(2);   // 25.00 left on #2, and #3
+  await expect(d2.getByLabel("Amount received")).toHaveValue("125.00");
+  await d2.getByRole("button", { name: "Cancel" }).click();
+  await logout(page);
+  await login(page, "admin");
+  ({ me, call } = await caller());
+  await call("PATCH", `/api/users/${ru.id}`, { roles: ruRoles });
+  if (!wasOn) await call("PUT", "/api/system/modules", { invoices: false });
+  await logout(page);
+});
+
 test("#125: an Administrator reinitializes (keeping the users); everyone sees the notice until it is acknowledged", async ({ page }) => {
   await login(page, "admin");
   await page.getByRole("link", { name: "System/About" }).click();

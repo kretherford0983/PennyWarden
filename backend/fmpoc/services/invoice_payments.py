@@ -214,6 +214,35 @@ def _get_open(db: Session, ctx, i: Invoice) -> None:
         raise conflict("WRITE_OFF_PENDING", "A write-off is waiting for a decision; decide it first.")
 
 
+def _invoice_allocations(db: Session, i: Invoice, paid: int, pay: int, over: int, fy: FiscalYear | None,
+                         entity_id: int | None) -> list[tuple]:
+    """The deposit lines that pay `pay` of an invoice already paid `paid`: the lines' share on their Invoiced Income
+    budgets and each tax rate's on its own (#487), as the difference of two cumulative apportionments; `over` (an
+    overpayment) on the first line's budget. #523: shared by Record payment and the payment for several invoices."""
+    from ..schemas import AllocationIn
+    before, before_tax = apportion_rates(i, paid)
+    after, after_tax = apportion_rates(i, paid + pay)
+    tt = docs.totals_of(i)
+    lines = list(tt["rows"])
+    allocs: list[tuple[AllocationIn, str]] = []
+    num = docs.display_number(i)
+    for r, b0, b1 in zip(lines, before, after):
+        part = b1 - b0
+        if part > 0:
+            allocs.append((AllocationIn(budget_id=_budget_in(db, r["line"].budget_id, fy), amount=fmt(part),
+                                        entity_id=entity_id, fiscal_year_id=None,
+                                        description=f"{num}: {r['line'].description}"[:500]), "PAYMENT"))
+    for x, b0, b1 in zip(tt["taxes"], before_tax, after_tax):        # 2.4.0 polish (#487): each rate to its budget
+        if b1 - b0 > 0:
+            allocs.append((AllocationIn(budget_id=_budget_in(db, x["budget_id"], fy), amount=fmt(b1 - b0),
+                                        entity_id=entity_id, description=f"{num}: {x['name']}"[:500]), "PAYMENT"))
+    if over > 0:
+        first = lines[0]["line"].budget_id if lines else (tt["taxes"][0]["budget_id"] if tt["taxes"] else None)
+        allocs.append((AllocationIn(budget_id=_budget_in(db, first, fy), amount=fmt(over), entity_id=entity_id,
+                                    description=f"Overpayment — {num}"), "OVERPAYMENT"))
+    return allocs
+
+
 def record_payment(db: Session, ctx, i: Invoice, body) -> RegisterTransaction:
     from ..schemas import AllocationIn, TransactionCreateIn
     from . import register as reg
@@ -231,34 +260,15 @@ def record_payment(db: Session, ctx, i: Invoice, body) -> RegisterTransaction:
         raise AppError(409, "CONFIRMATION_REQUIRED", "The invoice is already paid; the whole amount would be an "
                        "overpayment.", warnings=[{"code": "OVERPAYMENT", "message": "The invoice is already paid.",
                                                   "details": {}}])
+    if over > 0 and not body.confirm_overpayment and pay > 0:
+        raise AppError(409, "CONFIRMATION_REQUIRED", f"{fmt(over)} more than the open balance: it will be recorded "
+                       "as an overpayment (it can be refunded).",
+                       warnings=[{"code": "OVERPAYMENT", "message": "Amount above the open balance.",
+                                  "details": {"overpayment": fmt(over)}}])
     d = body.transaction_date or dt.date.today()
     fy = _deposit_fy(db, ctx.workspace_id, d)
-    before, before_tax = apportion_rates(i, f["paid"])
-    after, after_tax = apportion_rates(i, f["paid"] + pay)
-    tt = docs.totals_of(i)
-    lines = list(tt["rows"])
-    allocs: list[tuple[AllocationIn, str]] = []
+    allocs = _invoice_allocations(db, i, f["paid"], pay, over, fy, i.customer_entity_id)
     num = docs.display_number(i)
-    for r, b0, b1 in zip(lines, before, after):
-        part = b1 - b0
-        if part > 0:
-            allocs.append((AllocationIn(budget_id=_budget_in(db, r["line"].budget_id, fy), amount=fmt(part),
-                                        entity_id=i.customer_entity_id, fiscal_year_id=None,
-                                        description=f"{num}: {r['line'].description}"[:500]), "PAYMENT"))
-    for x, b0, b1 in zip(tt["taxes"], before_tax, after_tax):        # 2.4.0 polish (#487): each rate to its budget
-        if b1 - b0 > 0:
-            allocs.append((AllocationIn(budget_id=_budget_in(db, x["budget_id"], fy), amount=fmt(b1 - b0),
-                                        entity_id=i.customer_entity_id, description=f"{num}: {x['name']}"[:500]),
-                           "PAYMENT"))
-    if over > 0:
-        first = lines[0]["line"].budget_id if lines else (tt["taxes"][0]["budget_id"] if tt["taxes"] else None)
-        if over > 0 and not body.confirm_overpayment and pay > 0:
-            raise AppError(409, "CONFIRMATION_REQUIRED", f"{fmt(over)} more than the open balance: it will be recorded "
-                           "as an overpayment (it can be refunded).",
-                           warnings=[{"code": "OVERPAYMENT", "message": "Amount above the open balance.",
-                                      "details": {"overpayment": fmt(over)}}])
-        allocs.append((AllocationIn(budget_id=_budget_in(db, first, fy), amount=fmt(over),
-                                    entity_id=i.customer_entity_id, description=f"Overpayment — {num}"), "OVERPAYMENT"))
     data = TransactionCreateIn(bank_account_id=body.bank_account_id, transaction_type="DEPOSIT", transaction_date=d,
                                clear_date=body.clear_date, entity_id=i.customer_entity_id,
                                notes=(body.notes or f"Payment of invoice {num}")[:4000],
@@ -274,6 +284,136 @@ def record_payment(db: Session, ctx, i: Invoice, body) -> RegisterTransaction:
                   "allocation_ids": [a.id for a in created]})
     refresh_status(db, ctx, i)
     return t
+
+
+# ------------------------------------------------------------------ 2.4.0 (#523): one payment, several invoices
+def open_for_payment(db: Session, ctx, customer_entity_id: int | None, number: str | None) -> dict:
+    """The open invoices a payment can go to (sent or partly paid, no write-off waiting), oldest due date first: a
+    customer's, or - from an invoice number typed off a payment stub - that invoice's customer's."""
+    inv.require_module(db, ctx)
+    ctx.require("invoice.record_payment")
+    found = None
+    if number and number.strip():
+        q = number.strip().lower()
+        for i in db.scalars(select(Invoice).where(Invoice.workspace_id == ctx.workspace_id,
+                                                  Invoice.status != "DRAFT")):
+            if (docs.display_number(i) or "").lower() == q:
+                found = i
+                break
+        if found is None:
+            raise not_found("Invoice")
+        customer_entity_id = found.customer_entity_id
+    if customer_entity_id is None:
+        raise validation("Choose a customer or type an invoice number.", "customer_entity_id")
+    e = db.get(Entity, customer_entity_id)
+    if e is None or e.workspace_id != ctx.workspace_id:
+        raise not_found("Entity")
+    rows = []
+    for i in db.scalars(select(Invoice).where(Invoice.workspace_id == ctx.workspace_id,
+                                              Invoice.customer_entity_id == customer_entity_id,
+                                              Invoice.status.in_(("SENT", "PARTLY_PAID")))):
+        if i.write_off_status == "PENDING":
+            continue
+        f = figures(db, i)
+        if f["open"] <= 0:
+            continue
+        rows.append({"id": i.id, "number": docs.display_number(i), "status": i.status,
+                     "invoice_date": i.invoice_date.isoformat() if i.invoice_date else None,
+                     "due_date": i.due_date.isoformat() if i.due_date else None,
+                     "total": fmt(f["total"]), "paid": fmt(f["paid"]), "open": fmt(f["open"]),
+                     "customer_entity_id": i.customer_entity_id})
+    rows.sort(key=lambda r: (r["due_date"] or "9999", r["invoice_date"] or "", r["id"]))
+    return {"customer": {"id": e.id, "name": e.display_name}, "invoices": rows,
+            "found_invoice_id": found.id if found is not None else None}
+
+
+def record_multi(db: Session, ctx, body) -> tuple[RegisterTransaction, list[Invoice]]:
+    """One deposit paying several invoices (decided with Kyle 2026-11-04): each invoice gets the lines Record payment
+    would give it, linked to it; the extra above the balances (confirmed) is an overpayment on the chosen invoice; a
+    payer other than an invoice's customer is the THIRD_PARTY_PAYER warning; the deposit's entity is the payer.
+    Void and unlink stay per invoice (the existing rules)."""
+    from ..schemas import TransactionCreateIn
+    from . import register as reg
+    inv.require_module(db, ctx)
+    ctx.require("invoice.record_payment")
+    ids = [x.invoice_id for x in body.items]
+    if len(set(ids)) != len(ids):
+        raise validation("Each invoice can be listed once.", "items")
+    parts: list[tuple[Invoice, int, dict]] = []
+    for n, x in enumerate(body.items):
+        i = docs.get(db, ctx, x.invoice_id)
+        _get_open(db, ctx, i)
+        try:
+            amount = parse_amount(x.amount, allow_zero=False)
+        except ValueError as e:
+            raise validation(str(e), f"items.{n}.amount") from None
+        f = figures(db, i)
+        if amount > f["open"]:
+            raise AppError(422, "OVER_OPEN_BALANCE", f"{fmt(amount)} for invoice {docs.display_number(i)} is more than "
+                           f"its open balance of {fmt(f['open'])}. Put the extra as an overpayment instead.",
+                           errors=[{"field": f"items.{n}.amount", "message": "More than the open balance."}])
+        parts.append((i, amount, f))
+    over = 0
+    if body.overpayment not in (None, "", "0", "0.00"):
+        try:
+            over = parse_amount(body.overpayment, allow_zero=True)
+        except ValueError as e:
+            raise validation(str(e), "overpayment") from None
+    target = None
+    if over > 0:
+        target = next((i for i, _a, _f in parts if i.id == body.overpayment_invoice_id), None)
+        if target is None:
+            raise validation("Choose which of these invoices gets the overpayment.", "overpayment_invoice_id")
+        if not body.confirm_overpayment:
+            raise AppError(409, "CONFIRMATION_REQUIRED", f"{fmt(over)} more than the invoices' balances: it will be "
+                           f"recorded as an overpayment on invoice {docs.display_number(target)} (it can be refunded).",
+                           warnings=[{"code": "OVERPAYMENT", "message": "Amount above the open balances.",
+                                      "details": {"overpayment": fmt(over)}}])
+    customers = {i.customer_entity_id for i, _a, _f in parts}
+    payer = body.payer_entity_id
+    if payer is None:
+        if len(customers) > 1:
+            raise validation("These invoices are for different customers: choose who paid.", "payer_entity_id")
+        payer = next(iter(customers))
+    pe = db.get(Entity, payer)
+    if pe is None or pe.workspace_id != ctx.workspace_id:
+        raise not_found("Entity")
+    others = [i for i, _a, _f in parts if i.customer_entity_id != payer]
+    warnings = []
+    if others:
+        nums = ", ".join(docs.display_number(i) for i in others)
+        warnings.append(Warning_("THIRD_PARTY_PAYER", f"The payment is from {pe.display_name}, not the customer of "
+                                 f"invoice{'s' if len(others) > 1 else ''} {nums}. Record it anyway?"))
+    require_confirmations(warnings, body.confirmations)
+    d = body.transaction_date or dt.date.today()
+    fy = _deposit_fy(db, ctx.workspace_id, d)
+    plan: list[tuple[Invoice, tuple]] = []
+    for i, amount, f in parts:
+        for a in _invoice_allocations(db, i, f["paid"], amount, over if i is target else 0, fy, payer):
+            plan.append((i, a))
+    if len(plan) > 100:
+        raise validation("Too many deposit lines for one payment (at most 100): record it in two parts.", "items")
+    nums = ", ".join(docs.display_number(i) for i, _a, _f in parts)
+    data = TransactionCreateIn(bank_account_id=body.bank_account_id, transaction_type="DEPOSIT", transaction_date=d,
+                               clear_date=body.clear_date, entity_id=payer,
+                               notes=(body.notes or f"Payment of invoices {nums}")[:4000],
+                               allocations=[a for _i, (a, _k) in plan], confirmations=body.confirmations)
+    t = reg.create(db, ctx, data, invoice_flow={})
+    created = sorted(t.live_allocations, key=lambda a: a.id)
+    for a, (i, (_ai, kind)) in zip(created, plan):
+        db.add(InvoicePayment(workspace_id=ctx.workspace_id, invoice_id=i.id, allocation_id=a.id, kind=kind,
+                              created_by_user_id=ctx.user.id))
+    db.flush()
+    total = sum(a for _i, a, _f in parts) + over
+    for i, amount, f in parts:
+        mine = [a.id for a, (j, _x) in zip(created, plan) if j is i]
+        audit.record(db, ctx, "INVOICE_PAYMENT_RECORDED", "invoice", i.id, {"paid": fmt(f["paid"])},
+                     {"transaction_id": t.id, "amount": fmt(amount + (over if i is target else 0)),
+                      "paid_now": fmt(amount), "overpayment": fmt(over if i is target else 0),
+                      "allocation_ids": mine, "deposit_total": fmt(total), "invoices_in_deposit": len(parts),
+                      "confirmed_warnings": [w.code for w in warnings]})
+        refresh_status(db, ctx, i)
+    return t, [i for i, _a, _f in parts]
 
 
 # ------------------------------------------------------------------ link an existing deposit

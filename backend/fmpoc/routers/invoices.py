@@ -434,7 +434,7 @@ def formal_report(rid: Literal["inv-sales-formal", "inv-overview"],
 
 
 # ------------------------------------------------------------------ 2.4.0 (#248): batches
-from ..schemas import InvoiceBatchIn  # noqa: E402
+from ..schemas import InvoiceBatchIn, InvoiceMultiPaymentIn  # noqa: E402
 from ..services import invoice_batches as batches  # noqa: E402
 
 
@@ -470,6 +470,26 @@ def batch_pdf(bid: int, download: bool = False, db: Session = Depends(get_db), c
     return Response(pdf, media_type="application/pdf",
                     headers={"Content-Disposition": f'{"attachment" if download else "inline"}; filename="{name}"',
                              "Cache-Control": "no-store"})
+
+
+# ------------------------------------------------------------------ 2.4.0 (#523): one payment, several invoices
+@router.get("/payments/open")
+def open_for_payment(customer_entity_id: int | None = None, number: str | None = Query(None, max_length=60),
+                     db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.record_payment"))):
+    """A customer's open invoices (oldest due first), or those of the customer of a typed invoice number."""
+    from ..services import invoice_payments as _pay
+    return _pay.open_for_payment(db, ctx, customer_entity_id, number)
+
+
+@router.post("/payments", status_code=201)
+def record_multi_payment(body: InvoiceMultiPaymentIn, db: Session = Depends(get_db),
+                         ctx: Ctx = Depends(require("invoice.record_payment"))):
+    """Register User: one deposit paying several invoices, linked to each."""
+    from ..services import invoice_payments as _pay
+    from ..services import register as _reg
+    t, invs = _pay.record_multi(db, ctx, body)
+    db.commit()
+    return {"invoices": [docs.out(db, ctx, i) for i in invs], "transaction": _reg.out(db, t)}
 
 
 @router.get("/{iid}")
