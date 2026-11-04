@@ -16,12 +16,14 @@ permissions:
 
 # 2.4.0 (CI speed): three jobs run side by side - the backend tests on every core of the runner (pytest-xdist), the
 # frontend build with the E2E tests, and the version / notices / dependency checks - and a final job named "test"
-# passes only when all three passed. "tests / test" stays the check the branch rules require.
+# passes only when all three passed. "tests / test" stays the check the branch rules require. Time limits are about
+# 3-4x a normal run (backend ~6 min, frontend + E2E ~6 min, checks ~1 min) so a hung run stops early; the backend's
+# leaves room for a run on one core (~17 min).
 jobs:
   backend:
     name: backend tests
     runs-on: ubuntu-26.04
-    timeout-minutes: 45
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -37,7 +39,7 @@ jobs:
   frontend:
     name: frontend build and E2E
     runs-on: ubuntu-26.04
-    timeout-minutes: 30
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -75,7 +77,7 @@ jobs:
   checks:
     name: version, notices and dependency checks
     runs-on: ubuntu-26.04
-    timeout-minutes: 20
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
