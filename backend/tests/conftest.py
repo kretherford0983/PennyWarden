@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime as dt
 import io
 import itertools
+import shutil
 
 import pytest
 from fastapi.testclient import TestClient
@@ -21,6 +22,14 @@ from argon2 import PasswordHasher as _PH  # noqa: E402
 import fmpoc.services.recovery as _recovery  # noqa: E402
 
 _recovery.hash_password = _PH(time_cost=1, memory_cost=1024, parallelism=1).hash
+
+# 2.4.0 (CI speed): the same for user passwords - each test creates five users and signs them in. Only the tests'
+# hasher changes (verification reads the parameters from the hash); the production one is kept as REAL_PASSWORD_HASHER
+# and checked by test_ci_speed.py.
+import fmpoc.security.passwords as _passwords  # noqa: E402
+
+REAL_PASSWORD_HASHER = _passwords._ph
+_passwords._ph = _PH(time_cost=1, memory_cost=1024, parallelism=1)
 
 PASSWORD = "Correct-Horse-9-Battery"
 # 1.8.0 (#113): the security questions every test user sets up at the first sign-in
@@ -79,9 +88,24 @@ class Api:
         return r
 
 
+@pytest.fixture(scope="session")
+def migrated_database(tmp_path_factory):
+    """2.4.0 (CI speed): every migration applied once per test process (each xdist worker has its own); each test
+    starts from a copy instead of migrating a new database (create_app still runs the upgrade, which finds it at
+    head). The upgrade from older databases keeps its own tests."""
+    from fmpoc.db import upgrade_database
+    s = load_settings({"data_dir": str(tmp_path_factory.mktemp("template") / "appdata")})
+    s.ensure_dirs()
+    upgrade_database(s.database_url)
+    return s.database_path
+
+
 @pytest.fixture
-def settings(tmp_path):
-    return load_settings({"data_dir": str(tmp_path / "appdata"), "login_max_failures": 5})
+def settings(tmp_path, migrated_database):
+    s = load_settings({"data_dir": str(tmp_path / "appdata"), "login_max_failures": 5})
+    s.database_path.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(migrated_database, s.database_path)
+    return s
 
 
 @pytest.fixture

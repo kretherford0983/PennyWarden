@@ -14,11 +14,67 @@ on:
 permissions:
   contents: read
 
+# 2.4.0 (CI speed): three jobs run side by side - the backend tests on every core of the runner (pytest-xdist), the
+# frontend build with the E2E tests, and the version / notices / dependency checks - and a final job named "test"
+# passes only when all three passed. "tests / test" stays the check the branch rules require.
 jobs:
-  test:
-    name: test
+  backend:
+    name: backend tests
     runs-on: ubuntu-26.04
-    timeout-minutes: 75   # 2.4.0: the backend suite alone is ~35-40 min on the hosted runner
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements*.txt
+      - name: Install dependencies
+        run: pip install -r backend/requirements-dev.txt
+      - name: Backend tests (AC-mapped, incl. security negative tests), on every core
+        run: cd backend && python -m pytest -p no:warnings -n auto
+
+  frontend:
+    name: frontend build and E2E
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: backend/requirements*.txt
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install dependencies
+        run: |
+          pip install -r backend/requirements.txt
+          npm --prefix frontend ci
+      - name: Frontend typecheck + production build
+        run: cd frontend && npx tsc --noEmit -p . && npm run build
+      - name: E2E UI tests (Playwright)
+        run: |
+          cd frontend
+          npx playwright install --with-deps chromium
+          FM_PYTHON=python npx playwright test
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: e2e-reports-${{ github.run_id }}
+          path: |
+            frontend/e2e-screenshots
+            frontend/test-results
+          if-no-files-found: ignore
+          retention-days: 7
+
+  checks:
+    name: version, notices and dependency checks
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
@@ -46,15 +102,6 @@ jobs:
           else
             python scripts/third_party_notices.py --check
           fi
-      - name: Backend tests (AC-mapped, incl. security negative tests)
-        run: cd backend && python -m pytest -p no:warnings
-      - name: Frontend typecheck + production build
-        run: cd frontend && npx tsc --noEmit -p . && npm run build
-      - name: E2E UI tests (Playwright)
-        run: |
-          cd frontend
-          npx playwright install --with-deps chromium
-          FM_PYTHON=python npx playwright test
       - name: Dependency vulnerability checks (AC-SEC-024)
         run: bash scripts/security_check.sh
       - uses: actions/upload-artifact@v7
@@ -63,8 +110,20 @@ jobs:
           name: test-reports-${{ github.run_id }}
           path: |
             build/security
-            frontend/e2e-screenshots
-            frontend/test-results
             THIRD-PARTY-NOTICES.txt
           if-no-files-found: ignore
           retention-days: 7
+
+  test:
+    name: test
+    needs: [backend, frontend, checks]
+    if: always()
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    steps:
+      - name: All three passed
+        env:
+          RESULTS: ${{ needs.backend.result }} ${{ needs.frontend.result }} ${{ needs.checks.result }}
+        run: |
+          echo "backend, frontend, checks: $RESULTS"
+          [ "$RESULTS" = "success success success" ]
