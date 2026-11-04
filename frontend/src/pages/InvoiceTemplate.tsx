@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
 import { ErrorBox, Field, Loading } from "../components";
 import { Lines, LivePreview, PatternInput } from "./checkShared";
+import { LogoChoice } from "../LogoChoice";
 
 type Col = { key: string; heading: string };
 
@@ -14,6 +15,7 @@ export function InvoiceTemplateEditor() {
   const [saved, setSaved] = useState(false);
   const [logoV, setLogoV] = useState(0);
   const dragFrom = useRef<number | null>(null);          // #480: the row being dragged
+  const [dragging, setDragging] = useState<number | null>(null);
   const load = () => api.get("/api/invoices/setup/template").then((x) => { setT(x); setCfg(x.config); }, setErr);
   useEffect(() => { load(); }, []);
   if (!t || !cfg) return <section className="card"><h2>Invoice PDF</h2><ErrorBox error={err} />{err ? null : <Loading />}</section>;
@@ -43,10 +45,6 @@ export function InvoiceTemplateEditor() {
     const clean = { ...cfg, letterhead: cfg.letterhead.filter((x: string) => x.trim()), bill_to: cfg.bill_to.filter((x: string) => x.trim()) };
     try { const x = await api.put("/api/invoices/setup/template", clean); setT(x); setCfg(x.config); setSaved(true); } catch (x) { setErr(x); }
   };
-  const logo = async (f: File | null) => {
-    setErr(null);
-    try { setT(f ? await api.upload("/api/invoices/setup/template/logo", f) : await api.post("/api/invoices/setup/template/logo/remove")); setLogoV(logoV + 1); } catch (x) { setErr(x); }
-  };
   return (
     <section className="card" aria-labelledby="inv-tpl-h" data-testid="invoice-template">
       <h2 id="inv-tpl-h">Invoice PDF</h2>
@@ -59,11 +57,14 @@ export function InvoiceTemplateEditor() {
             <Field label="Size"><input type="number" min={8} max={12} step={0.5} value={cfg.size} onChange={(e) => set("size", Number(e.target.value))} style={{ width: "5em" }} /></Field>
             <Field label="Accent color"><input type="color" value={cfg.accent} onChange={(e) => set("accent", e.target.value.toUpperCase())} /></Field>
           </div>
-          <div className="row fields">
-            <Field label="Logo">{t.has_logo ? <span><img src={`/api/invoices/setup/template/logo?v=${logoV}`} alt="Current logo" style={{ maxHeight: 40, verticalAlign: "middle" }} /> <button type="button" className="small" onClick={() => logo(null)}>Remove</button></span>
-              : <input type="file" accept="image/png,image/jpeg" onChange={(e) => logo(e.target.files?.[0] || null)} />}</Field>
+          {/* 2.4.0 polish (#503): the organization logo, the invoice PDF's own, or none */}
+          <LogoChoice id="invoice" source={cfg.logo_source || "NONE"} onSource={(v) => set("logo_source", v)}
+            own={t.has_logo ? { version: logoV } : null} ownSrc={`/api/invoices/setup/template/logo?v=${logoV}`}
+            onUpload={async (f) => { setT(await api.upload("/api/invoices/setup/template/logo", f)); setLogoV(logoV + 1); }}
+            onRemove={async () => { setT(await api.post("/api/invoices/setup/template/logo/remove")); setLogoV(logoV + 1); }}
+            sizeHint="PNG or JPEG, at most 1 MB. Adding or removing the invoice PDF's own logo takes effect at once.">
             <Field label="Logo position"><select value={cfg.logo_position} onChange={(e) => set("logo_position", e.target.value)}><option value="LEFT">Left, above the letterhead</option><option value="CENTER">Center, between the letterhead and the title</option><option value="RIGHT">Right, above the title</option><option value="NONE">Don't print it</option></select></Field>
-          </div>
+          </LogoChoice>
           {lines("letterhead")}
           <div className="row fields">
             <PatternInput id="inv-title" label="Title" maxLength={40} value={cfg.title} variables={t.variables} hint={false} onChange={(v) => set("title", v)} />
@@ -72,9 +73,13 @@ export function InvoiceTemplateEditor() {
           {lines("bill_to")}
           <fieldset><legend>Line table columns</legend>
             <ol className="plain column-order" data-testid="inv-columns">{cols.map((c, n) => (
-              <li key={c.key} className="column-row" draggable onDragStart={() => { dragFrom.current = n; }}
-                  onDragOver={(e) => e.preventDefault()} onDrop={() => dropAt(n)}>
-                <span className="drag-handle" aria-hidden="true" title="Drag to reorder">⠿</span>
+              // 2.4.0 polish (#501): the row is `display: contents` (so the headings line up in one grid) and has no box
+              // a drag can start from - the handle is what's draggable; dragover/drop still bubble up to the row
+              <li key={c.key} className={`column-row${dragging === n ? " dragging" : ""}`}
+                  onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }} onDrop={(e) => { e.preventDefault(); dropAt(n); }}>
+                <span className="drag-handle" aria-hidden="true" title="Drag to reorder" draggable data-testid={`inv-col-handle-${c.key}`}
+                  onDragStart={(e) => { dragFrom.current = n; setDragging(n); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", c.key); }}
+                  onDragEnd={() => { dragFrom.current = null; setDragging(null); }}>⠿</span>
                 <label htmlFor={`inv-col-${c.key}`}>{t.columns.find((x: any) => x.key === c.key)?.label}</label>
                 <input id={`inv-col-${c.key}`} aria-label={`Heading for ${c.key}`} maxLength={30} value={c.heading} onChange={(e) => set("columns", cols.map((x) => (x.key === c.key ? { ...x, heading: e.target.value } : x)))} />
                 <button type="button" className="small" aria-label={`Move ${c.key} up`} disabled={!n} onClick={() => move(n, -1)}>↑</button>

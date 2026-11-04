@@ -616,8 +616,8 @@ def _draft_parts(db, ctx, body: DraftIn):
     _kind_ok(db, ctx, body.kind)
     cfg = svc._doc_config_or_422(body.kind, body.config)
     logo = None
-    if body.logo_from is not None and body.kind == "LETTER":
-        logo = svc.get_document(db, ctx, body.logo_from, "LETTER").logo_png
+    if body.logo_from is not None:                       # #503: envelopes carry a logo too
+        logo = svc.get_document(db, ctx, body.logo_from, body.kind).logo_png
     return cfg, logo
 
 
@@ -626,7 +626,7 @@ def draft_preview_image(body: DraftIn, request: Request, db: Session = Depends(g
     cfg, logo = _draft_parts(db, ctx, body)
     if not raster.available():
         raise AppError(501, "PREVIEW_UNAVAILABLE", "The picture preview is not available on this server.")
-    pdf = svc.sample_letter_pdf(cfg, logo, db, ctx, request.app.state.key) if body.kind == "LETTER" else svc.sample_envelope_pdf(cfg, preview=True)
+    pdf = svc.sample_letter_pdf(cfg, logo, db, ctx, request.app.state.key) if body.kind == "LETTER" else svc.sample_envelope_pdf(cfg, preview=True, logo=logo, db=db, ctx=ctx)
     png, pages = raster.pdf_to_png(pdf)
     return Response(png, media_type="image/png",
                     headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
@@ -636,14 +636,14 @@ def draft_preview_image(body: DraftIn, request: Request, db: Session = Depends(g
 @router.post("/documents/draft/preview")
 def draft_preview(body: DraftIn, request: Request, db: Session = Depends(get_db), ctx: Ctx = Depends(doc_ctx)):
     cfg, logo = _draft_parts(db, ctx, body)
-    pdf = svc.sample_letter_pdf(cfg, logo, db, ctx, request.app.state.key) if body.kind == "LETTER" else svc.sample_envelope_pdf(cfg, preview=True)
+    pdf = svc.sample_letter_pdf(cfg, logo, db, ctx, request.app.state.key) if body.kind == "LETTER" else svc.sample_envelope_pdf(cfg, preview=True, logo=logo, db=db, ctx=ctx)
     return _pdf(ctx, pdf, f"{body.kind.lower()}-preview.pdf")
 
 
 @router.post("/documents/draft/test-print")
 def draft_test_print(body: DraftIn, request: Request, db: Session = Depends(get_db), ctx: Ctx = Depends(doc_ctx)):
     cfg, logo = _draft_parts(db, ctx, body)
-    pdf = svc.sample_letter_pdf(cfg, logo, db, ctx, request.app.state.key) if body.kind == "LETTER" else svc.sample_envelope_pdf(cfg)
+    pdf = svc.sample_letter_pdf(cfg, logo, db, ctx, request.app.state.key) if body.kind == "LETTER" else svc.sample_envelope_pdf(cfg, logo=logo, db=db, ctx=ctx)
     audit.record(db, ctx, "CHECK_DOCUMENT_TEST_PRINT", "check_document", None, None,
                  {"unsaved_settings": True, "draft": True, "kind": body.kind})
     db.commit()
@@ -681,8 +681,8 @@ def document_flags(doc_id: int, body: DocFlagsIn, db: Session = Depends(get_db),
 @router.post("/documents/{doc_id}/logo")
 async def document_logo(doc_id: int, file: UploadFile = File(...), db: Session = Depends(get_db),
                         ctx: Ctx = Depends(setup_ctx)):
-    """#176: upload a cover letter's logo (PNG or JPEG, at most 1 MB; re-encoded as PNG)."""
-    d = svc.get_document(db, ctx, doc_id, "LETTER")
+    """#176: upload a cover letter's (2.4.0 polish #503: or an envelope's) own logo (PNG or JPEG, at most 1 MB; re-encoded as PNG)."""
+    d = svc.get_document(db, ctx, doc_id)
     data = await file.read(svc.MAX_LOGO_BYTES + 1)
     if len(data) > svc.MAX_LOGO_BYTES:
         raise AppError(413, "FILE_TOO_LARGE", "A logo may not exceed 1 MB.")
@@ -693,15 +693,15 @@ async def document_logo(doc_id: int, file: UploadFile = File(...), db: Session =
 
 @router.post("/documents/{doc_id}/logo/remove")
 def document_logo_remove(doc_id: int, db: Session = Depends(get_db), ctx: Ctx = Depends(setup_ctx)):
-    d = svc.set_logo(db, ctx, svc.get_document(db, ctx, doc_id, "LETTER"), None)
+    d = svc.set_logo(db, ctx, svc.get_document(db, ctx, doc_id), None)
     db.commit()
     return svc.doc_out(d)
 
 
 @router.get("/documents/{doc_id}/logo")
 def document_logo_image(doc_id: int, db: Session = Depends(get_db), ctx: Ctx = Depends(setup_ctx)):
-    """The stored (re-encoded) logo, for the editor."""
-    d = svc.get_document(db, ctx, doc_id, "LETTER")
+    """The stored (re-encoded) logo, for the editor (cover letters and, #503, envelopes)."""
+    d = svc.get_document(db, ctx, doc_id)
     if not d.logo_png:
         raise not_found("Logo")
     return Response(d.logo_png, media_type="image/png",
@@ -714,7 +714,7 @@ def document_test(doc_id: int, body: DocTestIn, request: Request, db: Session = 
     d = svc.get_document(db, ctx, doc_id)
     _kind_ok(db, ctx, d.kind)
     cfg = svc._doc_config_or_422(d.kind, body.config) if body.config is not None else svc.doc_config(d)
-    pdf = svc.sample_letter_pdf(cfg, d.logo_png, db, ctx, request.app.state.key) if d.kind == "LETTER" else svc.sample_envelope_pdf(cfg)
+    pdf = svc.sample_letter_pdf(cfg, d.logo_png, db, ctx, request.app.state.key) if d.kind == "LETTER" else svc.sample_envelope_pdf(cfg, logo=d.logo_png, db=db, ctx=ctx)
     audit.record(db, ctx, "CHECK_DOCUMENT_TEST_PRINT", "check_document", d.id, None,
                  {"unsaved_settings": body.config is not None})
     db.commit()
@@ -728,7 +728,7 @@ def document_preview(doc_id: int, body: DocTestIn, request: Request, db: Session
     d = svc.get_document(db, ctx, doc_id)
     _kind_ok(db, ctx, d.kind)
     cfg = svc._doc_config_or_422(d.kind, body.config) if body.config is not None else svc.doc_config(d)
-    pdf = svc.sample_letter_pdf(cfg, d.logo_png, db, ctx, request.app.state.key) if d.kind == "LETTER" else svc.sample_envelope_pdf(cfg, preview=True)
+    pdf = svc.sample_letter_pdf(cfg, d.logo_png, db, ctx, request.app.state.key) if d.kind == "LETTER" else svc.sample_envelope_pdf(cfg, preview=True, logo=d.logo_png, db=db, ctx=ctx)
     return _pdf(ctx, pdf, f"{d.kind.lower()}-preview.pdf")
 
 
@@ -741,7 +741,7 @@ def document_preview_image(doc_id: int, body: DocTestIn, request: Request, db: S
     cfg = svc._doc_config_or_422(d.kind, body.config) if body.config is not None else svc.doc_config(d)
     if not raster.available():
         raise AppError(501, "PREVIEW_UNAVAILABLE", "The picture preview is not available on this server.")
-    pdf = svc.sample_letter_pdf(cfg, d.logo_png, db, ctx, request.app.state.key) if d.kind == "LETTER" else svc.sample_envelope_pdf(cfg, preview=True)
+    pdf = svc.sample_letter_pdf(cfg, d.logo_png, db, ctx, request.app.state.key) if d.kind == "LETTER" else svc.sample_envelope_pdf(cfg, preview=True, logo=d.logo_png, db=db, ctx=ctx)
     png, pages = raster.pdf_to_png(pdf)
     return Response(png, media_type="image/png",
                     headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",

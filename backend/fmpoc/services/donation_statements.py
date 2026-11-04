@@ -234,7 +234,7 @@ def _donation_table(rows: list[dict], total_cents: int, cfg, st: dict) -> Table:
 def statement_pdf(cfg, *, org: dict, donor_name: str, donor_address: list[str], year: int, number: str, kind: str,
                   kind_note: str, rows: list[dict], total_cents: int, goods: list[tuple[int, str]], items: list[str],
                   today: dt.date | None = None, sample: bool = False, watermark: str | None = None,
-                  donor_values: dict | None = None, signature=None) -> bytes:
+                  donor_values: dict | None = None, signature=None, logo: bytes | None = None) -> bytes:
     today = today or dt.date.today()
     if sample and watermark is None:
         watermark = "SAMPLE - NOT A STATEMENT"
@@ -250,7 +250,8 @@ def statement_pdf(cfg, *, org: dict, donor_name: str, donor_address: list[str], 
     return dn.donor_letter_pdf(cfg, org=org, donor_lines=lines, today=today,
                                kind=kind, sample=sample, watermark=watermark,
                                doc_title=f"Year-end giving statement {number}", middle=mk,
-                               closing=texts["closing"].replace(TABLE_MARK, ""), signature=signature)
+                               closing=texts["closing"].replace(TABLE_MARK, ""), signature=signature,
+                               logo=logo)                                           # 2.4.0 polish (#503)
 
 
 def _statement_middle(cfg, texts: dict, vals: dict, org: dict, donor_name: str, year: int, number: str,
@@ -311,7 +312,8 @@ def sample_pdf(db: Session, ctx, data: dict | None, km=None) -> bytes:
                          kind_note="", rows=rows, total_cents=40000, goods=[(6000, "Dinner")],
                          items=["SAMPLE ITEM - a television for the auction"], sample=True,
                          donor_values=entity_vars.sample("DONOR", dn.SAMPLE_DONOR[0], dn.SAMPLE_DONOR[1:]),
-                         signature=dn.signature_for(db, ctx.workspace_id, km, cfg, "statement", with_image=True))
+                         signature=dn.signature_for(db, ctx.workspace_id, km, cfg, "statement", with_image=True),
+                         logo=dn.letter_logo(db, ctx.workspace_id, cfg, "statement"))          # #503
 
 
 # ------------------------------------------------------------------ printing
@@ -368,7 +370,8 @@ def _compose(db: Session, ctx, e: Entity, year: int, seq: int | None = None, sig
     return {"cfg": cfg, "c": c, "e": e, "org": org, "addr": addr, "kind": kind, "number": number, "seq": seq,
             "cur": cur, "sha": sha, "note": note, "warnings": warnings, "year": year,
             "signer_id": sid,
-            "signature": dn.signature_for(db, ctx.workspace_id, None, cfg, "statement", signer_id=sid)}   # no image yet
+            "signature": dn.signature_for(db, ctx.workspace_id, None, cfg, "statement", signer_id=sid),   # no image yet
+            "logo": dn.letter_logo(db, ctx.workspace_id, cfg, "statement")}                              # #503
 
 
 def _pdf(x: dict, watermark: str | None = None) -> bytes:
@@ -378,7 +381,7 @@ def _pdf(x: dict, watermark: str | None = None) -> bytes:
                          total_cents=c["total"], goods=[(r["goods_cents"], r["goods_description"]) for r in c["rows"]
                                                         if r["goods_cents"]],
                          items=c["items"], watermark=watermark, donor_values=entity_vars.values("DONOR", x["e"]),
-                         signature=x["signature"])
+                         signature=x["signature"], logo=x.get("logo"))
 
 
 def preview(db: Session, ctx, year: int, donor_id: int, signer_id: int | None = None) -> tuple[bytes, dict]:
@@ -544,14 +547,15 @@ def print_envelope(db: Session, ctx, settings, s: DonationStatement, doc_id: int
                                      ", ".join("{" + v + "}" for v in empty) + ". Print anyway?", variables=empty))
         require_confirmations(warnings, confirmations)
     opt = cp.envelope_options(db, ctx, doc, {"page": page, "guide": guide})
+    logo = cp.doc_logo(db, doc, cfg)                       # 2.4.0 polish (#503)
     pdf = documents.envelope_pdf(cfg, ret, to, page=opt["page"], guide=opt["guide"], dx=opt["dx"], dy=opt["dy"],
-                                 test=test)
+                                 test=test, logo=logo)
     if test:
         audit.record(db, ctx, "DONATION_ENVELOPE_TEST", "donation_statement", s.id, None,
                      {"statement_id": s.id, "document_id": doc.id, "page": opt["page"], "guide": opt["guide"]})
         db.commit()
         return pdf
-    copy_pdf = documents.envelope_pdf(cfg, ret, to, page="ENVELOPE")
+    copy_pdf = documents.envelope_pdf(cfg, ret, to, page="ENVELOPE", logo=logo)
     sha = hashlib.sha256(copy_pdf).hexdigest()
     path, added = None, False
     if db.scalar(select(Attachment).where(Attachment.donation_statement_id == s.id,

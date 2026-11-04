@@ -643,7 +643,9 @@ def invoice_pdf(db: Session, ws_id: int, i: Invoice | None, sample: bool = False
               "INVOICE.TOTAL": data["total"].lstrip("$"), "INVOICE.BALANCE": (data.get("balance") or data["total"]).lstrip("$"),
               "INVOICE.TERMS": data.get("terms") or ""}
     author = org_vals.get("ORG") or (ws.name if ws else "")
-    return tpl.render(cfg, data, values, s.logo_png, watermark, author)
+    from . import org_logos                    # #503: the editor's (unsaved) choice for previews, else the stored one
+    logo = org_logos.resolve(db, ws_id, cfg.logo_source, s.logo_png)
+    return tpl.render(cfg, data, values, logo, watermark, author)
 
 
 def _money(cents: int) -> str:

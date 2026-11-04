@@ -9,6 +9,7 @@ import { useEffect, useMemo, useState } from "react";
 import { api } from "../api";
 import { ErrorBox, Field, Loading, useConfirmable } from "../components";
 import { contrast, deltaE, generate, isHex, ROLES, type Role } from "../palette";
+import { LogoChoice, type LogoSource } from "../LogoChoice";
 
 type Preset = { id: string; label: string; source_primary: string; source_secondary: string; colors: Record<Role, string>; series: string[] };
 
@@ -77,28 +78,17 @@ function Preview({ colors, series, footer, logos, org, dark }: { colors: Record<
   );
 }
 
-function LogoSlot({ slot, info, label, hint, onChanged }: { slot: "full" | "mark" | "dark_full" | "dark_mark"; info: any; label: string; hint: string; onChanged: (v: any) => void }) {
-  const [err, setErr] = useState<unknown>(null);
-  const act = async (fn: () => Promise<any>) => { setErr(null); try { onChanged(await fn()); } catch (x) { setErr(x); } };
+function LogoSlot({ slot, info, source, label, hint, onChanged }: { slot: "full" | "mark" | "dark_full" | "dark_mark"; info: any; source: LogoSource; label: string; hint: string; onChanged: (v: any) => void }) {
+  // 2.4.0 polish (#503): the organization's logo, Branding's own, or none - each change takes effect at once
   return (
     <fieldset className="lines">
       <legend>{label}</legend>
-      <ErrorBox error={err} />
-      {info ? (
-        <div className="row form-row">
-          <img className="logo-thumb" src={`/api/system/branding/logo/${slot}?v=${info.sha256}`} alt={label} />
-          <span className="muted">{info.width} × {info.height} px</span>
-          <button type="button" className="small" onClick={() => act(() => api.post(`/api/system/branding/logo/${slot}/remove`, {}))}>Remove</button>
-        </div>
-      ) : <p className="muted">None.</p>}
-      <label className="button small">{info ? "Replace…" : "Add…"}
-        <input type="file" accept="image/png,image/jpeg" hidden aria-label={`${label} image`} onChange={(ev) => {
-          const f = ev.target.files?.[0];
-          ev.target.value = "";
-          if (f) act(() => api.upload(`/api/system/branding/logo/${slot}`, f));
-        }} />
-      </label>
-      <p className="hint">{hint}</p>
+      <LogoChoice id={`branding-${slot}`} slot={slot} source={source}
+        onSource={(v) => { if (v !== source) api.put(`/api/system/branding/logo/${slot}/source`, { source: v }).then(onChanged); }}
+        own={info} ownSrc={info ? `/api/system/branding/logo/${slot}?v=${info.sha256}` : undefined}
+        onUpload={async (f) => onChanged(await api.upload(`/api/system/branding/logo/${slot}`, f))}
+        onRemove={async () => onChanged(await api.post(`/api/system/branding/logo/${slot}/remove`, {}))}
+        sizeHint={hint} />
     </fieldset>
   );
 }
@@ -229,7 +219,13 @@ export function BrandingPanel({ org }: { org: string }) {
     setErr(null); setSaved(false);
     try { take(await api.post("/api/system/branding/reset", {})); setSaved(true); } catch (x) { setErr(x); }
   };
-  const logosChanged = (d: any) => setV((c: any) => ({ ...c, logos: d.logos }));
+  const logosChanged = (d: any) => setV((c: any) => ({ ...c, logos: d.logos, logo_sources: d.logo_sources, org_logos: d.org_logos }));
+  // #503: what each slot prints now - the organization's logo, Branding's own, or none (for the sample page)
+  const logoSrc = (k: string): LogoSource => (v.logo_sources?.[k] || "OWN");
+  const effective: any = Object.fromEntries(["full", "mark", "dark_full", "dark_mark"].map((k) => {
+    const o = logoSrc(k) === "ORG" ? v.org_logos?.[k] : logoSrc(k) === "OWN" ? v.logos?.[k] : null;
+    return [k, o ? { sha256: o.sha256 || o.version } : null];
+  }));
   const pal = tab === "dark" ? dark : light;
   return (
     <section className="card" aria-labelledby="brand-h">
@@ -278,18 +274,18 @@ export function BrandingPanel({ org }: { org: string }) {
             <button type="button" onClick={reset} disabled={v.preset === "pennywarden" && v.dark.preset === "pennywarden" && light.preset === "pennywarden" && dark.preset === "pennywarden"}>Reset to the PennyWarden palette</button>
             {saved ? <span className="hint" role="status">Saved.</span> : null}
           </div>
-          <LogoSlot slot="full" info={v.logos.full} label="Full logo" onChanged={logosChanged}
-                    hint="On report headers and title slides. PNG or JPEG, at most 2 MB. Takes effect at once." />
-          <LogoSlot slot="mark" info={v.logos.mark} label="Small mark (optional)" onChanged={logosChanged}
+          <LogoSlot slot="full" info={v.logos.full} source={logoSrc("full")} label="Full logo" onChanged={logosChanged}
+                    hint="On report headers and title slides. PNG or JPEG, at most 2 MB. Changes take effect at once." />
+          <LogoSlot slot="mark" info={v.logos.mark} source={logoSrc("mark")} label="Small mark (optional)" onChanged={logosChanged}
                     hint="In report and slide footers; without it, no mark is printed. PNG or JPEG, at most 2 MB. Takes effect at once." />
           {darkLogos ? <>
-            <LogoSlot slot="dark_full" info={v.logos.dark_full} label="Full logo for dark backgrounds" onChanged={logosChanged}
+            <LogoSlot slot="dark_full" info={v.logos.dark_full} source={logoSrc("dark_full")} label="Full logo for dark backgrounds" onChanged={logosChanged}
                       hint="Used instead of the full logo on dark slides and pages (save branding with the box ticked). Without it, the full logo is used." />
-            <LogoSlot slot="dark_mark" info={v.logos.dark_mark} label="Small mark for dark backgrounds (optional)" onChanged={logosChanged}
+            <LogoSlot slot="dark_mark" info={v.logos.dark_mark} source={logoSrc("dark_mark")} label="Small mark for dark backgrounds (optional)" onChanged={logosChanged}
                       hint="Used instead of the small mark on dark slides and pages. Without it, the small mark is used." />
           </> : null}
         </div>
-        <Preview colors={pal.colors} series={pal.series} footer={footer} logos={{ ...v.logos, useDark: darkLogos }} org={org} dark={tab === "dark"} />
+        <Preview colors={pal.colors} series={pal.series} footer={footer} logos={{ ...effective, useDark: darkLogos }} org={org} dark={tab === "dark"} />
       </div>
       {dialog}
     </section>

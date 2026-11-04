@@ -282,6 +282,46 @@ _RB = ParagraphStyle("fs_rb", parent=S["cellr"], fontName=_FONT_BOLD)
 S.update({"fs_wb": _WB, "fs_rb": _RB, "fs_w": _W, "fs_tv": _TILE_V, "fs_tk": _TILE_K, "fs_ind": _IND, "fs_ind2": _IND2})
 
 
+def tile_values(texts: list[str], width: float, max_lines: int = 2, min_size: float = 12.0,
+                floor: float = 10.0) -> list[Paragraph]:
+    """2.4.0 polish (#509): the big figure of each tile, fitted to its box. ReportLab breaks inside a word only when
+    that word alone is wider than the box ("Golf Tourna-ment"), so each value gets the largest size (up to the usual
+    17 pt) at which no word is broken and it takes at most `max_lines` lines - whole words wrap to the next line. A long
+    name that can't do that at `min_size` gets a third line instead of smaller type (never below `floor`). Each tile is
+    sized on its own, so a long name doesn't shrink the dollar figures beside it. `texts` are untrusted (escaped)."""
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+
+    def lines(text: str, size: float) -> int:
+        n, cur = 1, 0.0
+        space = stringWidth(" ", _FONT_BOLD, size)
+        for w in str(text).split():
+            ww = stringWidth(w, _FONT_BOLD, size)
+            if ww > width:
+                return 99                       # this word would be split
+            if cur and cur + space + ww > width:
+                n, cur = n + 1, ww
+            else:
+                cur = ww if not cur else cur + space + ww
+        return n
+
+    def fit(text: str) -> float:
+        for allowed, lowest in ((max_lines, min_size), (max_lines + 1, floor)):
+            size = _TILE_V.fontSize
+            while size >= lowest:
+                if lines(text, size) <= allowed:
+                    return size
+                size -= 0.5
+        return floor                            # a single word too wide even then: ReportLab breaks it
+
+    out = []
+    for t in texts:
+        size = fit(t)
+        style = _TILE_V if size == _TILE_V.fontSize else ParagraphStyle(f"fs_tv_{size}", parent=_TILE_V, fontSize=size,
+                                                                        leading=round(size * 1.24, 1))
+        out.append(Paragraph(escape(str(t)), style))
+    return out
+
+
 KEEP_WITH_HEADING = 1.3 * inch
 
 
@@ -360,7 +400,8 @@ def build_pdf(s: dict) -> tuple[bytes, _AuditDoc]:
              ("Total expenses", t["expenses"], f"{s['noun'].capitalize()} expenses" + ("; cash float not included"
                                                                        if t["cash_float_out"] != "0.00" else "")),
              ("Net proceeds", t["net_proceeds"], f"Net margin {_p(t['net_margin'])} of net revenue")]
-    cells = [[[P(k, "fs_tk"), PM(escape(money(v)), "fs_tv"), P(c, "small")] for k, v, c in tiles]]
+    vals = tile_values([money(v) for _k, v, _c in tiles], W / 3 - 8 - 6)          # #509: no word split
+    cells = [[[P(k, "fs_tk"), vals[i], P(c, "small")] for i, (k, v, c) in enumerate(tiles)]]
     tt = Table(cells, colWidths=[W / 3] * 3)
     tt.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), _tile()), ("BOX", (0, 0), (-1, -1), 0.5, branding.color("outline_variant")),
                             ("LINEAFTER", (0, 0), (1, 0), 0.5, branding.color("outline_variant")), ("VALIGN", (0, 0), (-1, -1), "TOP"),

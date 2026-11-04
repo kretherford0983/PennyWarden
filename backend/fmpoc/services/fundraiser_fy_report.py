@@ -19,7 +19,7 @@ from xml.sax.saxutils import escape
 
 from . import fundraiser_deck as deck
 from . import branding
-from .fundraiser_summary import _b, _band, _tile, _h, _p, _table, _us, heading, safe_name
+from .fundraiser_summary import _b, _band, _tile, _h, _p, _table, _us, heading, safe_name, tile_values
 from .reports import FRAME_W, P, S, _AuditDoc, _Mark, _stamp_and_write, money
 
 NO_HISTORY = "No earlier years linked yet."
@@ -95,7 +95,8 @@ def build_pdf(org: str, rep: dict) -> tuple[bytes, _AuditDoc]:
                               ("TOPPADDING", (0, 0), (-1, -1), 10), ("BOTTOMPADDING", (0, 0), (-1, -1), 10)]))
     f: list = [_Mark(doc, rep["fiscal_year"]["display_name"]), band, Spacer(1, 8), *heading("Executive highlights")]
     hl = highlights(rep)
-    cells = [[[P(k, "fs_tk"), P(v, "fs_tv"), P(c, "small")] for k, v, c in hl]]
+    vals = tile_values([v for _k, v, _c in hl], W / len(hl) - 12)     # 2.4.0 polish (#509): whole words, fitted size
+    cells = [[[P(k, "fs_tk"), vals[i], P(c, "small")] for i, (k, v, c) in enumerate(hl)]]
     tt = Table(cells, colWidths=[W / len(hl)] * len(hl))
     tt.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), _tile()), ("BOX", (0, 0), (-1, -1), 0.5, branding.color("outline_variant")),
                             ("INNERGRID", (0, 0), (-1, -1), 0.5, branding.color("outline_variant")), ("VALIGN", (0, 0), (-1, -1), "TOP"),

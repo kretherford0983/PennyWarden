@@ -31,7 +31,8 @@ from xml.sax.saxutils import escape
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import inch
-from reportlab.platypus import KeepTogether, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.lib.utils import ImageReader
+from reportlab.platypus import Image, KeepTogether, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -121,6 +122,11 @@ class ReceiptConfig(BaseModel):
     addressee: list[str] = Field(default_factory=lambda: list(DEFAULT_ADDRESSEE), max_length=6)
     # 2.2.0 (#256): the year-end giving statement's letter (the receipt variables plus {YEAR}, {TOTAL},
     # {STATEMENT_NO} and {DONATION_TABLE}); the layout, window and signer are the receipt's
+    # 2.4.0 polish (#503): the letters' logo - the organization logo, the receipt letter's own, or none (the default);
+    # where it goes; the statement follows the receipt (FOLLOW) or has its own choice (its own logo is stored apart)
+    logo_source: Literal["NONE", "ORG", "OWN"] = "NONE"
+    logo_position: Literal["LEFT", "CENTER", "RIGHT"] = "LEFT"
+    statement_logo_source: Literal["FOLLOW", "NONE", "ORG", "OWN"] = "FOLLOW"
     statement_title: str = Field(default="Year-End Giving Statement {YEAR}", max_length=120)
     statement_salutation: str = Field(default="Dear {DONOR_NAME},", max_length=200)
     statement_body: str = Field(default="Thank you for your generous support of {ORG.NAME} during {YEAR}. These are the "
@@ -251,6 +257,8 @@ def setup_out(db: Session, ctx) -> dict:
             "signers": [signers.out(db, ctx, s) for s in signers.tagged(db, ctx, signers.DONATIONS)],
             "signature_modes": [{"id": m, "label": signers.MODE_LABELS[m]} for m in signers.MODES],
             "missing": missing_setup(db, ctx.workspace_id), "organization": organization_out(db, ctx.workspace_id),
+            # 2.4.0 polish (#503): the letters' own logos and the organization logo (for the Logo choice)
+            "logos": logos_info(row), "org_logo": _org_logo_info(db, ctx.workspace_id),
             "variables": patterns.variable_options(patterns.RECEIPT),
             "statement_variables": patterns.variable_options(patterns.STATEMENT),     # 2.2.0 (#256)
             "date_formats": list(cfgmod.DATE_FORMATS), "no_goods_statement": NO_GOODS,
@@ -349,6 +357,60 @@ class ReceiptData:
     donor_values: dict[str, str] = field(default_factory=dict)        # 2.2.0 (#317): {DONOR.*}
     ein_override: bool = False            # 2.3.0 (#393): EIN off, but these details include it (confirmed, with a reason)
     signature: signers.SignatureBlock = field(default_factory=signers.SignatureBlock)   # 2.3.0 (#395)
+    logo: bytes | None = None             # 2.4.0 polish (#503): the letter's logo, already resolved
+
+
+def letter_logo(db: Session, ws_id: int, cfg: ReceiptConfig, which: str = "receipt") -> bytes | None:
+    """2.4.0 polish (#503): the logo the receipt or the year-end statement prints - the organization logo, the letter's
+    own upload (the statement following the receipt uses the receipt's), or none."""
+    from . import org_logos
+    row = db.scalar(select(DonationSettings).where(DonationSettings.workspace_id == ws_id))
+    if which == "receipt":
+        return org_logos.resolve(db, ws_id, cfg.logo_source, row.receipt_logo_png if row else None)
+    own = (row.receipt_logo_png if cfg.statement_logo_source == "FOLLOW" else row.statement_logo_png) if row else None
+    return org_logos.resolve(db, ws_id, org_logos.statement_source(cfg), own)
+
+
+def set_letter_logo(db: Session, ctx, which: str, data: bytes | None) -> dict:
+    """The receipt letter's or the statement's own logo (Administrator, Donations Setup). Uploading makes that letter
+    use it; removing it while in use switches to No logo. Audited with the fingerprint, never the image."""
+    if which not in ("receipt", "statement"):
+        raise validation("Choose the receipt letter or the year-end statement.", "which")
+    from .checkprint.service import normalize_logo
+    cfg = get_config(db, ctx.workspace_id)
+    row = _settings_row(db, ctx.workspace_id)
+    if row is None:
+        row = DonationSettings(workspace_id=ctx.workspace_id, config_json=json.dumps(cfg.model_dump(), sort_keys=True))
+        db.add(row)
+        db.flush()
+    before = {"which": which, "sha256": getattr(row, f"{which}_logo_sha256")}
+    field_ = "logo_source" if which == "receipt" else "statement_logo_source"
+    if data is None:
+        setattr(row, f"{which}_logo_png", None)
+        setattr(row, f"{which}_logo_sha256", None)
+        if getattr(cfg, field_) == "OWN":
+            setattr(cfg, field_, "NONE")
+    else:
+        png, _w, _h = normalize_logo(data)
+        setattr(row, f"{which}_logo_png", png)
+        setattr(row, f"{which}_logo_sha256", hashlib.sha256(png).hexdigest())
+        setattr(cfg, field_, "OWN")
+    row.config_json = json.dumps(cfg.model_dump(), sort_keys=True)
+    row.updated_at, row.updated_by_user_id = utcnow(), ctx.user.id
+    db.flush()
+    audit.record(db, ctx, "DONATION_LETTER_LOGO_REMOVED" if data is None else "DONATION_LETTER_LOGO_SET",
+                 "donation_settings", row.id, before, {"which": which, "sha256": getattr(row, f"{which}_logo_sha256")})
+    return logos_info(row)
+
+
+def _org_logo_info(db: Session, ws_id: int) -> dict | None:
+    from . import org_logos
+    return org_logos.info(org_logos.get(db, ws_id))
+
+
+def logos_info(row: DonationSettings | None) -> dict:
+    return {w: ({"version": getattr(row, f"{w}_logo_sha256")[:12]} if row is not None and getattr(row, f"{w}_logo_png")
+                else None) for w in ("receipt", "statement")}
 
 
 def money(cents: int) -> str:
@@ -444,7 +506,8 @@ def ack_table(rows: list[tuple[str, str]], st: dict) -> Table:
 
 def donor_letter_pdf(cfg: ReceiptConfig, *, org: dict, donor_lines: list[str], today: dt.date,
                      kind: str, sample: bool, watermark: str | None, doc_title: str, middle,
-                     closing: str, signature: "signers.SignatureBlock | None" = None) -> bytes:
+                     closing: str, signature: "signers.SignatureBlock | None" = None,
+                     logo: bytes | None = None) -> bytes:
     """A letter to a donor (receipt or year-end statement, 2.2.0 #256): the organization and donor heading - or the
     window-envelope layout and fold marks (#325) - then `middle`, the closing and the signer. A kind other than
     ORIGINAL is printed in the top corner; `watermark` across the page. `middle`: the flowables, or a function of
@@ -456,14 +519,14 @@ def donor_letter_pdf(cfg: ReceiptConfig, *, org: dict, donor_lines: list[str], t
         c = cfg if size == cfg.size else cfg.model_copy(update={"size": size})
         return _donor_letter_once(c, org=org, donor_lines=donor_lines, today=today, kind=kind, sample=sample,
                                   watermark=watermark, doc_title=doc_title, middle=make(c), closing=closing,
-                                  signature=signature, spacing=spacing, total=total, skip=skip)
+                                  signature=signature, spacing=spacing, total=total, skip=skip, logo=logo)
     return letter_fit.fit(build, cfg.size, skip)
 
 
 def _donor_letter_once(cfg: ReceiptConfig, *, org: dict, donor_lines: list[str], today: dt.date, kind: str,
                        sample: bool, watermark: str | None, doc_title: str, middle: list, closing: str,
                        signature: "signers.SignatureBlock | None", spacing: float, total: int,
-                       skip: int) -> tuple[bytes, int]:
+                       skip: int, logo: bytes | None = None) -> tuple[bytes, int]:
     st = _styles(cfg)
     reg_f, bold, size, base = st["reg"], st["bold"], st["size"], st["base"]
     lcfg = documents.LetterConfig(font=cfg.font, size=cfg.size, window=cfg.window, window_return=cfg.window_return,
@@ -476,6 +539,9 @@ def _donor_letter_once(cfg: ReceiptConfig, *, org: dict, donor_lines: list[str],
     def first_page(c, doc):
         if cfg.fold_marks == "FRONT":
             documents.fold_ticks(c, lcfg)
+        if logo is not None and cfg.window == "LETTER":   # #503: top right, clear of the windows (as a cover letter)
+            w, h = documents._logo_size(logo)
+            c.drawImage(ImageReader(io.BytesIO(logo)), (8.5 - 0.5) * PT - w, (11 - 0.5) * PT - h, w, h, mask="auto")
         if blocks:
             c.saveState()
             for which, x, y, lines in blocks:
@@ -518,6 +584,9 @@ def _donor_letter_once(cfg: ReceiptConfig, *, org: dict, donor_lines: list[str],
         story += [FixedSpacer(1, (documents.FOLD_LINES[0] + 0.15 - 1) * inch),
                   Paragraph(escape(format_date(today, cfg.date_format)), base)]
     else:
+        if logo is not None:                                    # #503: above the letterhead, where the setup says
+            w, h = documents._logo_size(logo)
+            story += [Image(io.BytesIO(logo), width=w, height=h, hAlign=cfg.logo_position), Spacer(1, size * 0.6)]
         story += [Paragraph(escape(org["ORG.NAME"]), st["strong"])]
         story += [Paragraph(escape(x), base) for x in org["ORG.ADDRESS"].split("\n") if x]
         story += [Spacer(1, size * 1.2), Paragraph(escape(format_date(today, cfg.date_format)), base),
@@ -563,7 +632,7 @@ def receipt_pdf(cfg: ReceiptConfig, data: ReceiptData, sample: bool = False, wat
                             today=data.today, kind=data.kind, sample=sample, watermark=watermark,
                             doc_title=f"Donation receipt {data.number}",
                             middle=lambda c: _receipt_middle(c, data, texts, values), closing=texts["closing"],
-                            signature=data.signature)
+                            signature=data.signature, logo=data.logo)
 
 
 def _receipt_middle(cfg: ReceiptConfig, data: ReceiptData, texts: dict, values: dict) -> list:
@@ -623,6 +692,7 @@ def sample_pdf(db: Session, ctx, data: dict | None, km=None) -> bytes:
     """Setup preview and test print (Administrators): sample data; 2.3.0 (#395) the real signature for IMAGE."""
     cfg = parse_config(data) if data is not None else get_config(db, ctx.workspace_id)
     sd = sample_data(db, ctx, cfg)
+    sd.logo = letter_logo(db, ctx.workspace_id, cfg)       # #503: the (unsaved) Logo choice of the editor
     sd.signature = signature_for(db, ctx.workspace_id, km, cfg, "receipt", with_image=True)
     return receipt_pdf(cfg, sd, sample=True)
 
@@ -857,7 +927,8 @@ def _compose(db: Session, ctx, d: Donation, signer_id: int | None = None) -> dic
                        amount_cents=c["amount"], dates=c["dates"], purposes=c["purposes"],
                        goods=c["goods"], details=c["details"], items=c["items"],
                        donor_values=entity_vars.values("DONOR", e),
-                       signature=signature_for(db, ctx.workspace_id, None, cfg, signer_id=sid))   # #395: no image yet
+                       signature=signature_for(db, ctx.workspace_id, None, cfg, signer_id=sid),   # #395: no image yet
+                       logo=letter_logo(db, ctx.workspace_id, cfg))                                # #503
     warnings = []
     if not cfg.include_ein and uses_ein(data.details):        # 2.3.0 (#393): a one-off EIN through {DETAILS}
         if not ein_entered(db, ctx.workspace_id):
@@ -1767,15 +1838,16 @@ def print_envelope(db: Session, ctx, settings, d: Donation, doc_id: int, *, retu
                                      ", ".join("{" + v + "}" for v in empty) + ". Print anyway?", variables=empty))
         require_confirmations(warnings, confirmations)
     opt = cp.envelope_options(db, ctx, doc, {"page": page, "guide": guide})
+    logo = cp.doc_logo(db, doc, cfg)                       # 2.4.0 polish (#503)
     pdf = documents.envelope_pdf(cfg, ret, to, page=opt["page"], guide=opt["guide"], dx=opt["dx"], dy=opt["dy"],
-                                 test=test)
+                                 test=test, logo=logo)
     if test:
         audit.record(db, ctx, "DONATION_ENVELOPE_TEST", "donation", d.id, None,
                      {"donation_id": d.id, "document_id": doc.id, "page": opt["page"], "guide": opt["guide"]})
         db.commit()
         return pdf
     # the kept copy is drawn without the feed offsets, so the same envelope is kept only once
-    copy_pdf = documents.envelope_pdf(cfg, ret, to, page="ENVELOPE")
+    copy_pdf = documents.envelope_pdf(cfg, ret, to, page="ENVELOPE", logo=logo)
     fname = f"envelope-donation-{d.id}.pdf"
     deposits = [t for t in deposits_of(db, d) if t.status == "ACTIVE"]
     added, paths = False, []
