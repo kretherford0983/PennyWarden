@@ -782,7 +782,14 @@ test("#513: Sales by product & category and the Sales overview - quarter or year
   await page.getByRole("link", { name: "Reports", exact: true }).click();
   const share = page.locator("section").filter({ has: page.getByRole("heading", { name: /^Share with the board and members/ }) }).first();
   await expect(share.getByRole("link", { name: "Sales overview", exact: true })).toBeVisible();
+  // a slow options answer must not reset the period chosen meanwhile (CI, PR #515)
+  await page.route("**/api/invoices/formal/options**", async (r) => { await new Promise((ok) => setTimeout(ok, 400)); await r.continue(); });
   await openReport(page, "Sales by product & category");
+  await expect(page.getByLabel("Quarter or year").locator("option")).toHaveCount(5);
+  await page.getByLabel("Quarter or year").selectOption("ANNUAL");
+  await page.waitForTimeout(1000);                         // a second, late answer would have reset it by now
+  await expect(page.getByLabel("Quarter or year")).toHaveValue("ANNUAL");
+  await page.unroute("**/api/invoices/formal/options**");
   await expect(page.getByLabel("Quarter or year").locator("option")).toHaveCount(5);
   await page.getByLabel("Quarter or year").selectOption("ANNUAL");
   await page.getByLabel("Commentary (optional)").fill("Dues renewals came in early.");
