@@ -320,6 +320,7 @@ def create_invoice(body: InvoiceIn, db: Session = Depends(get_db), ctx: Ctx = De
 import datetime as _dt  # noqa: E402
 from urllib.parse import quote as _quote  # noqa: E402
 
+from .. import audit  # noqa: E402
 from ..services import invoice_reports as rep_svc  # noqa: E402
 
 
@@ -356,6 +357,80 @@ def invoice_report(rid: Literal["inv-open", "inv-aging", "inv-statement", "inv-s
                     headers={"Content-Disposition": f"{kind}; filename=\"{name}\"; filename*=UTF-8''{_quote(name)}",
                              "Cache-Control": "private, no-store", "X-Frame-Options": "SAMEORIGIN",
                              "Content-Security-Policy": "default-src 'none'; frame-ancestors 'self'"})
+
+
+# ------------------------------------------------------------------ 2.4.0 (#513): the formal invoice reports
+@router.get("/formal/options")
+def formal_options(fiscal_year_id: int | None = None, db: Session = Depends(get_db),
+                   ctx: Ctx = Depends(require("invoice.view"))):
+    """The Fiscal Years (newest first) and, for the chosen one (default: the one covering today), its periods - for
+    the invoice viewers, who may not hold the financial permission the Quarterly / Annual options need."""
+    from sqlalchemy import select as _select
+
+    from ..models import FiscalYear
+    from ..services import invoice_formal as formal
+    from ..services import period_report as prep
+    from ..services.common import fy_label
+    svc.require_module(db, ctx)
+    today = _dt.date.today()
+    fys = list(db.scalars(_select(FiscalYear).where(FiscalYear.workspace_id == ctx.workspace_id)
+                          .order_by(FiscalYear.start_date.desc())))
+    fy = next((f for f in fys if f.id == fiscal_year_id), None) or \
+        next((f for f in fys if f.start_date <= today <= f.end_date), None) or (fys[0] if fys else None)
+    prior = prep.previous_fy(db, fy) if fy else None
+    return {"fiscal_years": [{"id": f.id, "label": fy_label(f), "start_date": f.start_date.isoformat(),
+                              "end_date": f.end_date.isoformat()} for f in fys],
+            "fiscal_year_id": fy.id if fy else None, "periods": prep.options(fy, today) if fy else [],
+            "prior_fiscal_year": prior.display_name if prior else None, "max_commentary": formal.MAX_COMMENTARY,
+            "today": today.isoformat()}
+
+
+@router.get("/formal/{rid}")
+def formal_report(rid: Literal["inv-sales-formal", "inv-overview"],
+                  fiscal_year_id: int | None = None, period: Literal["Q1", "Q2", "Q3", "Q4", "ANNUAL"] | None = None,
+                  date_from: _dt.date | None = None, date_to: _dt.date | None = None,
+                  commentary: str | None = Query(None, max_length=2000), show_names: bool = True,
+                  format: Literal["json", "pdf", "pptx"] = "pdf", download: bool = False,
+                  db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.view"))):
+    """2.4.0 (#513): Sales by product & category, or the Sales overview - for a Fiscal Year quarter / Annual (with
+    the same period last year) or a custom range - as JSON, a PDF or a presentation. Generation is audited."""
+    from ..models import Workspace
+    from ..services import branding
+    from ..services import invoice_formal as formal
+    from ..services import invoice_formal_output as out
+    rep = formal.build(db, ctx, rid, {"fiscal_year_id": fiscal_year_id, "period": period, "date_from": date_from,
+                                      "date_to": date_to, "commentary": commentary, "show_names": show_names},
+                       _dt.date.today())
+    if format == "json":
+        db.rollback()
+        return rep
+    org = db.get(Workspace, ctx.workspace_id).name
+    summary = {"report": rid.upper().replace("-", "_") + ("_PRESENTATION" if format == "pptx" else ""),
+               "fiscal_year_id": fiscal_year_id, "period": rep["period"], "start": rep["start_date"],
+               "end": rep["end_date"], "cutoff": rep["cutoff"], "preliminary": rep["preliminary"],
+               "commentary": bool(rep["commentary"]), "show_names": show_names, "format": format.upper()}
+    if format == "pptx":
+        with branding.use(db, output="presentations"):
+            data = out.build_pptx(org, rep)
+        audit.record(db, ctx, "REPORT_GENERATED", "workspace", ctx.workspace_id, None, summary)
+        db.commit()
+        name = out.file_stem(org, rep) + "-presentation.pptx"
+        return Response(data, media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                        headers={"Content-Disposition": f"attachment; filename=\"{name}\"; filename*=UTF-8''{_quote(name)}",
+                                 "Cache-Control": "private, no-store"})
+    with branding.use(db):
+        path, fname, pages = out.pdf_file(org, rep)
+    audit.record(db, ctx, "REPORT_GENERATED", "workspace", ctx.workspace_id, None, {**summary, "pages": pages})
+    db.commit()
+    from fastapi.responses import FileResponse
+    from starlette.background import BackgroundTask
+    import os as _os
+    kind = "attachment" if download else "inline"
+    return FileResponse(path, media_type="application/pdf",
+                        headers={"Content-Disposition": f"{kind}; filename=\"{fname}\"; filename*=UTF-8''{_quote(fname)}",
+                                 "Cache-Control": "private, no-store", "X-Frame-Options": "SAMEORIGIN",
+                                 "Content-Security-Policy": "default-src 'none'; frame-ancestors 'self'"},
+                        background=BackgroundTask(lambda: _os.path.exists(path) and _os.unlink(path)))
 
 
 # ------------------------------------------------------------------ 2.4.0 (#248): batches

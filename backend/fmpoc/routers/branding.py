@@ -69,6 +69,20 @@ def logo_remove(slot: str, db: Session = Depends(get_db), ctx: Ctx = Depends(req
     return out
 
 
+class LogoSourceIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    source: str = Field(max_length=4)
+
+
+@router.put("/logo/{slot}/source")
+def logo_source(slot: str, body: LogoSourceIn, db: Session = Depends(get_db),
+                ctx: Ctx = Depends(require("system.manage"))):
+    """2.4.0 polish (#503): the slot uses the organization logo (ORG), Branding's own (OWN) or none (NONE)."""
+    out = svc.set_logo_source(db, ctx, slot, body.source)
+    db.commit()
+    return out
+
+
 @router.get("/logo/{slot}")
 def logo_image(slot: str, db: Session = Depends(get_db), ctx: Ctx = Depends(require("system.manage"))):
     png = svc.logo_png(db, ctx, slot)

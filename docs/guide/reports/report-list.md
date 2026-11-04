@@ -8,6 +8,7 @@
 | **Planning Sheet** | The budget planning meeting form (see [Planning the next year](../fiscal-years/planning-sheet.md)). |
 | **Entity activity** | What each entity paid or received in a period. |
 | **Fundraiser detail (audit)** and the **Fiscal Year fundraising report** | See [Event reports](../events/event-reports.md). |
+| **Sales by product & category** and **Sales overview** | Invoice sales for the board, as a PDF or a presentation. See [Invoice reports](../invoices/invoice-reports.md#reports-for-the-board-and-members). |
 | **Invoice reports** | See [Invoice reports](../invoices/invoice-reports.md). |
 | **Restore re-entry reports** | After a restore: what was entered after the backup, to enter again. |
 

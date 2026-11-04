@@ -11,6 +11,8 @@ export function EmailSettingsPanel() {
   const [saved, setSaved] = useState(false);
   const [testTo, setTestTo] = useState("");
   const [test, setTest] = useState<any>(null);
+  const [testing, setTesting] = useState(false);          // 2.4.0 polish (#506)
+  const [testErr, setTestErr] = useState<unknown>(null);
   const fill = (x: any) => { setS(x); setV({ enabled: x.enabled, host: x.host || "", port: String(x.port), security: x.security, username: x.username || "", password: "", clear_password: false, from_address: x.from_address || "", from_name: x.from_name || "", reply_to: x.reply_to || "" }); };
   useEffect(() => { api.get("/api/system/email").then(fill, setErr); }, []);
   if (!s || !v) return <section className="card"><h2>Email</h2><ErrorBox error={err} />{err ? null : <Loading />}</section>;
@@ -20,11 +22,16 @@ export function EmailSettingsPanel() {
     setErr(null);
     try { fill(await api.put("/api/system/email", { ...v, port: Number(v.port), password: v.password || null })); setSaved(true); } catch (x) { setErr(x); }
   };
+  // #506: shows that it is sending (it can take up to half a minute), and the result or error beside the button
   const sendTest = async () => {
-    setErr(null);
+    setTestErr(null);
     setTest(null);
-    try { setTest(await api.post("/api/system/email/test", { to: testTo })); } catch (x) { setErr(x); }
+    setTesting(true);
+    try { setTest(await api.post("/api/system/email/test", { to: testTo })); } catch (x) { setTestErr(x); } finally { setTesting(false); }
   };
+  const port = Number(v.port);
+  const mismatch = v.security === "SSL" && port === 587 ? "Port 587 normally uses STARTTLS. With SSL/TLS, the usual port is 465."
+    : v.security === "STARTTLS" && port === 465 ? "Port 465 normally uses SSL/TLS. With STARTTLS, the usual port is 587." : null;
   return (
     <section className="card" aria-labelledby="email-h" data-testid="email-settings">
       <h2 id="email-h">Email (outgoing mail server)</h2>
@@ -37,6 +44,7 @@ export function EmailSettingsPanel() {
           <Field label="Port"><input type="number" min={1} max={65535} value={v.port} onChange={set("port")} style={{ width: "7em" }} /></Field>
           <Field label="Security"><select value={v.security} onChange={set("security")}><option value="STARTTLS">STARTTLS (usually port 587)</option><option value="SSL">SSL/TLS (usually port 465)</option><option value="NONE">None (not recommended)</option></select></Field>
         </div>
+        {mismatch ? <div className="alert warn" role="note" data-testid="email-port-hint">{mismatch}</div> : null}
         <div className="row fields">
           <Field label="User name"><input maxLength={255} autoComplete="off" value={v.username} onChange={set("username")} /></Field>
           <Field label="Password" hint={s.password_saved ? "A password is saved. Leave empty to keep it." : "No password saved."}>
@@ -53,9 +61,14 @@ export function EmailSettingsPanel() {
       </form>
       <div className="row">
         <Field label="Send a test email to"><input type="email" maxLength={254} value={testTo} onChange={(e) => setTestTo(e.target.value)} /></Field>
-        <button type="button" disabled={!testTo || !s.ready} onClick={sendTest}>Send test</button>
+        <button type="button" disabled={!testTo || !s.ready || testing} onClick={sendTest}>{testing ? "Sending…" : "Send test"}</button>
       </div>
-      {test ? <div className={`alert ${test.status === "SENT" ? "info" : "warn"}`} role="status">{test.status === "SENT" ? `Test email sent to ${test.to}.` : `Not sent: ${test.error}`}</div> : null}
+      {!s.ready ? <p className="hint">Turn email on and save the mail server settings first.</p> : null}
+      <div aria-live="polite">
+        {testing ? <p className="muted" role="status">Sending the test email… this can take up to half a minute if the mail server doesn't answer.</p> : null}
+        <ErrorBox error={testErr} />
+        {test ? <div className={`alert ${test.status === "SENT" ? "info" : "warn"}`} role="status" data-testid="email-test-result">{test.status === "SENT" ? `Test email sent to ${test.to}. If it doesn't arrive, check the spam folder.` : `Not sent: ${test.error}`}</div> : null}
+      </div>
     </section>
   );
 }

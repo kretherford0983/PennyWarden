@@ -21,7 +21,7 @@ from xml.sax.saxutils import escape
 from . import branding
 from . import fundraiser_deck as deck
 from .common import GROSS_BUDGET_NOTE
-from .fundraiser_summary import _band, _table, _tile, heading, safe_name
+from .fundraiser_summary import _band, _table, _tile, heading, safe_name, tile_values
 
 from .reports import FRAME_W, P, PM, S, _AuditDoc, _Mark, _stamp_and_write
 from .reports import money as cm
@@ -154,7 +154,8 @@ def build_pdf(org: str, rep: dict) -> tuple[bytes, _AuditDoc]:
                               ("TOPPADDING", (0, 0), (-1, -1), 10), ("BOTTOMPADDING", (0, 0), (-1, -1), 10)]))
     f: list = [_Mark(doc, rep["period_label"]), band, Spacer(1, 8), *heading("Highlights")]
     hl = highlight_tiles(rep)
-    tt = Table([[[P(k, "fs_tk"), P(v, "fs_tv"), P(c, "small")] for k, v, c in hl]], colWidths=[W / len(hl)] * len(hl))
+    vals = tile_values([v for _k, v, _c in hl], W / len(hl) - 12)     # 2.4.0 polish (#509): whole words, fitted size
+    tt = Table([[[P(k, "fs_tk"), vals[i], P(c, "small")] for i, (k, v, c) in enumerate(hl)]], colWidths=[W / len(hl)] * len(hl))
     tt.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, -1), _tile()),
                             ("BOX", (0, 0), (-1, -1), 0.5, branding.color("outline_variant")),
                             ("INNERGRID", (0, 0), (-1, -1), 0.5, branding.color("outline_variant")),

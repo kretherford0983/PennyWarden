@@ -16,7 +16,7 @@ export const GROUPS: { id: GroupId; name: string; short: string; why: string }[]
   { id: "audit", name: "Audit and year-end close", short: "Audit and close", why: "the records an auditor reviews" },
   { id: "analyze", name: "Analyze activity", short: "Analyze", why: "where money came from and went" },
   { id: "plan", name: "Plan budgets", short: "Plan", why: "next year's numbers" },
-  { id: "fundraisers", name: "Fundraisers", short: "Fundraisers", why: "event-day paperwork" },
+  { id: "fundraisers", name: "Events & Fundraisers", short: "Events & Fundraisers", why: "event-day paperwork" },   // 2.4.0 polish (#511)
   { id: "invoices", name: "Invoices", short: "Invoices", why: "what customers owe and have paid" },   // 2.4.0 (#255)
 ];
 
@@ -32,6 +32,13 @@ export const REPORTS: ReportDef[] = [
   { id: "fundraising-fy", name: "Fiscal Year fundraising report", short: "FY fundraising", group: "share", outputs: ["PDF", "PPTX"],
     purpose: "The year's fundraisers with the history of their series, trends and averages.",
     audience: "Board and members", keywords: "fundraiser series history deck", visible: fundraisers },
+  // 2.4.0 (#513): the invoice reports for formal publication
+  { id: "inv-sales-formal", name: "Sales by product & category", short: "Product & category sales", group: "share", outputs: ["PDF", "PPTX"],
+    purpose: "A quarter's or year's sales by category, product and Income budget, with what was collected and last year beside them.",
+    audience: "Board and members", keywords: "invoice sales products categories budget presentation deck formal", visible: invoices },
+  { id: "inv-overview", name: "Sales overview", short: "Sales overview", group: "share", outputs: ["PDF", "PPTX"],
+    purpose: "A quarter's or year's invoicing in one report: sales, collections, open and overdue amounts, top customers and products, sales tax.",
+    audience: "Board and members", keywords: "invoice sales overview collections aging customers quarterly annual presentation deck formal", visible: invoices },
   { id: "audit", name: "End of Year Audit", short: "End of Year Audit", group: "audit", outputs: ["PDF"],
     purpose: "The year's budgets and every register transaction with its attachments, account by account.",
     audience: "Auditors", keywords: "transactions attachments signature", visible: financial },

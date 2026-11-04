@@ -769,6 +769,55 @@ test("#373: the Quarterly / Annual financial report - period choice, commentary,
   await page.screenshot({ path: "e2e-screenshots/light-period-report.png", fullPage: true });
 });
 
+// 2.4.0 (#513): the invoice reports for formal publication, in Share with the board and members
+test("#513: Sales by product & category and the Sales overview - quarter or year, dates of my choice, names hidden, PDF and presentation", async ({ page }) => {
+  const modules = async (on: boolean) => {
+    await login(page, "admin");
+    const me = await (await page.request.get("/api/auth/me")).json();
+    expect((await page.request.put("/api/system/modules", { headers: { "X-CSRF-Token": me.csrf_token }, data: { invoices: on } })).status()).toBe(200);
+    await logout(page);
+  };
+  await modules(true);
+  await login(page, "bm1");
+  await page.getByRole("link", { name: "Reports", exact: true }).click();
+  const share = page.locator("section").filter({ has: page.getByRole("heading", { name: /^Share with the board and members/ }) }).first();
+  await expect(share.getByRole("link", { name: "Sales overview", exact: true })).toBeVisible();
+  // a slow options answer must not reset the period chosen meanwhile (CI, PR #515)
+  await page.route("**/api/invoices/formal/options**", async (r) => { await new Promise((ok) => setTimeout(ok, 400)); await r.continue(); });
+  await openReport(page, "Sales by product & category");
+  await expect(page.getByLabel("Quarter or year").locator("option")).toHaveCount(5);
+  await page.getByLabel("Quarter or year").selectOption("ANNUAL");
+  await page.waitForTimeout(1000);                         // a second, late answer would have reset it by now
+  await expect(page.getByLabel("Quarter or year")).toHaveValue("ANNUAL");
+  await page.unroute("**/api/invoices/formal/options**");
+  await expect(page.getByLabel("Quarter or year").locator("option")).toHaveCount(5);
+  await page.getByLabel("Quarter or year").selectOption("ANNUAL");
+  await page.getByLabel("Commentary (optional)").fill("Dues renewals came in early.");
+  const href = (await page.getByRole("link", { name: "Open", exact: true }).getAttribute("href"))!;
+  expect(href).toContain("/api/invoices/formal/inv-sales-formal?");
+  expect(href).toContain("period=ANNUAL");
+  const pdf = await page.request.get(href);
+  expect(pdf.status()).toBe(200);
+  expect((await pdf.body()).subarray(0, 5).toString()).toBe("%PDF-");
+  await page.screenshot({ path: "e2e-screenshots/light-invoice-sales-formal.png", fullPage: true });
+  await page.goto("/reports/inv-overview");
+  await page.getByLabel("Dates of my choice").check();
+  await page.getByLabel("From", { exact: true }).fill("2026-09-30");
+  await page.getByLabel("Through", { exact: true }).fill("2026-09-01");
+  await expect(page.getByRole("alert")).toContainText("From must be on or before Through");
+  await expect(page.getByRole("button", { name: "Download PPTX" })).toBeDisabled();
+  await page.getByLabel("From", { exact: true }).fill("2026-07-01");
+  await page.getByLabel("Show customer names").uncheck();
+  const deckHref = (await page.getByRole("link", { name: "Download PPTX" }).getAttribute("href"))!;
+  expect(deckHref).toContain("show_names=false");
+  expect(deckHref).toContain("date_from=2026-07-01");
+  const deck = await page.request.get(deckHref);
+  expect(deck.status()).toBe(200);
+  expect(deck.headers()["content-type"]).toContain("presentationml");
+  await logout(page);
+  await modules(false);                                    // leave the module off, as the later tests expect
+});
+
 // ---------------------------------------------------------------- v1.3 enhancements
 const PDF = Buffer.from("%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[]/Count 0>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n");
 // 2.4.0 (#425): a PDF with content of its own (the same file twice on one record asks first)
@@ -3339,14 +3388,17 @@ test("#165-#166: Administrator sets up a cover letter and an envelope; a Registe
   await page.getByRole("button", { name: "Signed by" }).click();
   // build 13: a new letter is a draft until saved; a logo can be added once it is saved
   await expect(page.getByTestId("draft-note")).toBeVisible();
-  await expect(page.getByLabel("Logo image")).toHaveCount(0);
+  await expect(page.getByLabel("letter logo image")).toHaveCount(0);
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.getByRole("status").filter({ hasText: "Saved." })).toBeVisible();
   await expect(page.getByTestId("draft-note")).toHaveCount(0);
   // #176: a logo (a tiny PNG made here: synthetic) and #177: the address for a window envelope
   const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAADAAAAAYCAIAAAAzn+mLAAAAN0lEQVR4nO3OMQHAIADAMEDINCERqfv39GRHoiDz2Wf8ybod+BIqQkWoCBWhIlSEilARKkJFqLyoawE+y3CGBgAAAABJRU5ErkJggg==", "base64");
-  await page.getByLabel("Logo image").setInputFiles({ name: "logo.png", mimeType: "image/png", buffer: png });
-  await expect(page.getByRole("img", { name: "The letter's logo" })).toBeVisible();
+  // 2.4.0 polish (#503): Logo - Organization logo / Its own logo / No logo (new letters start with none)
+  await expect(page.getByTestId("logo-choice-letter").getByRole("combobox")).toHaveValue("NONE");
+  await page.getByTestId("logo-choice-letter").getByRole("combobox").selectOption("OWN");
+  await page.getByLabel("letter logo image").setInputFiles({ name: "logo.png", mimeType: "image/png", buffer: png });
+  await expect(page.getByTestId("logo-choice-letter").getByRole("img", { name: "This logo" })).toBeVisible();
   await page.getByLabel("Address for a window envelope").selectOption("LETTER");
   await expect(page.getByLabel("Payee address – right (in)")).toBeVisible();
   await page.getByLabel("Address for a window envelope").selectOption("NONE");
@@ -4457,6 +4509,64 @@ test("#256: a Register User prints a year-end giving statement; the donor report
   await logout(page);
 });
 
+test("2.4.0 polish (#504): Record payment lists the register accounts by name and starts on the Primary account", async ({ page }) => {
+  // runs before #125 (Reinitialize wipes the financial data this needs: FY2027, the accounts)
+  const caller = async () => {
+    const me = await (await page.request.get("/api/auth/me")).json();
+    const call = async (method: string, url: string, data?: any) => {
+      const r = await page.request.fetch(url, { method, headers: { "X-CSRF-Token": me.csrf_token }, data });
+      expect(r.ok(), `${method} ${url}: ${await r.text()}`).toBeTruthy();
+      return r.status() === 204 ? null : r.json();
+    };
+    return { me, call };
+  };
+  // Administrator: the Invoices module on, and Rae (Register User) also an Invoice Manager for this test
+  await login(page, "admin");
+  let { me, call } = await caller();
+  const wasOn = !!me.modules?.invoices;
+  await call("PUT", "/api/system/modules", { invoices: true });
+  const ru = (await call("GET", "/api/users")).find((u: any) => u.username === "ru1");
+  const ruRoles: string[] = ru.roles;
+  await call("PATCH", `/api/users/${ru.id}`, { roles: [...ruRoles, "INVOICE_MANAGER"] });
+  await logout(page);
+  // Budget Manager: an Invoiced Income budget in FY2027
+  await login(page, "bm1");
+  ({ me, call } = await caller());
+  const fy = (await call("GET", "/api/fiscal-years")).find((f: any) => f.display_name === "FY2027");
+  const bud = await call("POST", "/api/budgets", { fiscal_year_id: fy.id, code: "4950", name: "E2E Dues", amount: "500.00", budget_type: "INCOME" });
+  await call("PUT", `/api/budgets/${bud.id}/invoiced-income`, { invoiced_income: true });
+  await logout(page);
+  // Rae: a product, a customer and a sent invoice, then Record payment…
+  await login(page, "ru1", "Brand-New-Pass-99");          // Rae changed her password earlier in the suite
+  ({ me, call } = await caller());
+  const units = await call("GET", "/api/invoices/catalog/unit-types");
+  const leaf = (await call("GET", `/api/budgets/selectable?fiscal_year_id=${fy.id}&transaction_type=DEPOSIT`)).find((o: any) => o.label.startsWith("4950 E2E Dues"));
+  const prod = await call("POST", "/api/invoices/catalog/products", { name: "E2E Dues", unit_price: "50.00", unit_type_id: units[0].id, budget_id: leaf.id });
+  const cust = await call("POST", "/api/entities", { entity_type: "ORGANIZATION", organization_name: "E2E Paying Member", confirmations: ["DUPLICATE_ENTITY"] });
+  const inv = await call("POST", "/api/invoices", { customer_entity_id: cust.id, invoice_date: "2026-09-15", lines: [{ product_id: prod.id, quantity: "1" }] });
+  await call("POST", `/api/invoices/${inv.id}/send`);
+  const reg = (await call("GET", "/api/bank-accounts")).filter((a: any) => a.status === "ACTIVE" && a.register_enabled);
+  const primary = reg.find((a: any) => a.is_primary) ?? (reg.length === 1 ? reg[0] : null);
+  await page.goto(`/invoices/${inv.id}`);
+  await page.getByRole("button", { name: "Record payment…" }).click();
+  const dlg = page.getByRole("dialog", { name: "Record payment" });
+  const sel = dlg.getByLabel("Bank account");
+  expect(reg.length).toBeGreaterThan(0);
+  await expect(sel.locator("option")).toHaveCount(reg.length + 1);              // the accounts load after the dialog opens
+  const names = (await sel.locator("option").allTextContents()).slice(1);         // after "Choose…"
+  expect(names).toEqual(reg.map((a: any) => a.label));                            // named, register accounts only
+  if (primary) await expect(sel).toHaveValue(String(primary.id));                  // starts on the Primary account
+  await dlg.getByRole("button", { name: "Cancel" }).click();
+  await call("POST", `/api/invoices/${inv.id}/void`, { reason: "E2E test invoice" });
+  await logout(page);
+  // put things back
+  await login(page, "admin");
+  ({ me, call } = await caller());
+  await call("PATCH", `/api/users/${ru.id}`, { roles: ruRoles });
+  if (!wasOn) await call("PUT", "/api/system/modules", { invoices: false });
+  await logout(page);
+});
+
 test("#125: an Administrator reinitializes (keeping the users); everyone sees the notice until it is acknowledged", async ({ page }) => {
   await login(page, "admin");
   await page.getByRole("link", { name: "System/About" }).click();
@@ -4505,7 +4615,7 @@ test("#280: an Administrator brands reports - a palette, a custom palette checke
   await card.getByRole("button", { name: "Save branding" }).click();
   await expect(card.getByRole("status")).toHaveText("Saved.");
   // the logo shows in the live preview at once
-  await card.getByLabel("Full logo image").setInputFiles({ name: "logo.png", mimeType: "image/png", buffer: BRAND_LOGO });
+  await card.getByLabel("branding-full logo image").setInputFiles({ name: "logo.png", mimeType: "image/png", buffer: BRAND_LOGO });
   await expect(page.getByTestId("branding-preview").getByRole("img", { name: "Full logo" })).toBeVisible();
   await card.screenshot({ path: "e2e-screenshots/light-branding.png" });
   await card.getByRole("button", { name: "Reset to the PennyWarden palette" }).click();
@@ -4580,7 +4690,7 @@ test("#386: light and dark themes - presentations dark for a new setup, a dark p
   await card.getByLabel("Use a separate logo on dark backgrounds").check();
   await card.getByRole("button", { name: "Save branding" }).click();
   await expect(card.getByRole("status")).toHaveText("Saved.");
-  await card.getByLabel("Full logo for dark backgrounds image").setInputFiles({ name: "logo-dark.png", mimeType: "image/png", buffer: BRAND_LOGO });
+  await card.getByLabel("branding-dark_full logo image").setInputFiles({ name: "logo-dark.png", mimeType: "image/png", buffer: BRAND_LOGO });
   await expect(page.getByTestId("branding-preview-dark").getByRole("img", { name: "Full logo" })).toBeVisible();
   await card.screenshot({ path: "e2e-screenshots/light-branding-dark-theme.png" });
   // the light theme is unchanged
@@ -4589,6 +4699,40 @@ test("#386: light and dark themes - presentations dark for a new setup, a dark p
 });
 
 // ---------------------------------------------------------------- 2.2.0 #315 / #316: entity names
+test("2.4.0 polish (#503): an organization logo used by Branding; removing it lists where it is used", async ({ page }) => {
+  await login(page, "admin");
+  await page.getByRole("link", { name: "System/About" }).click();
+  await aboutTab(page, "General");
+  const logos = page.getByTestId("org-logos");
+  await expect(logos.getByTestId("org-logo-full")).toContainText("Not used anywhere yet.");
+  await logos.getByLabel("Logo image", { exact: true }).setInputFiles({ name: "logo.png", mimeType: "image/png", buffer: BRAND_LOGO });
+  await expect(logos.getByRole("img", { name: "Logo", exact: true })).toBeVisible();
+  // Branding's full logo: the organization logo, shown in the preview
+  await aboutTab(page, "Branding");
+  const card = page.getByRole("region", { name: "Organization branding" });
+  const full = card.getByTestId("logo-choice-branding-full");
+  const before = await full.getByRole("combobox").inputValue();
+  await full.getByRole("combobox").selectOption("ORG");
+  await expect(full.getByRole("img", { name: "The organization logo" })).toBeVisible();
+  await expect(page.getByTestId("branding-preview").getByRole("img", { name: "Full logo" })).toBeVisible();
+  // removing the organization logo asks first and names the places that use it
+  await aboutTab(page, "General");
+  await expect(logos.getByTestId("org-logo-full")).toContainText("Used by: Branding: logo");
+  await logos.getByTestId("org-logo-full").getByRole("button", { name: "Remove" }).click();
+  const dlg = page.getByRole("dialog", { name: "Confirmation required" });
+  await expect(dlg).toContainText("Branding: logo");
+  await dlg.getByLabel(/explicitly confirm/).check();
+  await dlg.getByRole("button", { name: "Confirm and continue" }).click();
+  await expect(logos.getByTestId("org-logo-full")).toContainText("None.");
+  await page.screenshot({ path: "e2e-screenshots/light-organization-logos.png" });
+  // Branding still says Organization logo, and explains there is none now; put it back as it was
+  await aboutTab(page, "Branding");
+  await expect(full.getByRole("note")).toContainText("No organization logo yet");
+  await full.getByRole("combobox").selectOption(before);
+  await expect(full.getByRole("combobox")).toHaveValue(before);
+  await logout(page);
+});
+
 test("#315 / #316: first and last name, a display name and mailing address; each user's name order", async ({ page }) => {
   await login(page, "ru1", "Brand-New-Pass-99");
   await page.getByRole("link", { name: "Entities" }).click();
@@ -4664,6 +4808,14 @@ test("2.4.0 polish (#482, #481, #477, #480): turning Invoices on shows Invoices 
   const heads = await page.getByTestId("inv-columns").locator("input").all();
   const xs = await Promise.all(heads.map(async (h) => Math.round((await h.boundingBox())!.x)));
   expect(new Set(xs).size).toBe(1);
+  // #501: dragging a column by its handle reorders the list (the first column moves below the second)
+  const colKeys = async () => (await page.getByTestId("inv-columns").locator("input").evaluateAll((els) => els.map((e) => e.id)));
+  const before = await colKeys();
+  const k0 = before[0].replace("inv-col-", ""), k1 = before[1].replace("inv-col-", "");
+  await page.getByTestId(`inv-col-handle-${k0}`).dragTo(page.getByTestId(`inv-col-handle-${k1}`));
+  await expect.poll(colKeys).toEqual([before[1], before[0], ...before.slice(2)]);
+  await page.getByRole("button", { name: `Move ${k0} up` }).click();      // and back with the arrow
+  await expect.poll(colKeys).toEqual(before);
   await page.screenshot({ path: "e2e-screenshots/light-invoice-pdf-setup.png" });
   if (!wasOn) {                                            // leave the module as it was
     await page.goto("/about/general");

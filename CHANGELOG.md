@@ -106,12 +106,34 @@ PennyWarden 2.4.0 (in progress).
   (for example **Serial number**); the Invoice Manager ticks it on those products in the catalog. It is asked on each
   invoice line that uses such a product — required if the field says so — and prints after the line's description
   when *show on PDF* is on.
+- **Invoice reports for the board and members (#513).** Two reports made for publishing, each a PDF report and a
+  presentation with charts, in **Reports → Share with the board and members**: **Sales by product & category** (by
+  category, by product within each category and by Income budget, with share, collected and last year) and **Sales
+  overview** (sales, sales tax, money collected and refunded by month, open and overdue amounts, discounts and
+  write-offs, top customers and products). Run them for a Fiscal Year quarter or the year — compared with the same
+  period last year — or for dates of your choice. Sales are invoiced amounts (after discounts, before tax) with what has
+  been collected beside them. **Show customer names** can be turned off (*Customer 1, 2, …*), and a commentary is
+  printed on the first page and on its own slide.
+
+### Organization logos
+- **One logo for everything (#503).** **System/About → General → Organization logos** holds the organization's logo,
+  small mark and their dark-background versions. Every place that prints a logo has a **Logo** choice: the
+  **Organization logo** (replace it once and every such place prints the new one), **Its own logo**, or **No logo**:
+  each cover letter, the invoice PDF and the four Branding logos, and now also the **donation receipt letter**, the
+  **year-end statement** (the same as the receipt, or its own choice) and **envelopes** (at the return-address corner,
+  with the return address beside it). New templates start with no logo. Removing an organization logo lists the places
+  that use it and asks first; they then print none. After the upgrade, Branding's logos are the organization logos and
+  letters or the invoice PDF with the same file use them, so nothing prints differently.
 
 ### Optional modules
 - **Turning a module on or off updates the menu at once (#482)** — no page reload (for the Administrator who changes
   it; other users see it at their next sign-in or reload, as before).
 
 ### Events & Fundraisers
+- **Highlight boxes keep words whole (#509).** In the Fiscal Year fundraising report (and the fundraiser report and the
+  Quarterly / Annual report), a long name in a highlight box such as *Top fundraiser* moves whole words to the next line
+  and, only if a word still doesn't fit, uses a smaller type - "Golf Tournament" no longer prints as "Golf Tourna-ment".
+  The dollar figures beside it keep their size.
 - **The Fundraisers module is now Events & Fundraisers (#429).** The menu item is **Events**; the module setting and
   the pages read *Events & Fundraisers*, and the setting lists examples (fundraisers, a Summer Cookout, an annual
   picnic…). Nothing moves: every fundraiser, its buckets, reports and history stay where they were.
@@ -185,6 +207,13 @@ PennyWarden 2.4.0 (in progress).
   TypedDicts and pydantic dataclasses with `extra="allow"`). PennyWarden uses neither aliases nor those types - its
   request models refuse unknown fields - so it was not affected; updated as a precaution. Also XlsxWriter 3.3.1 (used
   for the presentations' chart data) and, for the tests only, pytest 9.2.0. No change in how PennyWarden behaves.
+
+### Under the hood
+- **Faster checks (CI).** The automatic checks on every pull request run in three jobs side by side (backend tests,
+  the web build with the browser tests, the version, notices and dependency checks), the backend tests use every core
+  of the build machine (pytest-xdist 3.8.0, for the tests only), and each test starts from a database migrated once
+  instead of migrating its own, with cheaper password hashing for the test users only. The tests are unchanged and
+  PennyWarden itself keeps its password hashing; no change in how it behaves.
 
 ## 2.3.0 — 2026-11-01
 PennyWarden 2.3.0 (in progress).

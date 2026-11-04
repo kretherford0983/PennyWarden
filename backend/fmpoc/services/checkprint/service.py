@@ -1033,9 +1033,8 @@ def doc_out(d: CheckDocument, full: bool = True) -> dict:
            "default_for": [f for f in (d.default_for or "").split(",") if f]}
     if full:
         out["config"] = doc_config(d).model_dump()
-        if d.kind == "LETTER":
-            out["logo"] = ({"width": d.logo_width, "height": d.logo_height, "version": (d.logo_sha256 or "")[:12]}
-                           if d.logo_png else None)
+        out["logo"] = ({"width": d.logo_width, "height": d.logo_height, "version": (d.logo_sha256 or "")[:12]}
+                       if d.logo_png else None)          # 2.4.0 polish (#503): envelopes have a logo too
     else:
         cfg = doc_config(d)
         out["include_by_default"] = getattr(cfg, "include_by_default", None)
@@ -1112,19 +1111,24 @@ def normalize_logo(data: bytes, max_bytes: int = MAX_LOGO_BYTES) -> tuple[bytes,
 
 
 def set_logo(db: Session, ctx, d: CheckDocument, data: bytes | None) -> CheckDocument:
-    """Sets (data) or removes (None) a cover letter's logo. Audited with the image's fingerprint, never the image."""
-    if d.kind != "LETTER":
-        raise validation("Only cover letters have a logo.", "file")
+    """Sets (data) or removes (None) a cover letter's or (2.4.0 polish, #503) an envelope's own logo. Uploading
+    makes the template use it ("Its own logo"); removing it while in use switches to No logo. Audited with the
+    image's fingerprint, never the image."""
     before = {"logo_sha256": d.logo_sha256}
+    cfg = doc_config(d)
     if data is None:
         if not d.logo_png:
             return d
         d.logo_png = d.logo_sha256 = d.logo_width = d.logo_height = None
         action = "CHECK_DOCUMENT_LOGO_REMOVED"
+        if cfg.logo_source == "OWN":
+            cfg.logo_source = "NONE"
     else:
         png, w, h = normalize_logo(data)
         d.logo_png, d.logo_sha256, d.logo_width, d.logo_height = png, hashlib.sha256(png).hexdigest(), w, h
         action = "CHECK_DOCUMENT_LOGO_SET"
+        cfg.logo_source = "OWN"
+    d.config_json = json.dumps(cfg.model_dump())
     d.updated_by_user_id, d.updated_at = ctx.user.id, utcnow()
     db.flush()
     audit.record(db, ctx, action, "check_document", d.id, before,
@@ -1217,10 +1221,9 @@ def draft_document(db: Session, ctx, kind: str, preset: str | None = None,
     out = {"id": None, "draft": True, "kind": kind, "name": name, "active": True,
            "is_default": is_default, "config": config, "feature": feature if kind == "ENVELOPE" else "PAYMENTS",
            "duplicate_of": source.id if source is not None else None}
-    if kind == "LETTER":
-        out["logo"] = ({"width": source.logo_width, "height": source.logo_height,
-                        "version": (source.logo_sha256 or "")[:12], "from": source.id}
-                       if source is not None and source.logo_png else None)
+    out["logo"] = ({"width": source.logo_width, "height": source.logo_height,      # #503: envelopes too
+                    "version": (source.logo_sha256 or "")[:12], "from": source.id}
+                   if source is not None and source.logo_png else None)
     return out
 
 
@@ -1475,7 +1478,8 @@ def print_letter(db: Session, ctx, settings, t: RegisterTransaction, d: CheckDoc
                                  "without it?"))
     require_confirmations(warnings, confirmations)
     fold = fold or letter_fold_default(db, ctx, d)      # #247: this letter's choice, else the user's, else the template's
-    pdf = documents.letter_pdf(cfg, data, logo=d.logo_png, fold=fold)
+    logo = doc_logo(db, d, cfg)                         # #503: the organization logo, its own, or none
+    pdf = documents.letter_pdf(cfg, data, logo=logo, fold=fold)
     added, path = _store_doc_copy(db, ctx, settings, t, LETTER_COPY,
                                   f"letter-{t.check_number or t.id}.pdf", pdf)
     printed = pdf
@@ -1484,7 +1488,7 @@ def print_letter(db: Session, ctx, settings, t: RegisterTransaction, d: CheckDoc
         if sig2.image:
             printed = documents.letter_pdf(cfg, data.model_copy(update={"signature_mode": "IMAGE",
                                                                         "signature_image": sig2.image}),
-                                           logo=d.logo_png, fold=fold)
+                                           logo=logo, fold=fold)
     audit.record(db, ctx, "CHECK_LETTER_PRINTED", "register_transaction", t.id, None,
                  {"transaction_id": t.id, "document_id": d.id, "signer_id": signer.id if signer else None,
                   "check_number": t.check_number, "attached": added, "fold_marks": fold,
@@ -1553,15 +1557,16 @@ def print_envelope(db: Session, ctx, settings, t: RegisterTransaction, d: CheckD
                                      ", ".join("{" + v + "}" for v in empty) + ". Print anyway?", variables=empty))
         require_confirmations(warnings, confirmations)
     opt = envelope_options(db, ctx, d, {"page": page, "guide": guide})
+    logo = doc_logo(db, d, cfg)                         # #503
     pdf = documents.envelope_pdf(cfg, ret, to, page=opt["page"], guide=opt["guide"], dx=opt["dx"], dy=opt["dy"],
-                                 test=test)
+                                 test=test, logo=logo)
     if test:
         audit.record(db, ctx, "CHECK_ENVELOPE_TEST", "register_transaction", t.id, None,
                      {"document_id": d.id, "page": opt["page"], "guide": opt["guide"]})
         db.commit()
         return pdf
     # the attached copy is drawn without the feed offsets so that the same envelope is attached only once
-    copy_pdf = documents.envelope_pdf(cfg, ret, to, page="ENVELOPE")
+    copy_pdf = documents.envelope_pdf(cfg, ret, to, page="ENVELOPE", logo=logo)
     added, path = _store_doc_copy(db, ctx, settings, t, ENVELOPE_COPY, f"envelope-{t.check_number or t.id}.pdf",
                                   copy_pdf)
     audit.record(db, ctx, "CHECK_ENVELOPE_PRINTED", "register_transaction", t.id, None,
@@ -1595,7 +1600,23 @@ def handwritten_check(db: Session, ctx, t: RegisterTransaction, number: str) -> 
                  {"check_number": t.check_number})
 
 
+def doc_logo(db: Session, d: CheckDocument, cfg=None) -> bytes | None:
+    """2.4.0 polish (#503): the logo a letter or envelope template prints - the organization logo, its own, or none."""
+    from .. import org_logos
+    cfg = cfg if cfg is not None else doc_config(d)
+    return org_logos.resolve(db, d.workspace_id, cfg.logo_source, d.logo_png)
+
+
+def _sample_logo(cfg, own: bytes | None, db: Session | None, ctx) -> bytes | None:
+    if db is not None and ctx is not None:
+        from .. import org_logos
+        return org_logos.resolve(db, ctx.workspace_id, cfg.logo_source, own)
+    return own if cfg.logo_source == "OWN" else None
+
+
 def sample_letter_pdf(cfg, logo: bytes | None = None, db: Session | None = None, ctx=None, km=None) -> bytes:
+    """`logo`: the template's own upload; the Logo choice in `cfg` decides what prints (#503)."""
+    logo = _sample_logo(cfg, logo, db, ctx)
     values = {**SAMPLE_VALUES["NORMAL"], "PAYEE": documents.SAMPLE_PAYEE[0],
               "TODAY": format_date(dt.date.today(), "MM/DD/YYYY"), "INVOICE_DATE": "08/29/2026 and others",
               "PAYEE_ADDRESS": "\n".join(documents.SAMPLE_PAYEE[1:]), "DATE": format_date(dt.date.today(), "MM/DD/YYYY"),
@@ -1614,8 +1635,10 @@ def sample_letter_pdf(cfg, logo: bytes | None = None, db: Session | None = None,
     return documents.letter_pdf(cfg, data, title="Letter test print", logo=logo, test=True)
 
 
-def sample_envelope_pdf(cfg, preview: bool = False) -> bytes:
+def sample_envelope_pdf(cfg, preview: bool = False, logo: bytes | None = None, db: Session | None = None,
+                        ctx=None) -> bytes:
     # the live preview follows the template's return-address setting; the test print always shows it
     ret, to, _e = documents.envelope_lines(cfg, {**SAMPLE_VALUES["NORMAL"]}, documents.SAMPLE_PAYEE,
                                            cfg.return_address if preview else True)
-    return documents.envelope_pdf(cfg, ret, to, test=not preview, preview=preview)
+    return documents.envelope_pdf(cfg, ret, to, test=not preview, preview=preview,
+                                  logo=_sample_logo(cfg, logo, db, ctx))
