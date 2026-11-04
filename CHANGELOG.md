@@ -208,6 +208,13 @@ PennyWarden 2.4.0 (in progress).
   request models refuse unknown fields - so it was not affected; updated as a precaution. Also XlsxWriter 3.3.1 (used
   for the presentations' chart data) and, for the tests only, pytest 9.2.0. No change in how PennyWarden behaves.
 
+### Under the hood
+- **Faster checks (CI).** The automatic checks on every pull request run in three jobs side by side (backend tests,
+  the web build with the browser tests, the version, notices and dependency checks), the backend tests use every core
+  of the build machine (pytest-xdist 3.8.0, for the tests only), and each test starts from a database migrated once
+  instead of migrating its own, with cheaper password hashing for the test users only. The tests are unchanged and
+  PennyWarden itself keeps its password hashing; no change in how it behaves.
+
 ## 2.3.0 — 2026-11-01
 PennyWarden 2.3.0 (in progress).
 
