@@ -311,6 +311,28 @@ through the same path. **BR-INV-FLD-004**, **AC-INV-FLD-005**. Test
   reload, live Next invoice and its error, letterhead rows + suggestions, column boxes aligned; the module is left as
   it was.
 
+**2.4.0 — One payment for several invoices (#523, decided with Kyle 2026-11-04; finishes #254's "one deposit split
+across several invoices").** `GET /api/invoices/payments/open?customer_entity_id=|number=` (the open invoices -
+sent or partly paid, no write-off waiting, open > 0 - oldest due first; a typed invoice number finds its customer's)
+and `POST /api/invoices/payments` (`InvoiceMultiPaymentIn`: items `[{invoice_id, amount}]` 1-50, `payer_entity_id`,
+`overpayment` + `overpayment_invoice_id`, date, account, notes, confirmations), both `invoice.record_payment`
+(Register User). `invoice_payments._invoice_allocations` is shared with Record payment: each invoice gets the lines
+Record payment would give it (difference of two cumulative apportionments), so later payments continue exactly. One
+`register.create` (every register rule and warning), at most 100 lines; one `InvoicePayment` per line;
+`INVOICE_PAYMENT_RECORDED` per invoice (with `deposit_total`, `invoices_in_deposit`). Frontend
+`pages/InvoicePayments.tsx` (`MultiPaymentForm`; `useAccounts` moved there): **Record a payment…** (customer or
+invoice number) and **Record payment for N invoices…** (ticked open rows in the list).
+- **BR-INV-PAY-007:** one payment may cover up to 50 issued invoices, each listed once, each part > 0 and not more
+  than its open balance (`OVER_OPEN_BALANCE`); the deposit is one register transaction linked line by line.
+- **BR-INV-PAY-008:** an amount above the parts is an overpayment on one of the invoices, chosen by the user and
+  confirmed (`OVERPAYMENT`), refundable as before (BR-INV-PAY-004).
+- **BR-INV-PAY-009:** the deposit's entity (and its lines') is the payer; the default is the invoices' customer when
+  they share one, otherwise it must be chosen; a payer other than an invoice's customer is `THIRD_PARTY_PAYER`,
+  confirmed. Void re-opens every invoice; unlink stays per invoice (BR-INV-PAY-005 unchanged).
+- ACs **AC-INV-PAY-008** open invoices oldest due first, found by number; **-009** one deposit linked to each
+  invoice, later payments continue exactly; **-010** limits, overpayment, another payer; **-011** void / unlink per
+  invoice. Tests: `backend/tests/test_v240_multi_invoice_payment.py` (5); E2E `#523`.
+
 **2.4.0 — Invoice reports for formal publication (#513, decided with Kyle 2026-11-03).** Two new reports in the
 catalog's *Share with the board and members* group (Subject: Invoices; Audience: Board & members), each a PDF
 (ReportLab, the Fiscal Year fundraising report's band, highlight tiles and tables) and a presentation (python-pptx,
@@ -370,6 +392,16 @@ description are cut to 30 / 45 characters (`clip`: at the last word break when i
 dropped, "…"; the whole text in the cell's title). Named `@page register` (letter portrait, 0.5 in margins) so other prints keep their own
 setup. (The screen table's Date/Cleared headings are sort buttons, which the global print rule hides - one reason
 for a separate print table.) E2E: the "#56 / #57" register test checks the print layout (`emulateMedia print`).
+
+**2.4.0 polish — logo top right, above or beside (#520, Kyle 2026-11-04).** `LetterConfig.logo_position` and
+`ReceiptConfig.logo_position` are both `LEFT | CENTER | RIGHT_ABOVE | RIGHT_BESIDE`. A stored `RIGHT` (before #520)
+is read as it printed: `RIGHT_BESIDE` on cover letters (#466), `RIGHT_ABOVE` on donation letters (#503). Beside on the
+donation letter works as on the cover letter: drawn on page 1 level with the organization's name at the right margin;
+the name, address and date wrap short of it; `_ClearBelow` keeps the donor's address clear of a tall logo. With a
+window layout the logo goes where it did before (donation `LETTER`: top right clear of the windows; on an address
+page layout either Top right prints right-aligned above). The invoice PDF keeps its own choices (text at both top
+corners). Proposed for Kyle: **BR-LOGO-POS-001** both letters offer the same four positions; **-002** a saved RIGHT
+keeps its look. Tests: `backend/tests/test_v240_logo_right.py` (2).
 
 **2.4.0 polish — cover letter logo top right (#466, Kyle 2026-11-02).** `LetterConfig.logo_position` adds `RIGHT`
 (LEFT|CENTER|RIGHT). Drawn on the first page's canvas (not in the story), top level with the text frame's top (1 in

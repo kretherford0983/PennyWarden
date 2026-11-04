@@ -146,7 +146,7 @@ export default function DonationSetup() {
               onRemove={async () => setS(await api.post("/api/donations/setup/logo/receipt/remove"))}
               sizeHint="PNG or JPEG, at most 1 MB. It prints above the organization's name (with a window envelope: at the top right, clear of the windows). Adding or removing the receipt's own logo takes effect at once.">
               <Field label="Logo position"><select value={cfg.logo_position} onChange={(e) => set("logo_position", e.target.value)}>
-                <option value="LEFT">Top left</option><option value="CENTER">Top center</option><option value="RIGHT">Top right</option></select></Field>
+                <option value="LEFT">Top left</option><option value="CENTER">Top center</option><option value="RIGHT_ABOVE">Top right, above the organization's name (the letter text moves down)</option><option value="RIGHT_BESIDE">Top right, beside the organization's name (the letter text stays where it is)</option></select></Field>
             </LogoChoice>
             <div className="row form-row">
               <Field label="Font"><select value={cfg.font} onChange={(e) => set("font", e.target.value)}>{FONTS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Field>
