@@ -15,7 +15,7 @@ export const SERIES = {
 };
 export const CHROME = {
   light: { text: "#1b1f24", muted: "#5b6573", grid: "#e1e0d9", axis: "#c3c2b7", surface: "#ffffff", neutral: "#c3c2b7", other: "#898781" },
-  dark: { text: "#e6eaef", muted: "#9aa6b4", grid: "#2c3440", axis: "#46515e", surface: "#1b2128", neutral: "#52806f", other: "#898781" },
+  dark: { text: "#e6eaef", muted: "#9aa6b4", grid: "#2c3440", axis: "#46515e", surface: "#1b2128", neutral: "#52606f", other: "#898781" },
 };
 
 export const CHARTS: { key: string; title: string }[] = [
