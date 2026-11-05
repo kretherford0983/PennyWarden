@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState, type FormEvent } from "react";
-import { api, money, qs } from "../api";
+import { api, money, qs, todayIso } from "../api";
 import { EntityPicker, ErrorBox, Field, GuardedForm, Loading, Modal, useConfirmable } from "../components";
 import { Link, useRouter } from "../router";
 import { useMe } from "../App";
@@ -473,7 +473,7 @@ function InvoiceForm({ current, batch, onClose, onSaved }: { current?: any; batc
   const [products, setProducts] = useState<any[]>([]);
   const [entities, setEntities] = useState<any[]>([]);
   const [err, setErr] = useState<unknown>(null);
-  const [v, setV] = useState({ customer: current?.customer ? String(current.customer.id) : "", invoice_date: current?.invoice_date || new Date().toISOString().slice(0, 10),
+  const [v, setV] = useState({ customer: current?.customer ? String(current.customer.id) : "", invoice_date: current?.invoice_date || todayIso(),
     due_date: current?.due_date || "", notes: current?.notes ?? "", terms_text: current?.terms_text ?? "",
     discount_kind: current?.discount?.kind || "", discount_value: current?.discount?.value || "", discount_reason: current?.discount?.reason || "" });
   const [lines, setLines] = useState<LineV[]>(current ? current.lines.map((l: any) => ({ id: l.id, product_id: String(l.product_id), quantity: l.quantity,
@@ -672,7 +672,7 @@ function MoneyForm({ i, refund, onClose, onDone }: { i: any; refund: boolean; on
   const accts = useAccounts();
   const { run, dialog } = useConfirmable();
   const [err, setErr] = useState<unknown>(null);
-  const [v, setV] = useState({ bank_account_id: "", amount: refund ? i.payments.refundable : i.payments.open, transaction_date: new Date().toISOString().slice(0, 10), check_number: "", notes: "" });
+  const [v, setV] = useState({ bank_account_id: "", amount: refund ? i.payments.refundable : i.payments.open, transaction_date: todayIso(), check_number: "", notes: "" });
   // #504: start on the only account, else the Primary account (as the Register does)
   useEffect(() => {
     const start = accts.length === 1 ? accts[0] : accts.find((a) => a.is_primary);

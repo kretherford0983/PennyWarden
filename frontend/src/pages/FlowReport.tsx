@@ -19,7 +19,8 @@ export function Signed({ c }: { c: number }) {
 
 export default function FlowReport({ accounts, initial = {}, onRun }: { accounts: any[]; initial?: Record<string, any>; onRun?: (params: Record<string, any>, label: string) => void }) {
   const open = accounts.filter((a) => a.status === "ACTIVE");
-  // 2.3.0 (#375): the user's last title and dates are filled in (notes and the balance options are not remembered)
+  // 2.3.0 (#375): a Recently run link fills in the title and dates (notes and the balance options are not kept);
+  // #528: opened from the catalog it starts empty
   const [p, setP] = useState({ title: String(initial.title || ""), date_from: String(initial.date_from || ""), date_to: String(initial.date_to || ""),
     include_balances: false, compare_date: "", notes: "", show_substitution_notes: false });
   const [ids, setIds] = useState<number[]>(open.map((a) => a.id));
