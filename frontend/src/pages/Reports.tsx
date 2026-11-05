@@ -1,6 +1,6 @@
 // v1.2 CR-002: reporting interface. 2.3.0 (#375): catalog home, a page per report, one registry.
 import { Fragment, useEffect, useState } from "react";
-import { api, money, qs } from "../api";
+import { api, money, qs, todayIso } from "../api";
 import { EntityPicker, ErrorBox, Field, Loading } from "../components";
 import { NotAuthorized, useMe } from "../App";
 import { InvoiceReport } from "./InvoiceReports";
@@ -415,7 +415,7 @@ function FundraiserDetailReport({ fys, initial, onRun, actions }: BodyProps) {
  * accounts, cash flow, budgets and fundraisers as of the end of the period. A period still in progress is reported
  * as Preliminary, as of today; a period that hasn't started can't be chosen. */
 function PeriodReport({ fys, initial, onRun, actions }: BodyProps) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIso();
   const cur = currentFy(fys);
   const [fy, setFy] = useState(String(initial.fiscal_year_id || (cur ? cur.id : "")));
   const [opts, setOpts] = useState<any>(null);

@@ -4632,6 +4632,15 @@ test("2.4.0 (#523): a Register User records one payment for several invoices - t
   await expect(d2.getByTestId("multi-payment-invoices").locator("tbody tr")).toHaveCount(2);   // 25.00 left on #2, and #3
   await expect(d2.getByLabel("Amount received")).toHaveValue("125.00");
   await d2.getByRole("button", { name: "Cancel" }).click();
+  // #528: a report run "to today" is remembered as such, so it reopens through the day it is opened (not a stale date)
+  await page.goto("/reports/inv-register");
+  const pop = page.context().waitForEvent("page");
+  await page.getByRole("link", { name: "Open", exact: true }).click();
+  await (await pop).close();
+  await expect.poll(async () => (await call("GET", "/api/me/report-preferences")).last?.["inv-register"]).toBeTruthy();
+  const last = (await call("GET", "/api/me/report-preferences")).last["inv-register"];
+  expect(last.date_to ?? null).toBeNull();
+  expect(last.date_from ?? null).toBeNull();
   await logout(page);
   await login(page, "admin");
   ({ me, call } = await caller());

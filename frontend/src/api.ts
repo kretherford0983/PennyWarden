@@ -181,6 +181,11 @@ export function todayIso() {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 }
 
+/** The first day of this month on the user's calendar (toISOString would give the UTC date - a day off in the evening). */
+export function monthStartIso() {
+  return `${todayIso().slice(0, 8)}01`;
+}
+
 /** v1.3 CR-011: one-time key for a create form (works on plain-HTTP LAN addresses, unlike crypto.randomUUID). */
 export function newRequestKey() {
   const b = new Uint8Array(16);
