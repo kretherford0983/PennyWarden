@@ -43,11 +43,11 @@ export default function Reports({ id }: { id?: string }) {
     api.post("/api/me/report-runs", { report: rid, params, label: label || null }).then(setPrefs, () => undefined);
   };
   if (!def) return <ReportsHome list={list} prefs={prefs} groups={grouping} />;
-  // a shortcut's or Recently run's options (the address) come before the remembered ones
+  // #528 (Kyle, 2026-11-05): a report opened from the catalog starts with its defaults; only a Recently run link (or a
+  // shortcut from another page) fills in options - they come in the address
   const q = new URLSearchParams(search);
-  const fromUrl: Record<string, any> = {};
-  q.forEach((v, k) => { fromUrl[k] = v === "true" ? true : v === "false" ? false : v; });
-  const initial = Object.keys(fromUrl).length ? fromUrl : (prefs.last?.[def.id] || {});
+  const initial: Record<string, any> = {};
+  q.forEach((v, k) => { initial[k] = v === "true" ? true : v === "false" ? false : v; });
   const props = { fys, accounts, initial, onRun: onRun(def.id), actions: (l: Links) => <ReportActions {...l} /> };
   const Body = BODIES[def.id];
   return (
