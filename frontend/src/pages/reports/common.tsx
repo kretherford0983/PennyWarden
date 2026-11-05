@@ -1,6 +1,7 @@
 /** 2.3.0 (#375): what every report page shares - the one action row (Open · Download PDF · Download PPTX ·
  * Download CSV, as the report has them) and the hooks a report uses to be remembered (Recently run, last options). */
 import type { ReactNode } from "react";
+import { todayIso } from "../../api";
 
 /** A report's options as remembered for the user (parameters only, never output), and its short Recently run label. */
 export type RunFn = (params: Record<string, any>, label: string) => void;
@@ -8,7 +9,7 @@ export type Links = { open?: string | null; download?: string | null; pptx?: str
 export type ActionsFn = (l: Links) => ReactNode;
 
 export function currentFy(fys: any[]): any {
-  const t = new Date().toISOString().slice(0, 10);
+  const t = todayIso();
   return fys.find((f) => f.start_date <= t && f.end_date >= t) || fys[fys.length - 1];
 }
 

@@ -3,7 +3,7 @@
  * comparison); a commentary for this run (free text: not remembered); customer names on or off. PDF and presentation.
  * The Fiscal Years come from the invoice options endpoint: an Invoice Manager may not hold the financial permission. */
 import { useEffect, useState } from "react";
-import { api, qs } from "../../api";
+import { api, qs, todayIso } from "../../api";
 import { ErrorBox, Field, Loading } from "../../components";
 import type { ActionsFn, RunFn } from "./common";
 
@@ -15,7 +15,8 @@ export function InvoiceFormalReport({ rid, initial, onRun, actions }: Props) {
   const [opts, setOpts] = useState<any>(null);
   const [period, setPeriod] = useState("");
   const [from, setFrom] = useState<string>(initial.date_from || "");
-  const [through, setThrough] = useState<string>(initial.date_to || "");
+  // #528: a custom range remembered "through today" reopens through the day it is opened
+  const [through, setThrough] = useState<string>(initial.date_to || (initial.date_from ? todayIso() : ""));
   const [names, setNames] = useState(initial.show_names !== false && initial.show_names !== "false");
   const [note, setNote] = useState("");
   const [err, setErr] = useState<unknown>(null);
@@ -40,6 +41,7 @@ export function InvoiceFormalReport({ rid, initial, onRun, actions }: Props) {
   const rangeOk = !!from && !!through && from <= through;
   const ready = kind === "FY" ? !!sel?.selectable : rangeOk;
   const params = kind === "FY" ? { fiscal_year_id: fy, period } : { date_from: from, date_to: through };
+  const remembered = kind === "FY" ? params : { date_from: from, date_to: through === todayIso() ? null : through };
   const url = (format: string, download: boolean) => `/api/invoices/formal/${rid}${qs({ ...params, show_names: names ? null : false,
     commentary: note.trim() || null, format: format === "pdf" ? null : format, download: download || null })}`;
   const fyName = opts.fiscal_years.find((y: any) => String(y.id) === fy)?.label || "";
@@ -90,7 +92,7 @@ export function InvoiceFormalReport({ rid, initial, onRun, actions }: Props) {
         <textarea rows={4} maxLength={opts.max_commentary || 2000} value={note} onChange={(e) => setNote(e.target.value)} />
       </Field>
       {actions({ open: ready ? url("pdf", false) : null, download: ready ? url("pdf", true) : null, pptx: ready ? url("pptx", true) : null,
-        onRun: () => onRun({ ...params, show_names: names }, label) })}
+        onRun: () => onRun({ ...remembered, show_names: names }, label) })}
     </>
   );
 }

@@ -311,6 +311,14 @@ through the same path. **BR-INV-FLD-004**, **AC-INV-FLD-005**. Test
   reload, live Next invoice and its error, letterhead rows + suggestions, column boxes aligned; the module is left as
   it was.
 
+**2.4.0 polish — reports open with their defaults (#528, Kyle 2026-11-05).** Amends #375 (2.3.0): a report
+opened from the catalog (or by its address without options) starts with its defaults; only a *Recently run* link or a
+shortcut from another page fills in options (they travel in the address). Each report's last options are still
+recorded on the server (`report_prefs.last`) but no longer read by the Reports page. Invoice reports and the custom
+range of the formal sales reports record a run "to today" / "as of today" / "from the first of the month" without
+those dates, so its Recently run link reopens to the current day. Dates the screens fill in use the user's calendar
+date (`todayIso()`, new `monthStartIso()`), not the UTC date (tomorrow in US evenings).
+
 **2.4.0 — One payment for several invoices (#523, decided with Kyle 2026-11-04; finishes #254's "one deposit split
 across several invoices").** `GET /api/invoices/payments/open?customer_entity_id=|number=` (the open invoices -
 sent or partly paid, no write-off waiting, open > 0 - oldest due first; a typed invoice number finds its customer's)

@@ -106,6 +106,11 @@ PennyWarden 2.4.0 (in progress).
   (for example **Serial number**); the Invoice Manager ticks it on those products in the catalog. It is asked on each
   invoice line that uses such a product — required if the field says so — and prints after the line's description
   when *show on PDF* is on.
+- **Reports open with their defaults (#528).** A report opened from the Reports catalog starts with its usual choices
+  (today's date, this month, the current Fiscal Year) instead of your last run's - which left newer invoices out of
+  the invoice reports. **Recently run** still opens a report with that run's choices; a run "to today" (or "as of
+  today", or from the first of the month) reopens to the current day. Dates the screens fill in (a new invoice, a
+  payment, report periods) are your calendar date; before, they could show tomorrow in the evening.
 - **One payment for several invoices (#523).** When one check pays several invoices, a Register User records it once:
   tick the invoices in the list (**Record payment for N invoices…**) or choose **Record a payment…** and pick the
   customer — or type an invoice number from a payment stub. The amount received fills the balances oldest due date

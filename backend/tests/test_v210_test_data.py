@@ -93,7 +93,8 @@ def built(tmp_path_factory):
 def test_data_set(built):
     import json
     s = json.loads((built["tmp"] / "summary.json").read_text())
-    assert s["sign_ins"] == ["admin", "budgetmgr", "bookkeeper", "auditor", "treasurer"]
+    assert s["sign_ins"] == ["admin", "budgetmgr", "bookkeeper", "auditor", "treasurer", "invoices"]
+    assert s["counts"]["invoices"] >= 14 and s["counts"]["invoice_payments"] >= 11           # 2.4.0: last year in full
     assert [y["status"] for y in s["fiscal_years"]] == ["Closed", "Closed", "Approved", "Draft"]
     assert s["counts"]["printed_checks"] == 2 and s["counts"]["entered_years"] == 12
     assert s["counts"]["donation_receipts"] == 2                                     # 2.1.0 (#312)

@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState, type FormEvent } from "react";
-import { api, money, qs } from "../api";
+import { api, money, qs, todayIso } from "../api";
 import { ErrorBox, Field, GrossBudgetNote, Loading, Modal, GuardedForm } from "../components";
 import { useMe } from "../App";
 import { useRouter } from "../router";
@@ -18,7 +18,7 @@ export default function Budgets() {
     api.get("/api/fiscal-years").then((l: any[]) => {
       setFys(l);
       const want = Number(new URLSearchParams(search).get("fiscal_year_id"));
-      const today = new Date().toISOString().slice(0, 10);
+      const today = todayIso();
       const cur = l.find((f) => f.id === want) || l.find((f) => f.start_date <= today && f.end_date >= today && f.status !== "CLOSED") || l[l.length - 1];
       setFyId(cur ? cur.id : null);
     }, setErr);
