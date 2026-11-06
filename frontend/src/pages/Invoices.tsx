@@ -630,6 +630,7 @@ function Payments({ i, onChanged }: { i: any; onChanged: (i: any) => void }) {
   const { can } = useMe();
   const [mode, setMode] = useState<null | "pay" | "refund" | "link">(null);
   const [unlink, setUnlink] = useState<any>(null);
+  const [takeOff, setTakeOff] = useState(false);                 // 2.4.0 (#534)
   const p = i.payments;
   const open = ["SENT", "PARTLY_PAID", "PAID"].includes(i.status) && i.write_off?.status !== "PENDING";
   const live = p.links.filter((x: any) => !x.unlinked);
@@ -639,7 +640,10 @@ function Payments({ i, onChanged }: { i: any; onChanged: (i: any) => void }) {
       <dl className="dl">
         <dt>Paid</dt><dd data-testid="inv-paid">{money(p.paid)}</dd>
         <dt>Open balance</dt><dd data-testid="inv-open">{money(p.open)}</dd>
-        {Number(p.overpaid) ? <><dt>Overpaid</dt><dd>{money(p.overpaid)}{Number(p.refunded) ? ` (refunded ${money(p.refunded)})` : ""}</dd></> : null}
+        {Number(p.credit_applied) ? <><dt>Account credit applied</dt><dd data-testid="inv-credit-applied">{money(p.credit_applied)}</dd></> : null}
+        {Number(p.overpaid) ? <><dt>Overpaid (customer credit)</dt><dd>{money(p.overpaid)}{Number(p.refunded) ? ` (refunded ${money(p.refunded)})` : ""}</dd></> : null}
+        {Number(p.customer_credit?.total) ? <><dt>Customer's credit on other invoices</dt><dd data-testid="inv-customer-credit">{money(p.customer_credit.total)}
+          <span className="muted small"> — applied when their next invoice is sent</span></dd></> : null}
       </dl>
       {live.length ? (
         <table className="table">
@@ -647,11 +651,12 @@ function Payments({ i, onChanged }: { i: any; onChanged: (i: any) => void }) {
           <tbody>{live.map((x: any) => (
             <tr key={x.id} className={x.status !== "ACTIVE" ? "muted" : undefined}>
               <td>{x.date}</td>
-              <td>{x.kind === "PAYMENT" ? "Payment" : x.kind === "OVERPAYMENT" ? "Overpayment" : "Refund"}{x.status !== "ACTIVE" ? <span className="badge grey">Void</span> : null}</td>
+              <td>{x.credit_from ? `Credit from ${x.credit_from.number}` : x.kind === "PAYMENT" ? "Payment" : x.kind === "OVERPAYMENT" ? "Overpayment (credit)" : "Refund"}{x.status !== "ACTIVE" ? <span className="badge grey">Void</span> : null}</td>
               <td className="num">{x.kind === "REFUND" ? "−" : ""}{money(x.amount)}</td>
               <td>{x.budget?.label}</td>
               <td>{can("register.view") && x.bank_account_id ? <Link to={`/register?account=${x.bank_account_id}&txn=${x.transaction_id}`}>Transaction #{x.transaction_id}</Link> : `#${x.transaction_id}`}</td>
-              <td>{can("transaction.manage") && x.status === "ACTIVE" && x.kind !== "REFUND" ? <button className="small" onClick={() => setUnlink(x)}>Unlink…</button> : null}</td>
+              <td>{can("transaction.manage") && x.status === "ACTIVE" && x.kind !== "REFUND" && !x.credit_from
+                ? <button className="small" onClick={() => setUnlink(x)}>{x.kind === "OVERPAYMENT" ? "Move credit…" : "Unlink…"}</button> : null}</td>
             </tr>
           ))}</tbody>
         </table>
@@ -659,12 +664,36 @@ function Payments({ i, onChanged }: { i: any; onChanged: (i: any) => void }) {
       {open ? <div className="row">
         {can("invoice.record_payment") ? <button className="primary" onClick={() => setMode("pay")}>Record payment…</button> : null}
         {can("invoice.link_payment") && Number(p.open) > 0 ? <button onClick={() => setMode("link")}>Link a deposit…</button> : null}
-        {can("invoice.record_payment") && Number(p.refundable) > 0 ? <button onClick={() => setMode("refund")}>Refund overpayment…</button> : null}
+        {can("invoice.record_payment") && Number(p.refundable) > 0 ? <button onClick={() => setMode("refund")}>Refund credit…</button> : null}
+        {can("transaction.manage") && Number(p.credit_applied) > 0 ? <button onClick={() => setTakeOff(true)}>Take credit off…</button> : null}
       </div> : null}
+      {takeOff ? <TakeCreditOff i={i} onClose={() => setTakeOff(false)} onDone={(x) => { setTakeOff(false); onChanged(x); }} /> : null}
       {mode === "pay" || mode === "refund" ? <MoneyForm i={i} refund={mode === "refund"} onClose={() => setMode(null)} onDone={(x) => { setMode(null); onChanged(x); }} /> : null}
       {mode === "link" ? <LinkForm i={i} onClose={() => setMode(null)} onDone={(x) => { setMode(null); onChanged(x); }} /> : null}
       {unlink ? <UnlinkForm i={i} link={unlink} onClose={() => setUnlink(null)} onDone={(x) => { setUnlink(null); onChanged(x); }} /> : null}
     </section>
+  );
+}
+
+/** 2.4.0 (#534): the credit applied to this invoice is the customer's credit again (Register User, with a reason). */
+function TakeCreditOff({ i, onClose, onDone }: { i: any; onClose: () => void; onDone: (i: any) => void }) {
+  const [reason, setReason] = useState("");
+  const [err, setErr] = useState<unknown>(null);
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setErr(null);
+    try { onDone(await api.post(`/api/invoices/${i.id}/credit/remove`, { reason })); } catch (x) { setErr(x); }
+  };
+  return (
+    <Modal title="Take credit off" onClose={onClose}>
+      <form onSubmit={submit}>
+        <ErrorBox error={err} />
+        <p>The {money(i.payments.credit_applied)} of account credit applied to this invoice goes back to being the customer's credit (an
+          overpayment on the invoice it came from). The invoice owes that amount again.</p>
+        <Field label="Reason"><input required maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} /></Field>
+        <div className="actions"><button type="button" onClick={onClose}>Cancel</button><button className="primary" type="submit" disabled={!reason.trim()}>Take credit off</button></div>
+      </form>
+    </Modal>
   );
 }
 
@@ -690,7 +719,7 @@ function MoneyForm({ i, refund, onClose, onDone }: { i: any; refund: boolean; on
     } catch (x) { setErr(x); }
   }
   return (
-    <Modal title={refund ? "Refund overpayment" : "Record payment"} onClose={onClose}>
+    <Modal title={refund ? "Refund credit" : "Record payment"} onClose={onClose}>
       <form onSubmit={submit}>
         <ErrorBox error={err} />
         <p className="hint">{refund
@@ -766,14 +795,16 @@ function UnlinkForm({ i, link, onClose, onDone }: { i: any; link: any; onClose: 
     catch (x) { setErr(x); }
   }
   return (
-    <Modal title="Unlink payment" onClose={onClose}>
+    <Modal title={link.kind === "OVERPAYMENT" ? "Move credit" : "Unlink payment"} onClose={onClose}>
       <form onSubmit={submit}>
         <ErrorBox error={err} />
-        <p className="hint">The {money(link.amount)} line stays in the register and moves to another budget in the same step; the invoice's open balance goes back up.</p>
+        <p className="hint">{link.kind === "OVERPAYMENT"
+          ? <>The customer's {money(link.amount)} credit moves to another budget (for example a donation) in the same step; it is no longer their credit.</>
+          : <>The {money(link.amount)} line stays in the register and moves to another budget in the same step; the invoice's open balance goes back up.</>}</p>
         <Field label="Move the line to"><select required value={v.budget} onChange={(e) => setV({ ...v, budget: e.target.value })}>
           <option value="">Choose…</option>{opts.map((b) => <option key={b.id} value={b.id}>{b.label}</option>)}</select></Field>
         <Field label="Reason"><textarea required rows={2} maxLength={500} value={v.reason} onChange={(e) => setV({ ...v, reason: e.target.value })} /></Field>
-        <div className="actions"><button type="button" onClick={onClose}>Cancel</button><button className="primary" type="submit" disabled={!v.budget || !v.reason.trim()}>Unlink</button></div>
+        <div className="actions"><button type="button" onClick={onClose}>Cancel</button><button className="primary" type="submit" disabled={!v.budget || !v.reason.trim()}>{link.kind === "OVERPAYMENT" ? "Move credit" : "Unlink"}</button></div>
       </form>
     </Modal>
   );
