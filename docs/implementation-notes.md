@@ -311,6 +311,28 @@ through the same path. **BR-INV-FLD-004**, **AC-INV-FLD-005**. Test
   reload, live Next invoice and its error, letterhead rows + suggestions, column boxes aligned; the module is left as
   it was.
 
+**2.4.0 — a Register deposit reaches its invoice (#533, decided with Kyle 2026-11-06; a gap in #254:
+`INVOICE_PAYMENT_REQUIRED` and `NOT_INVOICED_INCOME` together made a deposit entered first impossible to link).**
+- `AllocationIn.apply_to` `[{invoice_id, amount}]`, `apply_extra` `BUDGET|CREDIT|REFUND`, `apply_extra_invoice_id`.
+  `register.create` / `update` call `invoice_payments.expand_applications` first: an applied allocation is replaced by
+  each invoice's splits (`_invoice_allocations`, shared with Record payment), generated allocations pass the Invoiced
+  Income guards; the extra stays on the allocation's budget (`BUDGET`, not an Invoiced Income one), or is an
+  `OVERPAYMENT` on the chosen invoice (`CREDIT` - becomes customer credit with #534 - and `REFUND`, which then writes
+  the refund withdrawal on the same account and date, no check number). `finish_applications` links, audits
+  (`INVOICE_PAYMENT_RECORDED` with `from_register`) and refreshes the invoices. Warnings `OVERPAYMENT` and
+  `THIRD_PARTY_PAYER` join the register's confirmations. Register output: each allocation's `invoice` (id, number,
+  kind).
+- **Link a deposit…**: candidates are unlinked active deposit lines on any Income budget (not Budget 0) in an open
+  year, the customer's first; a line not on Invoiced Income is moved (`_link_moving`: a `register.update` applying
+  the line, `transaction.manage`), up to the open balance, the rest per `extra` (default `BUDGET`).
+- **BR-INV-PAY-010** a deposit allocation may be applied to open invoices of any customer (confirmed if not the
+  payer's); the applied part becomes the invoices' splits, linked; **-011** the extra above the invoices stays on a
+  non-Invoiced-Income budget, or is an overpayment kept as credit or refunded at once (confirmed); **-012** Link moves a
+  deposit line on an ordinary Income budget onto the invoice's budgets (Register User).
+- ACs **AC-INV-PAY-012** apply part of a deposit in the register; **-013** the extra (budget / credit / refund);
+  **-014** link moves a line; **-015** apply on edit, another payer, module off. Tests:
+  `backend/tests/test_v240_apply_to_invoice.py` (6); E2E `#533`.
+
 **2.4.0 polish — reports open with their defaults (#528, Kyle 2026-11-05).** Amends #375 (2.3.0): a report
 opened from the catalog (or by its address without options) starts with its defaults; only a *Recently run* link or a
 shortcut from another page fills in options (they travel in the address). Each report's last options are still

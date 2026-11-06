@@ -4652,6 +4652,75 @@ test("2.4.0 (#523): a Register User records one payment for several invoices - t
   await logout(page);
 });
 
+test("2.4.0 (#533): a deposit entered in the Register is applied to an invoice; the rest stays on its budget", async ({ page }) => {
+  // runs before #125 (Reinitialize wipes the financial data this needs)
+  const caller = async () => {
+    const me = await (await page.request.get("/api/auth/me")).json();
+    const call = async (method: string, url: string, data?: any) => {
+      const r = await page.request.fetch(url, { method, headers: { "X-CSRF-Token": me.csrf_token }, data });
+      expect(r.ok(), `${method} ${url}: ${await r.text()}`).toBeTruthy();
+      return r.status() === 204 ? null : r.json();
+    };
+    return { me, call };
+  };
+  await login(page, "admin");
+  let { me, call } = await caller();
+  const wasOn = !!me.modules?.invoices;
+  await call("PUT", "/api/system/modules", { invoices: true });
+  const ru = (await call("GET", "/api/users")).find((u: any) => u.username === "ru1");
+  const ruRoles: string[] = ru.roles;
+  await call("PATCH", `/api/users/${ru.id}`, { roles: [...ruRoles, "INVOICE_MANAGER"] });
+  await logout(page);
+  await login(page, "bm1");
+  ({ me, call } = await caller());
+  const fy = (await call("GET", "/api/fiscal-years")).find((f: any) => f.display_name === "FY2027");
+  const inv = await call("POST", "/api/budgets", { fiscal_year_id: fy.id, code: "4953", name: "E2E Program Fees", amount: "500.00", budget_type: "INCOME" });
+  await call("PUT", `/api/budgets/${inv.id}/invoiced-income`, { invoiced_income: true });
+  await call("POST", "/api/budgets", { fiscal_year_id: fy.id, code: "4954", name: "E2E Golf", amount: "500.00", budget_type: "INCOME" });
+  await logout(page);
+  await login(page, "ru1", "Brand-New-Pass-99");
+  ({ me, call } = await caller());
+  const sel = await call("GET", `/api/budgets/selectable?fiscal_year_id=${fy.id}&transaction_type=DEPOSIT`);
+  const fees = sel.find((o: any) => o.label.startsWith("4953"));
+  const golf = sel.find((o: any) => o.label.startsWith("4954"));
+  const units = await call("GET", "/api/invoices/catalog/unit-types");
+  const prod = await call("POST", "/api/invoices/catalog/products", { name: "E2E Program", unit_price: "100.00", unit_type_id: units[0].id, budget_id: fees.id });
+  const cust = await call("POST", "/api/entities", { entity_type: "ORGANIZATION", organization_name: "E2E Apply Customer", confirmations: ["DUPLICATE_ENTITY"] });
+  const i = await call("POST", "/api/invoices", { customer_entity_id: cust.id, invoice_date: "2026-09-02", lines: [{ product_id: prod.id, quantity: "1" }] });
+  await call("POST", `/api/invoices/${i.id}/send`);
+  // a $150 check: $100 for the invoice, $50 for the golf outing - all entered in the Register
+  await page.goto("/register");
+  await page.getByRole("button", { name: "New transaction" }).click();
+  const t = page.getByRole("dialog", { name: /New transaction/ });
+  await t.getByLabel("Type").selectOption("DEPOSIT");
+  await t.getByLabel("Transaction date").fill("2026-09-29");
+  await t.getByRole("combobox", { name: "Entity (payer)" }).fill("E2E Apply");
+  await page.getByRole("option", { name: /E2E Apply Customer/ }).click();
+  await t.getByLabel("Allocation 1 Fiscal Year").selectOption(String(fy.id));
+  await t.getByLabel("Allocation 1 Budget").selectOption(String(golf.id));
+  await t.getByLabel("Allocation 1 Amount").fill("150.00");
+  await t.getByTestId("allocation-1-apply").getByRole("button", { name: "Apply to invoice…" }).click();
+  const m = page.getByTestId("apply-to-invoice");
+  await expect(m.getByLabel(`Apply amount for ${i.number}`)).toHaveValue("100.00");       // the invoice's balance
+  await expect(m.getByTestId("apply-extra")).toContainText("The other $50.00");
+  await page.screenshot({ path: "e2e-screenshots/light-apply-to-invoice.png" });
+  await m.getByRole("button", { name: "Apply", exact: true }).click();
+  await expect(t.getByTestId("allocation-1-apply")).toContainText(`Applied to ${i.number} ($100.00); the rest stays on this budget`);
+  await t.getByRole("button", { name: "Save" }).click();
+  await expect(t).toHaveCount(0);
+  const after = await call("GET", `/api/invoices/${i.id}`);
+  expect(after.status).toBe("PAID");
+  const txn = await call("GET", `/api/transactions/${after.payments.links[0].transaction_id}`);
+  expect(txn.total).toBe("150.00");
+  expect(txn.allocations.filter((a: any) => !a.invoice).map((a: any) => [a.amount, a.budget.label.split(" ")[0]])).toEqual([["50.00", "4954"]]);
+  await logout(page);
+  await login(page, "admin");
+  ({ me, call } = await caller());
+  await call("PATCH", `/api/users/${ru.id}`, { roles: ruRoles });
+  if (!wasOn) await call("PUT", "/api/system/modules", { invoices: false });
+  await logout(page);
+});
+
 test("#125: an Administrator reinitializes (keeping the users); everyone sees the notice until it is acknowledged", async ({ page }) => {
   await login(page, "admin");
   await page.getByRole("link", { name: "System/About" }).click();

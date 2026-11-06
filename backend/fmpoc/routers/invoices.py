@@ -574,7 +574,7 @@ def link_candidates(iid: int, db: Session = Depends(get_db), ctx: Ctx = Depends(
 def link_payment(iid: int, body: InvoiceLinkIn, db: Session = Depends(get_db),
                  ctx: Ctx = Depends(require("invoice.link_payment"))):
     i = docs.get(db, ctx, iid)
-    pay.link(db, ctx, i, body.allocation_id, body.confirmations)
+    pay.link(db, ctx, i, body.allocation_id, body.confirmations, body.extra, body.amount)
     db.commit()
     return docs.out(db, ctx, i)
 

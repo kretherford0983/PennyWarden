@@ -711,23 +711,40 @@ function MoneyForm({ i, refund, onClose, onDone }: { i: any; refund: boolean; on
 
 function LinkForm({ i, onClose, onDone }: { i: any; onClose: () => void; onDone: (i: any) => void }) {
   const { run, dialog } = useConfirmable();
+  const { can } = useMe();
   const [rows, setRows] = useState<any[] | null>(null);
   const [err, setErr] = useState<unknown>(null);
+  const [extra, setExtra] = useState<Record<number, string>>({});
   useEffect(() => { api.get(`/api/invoices/${i.id}/link-candidates`).then(setRows, setErr); }, [i.id]);
-  async function pick(aid: number) {
+  const open = Number(i.payments.open);
+  async function pick(r: any) {
     setErr(null);
-    try { const r = await run((codes) => api.post(`/api/invoices/${i.id}/links`, { allocation_id: aid, confirmations: codes })); if (r) onDone(r); }
+    const more = Number(r.amount) > open;
+    try { const x = await run((codes) => api.post(`/api/invoices/${i.id}/links`, { allocation_id: r.allocation_id, confirmations: codes,
+      ...(r.moves && more ? { extra: extra[r.allocation_id] || "BUDGET" } : {}) })); if (x) onDone(x); }
     catch (x) { setErr(x); }
   }
+  // 2.4.0 (#533): a line on an ordinary Income budget is moved onto this invoice's budgets when linked (a register edit,
+  // Register User); the rest of a larger line stays on its budget, is kept as credit or refunded
+  const mover = can("transaction.manage");
   return (
-    <Modal title="Link a deposit" onClose={onClose}>
+    <Modal title="Link a deposit" onClose={onClose} wide>
       <ErrorBox error={err} />
-      <p className="hint">Deposit lines on an Invoiced Income budget that aren't linked yet. A line larger than the open balance ({money(i.payments.open)}) is split in the register first.</p>
+      <p className="hint">Unlinked deposit lines on Income budgets, {i.customer?.name ? `${i.customer.name}'s first` : "the customer's first"}. A line on another
+        Income budget is moved onto this invoice's budgets when linked (up to the open balance of {money(i.payments.open)}).</p>
       {rows === null ? <Loading /> : rows.length ? (
         <table className="table"><thead><tr><th>Date</th><th>From</th><th>Budget</th><th className="num">Amount</th><th /></tr></thead>
-          <tbody>{rows.map((r) => <tr key={r.allocation_id}><td>{r.date}</td><td>{r.entity || "—"}</td><td>{r.budget?.label}</td><td className="num">{money(r.amount)}</td>
-            <td><button className="small" onClick={() => pick(r.allocation_id)}>Link</button></td></tr>)}</tbody></table>
-      ) : <p className="muted">No unlinked deposits on Invoiced Income budgets.</p>}
+          <tbody>{rows.map((r) => {
+            const more = Number(r.amount) > open;
+            return <tr key={r.allocation_id}><td>{r.date}</td><td>{r.entity || "—"}</td><td>{r.budget?.label}{r.moves ? <div className="muted small">moved onto the invoice's budgets</div> : null}</td>
+              <td className="num">{money(r.amount)}</td>
+              <td>{r.moves && more ? (
+                <select aria-label={`Rest of the ${r.amount} line`} value={extra[r.allocation_id] || "BUDGET"} onChange={(e) => setExtra({ ...extra, [r.allocation_id]: e.target.value })}>
+                  <option value="BUDGET">The rest stays on its budget</option><option value="CREDIT">The rest kept as credit</option><option value="REFUND">The rest refunded</option></select>) : null}
+                {r.moves && !mover ? <span className="muted small">A Register User links this one</span>
+                  : <button className="small" disabled={!r.moves && more} onClick={() => pick(r)}>Link</button>}</td></tr>;
+          })}</tbody></table>
+      ) : <p className="muted">No unlinked deposits on Income budgets.</p>}
       <div className="actions"><button type="button" onClick={onClose}>Close</button></div>
       {dialog}
     </Modal>

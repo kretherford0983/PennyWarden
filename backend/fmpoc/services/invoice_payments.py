@@ -103,20 +103,35 @@ def linked_allocations(db: Session, allocation_ids: list[int]) -> dict[int, str]
         InvoicePayment.allocation_id.in_(allocation_ids), InvoicePayment.removed_at.is_(None)))}
 
 
-def guard_new_plans(db: Session, ctx, txn_type: str, plans: list, invoice_flow: bool) -> None:
-    """With the module on, a deposit allocation on an Invoiced Income budget comes from an invoice (Record payment or
-    Link) - never entered by hand in the register."""
+def allocation_invoices(db: Session, allocation_ids: list[int]) -> dict[int, dict]:
+    """2.4.0 (#533): allocation id -> the invoice it pays (or refunds), for the register's lines."""
+    if not allocation_ids:
+        return {}
+    out = {}
+    for link in db.scalars(select(InvoicePayment).where(InvoicePayment.allocation_id.in_(allocation_ids),
+                                                        InvoicePayment.removed_at.is_(None))):
+        i = db.get(Invoice, link.invoice_id)
+        out[link.allocation_id] = {"id": i.id, "number": docs.display_number(i), "kind": link.kind}
+    return out
+
+
+def guard_new_plans(db: Session, ctx, txn_type: str, plans: list, invoice_flow: bool,
+                    generated: set[int] | None = None) -> None:
+    """With the module on, a deposit allocation on an Invoiced Income budget comes from an invoice (Record payment,
+    Link, or #533 Apply to invoice in the register) - never entered by hand in the register."""
     if invoice_flow or txn_type != "DEPOSIT" or not inv.module_enabled(db, ctx.workspace_id):
         return
     for p in plans:
+        if generated and id(p.data) in generated:
+            continue
         if p.budget.invoiced_income:
             raise AppError(422, "INVOICE_PAYMENT_REQUIRED",
-                           "This is an Invoiced Income budget: record the deposit with Record payment on the invoice "
-                           "(or link it there), or choose another budget.")
+                           "This is an Invoiced Income budget: use Apply to invoice… on the allocation (or Record "
+                           "payment on the invoice), or choose another budget.")
 
 
 def guard_edit(db: Session, ctx, t: RegisterTransaction, new_type: str, plans: list, existing: dict,
-               linked: dict[int, str]) -> None:
+               linked: dict[int, str], generated: set[int] | None = None) -> None:
     """A linked allocation keeps its budget, amount and type until it is unlinked on the invoice; a new or changed
     deposit allocation on an Invoiced Income budget is refused while the module is on."""
     kept = {p.existing.id: p for p in plans if p.existing is not None}
@@ -131,6 +146,8 @@ def guard_edit(db: Session, ctx, t: RegisterTransaction, new_type: str, plans: l
         return
     for p in plans:
         if p.existing is not None and p.existing.id in linked:
+            continue
+        if generated and id(p.data) in generated:
             continue
         if p.budget.invoiced_income and (p.existing is None or p.existing.budget_id != p.budget.id
                                          or p.existing.amount_cents != p.amount):
@@ -416,8 +433,142 @@ def record_multi(db: Session, ctx, body) -> tuple[RegisterTransaction, list[Invo
     return t, [i for i, _a, _f in parts]
 
 
+# ------------------------------------------------------------------ 2.4.0 (#533): Apply to invoice in the register
+class Applied:
+    """What expand_applications made of a deposit's "Apply to invoice" allocations: the allocations to save (the
+    applied parts replaced by the invoices' splits), which of them are generated, and what to do once saved."""
+
+    def __init__(self):
+        self.allocations: list = []
+        self.generated: set[int] = set()          # id() of the generated AllocationIn objects
+        self.links: list[tuple] = []               # (AllocationIn, Invoice, kind)
+        self.refunds: list[tuple] = []             # (Invoice, cents)
+        self.audit: list[tuple] = []               # (Invoice, paid before, applied, overpayment)
+        self.warnings: list = []
+        self.created: dict[int, TransactionAllocation] = {}
+
+
+def expand_applications(db: Session, ctx, txn_type: str, txn_date: dt.date, parent_entity_id: int | None,
+                        allocs_in: list) -> Applied | None:
+    """Decided with Kyle 2026-11-06: an allocation applied to invoices becomes, when saved, each invoice's splits (its
+    lines' Invoiced Income budgets and tax, as Record payment gives them) linked to the invoice; the extra above
+    them stays on the allocation's budget (BUDGET), is an overpayment on an invoice kept as credit (CREDIT, #534) or
+    is refunded at once (REFUND: an overpayment, then a refund withdrawal). None when nothing is applied."""
+    if not any(getattr(a, "apply_to", None) for a in allocs_in):
+        return None
+    inv.require_module(db, ctx)
+    ctx.require("invoice.record_payment")
+    if txn_type != "DEPOSIT":
+        raise validation("Only a deposit can pay an invoice.", "allocations")
+    out = Applied()
+    fy = _deposit_fy(db, ctx.workspace_id, txn_date)
+    paid_now: dict[int, int] = {}                 # invoice id -> applied earlier in this deposit
+    third: list[str] = []
+    for n, a in enumerate(allocs_in):
+        if not a.apply_to:
+            if a.apply_extra is not None or a.apply_extra_invoice_id is not None:
+                raise validation("Nothing is applied to an invoice on this line.", f"allocations.{n}.apply_to")
+            out.allocations.append(a)
+            continue
+        try:
+            total = parse_amount(a.amount, allow_zero=False)
+        except ValueError as e:
+            raise validation(str(e), f"allocations.{n}.amount") from None
+        parts: list[tuple[Invoice, int]] = []
+        seen: set[int] = set()
+        for m, x in enumerate(a.apply_to):
+            if x.invoice_id in seen:
+                raise validation("Each invoice can be listed once on a line.", f"allocations.{n}.apply_to.{m}")
+            seen.add(x.invoice_id)
+            i = docs.get(db, ctx, x.invoice_id)
+            _get_open(db, ctx, i)
+            try:
+                amt = parse_amount(x.amount, allow_zero=False)
+            except ValueError as e:
+                raise validation(str(e), f"allocations.{n}.apply_to.{m}.amount") from None
+            f = figures(db, i)
+            open_left = f["open"] - paid_now.get(i.id, 0)
+            if amt > open_left:
+                raise AppError(422, "OVER_OPEN_BALANCE", f"{fmt(amt)} for invoice {docs.display_number(i)} is more "
+                               f"than its open balance of {fmt(open_left)}.",
+                               errors=[{"field": f"allocations.{n}.apply_to.{m}.amount", "message": "More than the open balance."}])
+            parts.append((i, amt))
+        applied = sum(x for _i, x in parts)
+        if applied > total:
+            raise validation(f"{fmt(applied)} is applied to invoices but the line is {fmt(total)}.",
+                             f"allocations.{n}.apply_to")
+        extra = total - applied
+        kind = a.apply_extra or ("BUDGET" if extra else None)
+        target = None
+        if extra and kind in ("CREDIT", "REFUND"):
+            target = next((i for i, _x in parts if i.id == a.apply_extra_invoice_id), parts[-1][0])
+        payer = a.entity_id or parent_entity_id
+        for i, _x in parts:
+            if payer and payer != i.customer_entity_id:
+                third.append(docs.display_number(i))
+        # the invoices' splits, in order; each continues from what the invoice has been paid (and earlier lines)
+        for i, x in parts:
+            f = figures(db, i)
+            before = f["paid"] + paid_now.get(i.id, 0)
+            over = extra if (i is target) else 0
+            for ai, k in _invoice_allocations(db, i, before, x, over, fy, a.entity_id):
+                ai = ai.model_copy(update={"notes": a.notes, "no_attachment": a.no_attachment,
+                                           "no_attachment_reason": a.no_attachment_reason})
+                out.allocations.append(ai)
+                out.generated.add(id(ai))
+                out.links.append((ai, i, k))
+            paid_now[i.id] = paid_now.get(i.id, 0) + x
+            out.audit.append((i, before, x, over))
+        if extra and kind == "BUDGET":
+            b = db.get(Budget, a.budget_id)
+            if b is None or b.invoiced_income:
+                raise validation("Choose a budget that is not Invoiced Income for the rest of this line "
+                                 f"({fmt(extra)}).", f"allocations.{n}.budget_id")
+            out.allocations.append(a.model_copy(update={"amount": fmt(extra), "apply_to": None, "apply_extra": None,
+                                                        "apply_extra_invoice_id": None}))
+        elif extra:
+            out.warnings.append(Warning_("OVERPAYMENT", f"{fmt(extra)} more than the invoices' balances: it will be "
+                                         f"recorded as an overpayment on invoice {docs.display_number(target)}"
+                                         + (" and refunded at once." if kind == "REFUND" else " (kept as credit).")))
+            if kind == "REFUND":
+                out.refunds.append((target, extra))
+    if third:
+        out.warnings.append(Warning_("THIRD_PARTY_PAYER", "The payment is not from the customer of invoice"
+                                     f"{'s' if len(third) > 1 else ''} {', '.join(sorted(set(third)))}. Record it anyway?"))
+    if len(out.allocations) > 100:
+        raise validation("Too many deposit lines (at most 100): record it in two parts.", "allocations")
+    return out
+
+
+def finish_applications(db: Session, ctx, t: RegisterTransaction, applied: Applied) -> None:
+    """After the deposit is saved: link each generated line to its invoice, audit, update the invoices' status and
+    write the refunds asked for."""
+    from ..schemas import InvoiceRefundIn
+    for ai, i, kind in applied.links:
+        a = applied.created.get(id(ai))
+        if a is None:                              # not saved (a rolled-back no-op): nothing to link
+            continue
+        db.add(InvoicePayment(workspace_id=ctx.workspace_id, invoice_id=i.id, allocation_id=a.id, kind=kind,
+                              created_by_user_id=ctx.user.id))
+    db.flush()
+    for i, before, x, over in applied.audit:
+        mine = [applied.created[id(ai)].id for ai, j, _k in applied.links if j is i and id(ai) in applied.created]
+        audit.record(db, ctx, "INVOICE_PAYMENT_RECORDED", "invoice", i.id, {"paid": fmt(before)},
+                     {"transaction_id": t.id, "amount": fmt(x + over), "paid_now": fmt(x), "overpayment": fmt(over),
+                      "allocation_ids": mine, "from_register": True})
+        refresh_status(db, ctx, i)
+    for i, cents in applied.refunds:               # Kyle: the system starts the reimbursement at once
+        r = refund(db, ctx, i, InvoiceRefundIn(bank_account_id=t.bank_account_id, amount=fmt(cents),
+                                               transaction_date=t.transaction_date,
+                                               notes=f"Refund of the overpayment in deposit #{t.id} on invoice "
+                                                     f"{docs.display_number(i)}"))
+        refresh_status(db, ctx, i)
+        assert r is not None
+
+
 # ------------------------------------------------------------------ link an existing deposit
-def link(db: Session, ctx, i: Invoice, allocation_id: int, confirmations: list[str]) -> InvoicePayment:
+def link(db: Session, ctx, i: Invoice, allocation_id: int, confirmations: list[str], extra: str | None = None,
+         amount: str | None = None) -> InvoicePayment | None:
     from . import register as reg
     inv.require_module(db, ctx)
     ctx.require("invoice.link_payment")
@@ -430,8 +581,7 @@ def link(db: Session, ctx, i: Invoice, allocation_id: int, confirmations: list[s
         raise conflict("INVALID_STATE", "Only a line of an active deposit can pay an invoice.")
     b = db.get(Budget, a.budget_id)
     if not b.invoiced_income:
-        raise AppError(422, "NOT_INVOICED_INCOME", "This deposit line is not on an Invoiced Income budget. A Register "
-                       "User re-allocates it (or splits off the invoice part) first, then links it.")
+        return _link_moving(db, ctx, i, a, confirmations, extra, amount)
     if reg.is_closed_protected(db, t):
         raise conflict("FISCAL_YEAR_CLOSED", "The deposit is in a Closed Fiscal Year; it can't be linked.")
     if linked_allocations(db, [a.id]):
@@ -456,6 +606,42 @@ def link(db: Session, ctx, i: Invoice, allocation_id: int, confirmations: list[s
                   "confirmed_warnings": [w.code for w in warnings]})
     refresh_status(db, ctx, i)
     return p
+
+
+def _link_moving(db: Session, ctx, i: Invoice, a: TransactionAllocation, confirmations: list[str],
+                 extra: str | None, amount: str | None) -> None:
+    """2.4.0 (#533): a deposit line on an ordinary Income budget is moved onto the invoice's budgets and linked in one
+    step (a register edit, Register User): the invoice's part becomes its splits; the rest of the line stays on its
+    budget (BUDGET), or is an overpayment kept as credit (CREDIT) or refunded (REFUND)."""
+    from ..schemas import AllocationIn, ApplyToInvoiceIn, TransactionUpdateIn
+    from . import register as reg
+    ctx.require("transaction.manage")
+    t = a.transaction
+    if a.budget.budget_type != "INCOME":
+        raise AppError(422, "NOT_INCOME", "Only a deposit line on an Income budget can pay an invoice.")
+    if linked_allocations(db, [a.id]):
+        raise conflict("ALREADY_LINKED", "This deposit line is already linked to an invoice.")
+    f = figures(db, i)
+    try:
+        part = parse_amount(amount, allow_zero=False) if amount else min(a.amount_cents, f["open"])
+    except ValueError as e:
+        raise validation(str(e), "amount") from None
+    part = min(part, a.amount_cents)
+    if part > f["open"]:
+        raise AppError(422, "OVER_OPEN_BALANCE", f"{fmt(part)} is more than the invoice's open balance of "
+                       f"{fmt(f['open'])}.")
+    rows = []
+    for x in t.live_allocations:
+        ai = AllocationIn(id=x.id, budget_id=x.budget_id, entity_id=x.entity_id, invoice_number=x.invoice_number,
+                          invoice_date=x.invoice_date, description=x.description, amount=fmt(x.amount_cents),
+                          notes=x.notes, fiscal_year_id=x.budget.fiscal_year_id)
+        if x.id == a.id:
+            ai = ai.model_copy(update={"apply_to": [ApplyToInvoiceIn(invoice_id=i.id, amount=fmt(part))],
+                                       "apply_extra": (extra or "BUDGET") if a.amount_cents > part else None,
+                                       "apply_extra_invoice_id": i.id})
+        rows.append(ai)
+    reg.update(db, ctx, t, TransactionUpdateIn(allocations=rows, confirmations=confirmations))
+    return None
 
 
 def unlink(db: Session, ctx, i: Invoice, link_id: int, move_to_budget_id: int, reason: str) -> None:
@@ -532,7 +718,8 @@ def refund(db: Session, ctx, i: Invoice, body) -> RegisterTransaction:
 
 
 def candidates(db: Session, ctx, i: Invoice) -> list[dict]:
-    """Deposit lines that could be linked: active, unlinked, on an Invoiced Income budget, not in a closed year."""
+    """Deposit lines that could be linked: active, unlinked, on an Income budget (#533: an ordinary one is moved onto
+    the invoice's budgets when linked), not in a closed year; the customer's first, then the newest."""
     from . import register as reg
     inv.require_module(db, ctx)
     ctx.require("invoice.link_payment")
@@ -541,7 +728,8 @@ def candidates(db: Session, ctx, i: Invoice) -> list[dict]:
          .join(Budget, Budget.id == TransactionAllocation.budget_id)
          .where(RegisterTransaction.workspace_id == ctx.workspace_id, RegisterTransaction.status == "ACTIVE",
                 RegisterTransaction.transaction_type == "DEPOSIT", TransactionAllocation.removed_at.is_(None),
-                Budget.invoiced_income.is_(True)).order_by(RegisterTransaction.transaction_date.desc()).limit(200))
+                Budget.budget_type == "INCOME", Budget.is_budget_zero.is_(False))
+         .order_by(RegisterTransaction.transaction_date.desc()).limit(400))
     linked = None
     for a in db.scalars(q):
         if linked is None:
@@ -551,5 +739,7 @@ def candidates(db: Session, ctx, i: Invoice) -> list[dict]:
         e = db.get(Entity, a.entity_id or a.transaction.parent_entity_id) if (a.entity_id or a.transaction.parent_entity_id) else None
         out.append({"allocation_id": a.id, "transaction_id": a.transaction_id, "date": a.transaction.transaction_date.isoformat(),
                     "amount": fmt(a.amount_cents), "entity": e.display_name if e else None,
-                    "budget": cat._budget_brief(db, a.budget_id), "description": a.description})
-    return out
+                    "budget": cat._budget_brief(db, a.budget_id), "description": a.description,
+                    "moves": not a.budget.invoiced_income, "customer": bool(e and e.id == i.customer_entity_id)})
+    out.sort(key=lambda r: (not r["customer"], r["moves"]))       # stable: newest first within each group
+    return out[:200]

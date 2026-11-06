@@ -111,6 +111,12 @@ PennyWarden 2.4.0 (in progress).
   the invoice reports. **Recently run** still opens a report with that run's choices; a run "to today" (or "as of
   today", or from the first of the month) reopens to the current day. Dates the screens fill in (a new invoice, a
   payment, report periods) are your calendar date; before, they could show tomorrow in the evening.
+- **Apply a Register deposit to an invoice (#533).** A deposit entered in the Register can pay invoices: **Apply to
+  invoice…** on an allocation lists the customer's open invoices (oldest due first) and, when saved, spreads the
+  applied part over each invoice's budgets and links it - while the deposit's other allocations stay as entered (one
+  check for an invoice and a fundraiser). Above the invoices, the rest stays on its budget, is kept as the customer's
+  credit, or is refunded at once. **Link a deposit…** on an invoice now also takes a deposit already saved on another
+  Income budget and moves it onto the invoice's budgets. Before, a deposit entered first could not reach an invoice.
 - **One payment for several invoices (#523).** When one check pays several invoices, a Register User records it once:
   tick the invoices in the list (**Record payment for N invoices…**) or choose **Record a payment…** and pick the
   customer — or type an invoice number from a payment stub. The amount received fills the balances oldest due date
