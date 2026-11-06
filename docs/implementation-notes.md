@@ -128,6 +128,20 @@ could not otherwise be corrected. Scope and safeguards:
   with a link; the variable picker completes dotted names.
 - Tests: `backend/tests/test_v210_organization.py` (6, including the data migration) and the E2E #126 and #312 steps.
 
+**2.4.0 — payment stub (#522, decided with Kyle 2026-11-04).** `TemplateConfig` (the invoice PDF template, JSON - no
+migration): `stub`, `statement_stub` (both off), `stub_payable` (`{ORG}`), `stub_address` (`{ORG}`, `{ORG.ADDRESS}`),
+`stub_window`, `stub_dx` / `stub_dy`. `invoice_template.draw_stub` draws in page coordinates: the cut line 3.5 in above
+the paper's bottom edge (the detached stub fits a #9 envelope, 3 7/8 in), drawn scissors, the instruction, *PAYMENT
+STUB*, Make checks payable to, the mailing address (or, with `stub_window`, inside a #9 window: 7/8 in from the left,
+1/2 in from the bottom, 4 1/2 × 1 1/8 in, as the stub settles at the envelope's bottom), and on the right the
+customer, customer number (`{CUSTOMER.ENTITY_NUMBER}`), dates, the invoice number (15 pt), Amount due (the balance on
+the PDF: the total, or what is left once paid or credited) and Amount enclosed. On an invoice `_StubAtBottom` takes the
+rest of the last page (a new page when less than the stub is left). The customer statement (a landscape report) gets a
+portrait last page with the stub listing its open invoices (`invoice_reports._with_statement_stub`), only when
+something is open. Proposed: **BR-INV-STUB-001** off by default, statements separately; **-002** at the bottom of the
+last page, never squeezed; **-003** the pay-to lines come from the organization profile and can be changed. ACs
+**AC-INV-STUB-001..004**. Tests: `backend/tests/test_v240_payment_stub.py` (5); E2E in the #482 test.
+
 **2.4.0 — email donation receipts and statements (#539, decided with Kyle 2026-11-06).** Reuses the invoice email
 code (`email._send_logged`: mail server, email log, audit). `services/donation_email.py`: `GET
 /api/donations/email/defaults` (Donations Setup's `email_subject` / `email_message` or `statement_email_*`, variables
@@ -143,6 +157,7 @@ uses them over the Email setup's; the From address is always the server account'
   **-002** emailing issues the document as printing does, and a refused email issues nothing; **-003** Invoices and
   Donations each may set their own Reply-To and From name (empty: the Email setup's). ACs **AC-DON-EM-001..004**.
   Tests: `backend/tests/test_v240_donation_email.py` (5).
+
 
 **2.4.0 — customer account credit (#534, decided with Kyle 2026-11-06).** A customer's credit is every
 `OVERPAYMENT` link not refunded (`figures().refundable`) on their invoices - existing ones included (migration `0087`
@@ -160,6 +175,7 @@ Statement: an *Account credit (today)* section. Audit `INVOICE_CREDIT_APPLIED` /
   first, up to what is owed, never from a Closed Fiscal Year; **-003** a Register User takes it back off, refunds it,
   or moves it (reason); **-004** the invoice, its PDF and the statement show it. ACs **AC-INV-CR-001..005**. Tests:
   `backend/tests/test_v240_customer_credit.py` (6); E2E in `#533`.
+
 **2.4.0 polish — selective restore sections (#535, Kyle 2026-11-06).** `partial_restore.SETTINGS_SECTIONS` gains
 `settings.invoices` (`invoice_settings`, `invoice_custom_field`), `settings.email` (`email_settings`),
 `settings.logos` (`organization_logo`) and `settings.signers` (`check_signer`), out of `settings.general` and

@@ -18,3 +18,21 @@ as you type.
   (needs two-sided printing).
 
 **Save template** applies it to every invoice PDF made from now on; PDFs already kept for sent invoices don't change.
+
+## Payment stub
+
+Turn on **Payment stub (detach and return with payment)** to print a stub at the bottom of the invoice's last page,
+below a dashed cut line with scissors and *Please detach and return this portion with your payment.* (When the invoice
+doesn't leave room, the stub prints on a page of its own.) The stub shows:
+
+- the **invoice number** in large type — what a Register User types into **Record a payment…** to find the invoice;
+- the invoice and due dates, the customer and their **customer number**;
+- the **amount due** when the PDF was made, and a blank **Amount enclosed** line;
+- **Make checks payable to** and the mailing address — filled from the organization profile (`{ORG}`,
+  `{ORG.ADDRESS}`) and editable here.
+
+**Place the address for a #9 return envelope window** puts the mailing address where a #9 envelope's window shows it
+(move it right or down if your envelopes differ), so the customer can mail the stub in your return envelope.
+
+**Payment stub on customer statements** is its own setting: the statement gets a last page with a stub listing the
+customer's open invoices and the total due. Both are off until you turn them on; invoices already sent keep their PDFs.

@@ -4982,6 +4982,13 @@ test("2.4.0 polish (#482, #481, #477, #480): turning Invoices on shows Invoices 
   await page.getByRole("button", { name: `Move ${k0} up` }).click();      // and back with the arrow
   await expect.poll(colKeys).toEqual(before);
   await page.screenshot({ path: "e2e-screenshots/light-invoice-pdf-setup.png" });
+  // #522: the payment stub's settings show once it is turned on (not saved: the later tests keep the default)
+  const stub = page.getByTestId("inv-stub");
+  await expect(stub.getByLabel("Make checks payable to")).toHaveCount(0);
+  await stub.getByLabel("Payment stub (detach and return with payment) on invoices").check();
+  await expect(stub.getByLabel("Make checks payable to")).toHaveValue("{ORG}");
+  await stub.getByLabel("Place the address for a #9 return envelope window").check();
+  await expect(stub.getByLabel("Address – down (in)")).toBeVisible();
   if (!wasOn) {                                            // leave the module as it was
     await page.goto("/about/general");
     await page.getByLabel("Invoices module").uncheck();
