@@ -12,6 +12,7 @@ import { LivePreview, PatternInput, PdfViewer, PinToggle, Section, SetupLayout, 
 import { DocFocus, DocumentEditor } from "./CheckDocuments";
 import { EnvelopeLibrary, ReceiptEnvelopePanel } from "./Envelopes";
 import { LogoChoice } from "../LogoChoice";
+import { EmailDocumentButton } from "./Email";
 
 /** 2.3.0 (#393): details that include the EIN while it is turned off for donations - confirmed, with a reason. */
 export const usesEin = (text: string) => /\{ORG[._]EIN\}/.test(text || "");
@@ -233,6 +234,20 @@ export default function DonationSetup() {
             <p className="hint">The preview beside these settings (or at the top, on a narrow screen) can show the statement: choose <i>Year-end statement</i> there.</p>
           </Section>
           {/* 2.2.0 (#325): the cover letter's window-envelope options (#177) and fold marks (#247) */}
+          {/* 2.4.0 (#539): receipts and statements by email, through the mail server set up for Invoices */}
+          <Section id="email" scope="pw-donations" title="Email">
+            <p className="hint">Receipts and year-end statements can be emailed to the donor when the mail server is set up (System/About → Email); the
+              Email buttons don't show until then. Emailing issues the receipt or statement just as printing does. The subject and message below are where
+              each email starts; they can be changed before sending. Variables: {"{DONOR_NAME}"}, {"{ORG.NAME}"}, {"{AMOUNT}"} (receipts), {"{YEAR}"} and {"{TOTAL}"} (statements).</p>
+            <div className="row form-row">
+              <Field label="Reply-To (optional)" hint="Where donors' replies go; empty = the Email setup's."><input type="email" maxLength={254} value={cfg.email_reply_to || ""} onChange={(e) => set("email_reply_to", e.target.value)} placeholder="donations@example.org" /></Field>
+              <Field label="From name (optional)" hint="The sender name donors see; empty = the Email setup's. The From address is always the mail server's."><input maxLength={120} value={cfg.email_from_name || ""} onChange={(e) => set("email_from_name", e.target.value)} /></Field>
+            </div>
+            <Field label="Receipt email subject"><input maxLength={200} value={cfg.email_subject} onChange={(e) => set("email_subject", e.target.value)} /></Field>
+            <Field label="Receipt email message"><textarea rows={5} maxLength={4000} value={cfg.email_message} onChange={(e) => set("email_message", e.target.value)} /></Field>
+            <Field label="Statement email subject"><input maxLength={200} value={cfg.statement_email_subject} onChange={(e) => set("statement_email_subject", e.target.value)} /></Field>
+            <Field label="Statement email message"><textarea rows={5} maxLength={4000} value={cfg.statement_email_message} onChange={(e) => set("statement_email_message", e.target.value)} /></Field>
+          </Section>
           <Section id="win" scope="pw-donations" title="Window envelope and fold marks">
             <div className="row form-row">
               <Field label="Address for a window envelope">
@@ -283,7 +298,8 @@ const cents = (s: string): number | null => {
 };
 
 export function DonationReceiptDialog({ txn, onClose, onChanged }: { txn: any; onClose: () => void; onChanged: () => void }) {
-  const { can } = useMe();
+  const { me, can } = useMe();
+  const [emailed, setEmailed] = useState<string | null>(null);   // 2.4.0 (#539)
   const canPrint = can("donation.print");
   const [d, setD] = useState<any>(null);
   const [lines, setLines] = useState<Line[]>([]);
@@ -385,6 +401,13 @@ export function DonationReceiptDialog({ txn, onClose, onChanged }: { txn: any; o
       setPdf(blob, "receipt-preview.pdf"); setViewing(`Preview – ${donor.name}`);
     } catch (x) { setErr(x); }
   };
+  // 2.4.0 (#539): Email… issues the receipt like Print does and sends it (only when the mail server is set up)
+  const emailButton = (g: any, primary = false) => (
+    <EmailDocumentButton ready={!!me?.email_ready && !dirty} className={primary ? "" : undefined} attachment="the donation receipt (PDF)"
+      defaultsUrl={`/api/donations/email/defaults?kind=RECEIPT&transaction_id=${txn.id}&donor_entity_id=${g.entity_id}`}
+      url={`/api/donations/transactions/${txn.id}/receipts/email`} extra={{ donor_entity_id: g.entity_id, ...signerBody(g) }} run={run}
+      onSent={(r) => { setEmailed(`Receipt ${r.number} emailed to ${g.name}.`); onChanged(); load(); }} />
+  );
   /** Print saves first, so one click saves and prints */
   const print = async (donor: any) => {
     setErr(null);
@@ -484,6 +507,7 @@ export function DonationReceiptDialog({ txn, onClose, onChanged }: { txn: any; o
                       <div className="actions left">
                         <button onClick={() => preview(g)}>Preview</button>
                         <button onClick={() => print(g)}>{printLabel(g)}</button>
+                        {emailButton(g)}
                       </div>
                     ) : null}
                     {envFor === g.entity_id && g.saved?.donation_id ? <ReceiptEnvelopePanel donationId={g.saved.donation_id} onChanged={onChanged} /> : null}
@@ -499,7 +523,9 @@ export function DonationReceiptDialog({ txn, onClose, onChanged }: { txn: any; o
             {groups.length === 1 && canPrintNow ? <>
               <button onClick={() => preview(groups[0])}>Preview</button>
               <button className="primary" onClick={() => print(groups[0])}>{printLabel(groups[0])}</button>
+              {emailButton(groups[0], true)}
             </> : null}
+            {emailed ? <span className="hint" role="status" data-testid="receipt-emailed">{emailed}</span> : null}
             {saved && !dirty ? <span className="hint" role="status">Saved.</span> : dirty && editable ? <span className="hint">Unsaved changes{canPrintNow && groups.length ? " (Print saves them first)" : ""}</span> : null}
             <span className="spacer" />
             <button onClick={onClose}>Close</button>

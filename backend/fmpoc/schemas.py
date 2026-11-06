@@ -648,6 +648,8 @@ class InvoiceSetupIn(In):                    # 2.4.0 (#253): the Administrator's
     terms_text: OptStr(200) = None
     default_notes: OptStr(2000) = None
     overdue_reminder_days: int | None = None      # 2.4.0 (#255): reminder to Invoice Managers, due date + N days
+    email_reply_to: OptStr(254) = None            # 2.4.0 (#539): empty = the Email setup's
+    email_from_name: OptStr(120) = None
 
 
 class InvoiceWriteOffDecisionIn(In):          # 2.4.0 (#253)

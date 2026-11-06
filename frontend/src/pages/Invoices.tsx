@@ -270,13 +270,14 @@ export function InvoiceSetup() {
     }, 250);
     return () => { live = false; window.clearTimeout(t); };
   }, [pattern]);
-  useEffect(() => { api.get("/api/invoices/setup").then((x) => { setO(x); setV({ number_pattern: x.number_pattern, terms_days: String(x.terms_days), terms_text: x.terms_text || "", default_notes: x.default_notes || "", overdue_reminder_days: String(x.overdue_reminder_days ?? 0) }); }, setErr); }, []);
+  useEffect(() => { api.get("/api/invoices/setup").then((x) => { setO(x); setV({ number_pattern: x.number_pattern, terms_days: String(x.terms_days), terms_text: x.terms_text || "", default_notes: x.default_notes || "", overdue_reminder_days: String(x.overdue_reminder_days ?? 0), email_reply_to: x.email_reply_to || "", email_from_name: x.email_from_name || "" }); }, setErr); }, []);
   if (!o || !v) return <><ErrorBox error={err} />{err ? null : <Loading />}</>;
   const set = (k: string) => (e: any) => { setSaved(false); setV({ ...v, [k]: e.target.value }); };
   const save = async (e: FormEvent) => {
     e.preventDefault();
     setErr(null);
-    try { const x = await api.put("/api/invoices/setup", { ...v, terms_days: Number(v.terms_days), overdue_reminder_days: Number(v.overdue_reminder_days) }); setO(x); setSaved(true); } catch (x) { setErr(x); }
+    try { const x = await api.put("/api/invoices/setup", { ...v, terms_days: Number(v.terms_days), overdue_reminder_days: Number(v.overdue_reminder_days),
+      email_reply_to: v.email_reply_to || null, email_from_name: v.email_from_name || null }); setO(x); setSaved(true); } catch (x) { setErr(x); }
   };
   return (
     <div>
@@ -297,6 +298,11 @@ export function InvoiceSetup() {
           <Field label="Overdue reminder (days after the due date)" hint="Invoice Managers see a reminder for each unpaid invoice from its due date plus this many days (0 = on the due date).">
             <input type="number" min={0} max={365} value={v.overdue_reminder_days} onChange={set("overdue_reminder_days")} />
           </Field>
+          {/* 2.4.0 (#539): invoice and statement emails can reply elsewhere and use their own sender name */}
+          <div className="row fields">
+            <Field label="Email Reply-To (optional)" hint="Where customers' replies go; empty = the Email setup's."><input type="email" maxLength={254} placeholder="invoicing@example.org" value={v.email_reply_to} onChange={set("email_reply_to")} /></Field>
+            <Field label="Email From name (optional)" hint="The sender name customers see; empty = the Email setup's. The From address is always the mail server's."><input maxLength={120} value={v.email_from_name} onChange={set("email_from_name")} /></Field>
+          </div>
           <div className="actions"><button className="primary" type="submit">Save</button>{saved ? <span role="status" className="muted">Saved.</span> : null}</div>
         </GuardedForm>
       </section>

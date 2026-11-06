@@ -129,6 +129,18 @@ class ReceiptConfig(BaseModel):
     # cover letters; a setup saved as RIGHT (before #520) was above and stays so
     logo_position: Literal["LEFT", "CENTER", "RIGHT_ABOVE", "RIGHT_BESIDE"] = "LEFT"
     statement_logo_source: Literal["FOLLOW", "NONE", "ORG", "OWN"] = "FOLLOW"
+    # 2.4.0 (#539): the email that carries a receipt / a year-end statement (the mail server is the one set up for
+    # Invoices); {DONOR_NAME}, {ORG.NAME}, {AMOUNT} (receipts), {YEAR} and {TOTAL} (statements); editable on each send
+    email_reply_to: str = Field(default="", max_length=254)        # empty: the Email setup's (#539)
+    email_from_name: str = Field(default="", max_length=120)
+    email_subject: str = Field(default="Your donation receipt from {ORG.NAME}", max_length=200)
+    email_message: str = Field(default="Dear {DONOR_NAME},\n\nThank you for your gift of {AMOUNT} to {ORG.NAME}. Your "
+                                       "receipt is attached; please keep it for your records.\n\nWith gratitude,\n"
+                                       "{ORG.NAME}", max_length=4000)
+    statement_email_subject: str = Field(default="Your {YEAR} giving statement from {ORG.NAME}", max_length=200)
+    statement_email_message: str = Field(default="Dear {DONOR_NAME},\n\nThank you for your support of {ORG.NAME} during "
+                                                 "{YEAR}. Your year-end giving statement is attached.\n\nWith "
+                                                 "gratitude,\n{ORG.NAME}", max_length=4000)
 
     @field_validator("logo_position", mode="before")
     @classmethod
@@ -280,6 +292,9 @@ def save_config(db: Session, ctx, data: dict) -> ReceiptConfig:
     signers.require_tagged(db, ctx, cfg.statement_signer_id, signers.DONATIONS, "statement_signer_id")
     if cfg.signature_mode != "NONE" and cfg.signer_id is None:
         raise validation("Choose the signer, or set the signature to None.", "signer_id")
+    if cfg.email_reply_to:                             # 2.4.0 (#539): a real address, or empty
+        from .email import _addr
+        _addr(cfg.email_reply_to, "email_reply_to")
     row = _settings_row(db, ctx.workspace_id)
     before = json.loads(row.config_json) if row else None
     if row is None:
@@ -1009,7 +1024,9 @@ def _store_donation_copy(db: Session, ctx, settings, d: Donation, kind_type: str
 
 
 def print_donation(db: Session, ctx, settings, d: Donation, confirmations: list[str],
-                   km=None, signer_id: int | None = None) -> tuple[bytes, DonationReceipt]:
+                   km=None, signer_id: int | None = None, before_commit=None) -> tuple[bytes, DonationReceipt]:
+    """`before_commit(printed pdf, receipt)` (2.4.0 #539: emailing) runs before the receipt is committed; if it raises,
+    the receipt isn't issued."""
     c = _compose(db, ctx, d, signer_id)
     cfg, data, kind, number, year, seq, cur, sha, content, e = (c[k] for k in ("cfg", "data", "kind", "number",
                                                                                 "year", "seq", "cur", "sha", "c", "e"))
@@ -1056,6 +1073,8 @@ def print_donation(db: Session, ctx, settings, d: Donation, confirmations: list[
                   "signature": data.signature.mode if data.signature.name else "NONE",           # 2.3.0 (#395)
                   "signer_id": r.signer_id})                                                    # 2.3.0 polish
     try:
+        if before_commit is not None:
+            before_commit(printed, r)
         db.commit()
     except Exception:
         db.rollback()
@@ -1322,14 +1341,15 @@ def preview_receipt(db: Session, ctx, t: RegisterTransaction, donor_entity_id: i
 
 
 def print_receipt(db: Session, ctx, settings, t: RegisterTransaction, donor_entity_id: int,
-                  confirmations: list[str], km=None, signer_id: int | None = None) -> tuple[bytes, DonationReceipt]:
+                  confirmations: list[str], km=None, signer_id: int | None = None,
+                  before_commit=None) -> tuple[bytes, DonationReceipt]:
     if t.status != "ACTIVE":
         raise conflict("NOT_PRINTABLE", "This deposit is void - its receipts are void and no receipt can be printed.")
     if reg.is_closed_protected(db, t):
         raise conflict("FISCAL_YEAR_CLOSED", "The deposit belongs to a Closed Fiscal Year and cannot be printed. Its "
                                              "receipts are attached to it.")
     return print_donation(db, ctx, settings, _deposit_donation(db, t, donor_entity_id), confirmations, km=km,
-                          signer_id=signer_id)
+                          signer_id=signer_id, before_commit=before_commit)
 
 
 # ------------------------------------------------------------------ 2.2.0 (#256): fundraiser donation buckets

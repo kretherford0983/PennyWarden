@@ -121,6 +121,11 @@ PennyWarden 2.4.0 (in progress).
   the invoice reports. **Recently run** still opens a report with that run's choices; a run "to today" (or "as of
   today", or from the first of the month) reopens to the current day. Dates the screens fill in (a new invoice, a
   payment, report periods) are your calendar date; before, they could show tomorrow in the evening.
+- **Email donation receipts and statements (#539).** With the mail server set up (the one Invoices use), donation
+  receipts and year-end statements have an **Email…** button (none when email isn't set up). The email starts from a
+  subject and message set in Donations Setup and goes to the donor's address; sending issues the receipt or statement
+  just as printing does. Invoices Setup and Donations Setup can each have their own **Reply-To** and **From name**
+  (empty uses the Email setup's), for example invoicing@… and donations@….
 - **Customer credit (#534).** An overpayment not refunded is the customer's **account credit**. It is applied
   automatically when their next invoice is marked as sent (oldest first), shown on the invoice and its PDF (**New
   charges, Account credit applied, Total due**), on their other invoices, in Record a payment and on their statement. A

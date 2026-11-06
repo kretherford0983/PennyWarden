@@ -1427,6 +1427,9 @@ class InvoiceSettings(Base):
     terms_text: Mapped[str | None] = mapped_column(String(200), nullable=True)
     default_notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
     overdue_reminder_days: Mapped[int] = mapped_column(Integer, default=0, server_default="0")   # 2.4.0 (#255)
+    # 2.4.0 (#539): invoice emails' Reply-To and From name (empty: the Email setup's)
+    email_reply_to: Mapped[str | None] = mapped_column(String(254), nullable=True)
+    email_from_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
     template_json: Mapped[str | None] = mapped_column(Text, nullable=True)        # 2.4.0 (#253 part 3): PDF template
     logo_png: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
     logo_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
@@ -1579,7 +1582,7 @@ class EmailLog(Base):
     __tablename__ = "email_log"
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
-    kind: Mapped[str] = mapped_column(String(12))                          # INVOICE | STATEMENT | TEST
+    kind: Mapped[str] = mapped_column(String(12))                          # INVOICE | STATEMENT | TEST | RECEIPT | DONOR_STMT (#539)
     invoice_id: Mapped[int | None] = mapped_column(ForeignKey("invoice.id"), nullable=True, index=True)
     customer_entity_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     to_address: Mapped[str] = mapped_column(String(1000))

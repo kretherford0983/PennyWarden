@@ -4433,6 +4433,7 @@ test("#325: a receipt before the money and an item on the Donations page, then C
   await dlg.getByRole("button", { name: "Save donation" }).click();
   const ed = page.getByRole("dialog", { name: /Donation #\d+ – Sample Donor Alpha/ });
   await expect(ed.getByText("Awaiting deposit")).toBeVisible();
+  await expect(ed.getByRole("button", { name: "Email receipt…" })).toHaveCount(0);      // #539: no mail server set up
   // not received: the receipt prints the date blank, after a confirmation
   await ed.getByRole("button", { name: "Print receipt" }).click();
   const conf = page.getByRole("dialog", { name: "Confirmation required" });
