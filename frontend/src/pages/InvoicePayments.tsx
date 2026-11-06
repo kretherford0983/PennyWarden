@@ -168,3 +168,82 @@ export function MultiPaymentForm({ invoiceIds, customerIds, onClose, onDone }: {
     </Modal>
   );
 }
+
+// ------------------------------------------------------------------ 2.4.0 (#533): Apply to invoice (Register form)
+export type Applied = { invoices: { invoice_id: number; number: string; amount: string }[]; extra: "" | "BUDGET" | "CREDIT" | "REFUND"; extra_invoice_id: string };
+
+/** The open invoices of the allocation's entity; the allocation's amount fills them oldest due date first; the extra
+ *  above them stays on the line's budget, is kept as credit (an overpayment on an invoice) or is refunded at once. */
+export function ApplyToInvoiceModal({ entityId, entityName, amount, current, onClose, onApply }: {
+  entityId: string; entityName: string; amount: string; current?: Applied; onClose: () => void; onApply: (a: Applied | null) => void;
+}) {
+  const [rows, setRows] = useState<Row[] | null>(null);
+  const [total, setTotal] = useState(amount);
+  const [extra, setExtra] = useState<Applied["extra"]>(current?.extra || "BUDGET");
+  const [overTo, setOverTo] = useState(current?.extra_invoice_id || "");
+  const [err, setErr] = useState<unknown>(null);
+  useEffect(() => {
+    api.get(`/api/invoices/payments/open?customer_entity_id=${entityId}`).then((r: any) => {
+      let got: Row[] = (r.invoices as any[]).map((x) => ({ ...x, customer: r.customer.name, on: true, amount: "" }));
+      const all = got.reduce((s, x) => s + (cents(x.open) || 0), 0);
+      const amt = cents(amount) ?? all;
+      if (current?.invoices.length) {
+        got = got.map((x) => { const c = current.invoices.find((y) => y.invoice_id === x.id); return { ...x, on: !!c, amount: c ? c.amount : "" }; });
+      } else got = spread(got, amt);
+      setTotal(show(amt));
+      setRows(got);
+      if (!overTo && got.length) setOverTo(String(got[got.length - 1].id));
+    }, setErr);
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!rows) return <Modal title="Apply to invoice" onClose={onClose}><ErrorBox error={err} />{err ? null : <Loading />}</Modal>;
+  const t = cents(total);
+  const applied = rows.filter((r) => r.on).reduce((s, r) => s + (cents(r.amount) || 0), 0);
+  const bad = rows.some((r) => r.on && ((cents(r.amount) ?? -1) < 0 || (cents(r.amount) || 0) > (cents(r.open) || 0)));
+  const left = t !== null ? t - applied : 0;
+  const ok = t !== null && applied > 0 && !bad && left >= 0;
+  const apply = () => onApply({
+    invoices: rows.filter((r) => r.on && (cents(r.amount) || 0) > 0).map((r) => ({ invoice_id: r.id, number: r.number, amount: show(cents(r.amount) || 0) })),
+    extra: left > 0 ? extra : "", extra_invoice_id: overTo,
+  });
+  return (
+    <Modal title="Apply to invoice" onClose={onClose} wide>
+      <div data-testid="apply-to-invoice">
+        <p className="hint">{entityName}'s open invoices, oldest due date first. When the deposit is saved, the part applied to each invoice is spread over
+          its lines' Invoiced Income budgets and tax (as Record payment does) and linked to it.</p>
+        {!rows.length ? <p className="muted">{entityName} has no open invoices.</p> : (
+          <>
+            <Field label="Amount of this allocation"><input aria-label="Allocation amount to apply" inputMode="decimal" value={total}
+              onChange={(e) => { setTotal(e.target.value); const c = cents(e.target.value); if (c !== null) setRows(spread(rows, c)); }} /></Field>
+            <table className="table compact">
+              <thead><tr><th /><th>Invoice</th><th>Due</th><th className="num">Open</th><th className="num">Apply</th></tr></thead>
+              <tbody>{rows.map((r) => (
+                <tr key={r.id}>
+                  <td><input type="checkbox" aria-label={`Apply to ${r.number}`} checked={r.on}
+                    onChange={(e) => { const n = rows.map((x) => (x.id === r.id ? { ...x, on: e.target.checked } : x)); setRows(t !== null ? spread(n, t) : n); }} /></td>
+                  <td>{r.number}</td><td>{r.due_date}</td><td className="num">{money(r.open)}</td>
+                  <td className="num"><input aria-label={`Apply amount for ${r.number}`} inputMode="decimal" disabled={!r.on} value={r.amount} style={{ width: "8em", textAlign: "right" }}
+                    onChange={(e) => setRows(rows.map((x) => (x.id === r.id ? { ...x, amount: e.target.value } : x)))} /></td>
+                </tr>))}</tbody>
+            </table>
+            {bad ? <p className="error" role="alert">An invoice's part can't be more than its open balance.</p> : null}
+            {t !== null && left < 0 ? <p className="error" role="alert">{money(show(applied))} is applied but the allocation is {money(show(t))}.</p> : null}
+            {left > 0 ? (
+              <fieldset data-testid="apply-extra"><legend>The other {money(show(left))}</legend>
+                <label className="check"><input type="radio" name="apply-extra" checked={extra === "BUDGET"} onChange={() => setExtra("BUDGET")} /> Keep it on this allocation's budget (e.g. a fundraiser or a donation)</label>
+                <label className="check"><input type="radio" name="apply-extra" checked={extra === "CREDIT"} onChange={() => setExtra("CREDIT")} /> Overpayment kept as the customer's credit</label>
+                <label className="check"><input type="radio" name="apply-extra" checked={extra === "REFUND"} onChange={() => setExtra("REFUND")} /> Overpayment refunded (a refund withdrawal is recorded with the deposit)</label>
+                {extra !== "BUDGET" ? <Field label="On invoice"><select aria-label="Overpayment on invoice" value={overTo} onChange={(e) => setOverTo(e.target.value)}>
+                  {rows.filter((r) => r.on).map((r) => <option key={r.id} value={r.id}>{r.number}</option>)}</select></Field> : null}
+              </fieldset>
+            ) : null}
+          </>
+        )}
+        <div className="actions">
+          {current ? <button type="button" onClick={() => onApply(null)}>Don't apply</button> : null}
+          <button type="button" onClick={onClose}>Cancel</button>
+          <button type="button" className="primary" disabled={!ok} onClick={apply}>Apply</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}

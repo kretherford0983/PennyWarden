@@ -341,6 +341,11 @@ class CloseAccountIn(In):
 
 
 # ------------------------------------------------------------------ register
+class ApplyToInvoiceIn(In):                  # 2.4.0 (#533): part of a deposit allocation paying an invoice
+    invoice_id: int
+    amount: Amount
+
+
 class AllocationIn(In):
     id: int | None = None
     budget_id: int
@@ -353,6 +358,11 @@ class AllocationIn(In):
     notes: OptStr(4000) = None
     no_attachment: bool | None = None  # v1.2.1 per-allocation "no attachment will be provided"
     no_attachment_reason: OptStr(500) = None
+    # 2.4.0 (#533): Apply to invoice - the applied part becomes the invoices' splits (linked) when saved; the extra
+    # above them stays on this budget (BUDGET), is an overpayment kept as credit (CREDIT) or refunded (REFUND)
+    apply_to: Annotated[list[ApplyToInvoiceIn] | None, Field(max_length=50)] = None
+    apply_extra: Literal["BUDGET", "CREDIT", "REFUND"] | None = None
+    apply_extra_invoice_id: int | None = None
 
 
 RequestKeyStr = Annotated[str | None, StringConstraints(pattern=r"^[A-Za-z0-9-]{16,64}$")]
@@ -676,6 +686,11 @@ class InvoiceMultiPaymentIn(In):              # 2.4.0 (#523): one deposit paying
 class InvoiceLinkIn(In):                      # 2.4.0 (#254)
     allocation_id: int
     confirmations: Confirmations = []
+    # 2.4.0 (#533): a line on an ordinary Income budget is moved onto the invoice's budgets; `amount` (default: up to
+    # the open balance) is the invoice's part, and the rest stays on its budget (BUDGET) or is an overpayment kept as
+    # credit (CREDIT) or refunded (REFUND)
+    amount: Amount | None = None
+    extra: Literal["BUDGET", "CREDIT", "REFUND"] | None = None
 
 
 class InvoiceUnlinkIn(In):                    # 2.4.0 (#254)
