@@ -144,6 +144,17 @@ Statement: an *Account credit (today)* section. Audit `INVOICE_CREDIT_APPLIED` /
   first, up to what is owed, never from a Closed Fiscal Year; **-003** a Register User takes it back off, refunds it,
   or moves it (reason); **-004** the invoice, its PDF and the statement show it. ACs **AC-INV-CR-001..005**. Tests:
   `backend/tests/test_v240_customer_credit.py` (6); E2E in `#533`.
+**2.4.0 polish — selective restore sections (#535, Kyle 2026-11-06).** `partial_restore.SETTINGS_SECTIONS` gains
+`settings.invoices` (`invoice_settings`, `invoice_custom_field`), `settings.email` (`email_settings`),
+`settings.logos` (`organization_logo`) and `settings.signers` (`check_signer`), out of `settings.general` and
+`settings.payments`; the Data label names Invoices and the catalog (which stay in Data: they point at budgets and
+entities). A kept mail server password is re-encrypted when the keys differ (it wasn't before: `email_settings` was
+never in the kept set). `_clean_references` also clears signer ids in `check_style` / `check_document` /
+`donation_settings` configs that the result's signer list doesn't have, takes custom field ids off products that
+the result's Invoices Setup doesn't have, and moves `invoice_settings.next_seq` past the highest invoice `seq` (BR-001:
+a number is never reused); each is a line in the restore report. Proposed: **BR-RST-010** these four sections restore
+on their own; **-011** cross-section references are cleared and reported, invoice numbering never goes back.
+Tests: `backend/tests/test_v240_restore_sections.py` (4).
 
 **2.4.0 — One current user guide, archived release notes, in-app Help and the guide on pennywarden.org (#473,
 decided with Kyle 2026-11-02).** The `docs/user-guide-v*.md` files were "what's new" notes, not full guides; a new
