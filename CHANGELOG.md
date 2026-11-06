@@ -106,6 +106,10 @@ PennyWarden 2.4.0 (in progress).
   (for example **Serial number**); the Invoice Manager ticks it on those products in the catalog. It is asked on each
   invoice line that uses such a product — required if the field says so — and prints after the line's description
   when *show on PDF* is on.
+- **Restore settings piece by piece (#535).** In **What to restore**, Invoices Setup, Email (the mail server),
+  Organization logos and Signers are now sections of their own (they were part of General and Payments Setup). If a
+  restored Payments or Donations Setup names a signer that isn't in the restored signer list, that choice is cleared
+  and the restore says so; the next invoice number always follows the highest invoice, so no number is used twice.
 - **Reports open with their defaults (#528).** A report opened from the Reports catalog starts with its usual choices
   (today's date, this month, the current Fiscal Year) instead of your last run's - which left newer invoices out of
   the invoice reports. **Recently run** still opens a report with that run's choices; a run "to today" (or "as of

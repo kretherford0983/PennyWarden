@@ -6,9 +6,11 @@ A backup holds four domains (Kyle, 2026-10-22/24):
   checks, each account's check style and sheet counter), Fundraisers and Donations. **Never split**: the records refer
   to each other, so Data is restored or kept as one unit, attachments included.
 * **settings** - in sections: ``settings.general`` (the organization profile and name, optional modules, the audit
-  review signature wording), ``settings.backups`` (backup reminder, scheduled backups and their history),
-  ``settings.payments`` (check styles, signers, letter and envelope templates), ``settings.donations``,
-  ``settings.branding`` (2.2.0, #280).
+  review signature wording, report grouping), ``settings.backups`` (backup reminder, scheduled backups and their
+  history), ``settings.payments`` (check styles, letter and envelope templates), ``settings.donations``,
+  ``settings.branding`` (2.2.0, #280); 2.4.0 (#535, Kyle 2026-11-06): ``settings.invoices`` (Invoices Setup),
+  ``settings.email`` (the mail server), ``settings.logos`` (the organization logos) and ``settings.signers`` (the
+  shared signer list) - each its own section.
 * **reminders** - organization and personal reminders.
 * **users** - users, roles, passwords, two-step verification, security questions and notices, personal preferences,
   each user's printer settings.
@@ -33,6 +35,7 @@ full restore (safety copy in pre-restore/, rollback on failure):
 """
 from __future__ import annotations
 
+import json
 import re
 import shutil
 import sqlite3
@@ -54,20 +57,24 @@ DATA_TABLES = (
     "email_log",                                                                          # 2.4.0 (#249)
 )
 SETTINGS_SECTIONS = {
-    "settings.general": {"tables": ("signature_template", "report_grouping",     # 2.3.0 (#376): report grouping
-                                    "invoice_settings", "invoice_custom_field",   # 2.4.0 (#253): Invoices Setup
-                                    "email_settings",                             # 2.4.0 (#249): mail server
-                                    "organization_logo"),                         # 2.4.0 polish (#503)
+    "settings.general": {"tables": ("signature_template", "report_grouping"),     # 2.3.0 (#376): report grouping
                          "workspace": ("name", "fundraisers_enabled", "checks_enabled", "donations_enabled", "invoices_enabled"),
                          "label": "General (organization profile, optional modules)"},
     "settings.backups": {"tables": ("backup_schedule", "backup_run"), "workspace": ("backup_warning_days",),
                          "label": "Backups (backup reminder, scheduled backups)"},
-    "settings.payments": {"tables": ("check_style", "check_signer", "check_document"), "workspace": (),
-                          "label": "Payments Setup (check styles, signers, letters and envelopes)"},
+    "settings.payments": {"tables": ("check_style", "check_document"), "workspace": (),
+                          "label": "Payments Setup (check styles, letters and envelopes)"},
     "settings.donations": {"tables": ("donation_settings",), "workspace": (), "label": "Donations Setup"},
     # 2.2.0 (#280)
     "settings.branding": {"tables": ("branding_settings",), "workspace": (),
                           "label": "Branding (report and presentation colors, logos, footer text)"},
+    # 2.4.0 (#535, Kyle 2026-11-06): out of General and Payments Setup into their own sections
+    "settings.invoices": {"tables": ("invoice_settings", "invoice_custom_field"), "workspace": (),
+                          "label": "Invoices Setup (numbering, terms, the invoice PDF, custom fields)"},
+    "settings.email": {"tables": ("email_settings",), "workspace": (), "label": "Email (the mail server)"},
+    "settings.logos": {"tables": ("organization_logo",), "workspace": (), "label": "Organization logos"},
+    "settings.signers": {"tables": ("check_signer",), "workspace": (),
+                         "label": "Signers (checks, letters and donation receipts, with their signature images)"},
 }
 REMINDER_TABLES = ("reminder",)
 USER_TABLES = ("app_user", "user_role", "user_mfa", "mfa_recovery_code", "user_security_question", "security_notice",
@@ -78,7 +85,7 @@ DATA_WORKSPACE_COLUMNS = ("next_entity_number",)
 
 DOMAINS = ("data", *SETTINGS_SECTIONS, "reminders", "users")
 LABELS = {"data": "Data (Fiscal Years, budgets, entities, bank accounts, the register and attachments, Payments "
-                  "records, Fundraisers, Donations)",
+                  "records, Fundraisers, Donations, Invoices and their catalog)",
           **{k: v["label"] for k, v in SETTINGS_SECTIONS.items()},
           "reminders": "Reminders (organization and personal)",
           "users": "Users (passwords, two-step verification, security questions, preferences, printer settings)"}
@@ -151,10 +158,15 @@ def domains_in(db_path: Path) -> list[dict]:
                      "fundraisers": _count(con, "fundraiser")},
             "settings.general": {"signature_wordings": _count(con, "signature_template")},
             "settings.backups": {"schedules": _count(con, "backup_schedule"), "runs": _count(con, "backup_run")},
-            "settings.payments": {"check_styles": _count(con, "check_style"), "signers": _count(con, "check_signer"),
+            "settings.payments": {"check_styles": _count(con, "check_style"),
                                   "letters_and_envelopes": _count(con, "check_document")},
             "settings.donations": {"settings": _count(con, "donation_settings")},
             "settings.branding": {"settings": _count(con, "branding_settings")},   # 2.2.0 (#280)
+            "settings.invoices": {"settings": _count(con, "invoice_settings"),     # 2.4.0 (#535)
+                                  "custom_fields": _count(con, "invoice_custom_field")},
+            "settings.email": {"settings": _count(con, "email_settings")},
+            "settings.logos": {"logos": _count(con, "organization_logo")},
+            "settings.signers": {"signers": _count(con, "check_signer")},
             "reminders": {"reminders": _count(con, "reminder")},
             "users": {"users": _count(con, "app_user")},
         }
@@ -337,8 +349,10 @@ def build(current_db: Path, current_key: crypto.KeyMaterial | None, backup_db: P
                 kept_tables.add("bank_account")
             # two-step secrets always: kept users (all of them, or those missing from the backup) carry theirs
             kept_tables.add("user_mfa")
-            if "settings.payments" not in chosen:
+            if "settings.signers" not in chosen:          # 2.4.0 (#535): their own section
                 kept_tables.add("check_signer")
+            if "settings.email" not in chosen:            # the kept mail server password (#249, #535)
+                kept_tables.add("email_settings")
             facts["reencrypted"] = _reencrypt(con, current_key, backup_key, kept_tables)
         else:
             facts["reencrypted"] = None
@@ -451,6 +465,45 @@ def _clean_references(con) -> dict:
         n += con.execute(f"UPDATE main.reminder SET link_type = NULL, link_id = NULL WHERE link_type = ? AND link_id "
                          f'NOT IN (SELECT id FROM main."{table}")', (lt,)).rowcount
     out["reminder_links"] = n
+    # 2.4.0 (#535): signers named by Payments / Donations Setup that the restored signer list doesn't have
+    signers = {r[0] for r in con.execute("SELECT id FROM main.check_signer")}
+    n = 0
+    for table, keys in (("check_style", ("default_signer_id", "default_signer2_id")), ("check_document", ("signer_id",)),
+                        ("donation_settings", ("signer_id", "statement_signer_id"))):
+        for rid, raw in con.execute(f'SELECT id, config_json FROM main."{table}"').fetchall():
+            try:
+                cfg = json.loads(raw or "{}")
+            except ValueError:
+                continue
+            gone = [k for k in keys if cfg.get(k) is not None and cfg[k] not in signers]
+            if gone:
+                for k in gone:
+                    cfg[k] = None
+                con.execute(f'UPDATE main."{table}" SET config_json = ? WHERE id = ?', (json.dumps(cfg), rid))
+                n += len(gone)
+    out["signer_choices"] = n
+    # products naming invoice custom fields the restored Invoices Setup doesn't have
+    fields = {r[0] for r in con.execute("SELECT id FROM main.invoice_custom_field")}
+    n = 0
+    for rid, raw in con.execute("SELECT id, custom_field_ids FROM main.invoice_product WHERE custom_field_ids IS NOT NULL"
+                                ).fetchall():
+        try:
+            ids = json.loads(raw or "[]")
+        except ValueError:
+            continue
+        keep = [i for i in ids if i in fields]
+        if keep != ids:
+            con.execute("UPDATE main.invoice_product SET custom_field_ids = ? WHERE id = ?", (json.dumps(keep), rid))
+            n += len(ids) - len(keep)
+    out["product_fields"] = n
+    # an invoice number is never reused (BR-001): the next one follows the highest in the result
+    top = con.execute("SELECT MAX(seq) FROM main.invoice").fetchone()[0]
+    out["invoice_numbering"] = None
+    if top is not None:
+        row = con.execute("SELECT id, next_seq FROM main.invoice_settings").fetchone()
+        if row is not None and row[1] <= top:
+            con.execute("UPDATE main.invoice_settings SET next_seq = ? WHERE id = ?", (top + 1, row[0]))
+            out["invoice_numbering"] = top + 1
     out["projection_choices"] = con.execute(
         "DELETE FROM main.budget_projection_choice WHERE user_id NOT IN (SELECT id FROM main.app_user)").rowcount
     con.execute("UPDATE main.app_user SET last_payment_account_id = NULL WHERE last_payment_account_id IS NOT NULL "
@@ -526,6 +579,15 @@ def report_lines(facts: dict) -> list[str]:
     if c.get("account_check_styles"):
         out.append(f"{c['account_check_styles']} bank account check style(s) cleared: the style isn't in the current "
                    "Payments Setup; a Register User chooses it again.")
+    if c.get("signer_choices"):                    # 2.4.0 (#535)
+        out.append(f"{c['signer_choices']} signer choice(s) in Payments or Donations Setup were cleared: that signer "
+                   "isn't in the restored signer list; choose the signer again.")
+    if c.get("product_fields"):
+        out.append(f"{c['product_fields']} custom field(s) were taken off products: they aren't in the restored "
+                   "Invoices Setup.")
+    if c.get("invoice_numbering"):
+        out.append(f"The next invoice number was moved on to sequence {c['invoice_numbering']} so no number is used "
+                   "twice.")
     if c.get("reminder_links"):
         out.append(f"{c['reminder_links']} reminder link(s) to records that aren't there were cleared.")
     for h in facts.get("host_settings") or []:
