@@ -3,7 +3,7 @@
 // fills the open balances oldest due date first; each part can be changed; the extra above the balances is an
 // overpayment on the invoice chosen (confirmed). A payer other than an invoice's customer is confirmed.
 import { useEffect, useState, type FormEvent } from "react";
-import { api, money } from "../api";
+import { api, money, todayIso } from "../api";
 import { EntityPicker, ErrorBox, Field, Loading, Modal, useConfirmable } from "../components";
 
 export function useAccounts() {
@@ -46,7 +46,7 @@ export function MultiPaymentForm({ invoiceIds, customerIds, onClose, onDone }: {
   const [received, setReceived] = useState("");
   const [payer, setPayer] = useState("");
   const [overTo, setOverTo] = useState("");
-  const [v, setV] = useState({ bank_account_id: "", transaction_date: new Date().toISOString().slice(0, 10), notes: "" });
+  const [v, setV] = useState({ bank_account_id: "", transaction_date: todayIso(), notes: "" });
   useEffect(() => { api.get("/api/entities").then(setEntities, () => setEntities([])); }, []);
   useEffect(() => {
     const start = accts.length === 1 ? accts[0] : accts.find((a) => a.is_primary);

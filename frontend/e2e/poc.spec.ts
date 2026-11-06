@@ -722,7 +722,7 @@ test("#375: Reports - a catalog by purpose, search, a page and address per repor
   await expect(side.getByRole("link", { name: "Planning Sheet", exact: true })).toBeVisible();
   await expect(side.getByRole("link", { name: "Financial Flow", exact: true })).toHaveCount(0);
   await side.getByLabel("Find a report").fill("");
-  // opening a report records the run and remembers the options
+  // opening a report records the run; Recently run opens it with those options, the catalog with the defaults (#528)
   await page.getByLabel("Include VOID transactions").uncheck();
   const popup = page.context().waitForEvent("page");
   await page.getByRole("link", { name: "Open", exact: true }).click();
@@ -730,10 +730,13 @@ test("#375: Reports - a catalog by purpose, search, a page and address per repor
   await page.getByRole("link", { name: "← All reports" }).click();
   await expect(recent.getByRole("link").first()).toContainText("End of Year Audit");
   await page.goto("/reports/audit");
+  await expect(page.getByLabel("Include VOID transactions")).toBeChecked();             // the catalog: the defaults
+  await page.getByRole("link", { name: "← All reports" }).click();
+  await recent.getByRole("link").first().click();                                         // Recently run: that run's options
   await expect(page.getByLabel("Include VOID transactions")).not.toBeChecked();
   await page.getByLabel("Include VOID transactions").check();
   await page.screenshot({ path: "e2e-screenshots/light-report-page.png", fullPage: true });
-  const again = page.context().waitForEvent("page");          // remembered as before for the later tests
+  const again = page.context().waitForEvent("page");          // the latest run with the defaults, for the later tests
   await page.getByRole("link", { name: "Open", exact: true }).click();
   await (await again).close();
   await logout(page);
@@ -4632,6 +4635,15 @@ test("2.4.0 (#523): a Register User records one payment for several invoices - t
   await expect(d2.getByTestId("multi-payment-invoices").locator("tbody tr")).toHaveCount(2);   // 25.00 left on #2, and #3
   await expect(d2.getByLabel("Amount received")).toHaveValue("125.00");
   await d2.getByRole("button", { name: "Cancel" }).click();
+  // #528: a report run "to today" is remembered as such, so it reopens through the day it is opened (not a stale date)
+  await page.goto("/reports/inv-register");
+  const pop = page.context().waitForEvent("page");
+  await page.getByRole("link", { name: "Open", exact: true }).click();
+  await (await pop).close();
+  await expect.poll(async () => (await call("GET", "/api/me/report-preferences")).last?.["inv-register"]).toBeTruthy();
+  const last = (await call("GET", "/api/me/report-preferences")).last["inv-register"];
+  expect(last.date_to ?? null).toBeNull();
+  expect(last.date_from ?? null).toBeNull();
   await logout(page);
   await login(page, "admin");
   ({ me, call } = await caller());

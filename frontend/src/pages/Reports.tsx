@@ -1,6 +1,6 @@
 // v1.2 CR-002: reporting interface. 2.3.0 (#375): catalog home, a page per report, one registry.
 import { Fragment, useEffect, useState } from "react";
-import { api, money, qs } from "../api";
+import { api, money, qs, todayIso } from "../api";
 import { EntityPicker, ErrorBox, Field, Loading } from "../components";
 import { NotAuthorized, useMe } from "../App";
 import { InvoiceReport } from "./InvoiceReports";
@@ -43,11 +43,11 @@ export default function Reports({ id }: { id?: string }) {
     api.post("/api/me/report-runs", { report: rid, params, label: label || null }).then(setPrefs, () => undefined);
   };
   if (!def) return <ReportsHome list={list} prefs={prefs} groups={grouping} />;
-  // a shortcut's or Recently run's options (the address) come before the remembered ones
+  // #528 (Kyle, 2026-11-05): a report opened from the catalog starts with its defaults; only a Recently run link (or a
+  // shortcut from another page) fills in options - they come in the address
   const q = new URLSearchParams(search);
-  const fromUrl: Record<string, any> = {};
-  q.forEach((v, k) => { fromUrl[k] = v === "true" ? true : v === "false" ? false : v; });
-  const initial = Object.keys(fromUrl).length ? fromUrl : (prefs.last?.[def.id] || {});
+  const initial: Record<string, any> = {};
+  q.forEach((v, k) => { initial[k] = v === "true" ? true : v === "false" ? false : v; });
   const props = { fys, accounts, initial, onRun: onRun(def.id), actions: (l: Links) => <ReportActions {...l} /> };
   const Body = BODIES[def.id];
   return (
@@ -415,7 +415,7 @@ function FundraiserDetailReport({ fys, initial, onRun, actions }: BodyProps) {
  * accounts, cash flow, budgets and fundraisers as of the end of the period. A period still in progress is reported
  * as Preliminary, as of today; a period that hasn't started can't be chosen. */
 function PeriodReport({ fys, initial, onRun, actions }: BodyProps) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayIso();
   const cur = currentFy(fys);
   const [fy, setFy] = useState(String(initial.fiscal_year_id || (cur ? cur.id : "")));
   const [opts, setOpts] = useState<any>(null);

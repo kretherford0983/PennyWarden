@@ -1,7 +1,7 @@
 // 2.4.0 (#255): the Invoices group of the Reports catalog - seven reports, one page each, shown on screen and as
 // PDF / CSV (the customer statement is PDF only). Options are remembered like every other report's.
 import { useEffect, useState } from "react";
-import { api, qs } from "../api";
+import { api, monthStartIso, qs, todayIso } from "../api";
 import { EntityPicker, ErrorBox, Field, Loading } from "../components";
 import type { ActionsFn, RunFn } from "./reports/common";
 import { useMe } from "../App";
@@ -10,8 +10,10 @@ import { SendEmail } from "./Email";
 type Props = { rid: string; fys: any[]; initial: Record<string, any>; onRun: RunFn; actions: ActionsFn };
 
 const AS_OF = new Set(["inv-open", "inv-aging"]);
-const today = () => new Date().toISOString().slice(0, 10);
-function monthStart() { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().slice(0, 10); }
+// the user's calendar date (not UTC); a remembered run "to today" or "from the start of the month" reopens relative
+// to the day it is opened (#528) - fixed dates the user chose are remembered as they are
+const today = todayIso;
+const monthStart = monthStartIso;
 
 export function InvoiceReport({ rid, initial, onRun, actions }: Props) {
   const asOf = AS_OF.has(rid);
@@ -43,7 +45,9 @@ export function InvoiceReport({ rid, initial, onRun, actions }: Props) {
   }, [key]); // eslint-disable-line react-hooks/exhaustive-deps
   const openMail = () => { setSent(false); api.get(`/api/invoice-statements/email${qs({ customer_entity_id: v.customer_entity_id })}`).then(setMailFor, setErr); };
   const cname = entities.find((e) => String(e.id) === v.customer_entity_id)?.display_name;
-  const remember = () => onRun(params, asOf ? `as of ${v.as_of}` : `${v.date_from} to ${v.date_to}${needCustomer && cname ? ` · ${cname}` : ""}`);
+  const rel = (p: Record<string, any>) => ({ ...p, as_of: p.as_of === today() ? null : p.as_of,
+    date_to: p.date_to === today() ? null : p.date_to, date_from: p.date_from === monthStart() ? null : p.date_from });
+  const remember = () => onRun(rel(params), asOf ? `as of ${v.as_of}` : `${v.date_from} to ${v.date_to}${needCustomer && cname ? ` · ${cname}` : ""}`);
   return (
     <>
       <div className="report-options">

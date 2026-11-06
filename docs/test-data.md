@@ -26,7 +26,8 @@ runs July–June; the workflow's *Fiscal Year start month* changes that.
 | **Organization** | a made-up address, phone, email and EIN (00-0000000) in System/About; the organization's own entity records the Holiday Raffle cash deposits (2.1.0, #314) |
 | **Donations** | a current-year deposit from two donors marked as donations (one received five days before the deposit, with a `{DETAILS}` write-up; the other with a gala dinner as goods), and both receipts printed (2.1.0, #312) |
 | **Fundraisers** | three series, each recorded in PennyWarden for three years plus **four years before PennyWarden entered by hand**:<br>• **Golf Outing**, with buckets and categories, Charge / Less (a card fee) and a contributor override ("Cash" for the raffle table);<br>• **Pancake Breakfast**, held twice a year (spring and fall) and merged into one series;<br>• **Holiday Raffle**.<br>Also an upcoming fundraiser and a cancelled one. |
-| **Other** | entities, organization and personal reminders; the Fundraisers, Payments and Donations modules are on |
+| **Invoices** (2.4.0) | the Invoices module on; an Invoiced Income budget (`4400` Sponsorships and program fees) each year; a catalog (sponsorships, a youth program fee, vendor booths and newsletter ads with a 7 % sales tax, in three categories); about 14 invoices each in last year and this year to the sponsors and members, so the Sales reports compare with last year - most paid, one half paid, some open and overdue, and **one check paying two invoices** (one deposit linked to both) |
+| **Other** | entities, organization and personal reminders; the Fundraisers, Payments, Donations and Invoices modules are on |
 
 | Sign-in | Role |
 |---|---|
@@ -35,6 +36,7 @@ runs July–June; the workflow's *Fiscal Year start month* changes that.
 | `bookkeeper` | Register User |
 | `auditor` | Auditor |
 | `treasurer` | Budget Manager + Register User (also Register Admin, which deletes a transaction in the data set) |
+| `invoices` | Invoice Manager (2.4.0): the catalog and the invoices; `treasurer` records their payments |
 
 Every test user's password is the `PW_TESTDATA_PASSWORD` secret, which is also the answer to their three security
 questions. On a server, each user **enrolls two-step verification at the first sign-in after a restore**: scan the new

@@ -2,11 +2,11 @@
 // Budget Managers only.
 // Both use the same projection rule and the same per-user, per-budget projection choices.
 import { Fragment, useEffect, useState } from "react";
-import { api, money, qs } from "../api";
+import { api, money, qs, todayIso } from "../api";
 import { BudgetState, ErrorBox, Field, GrossBudgetNote, Loading } from "../components";
 import type { ActionsFn, RunFn } from "./reports/common";
 
-const today = () => new Date().toISOString().slice(0, 10);
+const today = todayIso;
 
 function pctText(p: string | null | undefined) {
   return p === null || p === undefined ? "n/a" : `${p.replace("-", "")}%`;
