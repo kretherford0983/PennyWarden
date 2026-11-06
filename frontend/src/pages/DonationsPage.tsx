@@ -13,6 +13,7 @@ import { ReceiptEnvelopePanel } from "./Envelopes";
 import { useEinOverride } from "./Donations";
 import { DonorReportTab, StatementsTab } from "./DonationStatements";
 import { TxnForm } from "./Register";
+import { EmailDocumentButton } from "./Email";
 
 const PUB_1771 = "https://www.irs.gov/pub/irs-pdf/p1771.pdf";
 const KIND_LABEL: Record<string, string> = { ORIGINAL: "Original", DUPLICATE: "Duplicate", CORRECTED: "Corrected" };
@@ -101,6 +102,8 @@ export default function DonationsPage() {
 
 // ------------------------------------------------------------------ one donation
 function DonationEditor({ id, canPrint, variables, onClose, onChanged, onOpen }: { id: number | null; canPrint: boolean; variables: Variable[]; onClose: () => void; onChanged: () => void; onOpen: (id: number) => void }) {
+  const { me } = useMe();
+  const [emailed, setEmailed] = useState<string | null>(null);   // 2.4.0 (#539)
   const [d, setD] = useState<any>(null);
   const [entities, setEntities] = useState<any[]>([]);
   const [donor, setDonor] = useState("");
@@ -237,7 +240,12 @@ function DonationEditor({ id, canPrint, variables, onClose, onChanged, onOpen }:
           {d && canPrint && d.printable ? <>
             <button type="button" onClick={preview}>Preview receipt</button>
             <button type="button" onClick={print}>Print receipt{d.next_kind !== "ORIGINAL" ? ` (${KIND_LABEL[d.next_kind].toLowerCase()})` : ""}</button>
+            {/* 2.4.0 (#539): Email… issues the receipt like Print and sends it; only when the mail server is set up */}
+            <EmailDocumentButton ready={!!me?.email_ready && id != null} label="Email receipt…" attachment="the donation receipt (PDF)"
+              defaultsUrl={`/api/donations/email/defaults?kind=RECEIPT&donation_id=${id}`} url={`/api/donations/${id}/receipts/email`}
+              extra={signer.body} run={run} onSent={(r) => { setEmailed(`Receipt ${r.number} emailed.`); api.get(`/api/donations/${id}`).then(take); onChanged(); }} />
           </> : null}
+          {emailed ? <span className="hint" role="status" data-testid="receipt-emailed">{emailed}</span> : null}
           {d && canPrint && d.cancellable ? <button type="button" className="danger" onClick={() => setCancelAsk("")}>Cancel donation…</button> : null}
         </div>
       </GuardedForm>

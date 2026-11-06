@@ -217,14 +217,18 @@ def _org_name(db: Session, ws_id: int) -> str:
 
 
 def _message(s: EmailSettings, to: list[str], cc: list[str], subject: str, body: str,
-             attachment: tuple[str, bytes] | None) -> EmailMessage:
+             attachment: tuple[str, bytes] | None, sender: dict | None = None) -> EmailMessage:
+    """`sender` (2.4.0 #539): an area's own Reply-To / From name (Invoices or Donations Setup); empty = the setup's.
+    The From address is always the mail server's account."""
+    sender = sender or {}
     msg = EmailMessage()
-    msg["From"] = formataddr((s.from_name or "", s.from_address))
+    msg["From"] = formataddr((sender.get("from_name") or s.from_name or "", s.from_address))
     msg["To"] = ", ".join(to)
     if cc:
         msg["Cc"] = ", ".join(cc)
-    if s.reply_to:
-        msg["Reply-To"] = s.reply_to
+    reply = sender.get("reply_to") or s.reply_to
+    if reply:
+        msg["Reply-To"] = reply
     msg["Subject"] = subject
     msg["Message-ID"] = make_msgid(domain=(s.from_address or "localhost").split("@")[-1])
     msg.set_content(body or "")
@@ -235,7 +239,7 @@ def _message(s: EmailSettings, to: list[str], cc: list[str], subject: str, body:
 
 def _send_logged(db: Session, ctx, km, kind: str, to: list[str], cc: list[str], subject: str, body: str,
                  attachment: tuple[str, bytes] | None, invoice_id: int | None = None,
-                 customer_id: int | None = None) -> EmailLog:
+                 customer_id: int | None = None, sender: dict | None = None) -> EmailLog:
     s = settings_of(db, ctx.workspace_id)
     if not ready(s):
         raise conflict("EMAIL_NOT_SET_UP", "Email isn't set up: an Administrator sets the mail server in "
@@ -243,7 +247,7 @@ def _send_logged(db: Session, ctx, km, kind: str, to: list[str], cc: list[str], 
     subject = (subject or "").strip().replace("\r", " ").replace("\n", " ")
     if not subject:
         raise validation("Enter a subject.", "subject")
-    msg = _message(s, to, cc, subject[:200], body or "", attachment)
+    msg = _message(s, to, cc, subject[:200], body or "", attachment, sender)
     log = EmailLog(workspace_id=ctx.workspace_id, kind=kind, invoice_id=invoice_id, customer_entity_id=customer_id,
                    to_address=", ".join(to), cc_address=", ".join(cc) or None, subject=subject[:200], body=body or None,
                    attachment_name=attachment[0] if attachment else None,
@@ -255,7 +259,8 @@ def _send_logged(db: Session, ctx, km, kind: str, to: list[str], cc: list[str], 
         log.status, log.error = "FAILED", _safe_error(x, s)
     db.add(log)
     db.flush()
-    action = {"INVOICE": "INVOICE_EMAILED", "STATEMENT": "STATEMENT_EMAILED", "TEST": "EMAIL_TEST_SENT"}[kind]
+    action = {"INVOICE": "INVOICE_EMAILED", "STATEMENT": "STATEMENT_EMAILED", "TEST": "EMAIL_TEST_SENT",
+              "RECEIPT": "DONATION_RECEIPT_EMAILED", "DONOR_STMT": "DONATION_STATEMENT_EMAILED"}[kind]   # #539
     audit.record(db, ctx, action if log.status == "SENT" else "EMAIL_SEND_FAILED", "invoice" if invoice_id else "email_log", invoice_id or log.id, None,
                  {"kind": kind, "email_log_id": log.id, "to": log.to_address, "cc": log.cc_address, "subject": log.subject,
                   "attachment": log.attachment_name, "attachment_sha256": log.attachment_sha256,
@@ -318,7 +323,7 @@ def email_invoice(db: Session, ctx, km, settings, i: Invoice, body) -> EmailLog:
     cc = _recipients(body.cc, "cc", False)
     att = _invoice_pdf(db, settings, i)
     return _send_logged(db, ctx, km, "INVOICE", to, cc, body.subject, body.message, att, invoice_id=i.id,
-                        customer_id=i.customer_entity_id)
+                        customer_id=i.customer_entity_id, sender=invoice_sender(db, ctx.workspace_id))
 
 
 def email_statement(db: Session, ctx, km, body) -> EmailLog:
@@ -333,7 +338,14 @@ def email_statement(db: Session, ctx, km, body) -> EmailLog:
     r = rep.statement(db, ctx, e.id, body.date_from, body.date_to)
     pdf = rep.as_pdf(db, ctx, r)
     name = f"statement-{body.date_to.isoformat()}.pdf"
-    return _send_logged(db, ctx, km, "STATEMENT", to, cc, body.subject, body.message, (name, pdf), customer_id=e.id)
+    return _send_logged(db, ctx, km, "STATEMENT", to, cc, body.subject, body.message, (name, pdf), customer_id=e.id,
+                        sender=invoice_sender(db, ctx.workspace_id))
+
+
+def invoice_sender(db: Session, ws_id: int) -> dict:
+    """2.4.0 (#539): Invoices Setup's own Reply-To / From name for invoice and statement emails."""
+    st = docs.settings_of(db, ws_id)
+    return {"reply_to": st.email_reply_to, "from_name": st.email_from_name}
 
 
 def invoice_log(db: Session, ctx, i: Invoice) -> list[dict]:
