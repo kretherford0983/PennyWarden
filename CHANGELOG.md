@@ -106,6 +106,12 @@ PennyWarden 2.4.0 (in progress).
   (for example **Serial number**); the Invoice Manager ticks it on those products in the catalog. It is asked on each
   invoice line that uses such a product — required if the field says so — and prints after the line's description
   when *show on PDF* is on.
+- **Payment stub on invoices and statements (#522).** Invoices Setup → Invoice PDF can add a **payment stub** the
+  customer detaches and returns with their payment: below a dashed cut line on the invoice's last page (a page of its
+  own when there's no room), with the invoice number in large type, the dates, the customer and customer number, the
+  amount due, an Amount enclosed line, and who to pay and where to mail it (from the organization profile, editable),
+  optionally placed for a #9 return envelope window. Customer statements have their own stub setting, listing the open
+  invoices. Off until turned on.
 - **Restore settings piece by piece (#535).** In **What to restore**, Invoices Setup, Email (the mail server),
   Organization logos and Signers are now sections of their own (they were part of General and Payments Setup). If a
   restored Payments or Donations Setup names a signer that isn't in the restored signer list, that choice is cleared

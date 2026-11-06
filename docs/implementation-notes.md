@@ -128,6 +128,20 @@ could not otherwise be corrected. Scope and safeguards:
   with a link; the variable picker completes dotted names.
 - Tests: `backend/tests/test_v210_organization.py` (6, including the data migration) and the E2E #126 and #312 steps.
 
+**2.4.0 — payment stub (#522, decided with Kyle 2026-11-04).** `TemplateConfig` (the invoice PDF template, JSON - no
+migration): `stub`, `statement_stub` (both off), `stub_payable` (`{ORG}`), `stub_address` (`{ORG}`, `{ORG.ADDRESS}`),
+`stub_window`, `stub_dx` / `stub_dy`. `invoice_template.draw_stub` draws in page coordinates: the cut line 3.5 in above
+the paper's bottom edge (the detached stub fits a #9 envelope, 3 7/8 in), drawn scissors, the instruction, *PAYMENT
+STUB*, Make checks payable to, the mailing address (or, with `stub_window`, inside a #9 window: 7/8 in from the left,
+1/2 in from the bottom, 4 1/2 × 1 1/8 in, as the stub settles at the envelope's bottom), and on the right the
+customer, customer number (`{CUSTOMER.ENTITY_NUMBER}`), dates, the invoice number (15 pt), Amount due (the balance on
+the PDF: the total, or what is left once paid or credited) and Amount enclosed. On an invoice `_StubAtBottom` takes the
+rest of the last page (a new page when less than the stub is left). The customer statement (a landscape report) gets a
+portrait last page with the stub listing its open invoices (`invoice_reports._with_statement_stub`), only when
+something is open. Proposed: **BR-INV-STUB-001** off by default, statements separately; **-002** at the bottom of the
+last page, never squeezed; **-003** the pay-to lines come from the organization profile and can be changed. ACs
+**AC-INV-STUB-001..004**. Tests: `backend/tests/test_v240_payment_stub.py` (5); E2E in the #482 test.
+
 **2.4.0 polish — selective restore sections (#535, Kyle 2026-11-06).** `partial_restore.SETTINGS_SECTIONS` gains
 `settings.invoices` (`invoice_settings`, `invoice_custom_field`), `settings.email` (`email_settings`),
 `settings.logos` (`organization_logo`) and `settings.signers` (`check_signer`), out of `settings.general` and

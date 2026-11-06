@@ -522,7 +522,41 @@ def as_pdf(db: Session, ctx, rep: dict) -> bytes:
         t.setStyle(TableStyle(style))
         story += [t, Spacer(1, 12)]
     doc.build(story, onFirstPage=footer, onLaterPages=footer)
-    return buf.getvalue()
+    pdf = buf.getvalue()
+    if rep["id"] == "inv-statement":                         # 2.4.0 (#522): its payment stub, when set up
+        return _with_statement_stub(db, ctx, rep, pdf, org_name)
+    return pdf
+
+
+def _with_statement_stub(db: Session, ctx, rep: dict, pdf: bytes, author: str) -> bytes:
+    """The customer statement's payment stub (Invoices Setup → Invoice PDF → for statements): a portrait page at the
+    end, listing the open invoices and the amount due; none when nothing is open."""
+    import io as _io
+
+    from pypdf import PdfReader, PdfWriter
+
+    from . import entity_vars
+    from . import invoice_template as tpl
+    from . import organization as org_svc
+    cfg = tpl.stored(docs.settings_of(db, ctx.workspace_id))
+    open_sec = rep["sections"][1] if len(rep["sections"]) > 1 else None
+    rows = [r for r in (open_sec or {}).get("rows", []) if (r.get("open") or 0) > 0]
+    if not cfg.statement_stub or not rows:
+        return pdf
+    e = db.get(Entity, rep["params"]["customer_entity_id"])
+    values = {**org_svc.values_for(db, ctx.workspace_id), **entity_vars.values("CUSTOMER", e)}
+    info = {"customer": e.display_name, "customer_number": e.entity_number or "", "date": rep["params"]["date_to"],
+            "rows": [{"number": r["number"], "due": r["due_date"].isoformat() if r.get("due_date") else "",
+                      "open": docs._money(r["open"])} for r in rows],
+            "amount_due": docs._money(sum(r["open"] for r in rows))}
+    stub = tpl.statement_stub_page(cfg, info, tpl.stub_lines(cfg, values), author)
+    w = PdfWriter()
+    for src in (pdf, stub):
+        for pg in PdfReader(_io.BytesIO(src)).pages:
+            w.add_page(pg)
+    out = _io.BytesIO()
+    w.write(out)
+    return out.getvalue()
 
 
 def filename(rep: dict, ext: str) -> str:

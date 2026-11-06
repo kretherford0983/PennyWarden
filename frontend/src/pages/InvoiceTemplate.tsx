@@ -42,7 +42,8 @@ export function InvoiceTemplateEditor() {
   };
   const save = async () => {
     setErr(null);
-    const clean = { ...cfg, letterhead: cfg.letterhead.filter((x: string) => x.trim()), bill_to: cfg.bill_to.filter((x: string) => x.trim()) };
+    const clean = { ...cfg, letterhead: cfg.letterhead.filter((x: string) => x.trim()), bill_to: cfg.bill_to.filter((x: string) => x.trim()),
+      stub_address: (cfg.stub_address || []).filter((x: string) => x.trim()) };
     try { const x = await api.put("/api/invoices/setup/template", clean); setT(x); setCfg(x.config); setSaved(true); } catch (x) { setErr(x); }
   };
   return (
@@ -138,6 +139,26 @@ export function InvoiceTemplateEditor() {
                 <Field label="Shade"><select aria-label="Tick shade" value={cfg.fold_shade} onChange={(e) => set("fold_shade", e.target.value)}>
                   <option value="LIGHT">Light gray</option><option value="MEDIUM">Medium gray</option><option value="DARK">Dark gray</option></select></Field>
               </div>
+            ) : null}
+          </fieldset>
+          {/* 2.4.0 (#522): the payment stub the customer detaches and returns with their payment */}
+          <fieldset data-testid="inv-stub"><legend>Payment stub</legend>
+            <label className="check"><input type="checkbox" checked={!!cfg.stub} onChange={(e) => set("stub", e.target.checked)} /> Payment stub (detach and return with payment) on invoices</label>
+            <label className="check"><input type="checkbox" checked={!!cfg.statement_stub} onChange={(e) => set("statement_stub", e.target.checked)} /> Payment stub on customer statements (a page at the end, listing the open invoices)</label>
+            {cfg.stub || cfg.statement_stub ? (
+              <>
+                <p className="hint">At the bottom of the invoice's last page, below a dashed cut line (on a page of its own when the invoice doesn't leave
+                  room): the invoice number in large type, the dates, the customer and customer number, the amount due and an Amount enclosed line.</p>
+                <PatternInput id="inv-stub-payable" label="Make checks payable to" maxLength={200} value={cfg.stub_payable} variables={t.variables} hint={false} onChange={(v) => set("stub_payable", v)} />
+                <Lines label="Mailing address on the stub" idBase="inv-stub-address" max={6} lines={cfg.stub_address} variables={t.variables} onChange={(l) => set("stub_address", l)} />
+                <label className="check"><input type="checkbox" checked={!!cfg.stub_window} onChange={(e) => set("stub_window", e.target.checked)} /> Place the address for a #9 return envelope window</label>
+                {cfg.stub_window ? (
+                  <div className="row form-row">
+                    <Field label="Address – right (in)"><input type="number" step={0.0625} min={-0.75} max={0.75} value={cfg.stub_dx} onChange={num("stub_dx")} /></Field>
+                    <Field label="Address – down (in)"><input type="number" step={0.0625} min={-0.75} max={0.75} value={cfg.stub_dy} onChange={num("stub_dy")} /></Field>
+                  </div>
+                ) : null}
+              </>
             ) : null}
           </fieldset>
           <div className="actions left"><button className="primary" type="button" onClick={save}>Save template</button>{saved ? <span role="status" className="muted">Saved.</span> : null}</div>

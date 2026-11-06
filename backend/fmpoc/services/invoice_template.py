@@ -89,6 +89,16 @@ class TemplateConfig(_M):
     return_dy: float = Field(default=0, ge=-WINDOW_OFFSET_MAX, le=WINDOW_OFFSET_MAX)
     payee_dx: float = Field(default=0, ge=-WINDOW_OFFSET_MAX, le=WINDOW_OFFSET_MAX)
     payee_dy: float = Field(default=0, ge=-WINDOW_OFFSET_MAX, le=WINDOW_OFFSET_MAX)
+    # 2.4.0 (#522, Kyle 2026-11-04): the payment stub - detach and return with payment (off by default); its own
+    # setting for customer statements; the pay-to lines from the organization profile, editable; optionally the
+    # address placed for a #9 return envelope's window
+    stub: bool = False
+    statement_stub: bool = False
+    stub_payable: str = Field(default="{ORG}", max_length=200)
+    stub_address: list[str] = Field(default_factory=lambda: ["{ORG}", "{ORG.ADDRESS}"], max_length=6)
+    stub_window: bool = False
+    stub_dx: float = Field(default=0, ge=-WINDOW_OFFSET_MAX, le=WINDOW_OFFSET_MAX)
+    stub_dy: float = Field(default=0, ge=-WINDOW_OFFSET_MAX, le=WINDOW_OFFSET_MAX)
 
     @field_validator("font")
     @classmethod
@@ -146,7 +156,7 @@ class TemplateConfig(_M):
             raise ValueError("Window envelope: none or on the invoice.")
         return v
 
-    @field_validator("letterhead", "bill_to")
+    @field_validator("letterhead", "bill_to", "stub_address")
     @classmethod
     def _lines(cls, v):
         for line in v:
@@ -157,7 +167,7 @@ class TemplateConfig(_M):
 
     @model_validator(mode="after")
     def _all(self):
-        for name in ("title", "bill_to_heading", "footer"):
+        for name in ("title", "bill_to_heading", "footer", "stub_payable"):
             _check(getattr(self, name), name.replace("_", " ").capitalize())
         keys = [c.key for c in self.columns]
         if len(set(keys)) != len(keys):
@@ -425,7 +435,169 @@ def _render(cfg: TemplateConfig, data: dict, values: dict[str, str], logo: bytes
     foot = text(cfg.footer).strip() if cfg.footer else ""
     if foot:
         f += [Spacer(1, 16), Paragraph(escape(foot).replace("\n", "<br/>"), small)]
+    if cfg.stub:                                            # 2.4.0 (#522): at the bottom of the last page
+        info = {"customer": values.get("CUSTOMER.NAME", ""), "customer_number": values.get("CUSTOMER.ENTITY_NUMBER", ""),
+                "number": data["number"], "date": data["date"], "due": data["due"],
+                "amount_due": data.get("balance") or data["total"]}
+        f.append(_StubAtBottom(cfg, info, stub_lines(cfg, values), reg, bold, accent, Flowable))
     doc.build(f, onFirstPage=first, onLaterPages=mark)
+    return buf.getvalue()
+
+
+# ------------------------------------------------------------------ 2.4.0 (#522): the payment stub
+STUB_TOP = 3.5               # in: the cut line, above the paper's bottom edge (the stub fits a #9 envelope: 3 7/8 in)
+NINE_WINDOW = (0.875, 0.5, 4.5, 1.125)   # in: a #9 envelope's window - left, bottom, width, height (the stub settles at
+#                                          the envelope's bottom, so its bottom edge is the envelope's)
+
+
+def stub_lines(cfg: TemplateConfig, values: dict[str, str]) -> dict:
+    """The stub's pay-to name and mailing address, from the organization profile ({VARIABLES}, editable)."""
+    out: list[str] = []
+    for p in cfg.stub_address:
+        out += [x.strip() for x in patterns.resolve(p, values, CTX).text.split("\n") if x.strip()]
+    return {"payable": patterns.resolve(cfg.stub_payable, values, CTX).text.strip(), "address": out[:6]}
+
+
+def draw_stub(c, cfg: TemplateConfig, info: dict, pay: dict, reg: str, bold: str, accent, width: float = 8.5) -> None:
+    """Draws the stub in page coordinates (inches from the bottom-left corner of a portrait letter page): a dashed cut
+    line with scissors, "Please detach and return this portion with your payment.", who pays and how much on the
+    right, the pay-to name and mailing address on the left (or where a #9 return envelope's window shows it)."""
+    from reportlab.lib import colors
+    i = 72.0
+    c.saveState()
+    c.setStrokeColor(colors.HexColor("#777777"))
+    c.setDash(4, 3)
+    c.setLineWidth(0.6)
+    c.line(0.62 * i, STUB_TOP * i, (width - 0.3) * i, STUB_TOP * i)
+    c.setDash()
+    _scissors(c, 0.42 * i, STUB_TOP * i)                    # drawn: a font's scissors glyph isn't in every viewer
+    c.setFillColor(colors.black)
+    c.setFont(reg, 8.5)
+    c.drawCentredString(width / 2 * i, (STUB_TOP - 0.22) * i, "Please detach and return this portion with your payment.")
+    # left: make checks payable to, and where to mail it
+    x = 0.75 * i
+    c.setFillColor(accent)
+    c.setFont(bold, 11)
+    c.drawString(x, (STUB_TOP - 0.55) * i, "PAYMENT STUB")
+    c.setFillColor(colors.black)
+    c.setFont(reg, 8.5)
+    c.drawString(x, (STUB_TOP - 0.8) * i, "Make checks payable to")
+    c.setFont(bold, 10)
+    c.drawString(x, (STUB_TOP - 0.97) * i, (pay["payable"] or "")[:60])
+    if cfg.stub_window:                                      # where a #9 return envelope's window shows it
+        wl, wb, _ww, wh = NINE_WINDOW
+        ax, top = (wl + 0.15 + cfg.stub_dx) * i, (wb + wh - 0.15 - cfg.stub_dy) * i
+    else:
+        c.setFont(reg, 8.5)
+        c.drawString(x, (STUB_TOP - 1.25) * i, "Mail to")
+        ax, top = x, (STUB_TOP - 1.42) * i
+    c.setFont(reg, 10)
+    for k, line in enumerate(pay["address"]):
+        c.setFont(bold if k == 0 else reg, 10)
+        c.drawString(ax, top - k * 12, line[:60])
+    # right: who, which, how much
+    rx, vx = 5.2 * i, (width - 0.75) * i
+    rows = [("Customer", info.get("customer", "")), ("Customer number", info.get("customer_number", ""))]
+    if info.get("rows") is None:
+        rows += [("Invoice date", info.get("date", "")), ("Due date", info.get("due", ""))]
+    else:
+        rows += [("Statement date", info.get("date", ""))]
+    y = (STUB_TOP - 0.55) * i
+    for label, val in rows:
+        c.setFont(reg, 8.5)
+        c.drawString(rx, y, label)
+        c.setFont(bold, 9)
+        c.drawRightString(vx, y, str(val)[:40])
+        y -= 13
+    if info.get("rows") is None:                             # an invoice: its number, large, for the lookup
+        c.setFont(reg, 8.5)
+        c.drawString(rx, y - 4, "Invoice")
+        c.setFont(bold, 15)
+        c.drawRightString(vx, y - 6, info.get("number", ""))
+        y -= 26
+    else:                                                    # a statement: the open invoices it covers
+        shown = info["rows"][:6]
+        for r in shown:
+            c.setFont(reg, 8)
+            c.drawString(rx, y, f"{r['number']}  (due {r['due']})"[:40])
+            c.drawRightString(vx, y, r["open"])
+            y -= 11
+        if len(info["rows"]) > len(shown):
+            c.setFont(reg, 7.5)
+            c.drawString(rx, y, f"and {len(info['rows']) - len(shown)} more")
+            y -= 11
+        y -= 4
+    c.setStrokeColor(colors.HexColor("#999999"))
+    c.line(rx, y + 9, vx, y + 9)
+    c.setFont(bold, 10)
+    c.drawString(rx, y - 4, "Amount due")
+    c.drawRightString(vx, y - 4, info.get("amount_due", ""))
+    c.setFont(reg, 9)
+    c.drawString(rx, y - 26, "Amount enclosed")
+    c.line(vx - 1.2 * i, y - 28, vx, y - 28)
+    c.drawString(vx - 1.32 * i, y - 26, "$")
+    c.restoreState()
+
+
+def _scissors(c, x: float, y: float) -> None:
+    """Small open scissors on the cut line, pointing right (two blades and two finger loops)."""
+    from reportlab.lib import colors
+    c.saveState()
+    c.setStrokeColor(colors.HexColor("#555555"))
+    c.setLineWidth(0.8)
+    c.circle(x - 6, y + 3.2, 2.4, stroke=1, fill=0)
+    c.circle(x - 6, y - 3.2, 2.4, stroke=1, fill=0)
+    c.line(x - 3.8, y + 2.2, x + 7, y - 2.2)
+    c.line(x - 3.8, y - 2.2, x + 7, y + 2.2)
+    c.restoreState()
+
+
+def _StubAtBottom(cfg: TemplateConfig, info: dict, pay: dict, reg: str, bold: str, accent, Flowable):
+    """Takes the rest of the last page and draws the stub at its bottom; when the page doesn't have the room, the
+    stub goes on a page of its own (decision 3)."""
+    frame_bottom = 0.7 * 72 + 6                              # SimpleDocTemplate bottom margin + frame padding
+
+    class StubAtBottom(Flowable):
+        need = (STUB_TOP + 0.15) * 72 - frame_bottom
+
+        def wrap(self, aw, ah):
+            self._h = ah if ah >= self.need else self.need
+            return aw, self._h
+
+        def draw(self):
+            c = self.canv
+            x0, y0 = c.absolutePosition(0, 0)
+            c.saveState()
+            c.translate(-x0, -y0)
+            draw_stub(c, cfg, info, pay, reg, bold, accent)
+            c.restoreState()
+    return StubAtBottom()
+
+
+def statement_stub_page(cfg: TemplateConfig, info: dict, pay: dict, author: str) -> bytes:
+    """2.4.0 (#522): the customer statement's stub - the statement is a landscape report, so the stub prints at the
+    bottom of a portrait page of its own (which fits a #9 return envelope once detached)."""
+    from reportlab.lib import colors
+    from reportlab.lib.fonts import addMapping
+    from reportlab.lib.pagesizes import letter
+    from reportlab.pdfgen import canvas as rl_canvas
+    reg, bold = fonts.ps_name(cfg.font), fonts.ps_name(cfg.font, True)
+    addMapping(reg, 0, 0, reg)
+    addMapping(reg, 1, 0, bold)
+    buf = io.BytesIO()
+    c = rl_canvas.Canvas(buf, pagesize=letter)
+    c.setTitle(f"Payment stub - {info.get('customer', '')}")
+    c.setAuthor(author)
+    accent = colors.HexColor(cfg.accent)
+    c.setFillColor(accent)
+    c.setFont(bold, 14)
+    c.drawString(0.75 * 72, 10.2 * 72, "Payment stub")
+    c.setFillColor(colors.black)
+    c.setFont(reg, 10)
+    c.drawString(0.75 * 72, 9.95 * 72, f"For the statement of {info.get('date', '')} - {info.get('customer', '')}")
+    draw_stub(c, cfg, info, pay, reg, bold, accent)
+    c.showPage()
+    c.save()
     return buf.getvalue()
 
 
