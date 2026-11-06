@@ -90,8 +90,14 @@ def payments_out(db: Session, i: Invoice) -> dict:
                      "transaction_type": t.transaction_type if t else None,
                      "date": t.transaction_date.isoformat() if t else None, "amount": fmt(a.amount_cents) if a else None,
                      "status": t.status if t else None, "budget": cat._budget_brief(db, a.budget_id) if a else None,
-                     "unlinked": link.removed_at is not None, "unlink_reason": link.remove_reason})
-    return {**{k: fmt(v) for k, v in f.items()}, "links": rows}
+                     "unlinked": link.removed_at is not None, "unlink_reason": link.remove_reason,
+                     "credit_from": ({"id": link.credit_from_invoice_id,
+                                      "number": docs.display_number(db.get(Invoice, link.credit_from_invoice_id))}
+                                     if link.credit_from_invoice_id else None)})
+    credit = sum(a.amount_cents for link, a, _t in _live_links(db, i.id) if link.credit_from_invoice_id)
+    return {**{k: fmt(v) for k, v in f.items()}, "links": rows, "credit_applied": fmt(credit),     # 2.4.0 (#534)
+            "due": fmt(f["open"]),
+            "customer_credit": credit_out(db, i.workspace_id, i.customer_entity_id, i.id)}
 
 
 # ------------------------------------------------------------------ register guards
@@ -341,7 +347,8 @@ def open_for_payment(db: Session, ctx, customer_entity_id: int | None, number: s
                      "customer_entity_id": i.customer_entity_id})
     rows.sort(key=lambda r: (r["due_date"] or "9999", r["invoice_date"] or "", r["id"]))
     return {"customer": {"id": e.id, "name": e.display_name}, "invoices": rows,
-            "found_invoice_id": found.id if found is not None else None}
+            "found_invoice_id": found.id if found is not None else None,
+            "credit": credit_out(db, ctx.workspace_id, e.id)}                      # 2.4.0 (#534)
 
 
 def record_multi(db: Session, ctx, body) -> tuple[RegisterTransaction, list[Invoice]]:
@@ -441,11 +448,13 @@ class Applied:
     def __init__(self):
         self.allocations: list = []
         self.generated: set[int] = set()          # id() of the generated AllocationIn objects
-        self.links: list[tuple] = []               # (AllocationIn, Invoice, kind)
+        self.links: list[tuple] = []               # (AllocationIn, Invoice, kind[, credit_from_invoice_id])
         self.refunds: list[tuple] = []             # (Invoice, cents)
         self.audit: list[tuple] = []               # (Invoice, paid before, applied, overpayment)
         self.warnings: list = []
         self.created: dict[int, TransactionAllocation] = {}
+        self.unlink: list = []                     # #534: links set aside for a system re-allocation
+        self.reason: str = ""
 
 
 def expand_applications(db: Session, ctx, txn_type: str, txn_date: dt.date, parent_entity_id: int | None,
@@ -544,15 +553,15 @@ def finish_applications(db: Session, ctx, t: RegisterTransaction, applied: Appli
     """After the deposit is saved: link each generated line to its invoice, audit, update the invoices' status and
     write the refunds asked for."""
     from ..schemas import InvoiceRefundIn
-    for ai, i, kind in applied.links:
+    for ai, i, kind, *src in applied.links:
         a = applied.created.get(id(ai))
         if a is None:                              # not saved (a rolled-back no-op): nothing to link
             continue
         db.add(InvoicePayment(workspace_id=ctx.workspace_id, invoice_id=i.id, allocation_id=a.id, kind=kind,
-                              created_by_user_id=ctx.user.id))
+                              credit_from_invoice_id=src[0] if src else None, created_by_user_id=ctx.user.id))
     db.flush()
     for i, before, x, over in applied.audit:
-        mine = [applied.created[id(ai)].id for ai, j, _k in applied.links if j is i and id(ai) in applied.created]
+        mine = [applied.created[id(ai)].id for ai, j, _k, *_s in applied.links if j is i and id(ai) in applied.created]
         audit.record(db, ctx, "INVOICE_PAYMENT_RECORDED", "invoice", i.id, {"paid": fmt(before)},
                      {"transaction_id": t.id, "amount": fmt(x + over), "paid_now": fmt(x), "overpayment": fmt(over),
                       "allocation_ids": mine, "from_register": True})
@@ -564,6 +573,166 @@ def finish_applications(db: Session, ctx, t: RegisterTransaction, applied: Appli
                                                      f"{docs.display_number(i)}"))
         refresh_status(db, ctx, i)
         assert r is not None
+
+
+# ------------------------------------------------------------------ 2.4.0 (#534): customer account credit
+def _system_update(db: Session, ctx, t: RegisterTransaction, applied: Applied) -> bool:
+    """A register edit made by the system (credit applied / taken back): every warning the edit raises (a cleared
+    transaction, a Fiscal Year review...) is accepted, as the user's action that triggered it decided; in a savepoint,
+    so a refused edit (closed year, ...) changes nothing. True when it was made."""
+    from ..schemas import TransactionUpdateIn
+    from . import register as reg
+    codes: list[str] = []
+    for _attempt in range(2):
+        sp = db.begin_nested()
+        try:
+            for x in applied.unlink:
+                x.removed_at, x.removed_by_user_id, x.remove_reason = utcnow(), ctx.user.id, applied.reason
+            db.flush()
+            data = TransactionUpdateIn(allocations=applied.allocations, confirmations=codes)
+            reg._update(db, ctx, t, data, applied)
+            finish_applications(db, ctx, t, applied)
+            sp.commit()
+            return True
+        except AppError as e:
+            sp.rollback()
+            if e.code != "CONFIRMATION_REQUIRED" or codes:
+                return False
+            codes = [w["code"] for w in (e.extra.get("warnings") or [])]
+    return False
+
+
+def credit_sources(db: Session, ws_id: int, customer_id: int, exclude_invoice_id: int | None = None) -> list[dict]:
+    """The customer's credit (decision 2: every overpayment not refunded), oldest first: each invoice's refundable
+    overpayment and the deposit lines that hold it."""
+    from . import register as reg
+    out = []
+    for i in db.scalars(select(Invoice).where(Invoice.workspace_id == ws_id, Invoice.customer_entity_id == customer_id,
+                                              Invoice.id != (exclude_invoice_id or -1))):
+        f = figures(db, i)
+        if f["refundable"] <= 0:
+            continue
+        lines = sorted(((link, a, t) for link, a, t in _live_links(db, i.id) if link.kind == "OVERPAYMENT"),
+                       key=lambda x: (x[2].transaction_date, x[1].id))
+        usable = [(link, a, t) for link, a, t in lines if t.status == "ACTIVE" and not reg.is_closed_protected(db, t)]
+        out.append({"invoice": i, "amount": f["refundable"], "lines": usable, "first": lines[0][2].transaction_date
+                    if lines else dt.date.max, "usable": min(f["refundable"], sum(a.amount_cents for _l, a, _t in usable))})
+    out.sort(key=lambda x: (x["first"], x["invoice"].id))
+    return out
+
+
+def credit_out(db: Session, ws_id: int, customer_id: int | None, exclude_invoice_id: int | None = None) -> dict:
+    if not customer_id:
+        return {"total": "0.00", "usable": "0.00", "invoices": []}
+    src = credit_sources(db, ws_id, customer_id, exclude_invoice_id)
+    return {"total": fmt(sum(x["amount"] for x in src)), "usable": fmt(sum(x["usable"] for x in src)),
+            "invoices": [{"id": x["invoice"].id, "number": docs.display_number(x["invoice"]), "amount": fmt(x["amount"]),
+                          "usable": fmt(x["usable"])} for x in src]}
+
+
+def apply_credit(db: Session, ctx, target: Invoice) -> int:
+    """Decided with Kyle 2026-11-06: the customer's credit is applied when an invoice is sent, oldest first, up to
+    what the invoice still owes. Each credit is the overpayment line of the deposit that brought it: that line is
+    re-allocated on its deposit - the applied part becomes this invoice's splits (linked, remembering where the credit
+    came from), the rest stays the overpayment. The deposit's total doesn't change. A credit on a deposit in a Closed
+    Fiscal Year can't be re-allocated (it can still be refunded). Returns the cents applied."""
+    from ..schemas import AllocationIn
+    if target.status not in ("SENT", "PARTLY_PAID") or target.write_off_status == "PENDING":
+        return 0
+    need = figures(db, target)["open"]
+    done = 0
+    for src in credit_sources(db, ctx.workspace_id, target.customer_entity_id, target.id):
+        left_on_invoice = src["amount"]
+        for link, a, t in src["lines"]:
+            if need - done <= 0 or left_on_invoice <= 0:
+                break
+            take = min(a.amount_cents, left_on_invoice, need - done)
+            if take <= 0:
+                continue
+            fy = _deposit_fy(db, ctx.workspace_id, t.transaction_date)
+            ap = Applied()
+            ap.reason = f"Applied as credit to invoice {docs.display_number(target)}"
+            ap.unlink = [link]
+            for x in t.live_allocations:
+                ai = AllocationIn(id=x.id, budget_id=x.budget_id, entity_id=x.entity_id, invoice_number=x.invoice_number,
+                                  invoice_date=x.invoice_date, description=x.description, amount=fmt(x.amount_cents),
+                                  notes=x.notes, fiscal_year_id=x.budget.fiscal_year_id)
+                if x.id != a.id:
+                    ap.allocations.append(ai)
+                    continue
+                if a.amount_cents > take:                       # the rest stays the overpayment
+                    rest = ai.model_copy(update={"amount": fmt(a.amount_cents - take)})
+                    ap.allocations.append(rest)
+                    ap.generated.add(id(rest))
+                    ap.links.append((rest, src["invoice"], "OVERPAYMENT"))
+                paid_before = figures(db, target)["paid"]
+                for gi, _k in _invoice_allocations(db, target, paid_before, take, 0, fy, a.entity_id):
+                    gi = gi.model_copy(update={"description": f"{gi.description} (credit from "
+                                                              f"{docs.display_number(src['invoice'])})"[:500]})
+                    ap.allocations.append(gi)
+                    ap.generated.add(id(gi))
+                    ap.links.append((gi, target, "PAYMENT", src["invoice"].id))
+                ap.audit.append((target, paid_before, take, 0))
+            if _system_update(db, ctx, t, ap):
+                done += take
+                left_on_invoice -= take
+                audit.record(db, ctx, "INVOICE_CREDIT_APPLIED", "invoice", target.id, None,
+                             {"amount": fmt(take), "from_invoice_id": src["invoice"].id, "transaction_id": t.id})
+                refresh_status(db, ctx, src["invoice"])
+    if done:
+        db.expire(target)
+    return done
+
+
+def remove_credit(db: Session, ctx, i: Invoice, reason: str) -> int:
+    """Register User: the credit applied to this invoice goes back to being the customer's credit (an overpayment on
+    the invoice it came from), on the same deposits."""
+    from ..schemas import AllocationIn
+    inv.require_module(db, ctx)
+    ctx.require("transaction.manage")
+    reason = (reason or "").strip()
+    if not reason:
+        raise validation("Say why the credit is taken off.", "reason")
+    by_txn: dict[int, list] = {}
+    for link, a, t in _live_links(db, i.id):
+        if link.credit_from_invoice_id:
+            by_txn.setdefault(t.id, []).append((link, a, t))
+    if not by_txn:
+        raise conflict("NO_CREDIT", "No account credit is applied to this invoice.")
+    back = 0
+    for _tid, rows in by_txn.items():
+        t = rows[0][2]
+        fy = _deposit_fy(db, ctx.workspace_id, t.transaction_date)
+        ap = Applied()
+        ap.reason = f"Credit taken off invoice {docs.display_number(i)}: {reason}"[:500]
+        ap.unlink = [link for link, _a, _t in rows]
+        ids = {a.id for _l, a, _t in rows}
+        per_src: dict[int, int] = {}
+        for link, a, _t in rows:
+            per_src[link.credit_from_invoice_id] = per_src.get(link.credit_from_invoice_id, 0) + a.amount_cents
+        for x in t.live_allocations:
+            if x.id in ids:
+                continue
+            ap.allocations.append(AllocationIn(id=x.id, budget_id=x.budget_id, entity_id=x.entity_id,
+                                               invoice_number=x.invoice_number, invoice_date=x.invoice_date,
+                                               description=x.description, amount=fmt(x.amount_cents), notes=x.notes,
+                                               fiscal_year_id=x.budget.fiscal_year_id))
+        ent = rows[0][1].entity_id
+        for src_id, cents in per_src.items():
+            src = db.get(Invoice, src_id)
+            for gi, k in _invoice_allocations(db, src, figures(db, src)["paid"], 0, cents, fy, ent):
+                ap.allocations.append(gi)
+                ap.generated.add(id(gi))
+                ap.links.append((gi, src, k))
+            back += cents
+        if not _system_update(db, ctx, t, ap):
+            raise conflict("CREDIT_LOCKED", "The deposit holding this credit can't be changed (it may be in a Closed "
+                           "Fiscal Year or voided).")
+        for src_id in per_src:
+            refresh_status(db, ctx, db.get(Invoice, src_id))
+    audit.record(db, ctx, "INVOICE_CREDIT_REMOVED", "invoice", i.id, None, {"amount": fmt(back), "reason": reason})
+    refresh_status(db, ctx, i)
+    return back
 
 
 # ------------------------------------------------------------------ link an existing deposit
@@ -661,6 +830,9 @@ def unlink(db: Session, ctx, i: Invoice, link_id: int, move_to_budget_id: int, r
         raise validation("Say why it is unlinked.", "reason")
     a = db.get(TransactionAllocation, p.allocation_id)
     t = a.transaction
+    if p.kind == "OVERPAYMENT" and a.amount_cents > figures(db, i)["refundable"]:   # 2.4.0 (#534): moving credit
+        raise conflict("PARTLY_REFUNDED", "Part of this credit was refunded; only what is left can be moved. Refund or "
+                       "apply the rest instead.")
     if reg.is_closed_protected(db, t):
         raise conflict("FISCAL_YEAR_CLOSED", "The deposit is in a Closed Fiscal Year; it can't change.")
     if t.status != "ACTIVE":

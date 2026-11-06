@@ -1604,6 +1604,8 @@ class InvoicePayment(Base):
     invoice_id: Mapped[int] = mapped_column(ForeignKey("invoice.id"), index=True)
     allocation_id: Mapped[int] = mapped_column(ForeignKey("transaction_allocation.id"), index=True)
     kind: Mapped[str] = mapped_column(String(12))          # PAYMENT | OVERPAYMENT | REFUND
+    # 2.4.0 (#534): a payment made of the customer's credit - the invoice whose overpayment it came from
+    credit_from_invoice_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
     created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     removed_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)

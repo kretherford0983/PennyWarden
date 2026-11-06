@@ -42,3 +42,21 @@ When you're already entering a deposit in the **Register** and realize it pays a
 
 A deposit already saved on another Income budget can be linked from the invoice: **Link a deposit…** lists the
 customer's deposit lines first, and linking moves the line onto the invoice's budgets (a Register User does this).
+
+## Customer credit
+
+Money received above what a customer's invoices owe is their **account credit** — an overpayment on an invoice, not
+yet refunded. It shows on the invoice (**Overpaid (customer credit)**), on the customer's other invoices, in **Record a
+payment…** and on their **statement**.
+
+- **Applied automatically:** when the customer's next invoice is **marked as sent**, their credit is applied to it,
+  oldest first, up to what it owes. The invoice shows **Account credit applied**, and its PDF shows **New charges**,
+  **Account credit applied** and **Total due**. The deposit that brought the money doesn't change; the credit's part
+  moves onto the new invoice's budgets.
+- **Take credit off…** (Register User, with a reason): the credit applied to an invoice becomes the customer's credit
+  again, and the invoice owes that amount again.
+- **Refund credit…** (Register User): a refund of the credit, as before.
+- **Move credit…** (Register User, with a reason): for example when the customer says to keep it as a donation — the
+  credit moves to another budget and is no longer theirs.
+
+A credit held by a deposit in a **Closed** Fiscal Year can't be applied automatically; it can still be refunded.

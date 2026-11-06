@@ -10,9 +10,6 @@ from pypdf import PdfReader
 
 from test_v240_invoice_payments import ib  # noqa: F401  (fixture)
 
-S = "/tmp/claude-0/-home-claude/51a82774-2502-581c-81f6-3c534eec717d/scratchpad"
-
-
 def _tpl(env, **kw):
     cfg = env.admin.get("/api/invoices/setup/template").json()["config"]
     r = env.admin.put("/api/invoices/setup/template", {**cfg, **kw})
@@ -35,7 +32,6 @@ def test_ac_inv_stub_001_off_by_default_then_on_the_last_page(env, ib):
     assert n == 1 and "Please detach and return this portion with your payment." in t
     for s in ("PAYMENT STUB", "Make checks payable to", "Customer number", "Amount due", "Amount enclosed", "Mail to"):
         assert s in t, s
-    open(f"{S}/stub-invoice.pdf", "wb").write(on)
 
 
 def test_ac_inv_stub_002_real_invoice_window_and_pay_to(env, ib):
@@ -45,7 +41,6 @@ def test_ac_inv_stub_002_real_invoice_window_and_pay_to(env, ib):
     num = ib["im"].get(f"/api/invoices/{ib['inv']}").json()["number"]
     assert num in t and "Example Club Treasurer" in t and "PO Box 12" in t and "$220.00" in t
     assert "Mail to" not in t                                    # in the window: the envelope's address, no label
-    open(f"{S}/stub-window.pdf", "wb").write(pdf)
 
 
 def test_ac_inv_stub_003_a_new_page_when_there_is_no_room(env, ib):
@@ -64,7 +59,6 @@ def test_ac_inv_stub_004_customer_statement_has_its_own_stub(env, ib):
     pdf = env.ru.get("/api/invoices/reports/inv-statement", params=params).content
     n, t = _text(pdf)
     assert n == _text(plain)[0] + 1 and "Payment stub" in t and "Amount due" in t and "$220.00" in t
-    open(f"{S}/stub-statement.pdf", "wb").write(pdf)
 
 
 def test_stub_settings_are_checked(env, ib):

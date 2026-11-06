@@ -415,14 +415,22 @@ def _render(cfg: TemplateConfig, data: dict, values: dict[str, str], logo: bytes
         tot.append([f"Discount — {data['invoice_discount_reason']}", f"-{data['invoice_discount']}"])
     for label, amount in data.get("taxes") or []:          # 2.4.0 polish (#487): one line per tax rate
         tot.append([label, amount])
-    tot.append(["Total due", data["total"]])
-    if data.get("paid"):
-        tot.append(["Paid", f"-{data['paid']}"])
-        tot.append(["Balance due", data["balance"]])
-    tt = Table([[Paragraph(escape(a), rightb if a in ("Total due", "Balance due") else right),
-                 Paragraph(escape(b), rightb if a in ("Total due", "Balance due") else right)] for a, b in tot],
+    if data.get("credit"):                                  # 2.4.0 (#534): New charges, credit applied, Total due
+        tot.append(["New charges", data["total"]])
+        tot.append(["Account credit applied", f"-{data['credit']}"])
+        if data.get("paid"):
+            tot.append(["Paid", f"-{data['paid']}"])
+        tot.append(["Total due", data["balance"]])
+    else:
+        tot.append(["Total due", data["total"]])
+        if data.get("paid"):
+            tot.append(["Paid", f"-{data['paid']}"])
+            tot.append(["Balance due", data["balance"]])
+    strong = ("Total due", "Balance due", "New charges")
+    tt = Table([[Paragraph(escape(a), rightb if a in strong else right),
+                 Paragraph(escape(b), rightb if a in strong else right)] for a, b in tot],
                colWidths=[width - 1.2 * inch, 1.2 * inch])
-    total_row = [k for k, (a, _b) in enumerate(tot) if a == "Total due"][0]
+    total_row = [k for k, (a, _b) in enumerate(tot) if a in ("Total due", "New charges")][0]
     tt.setStyle(TableStyle([("LINEABOVE", (0, total_row), (-1, total_row), 0.8, accent),
                             ("BOTTOMPADDING", (0, 0), (-1, -1), 2)]))
     f.append(tt)
