@@ -77,8 +77,10 @@ const split = (t: string) => t.split(/[,;\s]+/).map((x) => x.trim()).filter(Bool
 
 /** The Send email form: To (the customer's address to start with), Cc, subject and message, all editable; one click
  * sends one email. `url` posts it; `extra` is added to the body (a statement's customer and period). */
-export function SendEmail({ title, defaults, url, extra, attachment, onClose, onSent }: {
+export function SendEmail({ title, defaults, url, extra, attachment, onClose, onSent, send }: {
   title: string; defaults: any; url: string; extra?: Record<string, any>; attachment: string; onClose: () => void; onSent: (log: any) => void;
+  /** 2.4.0 (#539): posts it another way (a donation receipt asks for confirmations first); null = cancelled */
+  send?: (body: Record<string, any>) => Promise<any>;
 }) {
   const [v, setV] = useState({ to: (defaults.to || []).join(", "), cc: "", subject: defaults.subject || "", message: defaults.message || "" });
   const [err, setErr] = useState<unknown>(null);
@@ -87,7 +89,8 @@ export function SendEmail({ title, defaults, url, extra, attachment, onClose, on
     e.preventDefault();
     setErr(null);
     setBusy(true);
-    try { onSent(await api.post(url, { ...extra, to: split(v.to), cc: split(v.cc), subject: v.subject, message: v.message })); }
+    const body = { ...extra, to: split(v.to), cc: split(v.cc), subject: v.subject, message: v.message };
+    try { const r = await (send ? send(body) : api.post(url, body)); if (r) onSent(r); }
     catch (x) { setErr(x); } finally { setBusy(false); }
   };
   return (
@@ -115,5 +118,26 @@ export function EmailLog({ rows }: { rows: any[] }) {
         <tbody>{rows.map((r) => <tr key={r.id}><td>{String(r.sent_at).slice(0, 16).replace("T", " ")}</td><td>{r.to}{r.cc ? <span className="muted"> (cc {r.cc})</span> : null}</td><td>{r.subject}</td><td>{r.sent_by}</td>
           <td>{r.status === "SENT" ? "Sent" : <span className="badge red" title={r.error || ""}>Failed</span>}</td></tr>)}</tbody></table>
     </section>
+  );
+}
+
+/** 2.4.0 (#539): Email… for a donation receipt or year-end statement - shown only when the mail server is set up and on.
+ * Sending issues the document like printing does (the caller's `run` asks for the same confirmations). */
+export function EmailDocumentButton({ ready, label = "Email…", defaultsUrl, url, extra, attachment, run, onSent, className }: {
+  ready: boolean; label?: string; defaultsUrl: string; url: string; extra?: Record<string, any>; attachment: string;
+  run: (fn: (confirmations: string[]) => Promise<any>) => Promise<any>; onSent: (r: any) => void; className?: string;
+}) {
+  const [defaults, setDefaults] = useState<any>(null);
+  const [err, setErr] = useState<unknown>(null);
+  if (!ready) return null;
+  const open = async () => { setErr(null); try { setDefaults(await api.get(defaultsUrl)); } catch (x) { setErr(x); } };
+  return (
+    <>
+      <button type="button" className={className} onClick={open}>{label}</button>
+      {err ? <ErrorBox error={err} /> : null}
+      {defaults ? <SendEmail title={`Email – ${defaults.donor || attachment}`} defaults={defaults} url={url} extra={extra} attachment={attachment}
+        onClose={() => setDefaults(null)} onSent={(r) => { setDefaults(null); onSent(r); }}
+        send={(b) => run((c) => api.post(url, { ...b, confirmations: c }))} /> : null}
+    </>
   );
 }

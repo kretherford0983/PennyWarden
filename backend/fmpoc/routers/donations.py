@@ -221,6 +221,16 @@ def awaiting_lines(db: Session = Depends(get_db), ctx: Ctx = Depends(print_ctx))
 
 
 # ------------------------------------------------------------------ 2.2.0 (#256): year-end statements, donor report
+class DonationEmailIn(In):                    # 2.4.0 (#539): print (issue) and email in one step
+    confirmations: list[str] = Field(default_factory=list, max_length=10)
+    signer_id: int | None = None
+    to: list[str] = Field(default_factory=list, max_length=10)
+    cc: list[str] = Field(default_factory=list, max_length=10)
+    subject: str = Field(default="", max_length=200)
+    message: str = Field(default="", max_length=8000)
+    donor_entity_id: int | None = None    # a deposit's receipts: which donor
+
+
 class StatementPrintIn(In):
     confirmations: list[str] = Field(default_factory=list, max_length=10)
     signer_id: int | None = None          # 2.3.0 polish: the signer chosen when printing
@@ -300,6 +310,60 @@ def print_all_statements(year: int, body: PrintAllIn, request: Request, db: Sess
     resp = _pdf(ctx, pdf, f"statements-{year}.pdf")
     resp.headers["X-Statement-Count"] = str(len(made))
     return resp
+
+
+# ------------------------------------------------------------------ 2.4.0 (#539): email a receipt or statement
+@router.get("/email/defaults")
+def email_defaults(kind: str = "RECEIPT", donor_entity_id: int | None = None, donation_id: int | None = None,
+                   transaction_id: int | None = None, year: int | None = None, db: Session = Depends(get_db),
+                   ctx: Ctx = Depends(print_ctx)):
+    """The Email form's To, subject and message (Donations Setup's, filled in)."""
+    from ..models import Entity, RegisterTransaction
+    from ..services import donation_email as de
+    from ..services import donation_statements as _stm
+    if kind == "STATEMENT":
+        e = _stm._donor(db, ctx, donor_entity_id)
+        amount = _stm._content(db, ctx.workspace_id, e, _stm._year(year or 0))["total"]
+        return de.defaults(db, ctx, de.STATEMENT, e, amount, year)
+    if donation_id is not None:
+        d = svc.get_donation(db, ctx, donation_id)
+    else:
+        t = db.get(RegisterTransaction, transaction_id) if transaction_id else None
+        if t is None or t.workspace_id != ctx.workspace_id:
+            from ..errors import not_found
+            raise not_found("Transaction")
+        d = svc._deposit_donation(db, t, donor_entity_id)
+    e = db.get(Entity, d.donor_entity_id)
+    c = svc._compose(db, ctx, d)
+    return de.defaults(db, ctx, de.RECEIPT, e, c["c"]["amount"])
+
+
+@router.post("/{donation_id}/receipts/email")
+def email_donation_receipt(donation_id: int, body: DonationEmailIn, request: Request, db: Session = Depends(get_db),
+                           ctx: Ctx = Depends(print_ctx)):
+    from ..services import donation_email as de
+    return de.email_donation(db, ctx, request.app.state.key, request.app.state.settings,
+                             svc.get_donation(db, ctx, donation_id), body)
+
+
+@router.post("/transactions/{txn_id}/receipts/email")
+def email_deposit_receipt(txn_id: int, body: DonationEmailIn, request: Request, db: Session = Depends(get_db),
+                          ctx: Ctx = Depends(print_ctx)):
+    from ..models import RegisterTransaction
+    from ..services import donation_email as de
+    t = db.get(RegisterTransaction, txn_id)
+    if t is None or t.workspace_id != ctx.workspace_id:
+        from ..errors import not_found
+        raise not_found("Transaction")
+    return de.email_deposit_receipt(db, ctx, request.app.state.key, request.app.state.settings, t,
+                                    body.donor_entity_id, body)
+
+
+@router.post("/statements/{year}/donors/{donor_id}/email")
+def email_statement(year: int, donor_id: int, body: DonationEmailIn, request: Request, db: Session = Depends(get_db),
+                    ctx: Ctx = Depends(print_ctx)):
+    from ..services import donation_email as de
+    return de.email_statement(db, ctx, request.app.state.key, request.app.state.settings, year, donor_id, body)
 
 
 @router.get("/statements/printed/{statement_id}/document")

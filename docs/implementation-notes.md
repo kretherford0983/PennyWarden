@@ -128,6 +128,22 @@ could not otherwise be corrected. Scope and safeguards:
   with a link; the variable picker completes dotted names.
 - Tests: `backend/tests/test_v210_organization.py` (6, including the data migration) and the E2E #126 and #312 steps.
 
+**2.4.0 — email donation receipts and statements (#539, decided with Kyle 2026-11-06).** Reuses the invoice email
+code (`email._send_logged`: mail server, email log, audit). `services/donation_email.py`: `GET
+/api/donations/email/defaults` (Donations Setup's `email_subject` / `email_message` or `statement_email_*`, variables
+filled), `POST /api/donations/{id}/receipts/email`, `/transactions/{id}/receipts/email`,
+`/statements/{year}/donors/{id}/email` (print permission). Sending **issues** the document: `print_donation` /
+`print_receipt` / `statement.print_one` take `before_commit`, which sends; a refused send raises, so nothing is issued,
+and the failed attempt is logged afterwards (`EMAIL_SEND_FAILED`, 502 `EMAIL_NOT_SENT`). Email log kinds `RECEIPT` /
+`DONOR_STMT`; audit `DONATION_RECEIPT_EMAILED` / `DONATION_STATEMENT_EMAILED`. `me.email_ready` (read only) hides the
+Email buttons when the mail server isn't set up and on. Sender overrides: `ReceiptConfig.email_reply_to` /
+`email_from_name`, `invoice_settings.email_reply_to` / `email_from_name` (migration `0088`); `email._message(sender=)`
+uses them over the Email setup's; the From address is always the server account's.
+- **BR-DON-EM-001** receipts and statements are emailed by whoever can print them, only with the mail server set up;
+  **-002** emailing issues the document as printing does, and a refused email issues nothing; **-003** Invoices and
+  Donations each may set their own Reply-To and From name (empty: the Email setup's). ACs **AC-DON-EM-001..004**.
+  Tests: `backend/tests/test_v240_donation_email.py` (5).
+
 **2.4.0 — customer account credit (#534, decided with Kyle 2026-11-06).** A customer's credit is every
 `OVERPAYMENT` link not refunded (`figures().refundable`) on their invoices - existing ones included (migration `0087`
 adds only `invoice_payment.credit_from_invoice_id`). `invoice_payments.credit_sources` / `credit_out`

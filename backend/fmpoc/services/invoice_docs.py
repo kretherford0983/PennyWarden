@@ -222,6 +222,7 @@ def setup_out(db: Session, ctx) -> dict:
             "next_number_example": format_number(s.number_pattern, dt.date.today(), _next_seq(db, ctx.workspace_id, s)),
             "terms_days": s.terms_days, "terms_text": s.terms_text, "default_notes": s.default_notes,
             "overdue_reminder_days": s.overdue_reminder_days or 0,
+            "email_reply_to": s.email_reply_to, "email_from_name": s.email_from_name,          # 2.4.0 (#539)
             "fields": [field_out(f) for f in fields_of(db, ctx.workspace_id, include_inactive=True)],
             "pending": []}
 
@@ -230,7 +231,8 @@ def save_setup(db: Session, ctx, body) -> dict:
     inv.require_module(db, ctx)
     s = settings_of(db, ctx.workspace_id)
     before = {"number_pattern": s.number_pattern, "terms_days": s.terms_days, "terms_text": s.terms_text,
-              "default_notes": s.default_notes, "overdue_reminder_days": s.overdue_reminder_days or 0}
+              "default_notes": s.default_notes, "overdue_reminder_days": s.overdue_reminder_days or 0,
+              "email_reply_to": s.email_reply_to, "email_from_name": s.email_from_name}
     s.number_pattern = check_pattern(body.number_pattern)
     if not 0 <= body.terms_days <= 365:
         raise validation("Terms are 0 to 365 days.", "terms_days")
@@ -241,9 +243,14 @@ def save_setup(db: Session, ctx, body) -> dict:
         if not 0 <= body.overdue_reminder_days <= 365:
             raise validation("The reminder is 0 to 365 days after the due date.", "overdue_reminder_days")
         s.overdue_reminder_days = body.overdue_reminder_days
+    if "email_reply_to" in body.model_fields_set or "email_from_name" in body.model_fields_set:   # 2.4.0 (#539)
+        from .email import _addr
+        s.email_reply_to = _addr(body.email_reply_to, "email_reply_to")
+        s.email_from_name = (body.email_from_name or "").strip()[:120] or None
     s.updated_by_user_id = ctx.user.id
     after = {"number_pattern": s.number_pattern, "terms_days": s.terms_days, "terms_text": s.terms_text,
-             "default_notes": s.default_notes, "overdue_reminder_days": s.overdue_reminder_days or 0}
+             "default_notes": s.default_notes, "overdue_reminder_days": s.overdue_reminder_days or 0,
+             "email_reply_to": s.email_reply_to, "email_from_name": s.email_from_name}
     if after != before:
         db.flush()
         audit.record(db, ctx, "INVOICE_SETUP_UPDATED", "invoice_settings", s.id, before, after)
