@@ -47,6 +47,7 @@ export function MultiPaymentForm({ invoiceIds, customerIds, onClose, onDone }: {
   const [payer, setPayer] = useState("");
   const [overTo, setOverTo] = useState("");
   const [v, setV] = useState({ bank_account_id: "", transaction_date: todayIso(), notes: "" });
+  const [credit, setCredit] = useState<any>(null);
   useEffect(() => { api.get("/api/entities").then(setEntities, () => setEntities([])); }, []);
   useEffect(() => {
     const start = accts.length === 1 ? accts[0] : accts.find((a) => a.is_primary);
@@ -64,6 +65,7 @@ export function MultiPaymentForm({ invoiceIds, customerIds, onClose, onDone }: {
   };
   const fetchOpen = async (params: Record<string, string>) => {
     const r: any = await api.get(`/api/invoices/payments/open?${new URLSearchParams(params).toString()}`);
+    setCredit(r.credit && Number(r.credit.total) ? r.credit : null);                // 2.4.0 (#534)
     return (r.invoices as any[]).map((x) => ({ ...x, customer: r.customer.name }));
   };
   // ticked in the list: their customers' open invoices, keeping only the ticked ones
@@ -124,6 +126,8 @@ export function MultiPaymentForm({ invoiceIds, customerIds, onClose, onDone }: {
             </Field>
           </div>
         ) : null}
+        {credit ? <p className="hint" data-testid="multi-payment-credit">This customer has {money(credit.total)} of account credit (overpayments on{" "}
+          {credit.invoices.map((x: any) => x.number).join(", ")}). It is applied when their next invoice is sent, or refunded on that invoice.</p> : null}
         {rows.length ? (
           <>
             <Field label="Amount received" hint="Fills the balances oldest due date first; change any invoice's part below.">

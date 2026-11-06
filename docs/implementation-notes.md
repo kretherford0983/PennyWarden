@@ -128,6 +128,23 @@ could not otherwise be corrected. Scope and safeguards:
   with a link; the variable picker completes dotted names.
 - Tests: `backend/tests/test_v210_organization.py` (6, including the data migration) and the E2E #126 and #312 steps.
 
+**2.4.0 — customer account credit (#534, decided with Kyle 2026-11-06).** A customer's credit is every
+`OVERPAYMENT` link not refunded (`figures().refundable`) on their invoices - existing ones included (migration `0087`
+adds only `invoice_payment.credit_from_invoice_id`). `invoice_payments.credit_sources` / `credit_out`
+(`GET /api/invoices/credit?customer_entity_id=`, `payments.customer_credit`, `/payments/open`'s `credit`).
+`apply_credit` runs in `invoice_docs.send` (status set first, then credit, then the PDF): oldest first, up to the open
+balance; each overpayment line is re-allocated on its own deposit through `register._update` (a savepoint; the
+system accepts the edit's warnings) - the applied part becomes the new invoice's splits (`_invoice_allocations`),
+linked with `credit_from_invoice_id`, the rest stays the overpayment; the deposit's total doesn't change; a deposit in
+a Closed Fiscal Year (or not active) is skipped. `remove_credit` (`POST /{iid}/credit/remove`, `transaction.manage`,
+reason) puts it back as an overpayment on the source invoice. Moving credit = Unlink of the overpayment line, refused
+(`PARTLY_REFUNDED`) when part of it was refunded. PDF: *New charges, Account credit applied, [Paid], Total due*.
+Statement: an *Account credit (today)* section. Audit `INVOICE_CREDIT_APPLIED` / `INVOICE_CREDIT_REMOVED`.
+- **BR-INV-CR-001** credit = overpayments not refunded, the customer's; **-002** applied automatically on send, oldest
+  first, up to what is owed, never from a Closed Fiscal Year; **-003** a Register User takes it back off, refunds it,
+  or moves it (reason); **-004** the invoice, its PDF and the statement show it. ACs **AC-INV-CR-001..005**. Tests:
+  `backend/tests/test_v240_customer_credit.py` (6); E2E in `#533`.
+
 **2.4.0 — One current user guide, archived release notes, in-app Help and the guide on pennywarden.org (#473,
 decided with Kyle 2026-11-02).** The `docs/user-guide-v*.md` files were "what's new" notes, not full guides; a new
 feature-organized `docs/user-guide.md` replaces them and they moved to `docs/archive/` (only their relative links were

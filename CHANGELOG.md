@@ -111,6 +111,11 @@ PennyWarden 2.4.0 (in progress).
   the invoice reports. **Recently run** still opens a report with that run's choices; a run "to today" (or "as of
   today", or from the first of the month) reopens to the current day. Dates the screens fill in (a new invoice, a
   payment, report periods) are your calendar date; before, they could show tomorrow in the evening.
+- **Customer credit (#534).** An overpayment not refunded is the customer's **account credit**. It is applied
+  automatically when their next invoice is marked as sent (oldest first), shown on the invoice and its PDF (**New
+  charges, Account credit applied, Total due**), on their other invoices, in Record a payment and on their statement. A
+  Register User can take an applied credit back off, refund it, or move it to another budget (for example a donation)
+  with a reason. Existing overpayments count as credit.
 - **Apply a Register deposit to an invoice (#533).** A deposit entered in the Register can pay invoices: **Apply to
   invoice…** on an allocation lists the customer's open invoices (oldest due first) and, when saved, spreads the
   applied part over each invoice's budgets and links it - while the deposit's other allocations stay as entered (one

@@ -4713,6 +4713,16 @@ test("2.4.0 (#533): a deposit entered in the Register is applied to an invoice; 
   const txn = await call("GET", `/api/transactions/${after.payments.links[0].transaction_id}`);
   expect(txn.total).toBe("150.00");
   expect(txn.allocations.filter((a: any) => !a.invoice).map((a: any) => [a.amount, a.budget.label.split(" ")[0]])).toEqual([["50.00", "4954"]]);
+  // #534: a $30 overpayment is the customer's credit, applied when their next invoice is marked as sent
+  const i2 = await call("POST", "/api/invoices", { customer_entity_id: cust.id, invoice_date: "2026-09-30", lines: [{ product_id: prod.id, quantity: "1" }] });
+  await call("POST", `/api/invoices/${i2.id}/send`);
+  await call("POST", `/api/invoices/${i2.id}/payments`, { bank_account_id: txn.bank_account_id, amount: "130.00", transaction_date: "2026-09-30", confirm_overpayment: true, confirmations: ["POSSIBLE_DUPLICATE"] });
+  const i3 = await call("POST", "/api/invoices", { customer_entity_id: cust.id, invoice_date: "2026-09-30", lines: [{ product_id: prod.id, quantity: "1" }] });
+  await page.goto(`/invoices/${i3.id}`);
+  await page.getByRole("button", { name: "Mark as sent" }).click();
+  await expect(page.getByTestId("inv-credit-applied")).toHaveText("$30.00");
+  await expect(page.getByTestId("inv-open")).toHaveText("$70.00");
+  await page.screenshot({ path: "e2e-screenshots/light-invoice-credit.png", fullPage: true });
   await logout(page);
   await login(page, "admin");
   ({ me, call } = await caller());

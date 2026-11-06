@@ -505,35 +505,44 @@ def update(db: Session, ctx, i: Invoice, body) -> Invoice:
 
 # ------------------------------------------------------------------ send / revise
 def send(db: Session, ctx, settings, i: Invoice) -> Invoice:
-    """Mark as sent: the PDF of this version is made and kept with the invoice (every version's stays)."""
+    """Mark as sent: the PDF of this version is made and kept with the invoice (every version's stays). 2.4.0 (#534,
+    Kyle 2026-11-06): the customer's credit is applied first, so the PDF shows it."""
     ctx.require("invoice.manage")
     if i.status != "DRAFT":
         raise conflict("NOT_DRAFT", "Only a draft (or a revision being prepared) can be marked as sent.")
     from . import attachments as att_svc
+    from .invoice_payments import apply_credit, refresh_status
     refresh_taxes(db, i, _fy_for(db, ctx.workspace_id, i.invoice_date))        # 2.4.0 polish (#487): current rates
-    pdf = invoice_pdf(db, ctx.workspace_id, i)
     before = snapshot(i)
     t = totals_of(i)
-    att, path = att_svc.new_record(db, ctx, settings, pdf,
-                                   original_filename=att_svc.sanitize_filename(f"invoice-{display_number(i)}.pdf"),
-                                   mime_type="application/pdf", invoice_id=i.id, document_type="INVOICE_PDF",
-                                   system_generated=True)
+    path = None
     try:
+        i.status = "SENT"
+        i.sent_at, i.sent_by_user_id = utcnow(), ctx.user.id
+        db.flush()
+        refresh_status(db, ctx, i)                          # 2.4.0 (#254): a revision may already be (partly) paid
+        credit = apply_credit(db, ctx, i) if inv.module_enabled(db, ctx.workspace_id) else 0
+        if credit:
+            db.refresh(i)
+            refresh_status(db, ctx, i)
+        pdf = invoice_pdf(db, ctx.workspace_id, i)
+        att, path = att_svc.new_record(db, ctx, settings, pdf,
+                                       original_filename=att_svc.sanitize_filename(f"invoice-{display_number(i)}.pdf"),
+                                       mime_type="application/pdf", invoice_id=i.id, document_type="INVOICE_PDF",
+                                       system_generated=True)
         r = InvoiceRevision(invoice_id=i.id, revision=i.revision, number=display_number(i), total_cents=t["total"],
                             snapshot=json.dumps(snapshot(i), sort_keys=True), attachment_id=att.id,
                             sent_at=utcnow(), sent_by_user_id=ctx.user.id)
         db.add(r)
-        i.status = "SENT"
-        i.sent_at, i.sent_by_user_id = utcnow(), ctx.user.id
         db.flush()
-        from .invoice_payments import refresh_status        # 2.4.0 (#254): a revision may already be (partly) paid
-        refresh_status(db, ctx, i)
         audit.record(db, ctx, "INVOICE_SENT", "invoice", i.id, before,
-                     {**snapshot(i), "pdf_attachment_id": att.id, "pdf_sha256": hashlib.sha256(pdf).hexdigest()})
+                     {**snapshot(i), "pdf_attachment_id": att.id, "pdf_sha256": hashlib.sha256(pdf).hexdigest(),
+                      **({"credit_applied": _money(credit)} if credit else {})})
         db.commit()
     except Exception:
         db.rollback()
-        att_svc.discard_new_file(path)
+        if path is not None:
+            att_svc.discard_new_file(path)
         raise
     return i
 
@@ -692,8 +701,14 @@ def _paid_part(db: Session, i: Invoice, total: int) -> dict:
     from .invoice_payments import figures
     if i.status not in ("PARTLY_PAID", "PAID"):
         return {}
+    from .invoice_payments import _live_links
     paid = figures(db, i)["paid"]
-    return {"paid": _money(paid), "balance": _money(max(total - paid, 0))} if paid else {}
+    # 2.4.0 (#534): the customer's credit applied is its own line (New charges, Account credit applied, Total due)
+    credit = sum(a.amount_cents for link, a, _t in _live_links(db, i.id) if link.credit_from_invoice_id)
+    out = {"paid": _money(paid - credit)} if paid - credit else {}
+    if credit:
+        out["credit"] = _money(credit)
+    return {**out, "balance": _money(max(total - paid, 0))} if paid else {}
 
 
 def _sample_data() -> dict:

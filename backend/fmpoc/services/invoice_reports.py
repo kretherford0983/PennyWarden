@@ -221,7 +221,19 @@ def statement(db: Session, ctx, customer_id: int | None, date_from: dt.date | No
                  "totals": {"what": "Total", **_sum(activity, "charge", "credit")}},
                 {"heading": f"Open invoices as of {date_to.isoformat()}", "columns": ocols, "rows": open_rows,
                  "totals": {"number": "Amount due", **_sum(open_rows, "open")}},
-            ]}
+            ] + _credit_section(db, ws, e.id)}
+
+
+def _credit_section(db: Session, ws: int, customer_id: int) -> list[dict]:
+    """2.4.0 (#534): the customer's account credit today (overpayments not refunded), applied to their next invoice."""
+    from . import invoice_payments as pay
+    src = pay.credit_sources(db, ws, customer_id)
+    if not src:
+        return []
+    rows = [{"number": docs.display_number(x["invoice"]), "amount": x["amount"]} for x in src]
+    return [{"heading": "Account credit (today)", "columns": [("number", "Overpaid on invoice", "text"),
+                                                              ("amount", "Credit", "money")],
+             "rows": rows, "totals": {"number": "Account credit", **_sum(rows, "amount")}}]
 
 
 def sales_tax(db: Session, ctx, date_from: dt.date | None, date_to: dt.date | None) -> dict:

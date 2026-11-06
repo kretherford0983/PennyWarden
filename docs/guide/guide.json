@@ -402,7 +402,7 @@
         {
           "id": "record-payment",
           "title": "Recording a payment",
-          "summary": "Register Users: the deposit from an invoice, one payment for several invoices, or a Register deposit applied to invoices."
+          "summary": "Register Users: the deposit from an invoice, one payment for several invoices, a Register deposit applied to invoices, and customer credit."
         },
         {
           "id": "batches",
