@@ -270,13 +270,14 @@ export function InvoiceSetup() {
     }, 250);
     return () => { live = false; window.clearTimeout(t); };
   }, [pattern]);
-  useEffect(() => { api.get("/api/invoices/setup").then((x) => { setO(x); setV({ number_pattern: x.number_pattern, terms_days: String(x.terms_days), terms_text: x.terms_text || "", default_notes: x.default_notes || "", overdue_reminder_days: String(x.overdue_reminder_days ?? 0) }); }, setErr); }, []);
+  useEffect(() => { api.get("/api/invoices/setup").then((x) => { setO(x); setV({ number_pattern: x.number_pattern, terms_days: String(x.terms_days), terms_text: x.terms_text || "", default_notes: x.default_notes || "", overdue_reminder_days: String(x.overdue_reminder_days ?? 0), email_reply_to: x.email_reply_to || "", email_from_name: x.email_from_name || "" }); }, setErr); }, []);
   if (!o || !v) return <><ErrorBox error={err} />{err ? null : <Loading />}</>;
   const set = (k: string) => (e: any) => { setSaved(false); setV({ ...v, [k]: e.target.value }); };
   const save = async (e: FormEvent) => {
     e.preventDefault();
     setErr(null);
-    try { const x = await api.put("/api/invoices/setup", { ...v, terms_days: Number(v.terms_days), overdue_reminder_days: Number(v.overdue_reminder_days) }); setO(x); setSaved(true); } catch (x) { setErr(x); }
+    try { const x = await api.put("/api/invoices/setup", { ...v, terms_days: Number(v.terms_days), overdue_reminder_days: Number(v.overdue_reminder_days),
+      email_reply_to: v.email_reply_to || null, email_from_name: v.email_from_name || null }); setO(x); setSaved(true); } catch (x) { setErr(x); }
   };
   return (
     <div>
@@ -297,6 +298,11 @@ export function InvoiceSetup() {
           <Field label="Overdue reminder (days after the due date)" hint="Invoice Managers see a reminder for each unpaid invoice from its due date plus this many days (0 = on the due date).">
             <input type="number" min={0} max={365} value={v.overdue_reminder_days} onChange={set("overdue_reminder_days")} />
           </Field>
+          {/* 2.4.0 (#539): invoice and statement emails can reply elsewhere and use their own sender name */}
+          <div className="row fields">
+            <Field label="Email Reply-To (optional)" hint="Where customers' replies go; empty = the Email setup's."><input type="email" maxLength={254} placeholder="invoicing@example.org" value={v.email_reply_to} onChange={set("email_reply_to")} /></Field>
+            <Field label="Email From name (optional)" hint="The sender name customers see; empty = the Email setup's. The From address is always the mail server's."><input maxLength={120} value={v.email_from_name} onChange={set("email_from_name")} /></Field>
+          </div>
           <div className="actions"><button className="primary" type="submit">Save</button>{saved ? <span role="status" className="muted">Saved.</span> : null}</div>
         </GuardedForm>
       </section>
@@ -630,6 +636,7 @@ function Payments({ i, onChanged }: { i: any; onChanged: (i: any) => void }) {
   const { can } = useMe();
   const [mode, setMode] = useState<null | "pay" | "refund" | "link">(null);
   const [unlink, setUnlink] = useState<any>(null);
+  const [takeOff, setTakeOff] = useState(false);                 // 2.4.0 (#534)
   const p = i.payments;
   const open = ["SENT", "PARTLY_PAID", "PAID"].includes(i.status) && i.write_off?.status !== "PENDING";
   const live = p.links.filter((x: any) => !x.unlinked);
@@ -639,7 +646,10 @@ function Payments({ i, onChanged }: { i: any; onChanged: (i: any) => void }) {
       <dl className="dl">
         <dt>Paid</dt><dd data-testid="inv-paid">{money(p.paid)}</dd>
         <dt>Open balance</dt><dd data-testid="inv-open">{money(p.open)}</dd>
-        {Number(p.overpaid) ? <><dt>Overpaid</dt><dd>{money(p.overpaid)}{Number(p.refunded) ? ` (refunded ${money(p.refunded)})` : ""}</dd></> : null}
+        {Number(p.credit_applied) ? <><dt>Account credit applied</dt><dd data-testid="inv-credit-applied">{money(p.credit_applied)}</dd></> : null}
+        {Number(p.overpaid) ? <><dt>Overpaid (customer credit)</dt><dd>{money(p.overpaid)}{Number(p.refunded) ? ` (refunded ${money(p.refunded)})` : ""}</dd></> : null}
+        {Number(p.customer_credit?.total) ? <><dt>Customer's credit on other invoices</dt><dd data-testid="inv-customer-credit">{money(p.customer_credit.total)}
+          <span className="muted small"> — applied when their next invoice is sent</span></dd></> : null}
       </dl>
       {live.length ? (
         <table className="table">
@@ -647,11 +657,12 @@ function Payments({ i, onChanged }: { i: any; onChanged: (i: any) => void }) {
           <tbody>{live.map((x: any) => (
             <tr key={x.id} className={x.status !== "ACTIVE" ? "muted" : undefined}>
               <td>{x.date}</td>
-              <td>{x.kind === "PAYMENT" ? "Payment" : x.kind === "OVERPAYMENT" ? "Overpayment" : "Refund"}{x.status !== "ACTIVE" ? <span className="badge grey">Void</span> : null}</td>
+              <td>{x.credit_from ? `Credit from ${x.credit_from.number}` : x.kind === "PAYMENT" ? "Payment" : x.kind === "OVERPAYMENT" ? "Overpayment (credit)" : "Refund"}{x.status !== "ACTIVE" ? <span className="badge grey">Void</span> : null}</td>
               <td className="num">{x.kind === "REFUND" ? "−" : ""}{money(x.amount)}</td>
               <td>{x.budget?.label}</td>
               <td>{can("register.view") && x.bank_account_id ? <Link to={`/register?account=${x.bank_account_id}&txn=${x.transaction_id}`}>Transaction #{x.transaction_id}</Link> : `#${x.transaction_id}`}</td>
-              <td>{can("transaction.manage") && x.status === "ACTIVE" && x.kind !== "REFUND" ? <button className="small" onClick={() => setUnlink(x)}>Unlink…</button> : null}</td>
+              <td>{can("transaction.manage") && x.status === "ACTIVE" && x.kind !== "REFUND" && !x.credit_from
+                ? <button className="small" onClick={() => setUnlink(x)}>{x.kind === "OVERPAYMENT" ? "Move credit…" : "Unlink…"}</button> : null}</td>
             </tr>
           ))}</tbody>
         </table>
@@ -659,12 +670,36 @@ function Payments({ i, onChanged }: { i: any; onChanged: (i: any) => void }) {
       {open ? <div className="row">
         {can("invoice.record_payment") ? <button className="primary" onClick={() => setMode("pay")}>Record payment…</button> : null}
         {can("invoice.link_payment") && Number(p.open) > 0 ? <button onClick={() => setMode("link")}>Link a deposit…</button> : null}
-        {can("invoice.record_payment") && Number(p.refundable) > 0 ? <button onClick={() => setMode("refund")}>Refund overpayment…</button> : null}
+        {can("invoice.record_payment") && Number(p.refundable) > 0 ? <button onClick={() => setMode("refund")}>Refund credit…</button> : null}
+        {can("transaction.manage") && Number(p.credit_applied) > 0 ? <button onClick={() => setTakeOff(true)}>Take credit off…</button> : null}
       </div> : null}
+      {takeOff ? <TakeCreditOff i={i} onClose={() => setTakeOff(false)} onDone={(x) => { setTakeOff(false); onChanged(x); }} /> : null}
       {mode === "pay" || mode === "refund" ? <MoneyForm i={i} refund={mode === "refund"} onClose={() => setMode(null)} onDone={(x) => { setMode(null); onChanged(x); }} /> : null}
       {mode === "link" ? <LinkForm i={i} onClose={() => setMode(null)} onDone={(x) => { setMode(null); onChanged(x); }} /> : null}
       {unlink ? <UnlinkForm i={i} link={unlink} onClose={() => setUnlink(null)} onDone={(x) => { setUnlink(null); onChanged(x); }} /> : null}
     </section>
+  );
+}
+
+/** 2.4.0 (#534): the credit applied to this invoice is the customer's credit again (Register User, with a reason). */
+function TakeCreditOff({ i, onClose, onDone }: { i: any; onClose: () => void; onDone: (i: any) => void }) {
+  const [reason, setReason] = useState("");
+  const [err, setErr] = useState<unknown>(null);
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    setErr(null);
+    try { onDone(await api.post(`/api/invoices/${i.id}/credit/remove`, { reason })); } catch (x) { setErr(x); }
+  };
+  return (
+    <Modal title="Take credit off" onClose={onClose}>
+      <form onSubmit={submit}>
+        <ErrorBox error={err} />
+        <p>The {money(i.payments.credit_applied)} of account credit applied to this invoice goes back to being the customer's credit (an
+          overpayment on the invoice it came from). The invoice owes that amount again.</p>
+        <Field label="Reason"><input required maxLength={500} value={reason} onChange={(e) => setReason(e.target.value)} /></Field>
+        <div className="actions"><button type="button" onClick={onClose}>Cancel</button><button className="primary" type="submit" disabled={!reason.trim()}>Take credit off</button></div>
+      </form>
+    </Modal>
   );
 }
 
@@ -690,7 +725,7 @@ function MoneyForm({ i, refund, onClose, onDone }: { i: any; refund: boolean; on
     } catch (x) { setErr(x); }
   }
   return (
-    <Modal title={refund ? "Refund overpayment" : "Record payment"} onClose={onClose}>
+    <Modal title={refund ? "Refund credit" : "Record payment"} onClose={onClose}>
       <form onSubmit={submit}>
         <ErrorBox error={err} />
         <p className="hint">{refund
@@ -711,23 +746,40 @@ function MoneyForm({ i, refund, onClose, onDone }: { i: any; refund: boolean; on
 
 function LinkForm({ i, onClose, onDone }: { i: any; onClose: () => void; onDone: (i: any) => void }) {
   const { run, dialog } = useConfirmable();
+  const { can } = useMe();
   const [rows, setRows] = useState<any[] | null>(null);
   const [err, setErr] = useState<unknown>(null);
+  const [extra, setExtra] = useState<Record<number, string>>({});
   useEffect(() => { api.get(`/api/invoices/${i.id}/link-candidates`).then(setRows, setErr); }, [i.id]);
-  async function pick(aid: number) {
+  const open = Number(i.payments.open);
+  async function pick(r: any) {
     setErr(null);
-    try { const r = await run((codes) => api.post(`/api/invoices/${i.id}/links`, { allocation_id: aid, confirmations: codes })); if (r) onDone(r); }
+    const more = Number(r.amount) > open;
+    try { const x = await run((codes) => api.post(`/api/invoices/${i.id}/links`, { allocation_id: r.allocation_id, confirmations: codes,
+      ...(r.moves && more ? { extra: extra[r.allocation_id] || "BUDGET" } : {}) })); if (x) onDone(x); }
     catch (x) { setErr(x); }
   }
+  // 2.4.0 (#533): a line on an ordinary Income budget is moved onto this invoice's budgets when linked (a register edit,
+  // Register User); the rest of a larger line stays on its budget, is kept as credit or refunded
+  const mover = can("transaction.manage");
   return (
-    <Modal title="Link a deposit" onClose={onClose}>
+    <Modal title="Link a deposit" onClose={onClose} wide>
       <ErrorBox error={err} />
-      <p className="hint">Deposit lines on an Invoiced Income budget that aren't linked yet. A line larger than the open balance ({money(i.payments.open)}) is split in the register first.</p>
+      <p className="hint">Unlinked deposit lines on Income budgets, {i.customer?.name ? `${i.customer.name}'s first` : "the customer's first"}. A line on another
+        Income budget is moved onto this invoice's budgets when linked (up to the open balance of {money(i.payments.open)}).</p>
       {rows === null ? <Loading /> : rows.length ? (
         <table className="table"><thead><tr><th>Date</th><th>From</th><th>Budget</th><th className="num">Amount</th><th /></tr></thead>
-          <tbody>{rows.map((r) => <tr key={r.allocation_id}><td>{r.date}</td><td>{r.entity || "—"}</td><td>{r.budget?.label}</td><td className="num">{money(r.amount)}</td>
-            <td><button className="small" onClick={() => pick(r.allocation_id)}>Link</button></td></tr>)}</tbody></table>
-      ) : <p className="muted">No unlinked deposits on Invoiced Income budgets.</p>}
+          <tbody>{rows.map((r) => {
+            const more = Number(r.amount) > open;
+            return <tr key={r.allocation_id}><td>{r.date}</td><td>{r.entity || "—"}</td><td>{r.budget?.label}{r.moves ? <div className="muted small">moved onto the invoice's budgets</div> : null}</td>
+              <td className="num">{money(r.amount)}</td>
+              <td>{r.moves && more ? (
+                <select aria-label={`Rest of the ${r.amount} line`} value={extra[r.allocation_id] || "BUDGET"} onChange={(e) => setExtra({ ...extra, [r.allocation_id]: e.target.value })}>
+                  <option value="BUDGET">The rest stays on its budget</option><option value="CREDIT">The rest kept as credit</option><option value="REFUND">The rest refunded</option></select>) : null}
+                {r.moves && !mover ? <span className="muted small">A Register User links this one</span>
+                  : <button className="small" disabled={!r.moves && more} onClick={() => pick(r)}>Link</button>}</td></tr>;
+          })}</tbody></table>
+      ) : <p className="muted">No unlinked deposits on Income budgets.</p>}
       <div className="actions"><button type="button" onClick={onClose}>Close</button></div>
       {dialog}
     </Modal>
@@ -749,14 +801,16 @@ function UnlinkForm({ i, link, onClose, onDone }: { i: any; link: any; onClose: 
     catch (x) { setErr(x); }
   }
   return (
-    <Modal title="Unlink payment" onClose={onClose}>
+    <Modal title={link.kind === "OVERPAYMENT" ? "Move credit" : "Unlink payment"} onClose={onClose}>
       <form onSubmit={submit}>
         <ErrorBox error={err} />
-        <p className="hint">The {money(link.amount)} line stays in the register and moves to another budget in the same step; the invoice's open balance goes back up.</p>
+        <p className="hint">{link.kind === "OVERPAYMENT"
+          ? <>The customer's {money(link.amount)} credit moves to another budget (for example a donation) in the same step; it is no longer their credit.</>
+          : <>The {money(link.amount)} line stays in the register and moves to another budget in the same step; the invoice's open balance goes back up.</>}</p>
         <Field label="Move the line to"><select required value={v.budget} onChange={(e) => setV({ ...v, budget: e.target.value })}>
           <option value="">Choose…</option>{opts.map((b) => <option key={b.id} value={b.id}>{b.label}</option>)}</select></Field>
         <Field label="Reason"><textarea required rows={2} maxLength={500} value={v.reason} onChange={(e) => setV({ ...v, reason: e.target.value })} /></Field>
-        <div className="actions"><button type="button" onClick={onClose}>Cancel</button><button className="primary" type="submit" disabled={!v.budget || !v.reason.trim()}>Unlink</button></div>
+        <div className="actions"><button type="button" onClick={onClose}>Cancel</button><button className="primary" type="submit" disabled={!v.budget || !v.reason.trim()}>{link.kind === "OVERPAYMENT" ? "Move credit" : "Unlink"}</button></div>
       </form>
     </Modal>
   );

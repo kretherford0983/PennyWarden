@@ -445,13 +445,27 @@ def _printed(db: Session, ctx, x: dict, km) -> bytes | None:
 
 
 def print_one(db: Session, ctx, settings, year: int, donor_id: int, confirmations: list[str],
-              km=None, signer_id: int | None = None) -> tuple[bytes, DonationStatement]:
+              km=None, signer_id: int | None = None, before_commit=None) -> tuple[bytes, DonationStatement]:
+    """`before_commit(printed pdf, statement)` (2.4.0 #539: emailing) runs before the statement is committed; if it
+    raises, the statement isn't issued."""
     x = _compose(db, ctx, _donor(db, ctx, donor_id), _year(year), signer_id=signer_id)
     require_confirmations(x["warnings"], confirmations)
     pdf = _pdf(x)                                   # kept with the record: never the signature image (#395)
     s, path = _keep(db, ctx, settings, x, pdf)
+    printed = _printed(db, ctx, x, km) or pdf
+    if before_commit is not None:
+        try:
+            before_commit(printed, s)
+        except Exception:
+            db.rollback()
+            if path is not None:
+                try:
+                    path.unlink()
+                except OSError:
+                    pass
+            raise
     _commit(db, [path])
-    return _printed(db, ctx, x, km) or pdf, s
+    return printed, s
 
 
 def print_all(db: Session, ctx, settings, year: int, min_cents: int, confirmations: list[str],

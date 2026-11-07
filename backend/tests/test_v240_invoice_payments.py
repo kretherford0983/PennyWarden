@@ -106,13 +106,14 @@ def test_register_refuses_unlinked_invoiced_income_deposits_and_locks_linked_lin
 
 
 def test_link_existing_deposit_capped_and_needs_invoiced_income(env, base, ib):
-    """AC-INV-PAY-002: a deposit not on Invoiced Income must be re-allocated first; a link can't exceed the open
-    balance; another payer is a warning; Invoice Manager may link, not record."""
+    """AC-INV-PAY-002: a link can't exceed the open balance; another payer is a warning; Invoice Manager may link,
+    not record. #533: a deposit line not on Invoiced Income is moved onto the invoice's budgets when linked - a
+    register edit, so a Register User's (test_v240_apply_to_invoice.py)."""
     other = env.budget(base["fy"]["id"], "4100", "Grants", "INCOME", "500.00")
     sel = {o["label"]: o["id"] for o in env.selectable(base["fy"]["id"], "DEPOSIT")}
     t = env.txn(ib["acct"], "DEPOSIT", [{"budget_id": sel["4100 Grants"], "amount": "50.00"}], date="2026-09-20")
     r = ib["im"].post(f"/api/invoices/{ib['inv']}/links", {"allocation_id": t["allocations"][0]["id"]})
-    assert r.status_code == 422 and r.json()["error"]["code"] == "NOT_INVOICED_INCOME"
+    assert r.status_code == 403                                   # moving it is a Register User's (#533)
     # a deposit entered before the module was on, on the Invoiced Income budget
     env.admin.put("/api/system/modules", {"invoices": False})
     big = env.txn(ib["acct"], "DEPOSIT", [{"budget_id": base["inc_leaf"], "amount": "500.00"}], date="2026-09-21")

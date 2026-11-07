@@ -25,3 +25,38 @@ matches the bank:
 
 Each invoice gets its part as **Record payment…** would give it, linked to that invoice. Voiding the deposit re-opens
 every invoice it paid; unlinking on one invoice moves only that invoice's lines.
+
+## A deposit entered in the Register first
+
+When you're already entering a deposit in the **Register** and realize it pays an invoice:
+
+1. Choose the **Entity** (the customer who paid) and enter the allocation's amount.
+2. Choose **Apply to invoice…** on that allocation. The customer's open invoices are listed, oldest due date first, and
+   the amount fills them in that order; change any invoice's part, or untick one.
+3. If the allocation is more than you apply, choose what happens to **the other** amount: keep it on the allocation's
+   budget (for example a fundraiser or a donation — pick that budget), keep it as the customer's **credit** (an
+   overpayment on an invoice), or **refund** it (a refund withdrawal is recorded with the deposit).
+4. **Save**. The applied part is spread over each invoice's Invoiced Income budgets and tax and linked to the invoice;
+   the deposit's other allocations stay as you entered them — one $1,150 check can pay a $1,000 invoice and put $150
+   on a fundraiser.
+
+A deposit already saved on another Income budget can be linked from the invoice: **Link a deposit…** lists the
+customer's deposit lines first, and linking moves the line onto the invoice's budgets (a Register User does this).
+
+## Customer credit
+
+Money received above what a customer's invoices owe is their **account credit** — an overpayment on an invoice, not
+yet refunded. It shows on the invoice (**Overpaid (customer credit)**), on the customer's other invoices, in **Record a
+payment…** and on their **statement**.
+
+- **Applied automatically:** when the customer's next invoice is **marked as sent**, their credit is applied to it,
+  oldest first, up to what it owes. The invoice shows **Account credit applied**, and its PDF shows **New charges**,
+  **Account credit applied** and **Total due**. The deposit that brought the money doesn't change; the credit's part
+  moves onto the new invoice's budgets.
+- **Take credit off…** (Register User, with a reason): the credit applied to an invoice becomes the customer's credit
+  again, and the invoice owes that amount again.
+- **Refund credit…** (Register User): a refund of the credit, as before.
+- **Move credit…** (Register User, with a reason): for example when the customer says to keep it as a donation — the
+  credit moves to another budget and is no longer theirs.
+
+A credit held by a deposit in a **Closed** Fiscal Year can't be applied automatically; it can still be refunded.

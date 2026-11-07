@@ -9,3 +9,10 @@ none, at the **Top left**, **Top center**, **Top right, above the organization's
 down) or **Top right, beside the organization's name** (the letter text stays where it is) — the same choices as a
 payment cover letter. With a window envelope it prints at the top right, clear of the windows. The year-end
 statement uses the same as the receipt letter, or its own choice.
+
+## Email
+
+The subject and message each emailed receipt and year-end statement starts with (they can be changed before sending),
+with variables: `{DONOR_NAME}`, `{ORG.NAME}`, `{AMOUNT}` (receipts), `{YEAR}` and `{TOTAL}` (statements). Optional:
+a **Reply-To** for donors' replies (for example donations@…) and a **From name** — empty uses the Email setup's. The
+From address is always the mail server's account.

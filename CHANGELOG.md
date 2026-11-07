@@ -106,11 +106,37 @@ PennyWarden 2.4.0 (in progress).
   (for example **Serial number**); the Invoice Manager ticks it on those products in the catalog. It is asked on each
   invoice line that uses such a product — required if the field says so — and prints after the line's description
   when *show on PDF* is on.
+- **Payment stub on invoices and statements (#522).** Invoices Setup → Invoice PDF can add a **payment stub** the
+  customer detaches and returns with their payment: below a dashed cut line on the invoice's last page (a page of its
+  own when there's no room), with the invoice number in large type, the dates, the customer and customer number, the
+  amount due, an Amount enclosed line, and who to pay and where to mail it (from the organization profile, editable),
+  optionally placed for a #9 return envelope window. Customer statements have their own stub setting, listing the open
+  invoices. Off until turned on.
+- **Restore settings piece by piece (#535).** In **What to restore**, Invoices Setup, Email (the mail server),
+  Organization logos and Signers are now sections of their own (they were part of General and Payments Setup). If a
+  restored Payments or Donations Setup names a signer that isn't in the restored signer list, that choice is cleared
+  and the restore says so; the next invoice number always follows the highest invoice, so no number is used twice.
 - **Reports open with their defaults (#528).** A report opened from the Reports catalog starts with its usual choices
   (today's date, this month, the current Fiscal Year) instead of your last run's - which left newer invoices out of
   the invoice reports. **Recently run** still opens a report with that run's choices; a run "to today" (or "as of
   today", or from the first of the month) reopens to the current day. Dates the screens fill in (a new invoice, a
   payment, report periods) are your calendar date; before, they could show tomorrow in the evening.
+- **Email donation receipts and statements (#539).** With the mail server set up (the one Invoices use), donation
+  receipts and year-end statements have an **Email…** button (none when email isn't set up). The email starts from a
+  subject and message set in Donations Setup and goes to the donor's address; sending issues the receipt or statement
+  just as printing does. Invoices Setup and Donations Setup can each have their own **Reply-To** and **From name**
+  (empty uses the Email setup's), for example invoicing@… and donations@….
+- **Customer credit (#534).** An overpayment not refunded is the customer's **account credit**. It is applied
+  automatically when their next invoice is marked as sent (oldest first), shown on the invoice and its PDF (**New
+  charges, Account credit applied, Total due**), on their other invoices, in Record a payment and on their statement. A
+  Register User can take an applied credit back off, refund it, or move it to another budget (for example a donation)
+  with a reason. Existing overpayments count as credit.
+- **Apply a Register deposit to an invoice (#533).** A deposit entered in the Register can pay invoices: **Apply to
+  invoice…** on an allocation lists the customer's open invoices (oldest due first) and, when saved, spreads the
+  applied part over each invoice's budgets and links it - while the deposit's other allocations stay as entered (one
+  check for an invoice and a fundraiser). Above the invoices, the rest stays on its budget, is kept as the customer's
+  credit, or is refunded at once. **Link a deposit…** on an invoice now also takes a deposit already saved on another
+  Income budget and moves it onto the invoice's budgets. Before, a deposit entered first could not reach an invoice.
 - **One payment for several invoices (#523).** When one check pays several invoices, a Register User records it once:
   tick the invoices in the list (**Record payment for N invoices…**) or choose **Record a payment…** and pick the
   customer — or type an invoice number from a payment stub. The amount received fills the balances oldest due date
