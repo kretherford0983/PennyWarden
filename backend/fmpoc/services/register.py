@@ -151,10 +151,13 @@ def out(db: Session, t: RegisterTransaction, running_balance: int | None = None)
             key = ("t", t.id) if att.transaction_id else ("a", att.allocation_id)
             att_counts[key] = att_counts.get(key, 0) + 1
     acct = db.get(BankAccount, t.bank_account_id)
+    from . import invoice_payments as ipay                 # 2.4.0 (#533): the invoice a line pays (or refunds)
+    paying = ipay.allocation_invoices(db, [a.id for a in t.live_allocations])
     allocs = []
     for a in t.live_allocations:
         allocs.append({**alloc_snapshot(a), "budget": _budget_info(db, a.budget), "entity": entity_brief(a.entity),
-                       "reviews": reviews.get(a.id, []), "attachment_count": att_counts.get(("a", a.id), 0)})
+                       "reviews": reviews.get(a.id, []), "attachment_count": att_counts.get(("a", a.id), 0),
+                       "invoice": paying.get(a.id)})
     closed = is_closed_protected(db, t)
     total = t.total_cents
     return {
@@ -412,6 +415,18 @@ def check_clear_date(txn_date: dt.date, clear_date: dt.date | None) -> None:
 
 # ------------------------------------------------------------------ create
 def create(db: Session, ctx, data, invoice_flow: dict | None = None) -> RegisterTransaction:
+    from . import invoice_payments as ipay                 # 2.4.0 (#533): Apply to invoice on an allocation
+    applied = ipay.expand_applications(db, ctx, data.transaction_type, data.transaction_date or dt.date.today(),
+                                       data.entity_id, data.allocations or [])
+    if applied is not None:
+        data = data.model_copy(update={"allocations": applied.allocations})
+    t = _create(db, ctx, data, invoice_flow, applied)
+    if applied is not None:
+        ipay.finish_applications(db, ctx, t, applied)
+    return t
+
+
+def _create(db: Session, ctx, data, invoice_flow: dict | None, applied) -> RegisterTransaction:
     """`invoice_flow` (2.4.0 #254, set only by the invoice payment service): {"refund_ok": budget ids} - lets a
     payment land on Invoiced Income budgets and a refund withdrawal use the BR-050 exception."""
     acct = _account_for_register(db, ctx, data.bank_account_id)
@@ -443,7 +458,10 @@ def create(db: Session, ctx, data, invoice_flow: dict | None = None) -> Register
         allocs_in=data.allocations, existing={}, date_changed=True, keep_entity_ids=set(),
         refund_ok=set((invoice_flow or {}).get("refund_ok") or ()))
     from . import invoice_payments as ipay                 # 2.4.0 (#254): Invoiced Income takes invoice payments only
-    ipay.guard_new_plans(db, ctx, data.transaction_type, plans, invoice_flow is not None)
+    ipay.guard_new_plans(db, ctx, data.transaction_type, plans, invoice_flow is not None,
+                         applied.generated if applied is not None else None)
+    if applied is not None:
+        warnings.extend(applied.warnings)
     if data.transaction_type == "DEPOSIT":
         t.parent_entity_id = _deposit_parent_entity(db, ctx.workspace_id, plans, t.parent_entity_id)
     dup = possible_duplicate(db, ctx.workspace_id, acct.id, txn_date, data.transaction_type,
@@ -466,6 +484,8 @@ def create(db: Session, ctx, data, invoice_flow: dict | None = None) -> Register
         db.add(a)
         db.flush()
         _apply_reviews(db, ctx, a, p, natural_id)
+        if applied is not None:
+            applied.created[id(p.data)] = a
     db.flush()
     db.refresh(t)
     if t.total_cents <= 0:  # BR-072
@@ -538,6 +558,23 @@ def _create_zero_void(db: Session, ctx, t: RegisterTransaction, data) -> Registe
 
 # ------------------------------------------------------------------ update
 def update(db: Session, ctx, t: RegisterTransaction, data) -> RegisterTransaction:
+    from . import invoice_payments as ipay                 # 2.4.0 (#533): Apply to invoice on an allocation
+    applied = None
+    if data.allocations is not None and t.status == "ACTIVE":
+        f = data.model_fields_set
+        applied = ipay.expand_applications(
+            db, ctx, data.transaction_type if "transaction_type" in f and data.transaction_type else t.transaction_type,
+            data.transaction_date if "transaction_date" in f and data.transaction_date else t.transaction_date,
+            data.entity_id if "entity_id" in f else t.parent_entity_id, data.allocations)
+        if applied is not None:
+            data = data.model_copy(update={"allocations": applied.allocations})
+    t2 = _update(db, ctx, t, data, applied)
+    if applied is not None:
+        ipay.finish_applications(db, ctx, t2, applied)
+    return t2
+
+
+def _update(db: Session, ctx, t: RegisterTransaction, data, applied) -> RegisterTransaction:
     _not_deleted(t)
     if t.status == "VOID":
         raise conflict("TRANSACTION_VOID", "VOID transactions cannot be edited. Notes and attachments may be added.")
@@ -622,7 +659,10 @@ def update(db: Session, ctx, t: RegisterTransaction, data) -> RegisterTransactio
             existing=existing, date_changed=date_changed, keep_entity_ids=keep_ids,
             refund_alloc_ids={aid for aid, k in linked.items() if k == "REFUND"})
         warnings.extend(pw)
-        ipay.guard_edit(db, ctx, t, new_type, plans, existing, linked)
+        ipay.guard_edit(db, ctx, t, new_type, plans, existing, linked,
+                        applied.generated if applied is not None else None)
+        if applied is not None:
+            warnings.extend(applied.warnings)
     fin_fields = f - NO_ATTACHMENT_FIELDS  # documentation flags are not financial edits
     if plans is not None and "allocations" in fin_fields and not _allocations_financially_changed(plans, existing):
         fin_fields = fin_fields - {"allocations"}
@@ -659,6 +699,8 @@ def update(db: Session, ctx, t: RegisterTransaction, data) -> RegisterTransactio
             db.flush()
             db.expire(a, ["entity", "budget"])  # 2.1.2 (#344): the response showed the line's previous Entity
             _apply_reviews(db, ctx, a, p, natural_id)
+            if applied is not None:
+                applied.created[id(p.data)] = a
         removed = [aid for aid in existing if aid not in kept]
         if removed:                      # 2.2.0 (#325): Donations page lines on removed lines await a deposit again
             from . import donations

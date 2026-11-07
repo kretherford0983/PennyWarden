@@ -84,6 +84,7 @@ def me_payload(ctx: Ctx) -> dict:
                         "checks": checks_enabled(object_session(u), u.workspace_id),  # 2.0.0 (#156)
                         "donations": donations_enabled(object_session(u), u.workspace_id),  # 2.1.0 (#312)
                         "invoices": invoices_enabled(object_session(u), u.workspace_id)},  # 2.4.0 (#251)
+            "email_ready": _email_ready(object_session(u), u.workspace_id),   # 2.4.0 (#539): show Email buttons
             "sign_in_notices": recovery.sign_in_notices(u),  # 1.8.0 (#113)
             "first_name": u.first_name, "last_name": u.last_name,   # 2.0.0 (#134)
             # 2.0.0 (#134): an Administrator completes the missing names before continuing
@@ -375,3 +376,13 @@ def dismiss_security_notice(notice_id: int, db: Session = Depends(get_db), ctx: 
     recovery.dismiss_admin_notice(db, ctx, notice_id)
     db.commit()
     return recovery.admin_notices(db, ctx.workspace_id)
+
+
+def _email_ready(db, ws_id: int) -> bool:
+    """2.4.0 (#539): the mail server is set up and on (Email buttons show only then)."""
+    from sqlalchemy import select
+
+    from ..models import EmailSettings
+    from ..services import email as em
+    s = db.scalar(select(EmailSettings).where(EmailSettings.workspace_id == ws_id))   # read only: no row is made
+    return bool(s is not None and em.ready(s))

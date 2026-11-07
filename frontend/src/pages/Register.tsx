@@ -6,6 +6,7 @@ import { EntityForm } from "./Entities";
 import { NO_PAYMENT_DOCUMENTS, PrintCheckDialog } from "./CheckPrint";
 import { DonationReceiptDialog } from "./Donations";
 import { AmountPreview } from "./checkShared";
+import { ApplyToInvoiceModal, type Applied } from "./InvoicePayments";
 
 // 2.1.0 (#262): the register sorts by Date or Cleared, ascending or descending, remembered per user
 const DEFAULT_SORT = "transaction_date:asc";
@@ -282,7 +283,7 @@ function TxnDetail({ t, manage, canPrintChecks, paymentDocuments, onPrintCheck, 
   );
 }
 
-type Alloc = { id?: number; donation_line_id?: number; donation?: string; fiscal_year_id: string; budget_id: string; entity_id: string; invoice_number: string; invoice_date: string; description: string; amount: string; notes: string; no_attachment: boolean; no_attachment_reason: string; files: File[] };
+type Alloc = { apply?: Applied; invoice?: any; id?: number; donation_line_id?: number; donation?: string; fiscal_year_id: string; budget_id: string; entity_id: string; invoice_number: string; invoice_date: string; description: string; amount: string; notes: string; no_attachment: boolean; no_attachment_reason: string; files: File[] };
 const blankAlloc = (fy = ""): Alloc => ({ fiscal_year_id: fy, budget_id: "", entity_id: "", invoice_number: "", invoice_date: "", description: "", amount: "", notes: "", no_attachment: false, no_attachment_reason: "", files: [] });
 
 function useBudgetOptions(fyIds: string[], type: string) {
@@ -325,7 +326,7 @@ export function TxnForm({ account, txn, initial, fys, onClose, onSaved, payment,
     // 2.1.2 (#344): a deposit line on the parent Entity is left blank ("Default entity") so it follows a new parent
     entity_id: a.entity && !(txn.transaction_type === "DEPOSIT" && txn.entity && a.entity.id === txn.entity.id) ? String(a.entity.id) : "",
     invoice_number: a.invoice_number || "", invoice_date: a.invoice_date || "", description: a.description || "", amount: a.amount, notes: a.notes || "",
-    no_attachment: !!a.no_attachment, no_attachment_reason: a.no_attachment_reason || "", files: [],
+    no_attachment: !!a.no_attachment, no_attachment_reason: a.no_attachment_reason || "", files: [], invoice: a.invoice,
   })) : fromDonations ? donLines.map((l) => ({ ...blankAlloc(), donation_line_id: l.id, donation: `Donation #${l.donation_id} – ${l.donor}`,
     entity_id: String(l.donor_entity_id), amount: (l.amount_cents / 100).toFixed(2), description: l.description || "Donation" }))
     : [blankAlloc()]);
@@ -339,6 +340,10 @@ export function TxnForm({ account, txn, initial, fys, onClose, onSaved, payment,
   const [typeDlg, setTypeDlg] = useState<string | null>(null);
   const [newEnt, setNewEnt] = useState(false);
   const { run, dialog } = useConfirmable();
+  // 2.4.0 (#533): a deposit allocation can be applied to the entity's open invoices (Register User, module on)
+  const { me, can } = useMe();
+  const canApply = !!me?.modules?.invoices && can("invoice.record_payment") && !fromDonations && !payment;
+  const [applyAt, setApplyAt] = useState<number | null>(null);
   const dup = useAttachmentUpload();   // 2.4.0 (#425): the same file twice on one record - Cancel / Attach anyway
   const requestKey = useRef(newRequestKey()).current; // CR-011: repeated submits of this form create one transaction
   const loadEntities = () => api.get("/api/entities?status=active").then(setEntities);
@@ -380,7 +385,9 @@ export function TxnForm({ account, txn, initial, fys, onClose, onSaved, payment,
     e.preventDefault();
     setErr(null);
     const allocations = allocs.map((a) => ({
-      ...(a.id ? { id: a.id } : {}), budget_id: Number(a.budget_id), fiscal_year_id: a.fiscal_year_id ? Number(a.fiscal_year_id) : null,
+      ...(a.id ? { id: a.id } : {}), budget_id: Number(a.budget_id) || 0, fiscal_year_id: a.fiscal_year_id ? Number(a.fiscal_year_id) : null,
+      ...(type === "DEPOSIT" && a.apply ? { apply_to: a.apply.invoices.map((x) => ({ invoice_id: x.invoice_id, amount: x.amount })),
+        apply_extra: a.apply.extra || null, apply_extra_invoice_id: a.apply.extra_invoice_id ? Number(a.apply.extra_invoice_id) : null } : {}),
       entity_id: type === "DEPOSIT" && a.entity_id ? Number(a.entity_id) : null,
       invoice_number: type === "WITHDRAWAL" ? a.invoice_number || null : null,
       invoice_date: type === "WITHDRAWAL" && a.invoice_date ? a.invoice_date : null, // 2.0.0 (#165)
@@ -482,19 +489,21 @@ export function TxnForm({ account, txn, initial, fys, onClose, onSaved, payment,
         {payment ? <p className="hint">One line per invoice: its budget, invoice number, description and amount. The check is for the total.</p> : null}
         {allocs.map((a, i) => {
           const opts = options(a.fiscal_year_id, type);
+          const applied = type === "DEPOSIT" ? a.apply : undefined;
+          const needBudget = !applied || applied.extra === "BUDGET";      // #533: the invoices' budgets come from the invoices
           const cross = a.fiscal_year_id && nat && !nat.no_fiscal_year && !nat.covering.some((c: any) => String(c.id) === a.fiscal_year_id);
           return (
             <div key={i} className="alloc">
               {a.donation ? <p className="muted">{a.donation}</p> : null}
               <div className="row">
                 <Field label="Fiscal Year">
-                  <select required aria-label={`Allocation ${i + 1} Fiscal Year`} value={a.fiscal_year_id} onChange={(e) => upd(i, "fiscal_year_id", e.target.value)}>
+                  <select required={needBudget} aria-label={`Allocation ${i + 1} Fiscal Year`} value={a.fiscal_year_id} onChange={(e) => upd(i, "fiscal_year_id", e.target.value)}>
                     <option value="">— select —</option>
                     {openFys.map((y) => <option key={y.id} value={y.id}>{y.label}</option>)}
                   </select>
                 </Field>
                 <Field label="Budget">
-                  <select required aria-label={`Allocation ${i + 1} Budget`} value={a.budget_id} onChange={(e) => upd(i, "budget_id", e.target.value)}>
+                  <select required={needBudget} aria-label={`Allocation ${i + 1} Budget`} value={a.budget_id} onChange={(e) => upd(i, "budget_id", e.target.value)}>
                     <option value="">— select —</option>
                     {opts.map((o: any) => <option key={o.id} value={o.id}>{o.label}{o.is_budget_zero ? " ⚠" : o.above_budget ? ` (+${money(o.above_budget)} above budget)` : ` (remaining ${money(o.remaining)})`}</option>)}
                     {a.id && a.budget_id && !opts.some((o: any) => String(o.id) === a.budget_id) ? <option value={a.budget_id}>{txn?.allocations.find((x: any) => x.id === a.id)?.budget.label} (current)</option> : null}
@@ -508,6 +517,14 @@ export function TxnForm({ account, txn, initial, fys, onClose, onSaved, payment,
                   </>
                 ) : split && allocs.length > 1 ? <button type="button" className="small danger" onClick={() => setAllocs(allocs.filter((_, j) => j !== i))}>Remove</button> : null}
               </div>
+              {a.invoice ? <p className="muted" data-testid={`allocation-${i + 1}-invoice`}>{a.invoice.kind === "REFUND" ? "Refunds" : "Pays"} invoice {a.invoice.number} – unlink it on the invoice to change this line.</p> : null}
+              {canApply && type === "DEPOSIT" && !a.invoice ? (
+                <div className="row" data-testid={`allocation-${i + 1}-apply`}>
+                  {applied ? <span>Applied to {applied.invoices.map((x) => `${x.number} (${money(x.amount)})`).join(", ")}
+                    {applied.extra === "BUDGET" ? "; the rest stays on this budget" : applied.extra === "CREDIT" ? "; the rest kept as credit" : applied.extra === "REFUND" ? "; the rest refunded" : ""}.</span> : null}
+                  <button type="button" className="small" onClick={() => setApplyAt(i)}>{applied ? "Change…" : "Apply to invoice…"}</button>
+                </div>
+              ) : null}
               {cross ? <p className="warn-text">Budget Fiscal Year differs from the Fiscal Year covering the Transaction Date – confirmation will be required and the allocation will be flagged for review.</p> : null}
               <div className="row">
                 {type === "DEPOSIT" && split ? (
@@ -552,6 +569,16 @@ export function TxnForm({ account, txn, initial, fys, onClose, onSaved, payment,
       </GuardedForm>
       {dialog}
       {dup.dialog}
+      {applyAt !== null ? (() => {
+        const a = allocs[applyAt];
+        const eid = a.entity_id || h.entity_id;
+        if (!eid) return <Modal title="Apply to invoice" onClose={() => setApplyAt(null)}><p>Choose the {split ? "allocation's or the transaction's" : "transaction's"} Entity (the customer who paid) first.</p>
+          <div className="actions"><button type="button" onClick={() => setApplyAt(null)}>Close</button></div></Modal>;
+        return <ApplyToInvoiceModal entityId={eid} entityName={entities.find((e: any) => String(e.id) === eid)?.display_name || "The customer"}
+          amount={a.amount} current={a.apply} onClose={() => setApplyAt(null)}
+          onApply={(v) => { setAllocs(allocs.map((x, j) => (j === applyAt ? { ...x, apply: v || undefined,
+            amount: v && !x.amount ? (v.invoices.reduce((s, y) => s + Number(y.amount), 0)).toFixed(2) : x.amount } : x))); setApplyAt(null); }} />;
+      })() : null}
       {noAttDlg !== null ? (
         <Modal title="No attachment?" onClose={() => setNoAttDlg(null)}>
           <div className="alert warn" role="alert">Transactions should have supporting documentation (receipt, invoice, statement). Only mark this when no document is available — for example interest or other amounts deposited directly by the bank. The transaction will be listed as a Fiscal Year review warning.</div>

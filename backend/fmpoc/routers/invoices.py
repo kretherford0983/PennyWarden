@@ -472,6 +472,15 @@ def batch_pdf(bid: int, download: bool = False, db: Session = Depends(get_db), c
                              "Cache-Control": "no-store"})
 
 
+# ------------------------------------------------------------------ 2.4.0 (#534): customer account credit
+@router.get("/credit")
+def customer_credit(customer_entity_id: int, db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.view"))):
+    """The customer's account credit: overpayments not refunded, by invoice (and what can be applied)."""
+    from ..services import invoice_payments as _pay
+    svc.require_module(db, ctx)
+    return _pay.credit_out(db, ctx.workspace_id, customer_entity_id)
+
+
 # ------------------------------------------------------------------ 2.4.0 (#523): one payment, several invoices
 @router.get("/payments/open")
 def open_for_payment(customer_entity_id: int | None = None, number: str | None = Query(None, max_length=60),
@@ -574,7 +583,17 @@ def link_candidates(iid: int, db: Session = Depends(get_db), ctx: Ctx = Depends(
 def link_payment(iid: int, body: InvoiceLinkIn, db: Session = Depends(get_db),
                  ctx: Ctx = Depends(require("invoice.link_payment"))):
     i = docs.get(db, ctx, iid)
-    pay.link(db, ctx, i, body.allocation_id, body.confirmations)
+    pay.link(db, ctx, i, body.allocation_id, body.confirmations, body.extra, body.amount)
+    db.commit()
+    return docs.out(db, ctx, i)
+
+
+@router.post("/{iid}/credit/remove")
+def remove_credit(iid: int, body: ReasonIn, db: Session = Depends(get_db),
+                  ctx: Ctx = Depends(require("transaction.manage"))):
+    """2.4.0 (#534): Register User - the credit applied to this invoice is the customer's credit again."""
+    i = docs.get(db, ctx, iid)
+    pay.remove_credit(db, ctx, i, body.reason)
     db.commit()
     return docs.out(db, ctx, i)
 
