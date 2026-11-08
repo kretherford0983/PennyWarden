@@ -4742,7 +4742,7 @@ test("2.4.0 (#533): a deposit entered in the Register is applied to an invoice; 
   await expect(m.getByLabel(`Apply amount for ${i4.number}`)).toHaveValue("100.00");
   await expect(m.getByTestId("no-credit-while-owed")).toContainText("$70.00");
   await expect(m.getByRole("radio", { name: /account credit/ })).toBeDisabled();
-  await m.getByRole("radio", { name: /Apply it to the other open invoices/ }).check();
+  await m.getByRole("radio", { name: /Apply it to the other open invoices/ }).click();   // an action: it ticks them
   await expect(m.getByLabel(`Apply amount for ${i3.number}`)).toHaveValue("70.00");
   await expect(m.getByTestId("apply-extra")).toContainText("The other $30.00");
   await expect(m.getByTestId("no-credit-while-owed")).toHaveCount(0);
