@@ -259,7 +259,12 @@ function LinkForm({ former, fys, onClose, onSaved }: any) {
   useEffect(() => {
     if (!fyId) return;
     setOpts(null); setPick("");
-    api.get(`/api/budgets/former/${former.id}/budget-options${qs({ fiscal_year_id: fyId })}`).then(setOpts, setErr);
+    // 2.4.0: an answer for a Fiscal Year no longer chosen is dropped - the first year's list arriving after the one
+    // chosen meanwhile would show the wrong year's budgets (seen as an intermittent E2E #381 timeout)
+    let stale = false;
+    api.get(`/api/budgets/former/${former.id}/budget-options${qs({ fiscal_year_id: fyId })}`)
+      .then((o) => { if (!stale) setOpts(o); }, (x) => { if (!stale) setErr(x); });
+    return () => { stale = true; };
   }, [fyId]);
   const submit = async (e: FormEvent) => {
     e.preventDefault();
