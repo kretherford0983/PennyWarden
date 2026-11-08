@@ -237,6 +237,41 @@ def _get_open(db: Session, ctx, i: Invoice) -> None:
         raise conflict("WRITE_OFF_PENDING", "A write-off is waiting for a decision; decide it first.")
 
 
+def owed_elsewhere(db: Session, ws_id: int, customer_id: int, paying: dict[int, int]) -> int:
+    """2.4.0 (#544): what the customer still owes on their open invoices (sent or partly paid, no write-off waiting -
+    the ones a payment can go to) once `paying` (invoice id -> cents of this payment) is counted."""
+    owed = 0
+    for i in db.scalars(select(Invoice).where(Invoice.workspace_id == ws_id, Invoice.customer_entity_id == customer_id,
+                                              Invoice.status.in_(("SENT", "PARTLY_PAID")))):
+        if i.write_off_status == "PENDING":
+            continue
+        owed += max(0, figures(db, i)["open"] - paying.get(i.id, 0))
+    return owed
+
+
+def no_credit_while_owed(db: Session, ws_id: int, customer_id: int, paying: dict[int, int], field: str) -> None:
+    """2.4.0 (#544, decided with Kyle 2026-11-07): a customer who still owes is never given account credit - the
+    extra is applied to their other open invoices, kept on a budget or refunded."""
+    owed = owed_elsewhere(db, ws_id, customer_id, paying)
+    if owed > 0:
+        raise AppError(422, "CREDIT_WHILE_OWED", f"The customer still owes {fmt(owed)} on other open invoices, so the "
+                       "extra can't be kept as their credit: apply it to those invoices, keep it on a budget (a "
+                       "donation, a fundraiser...) or refund it.",
+                       errors=[{"field": field, "message": "The customer still owes on other invoices."}])
+
+
+def extra_budgets(db: Session, ctx, d: dt.date) -> list[dict]:
+    """2.4.0 (#544): the budgets the rest of a payment can stay on - Income budgets open for a deposit on that date
+    that are not Invoiced Income (a donation, a fundraiser...)."""
+    from . import budgets as bsvc
+    inv.require_module(db, ctx)
+    ctx.require("invoice.record_payment")
+    fy = _deposit_fy(db, ctx.workspace_id, d)
+    if fy is None:
+        return []
+    return [o for o in bsvc.selectable(db, ctx.workspace_id, fy, "DEPOSIT") if not o["invoiced_income"]]
+
+
 def _invoice_allocations(db: Session, i: Invoice, paid: int, pay: int, over: int, fy: FiscalYear | None,
                          entity_id: int | None) -> list[tuple]:
     """The deposit lines that pay `pay` of an invoice already paid `paid`: the lines' share on their Invoiced Income
@@ -288,6 +323,8 @@ def record_payment(db: Session, ctx, i: Invoice, body) -> RegisterTransaction:
                        "as an overpayment (it can be refunded).",
                        warnings=[{"code": "OVERPAYMENT", "message": "Amount above the open balance.",
                                   "details": {"overpayment": fmt(over)}}])
+    if over > 0:                                   # #544: the overpayment here is the customer's credit
+        no_credit_while_owed(db, ctx.workspace_id, i.customer_entity_id, {i.id: pay}, "amount")
     d = body.transaction_date or dt.date.today()
     fy = _deposit_fy(db, ctx.workspace_id, d)
     allocs = _invoice_allocations(db, i, f["paid"], pay, over, fy, i.customer_entity_id)
@@ -353,10 +390,12 @@ def open_for_payment(db: Session, ctx, customer_entity_id: int | None, number: s
 
 def record_multi(db: Session, ctx, body) -> tuple[RegisterTransaction, list[Invoice]]:
     """One deposit paying several invoices (decided with Kyle 2026-11-04): each invoice gets the lines Record payment
-    would give it, linked to it; the extra above the balances (confirmed) is an overpayment on the chosen invoice; a
+    would give it, linked to it; the extra above the balances (confirmed) stays on a budget (BUDGET, #544) or is an
+    overpayment on the chosen invoice - the customer's credit (CREDIT: never while they owe) or to be refunded
+    (REFUND: the app opens the Refund form next); a
     payer other than an invoice's customer is the THIRD_PARTY_PAYER warning; the deposit's entity is the payer.
     Void and unlink stay per invoice (the existing rules)."""
-    from ..schemas import TransactionCreateIn
+    from ..schemas import AllocationIn, TransactionCreateIn
     from . import register as reg
     inv.require_module(db, ctx)
     ctx.require("invoice.record_payment")
@@ -384,15 +423,30 @@ def record_multi(db: Session, ctx, body) -> tuple[RegisterTransaction, list[Invo
         except ValueError as e:
             raise validation(str(e), "overpayment") from None
     target = None
-    if over > 0:
+    kind = body.overpayment_kind or "CREDIT"
+    rest = None                                    # #544: the extra kept on a budget (an ordinary deposit line)
+    if over > 0 and kind == "BUDGET":
+        b = db.get(Budget, body.overpayment_budget_id) if body.overpayment_budget_id else None
+        if b is None or b.workspace_id != ctx.workspace_id or b.budget_type != "INCOME" or b.invoiced_income:
+            raise validation("Choose an Income budget that is not Invoiced Income for the rest of the payment "
+                             f"({fmt(over)}).", "overpayment_budget_id")
+        rest = b
+        from .common import budget_label
+        parent = db.get(Budget, b.parent_budget_id) if b.parent_budget_id else None
+        what = f"kept on the budget {budget_label(parent, None) if b.is_other and parent else budget_label(b, parent)}"
+    elif over > 0:
         target = next((i for i, _a, _f in parts if i.id == body.overpayment_invoice_id), None)
         if target is None:
             raise validation("Choose which of these invoices gets the overpayment.", "overpayment_invoice_id")
-        if not body.confirm_overpayment:
-            raise AppError(409, "CONFIRMATION_REQUIRED", f"{fmt(over)} more than the invoices' balances: it will be "
-                           f"recorded as an overpayment on invoice {docs.display_number(target)} (it can be refunded).",
-                           warnings=[{"code": "OVERPAYMENT", "message": "Amount above the open balances.",
-                                      "details": {"overpayment": fmt(over)}}])
+        if kind == "CREDIT":
+            no_credit_while_owed(db, ctx.workspace_id, target.customer_entity_id,
+                                 {i.id: a for i, a, _f in parts}, "overpayment_kind")
+        what = (f"recorded as an overpayment on invoice {docs.display_number(target)}"
+                + (", to be refunded next" if kind == "REFUND" else " (the customer's credit)"))
+    if over > 0 and not body.confirm_overpayment:
+        raise AppError(409, "CONFIRMATION_REQUIRED", f"{fmt(over)} more than the invoices' balances: it will be "
+                       f"{what}.", warnings=[{"code": "OVERPAYMENT", "message": "Amount above the open balances.",
+                                              "details": {"overpayment": fmt(over)}}])
     customers = {i.customer_entity_id for i, _a, _f in parts}
     payer = body.payer_entity_id
     if payer is None:
@@ -415,6 +469,9 @@ def record_multi(db: Session, ctx, body) -> tuple[RegisterTransaction, list[Invo
     for i, amount, f in parts:
         for a in _invoice_allocations(db, i, f["paid"], amount, over if i is target else 0, fy, payer):
             plan.append((i, a))
+    if rest is not None:
+        plan.append((None, (AllocationIn(budget_id=rest.id, amount=fmt(over), entity_id=payer,
+                                         description="Rest of the payment above the invoices"), None)))
     if len(plan) > 100:
         raise validation("Too many deposit lines for one payment (at most 100): record it in two parts.", "items")
     nums = ", ".join(docs.display_number(i) for i, _a, _f in parts)
@@ -425,6 +482,8 @@ def record_multi(db: Session, ctx, body) -> tuple[RegisterTransaction, list[Invo
     t = reg.create(db, ctx, data, invoice_flow={})
     created = sorted(t.live_allocations, key=lambda a: a.id)
     for a, (i, (_ai, kind)) in zip(created, plan):
+        if i is None:
+            continue
         db.add(InvoicePayment(workspace_id=ctx.workspace_id, invoice_id=i.id, allocation_id=a.id, kind=kind,
                               created_by_user_id=ctx.user.id))
     db.flush()
@@ -449,7 +508,6 @@ class Applied:
         self.allocations: list = []
         self.generated: set[int] = set()          # id() of the generated AllocationIn objects
         self.links: list[tuple] = []               # (AllocationIn, Invoice, kind[, credit_from_invoice_id])
-        self.refunds: list[tuple] = []             # (Invoice, cents)
         self.audit: list[tuple] = []               # (Invoice, paid before, applied, overpayment)
         self.warnings: list = []
         self.created: dict[int, TransactionAllocation] = {}
@@ -461,8 +519,9 @@ def expand_applications(db: Session, ctx, txn_type: str, txn_date: dt.date, pare
                         allocs_in: list) -> Applied | None:
     """Decided with Kyle 2026-11-06: an allocation applied to invoices becomes, when saved, each invoice's splits (its
     lines' Invoiced Income budgets and tax, as Record payment gives them) linked to the invoice; the extra above
-    them stays on the allocation's budget (BUDGET), is an overpayment on an invoice kept as credit (CREDIT, #534) or
-    is refunded at once (REFUND: an overpayment, then a refund withdrawal). None when nothing is applied."""
+    them stays on the allocation's budget (BUDGET), is an overpayment on an invoice kept as credit (CREDIT, #534 -
+    never while the customer owes, #544) or is to be refunded (REFUND: an overpayment; #544: the app then opens the
+    Refund form, linked to the invoice, rather than the system writing the withdrawal). None when nothing is applied."""
     if not any(getattr(a, "apply_to", None) for a in allocs_in):
         return None
     inv.require_module(db, ctx)
@@ -473,6 +532,7 @@ def expand_applications(db: Session, ctx, txn_type: str, txn_date: dt.date, pare
     fy = _deposit_fy(db, ctx.workspace_id, txn_date)
     paid_now: dict[int, int] = {}                 # invoice id -> applied earlier in this deposit
     third: list[str] = []
+    credits: list[tuple[int, str]] = []           # #544: (customer, field) of each extra kept as credit
     for n, a in enumerate(allocs_in):
         if not a.apply_to:
             if a.apply_extra is not None or a.apply_extra_invoice_id is not None:
@@ -538,9 +598,12 @@ def expand_applications(db: Session, ctx, txn_type: str, txn_date: dt.date, pare
         elif extra:
             out.warnings.append(Warning_("OVERPAYMENT", f"{fmt(extra)} more than the invoices' balances: it will be "
                                          f"recorded as an overpayment on invoice {docs.display_number(target)}"
-                                         + (" and refunded at once." if kind == "REFUND" else " (kept as credit).")))
-            if kind == "REFUND":
-                out.refunds.append((target, extra))
+                                         + (", and the Refund form opens once the deposit is saved." if kind == "REFUND"
+                                            else " (kept as credit).")))
+            if kind == "CREDIT":
+                credits.append((target.customer_entity_id, f"allocations.{n}.apply_extra"))
+    for cust, field in credits:                    # #544: once every line's part is counted
+        no_credit_while_owed(db, ctx.workspace_id, cust, paid_now, field)
     if third:
         out.warnings.append(Warning_("THIRD_PARTY_PAYER", "The payment is not from the customer of invoice"
                                      f"{'s' if len(third) > 1 else ''} {', '.join(sorted(set(third)))}. Record it anyway?"))
@@ -550,9 +613,7 @@ def expand_applications(db: Session, ctx, txn_type: str, txn_date: dt.date, pare
 
 
 def finish_applications(db: Session, ctx, t: RegisterTransaction, applied: Applied) -> None:
-    """After the deposit is saved: link each generated line to its invoice, audit, update the invoices' status and
-    write the refunds asked for."""
-    from ..schemas import InvoiceRefundIn
+    """After the deposit is saved: link each generated line to its invoice, audit and update the invoices' status."""
     for ai, i, kind, *src in applied.links:
         a = applied.created.get(id(ai))
         if a is None:                              # not saved (a rolled-back no-op): nothing to link
@@ -566,13 +627,6 @@ def finish_applications(db: Session, ctx, t: RegisterTransaction, applied: Appli
                      {"transaction_id": t.id, "amount": fmt(x + over), "paid_now": fmt(x), "overpayment": fmt(over),
                       "allocation_ids": mine, "from_register": True})
         refresh_status(db, ctx, i)
-    for i, cents in applied.refunds:               # Kyle: the system starts the reimbursement at once
-        r = refund(db, ctx, i, InvoiceRefundIn(bank_account_id=t.bank_account_id, amount=fmt(cents),
-                                               transaction_date=t.transaction_date,
-                                               notes=f"Refund of the overpayment in deposit #{t.id} on invoice "
-                                                     f"{docs.display_number(i)}"))
-        refresh_status(db, ctx, i)
-        assert r is not None
 
 
 # ------------------------------------------------------------------ 2.4.0 (#534): customer account credit

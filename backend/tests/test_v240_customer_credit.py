@@ -96,7 +96,16 @@ def test_ac_inv_cr_005_existing_overpayments_count_and_none_without_credit(env, 
     s = ib["im"].post(f"/api/invoices/{i['id']}/send").json()
     assert s["status"] == "SENT" and s["payments"]["credit_applied"] == "0.00"
     assert s["payments"]["customer_credit"]["total"] == "0.00"
-    _overpay(env, ib)
+    # #544: while the customer owes on that invoice, the extra can't be kept as credit...
+    r = env.ru.post(f"/api/invoices/{ib['inv']}/payments", {"bank_account_id": ib["acct"], "amount": "250.00",
+                                                            "transaction_date": "2026-09-20", "confirm_overpayment": True})
+    assert r.status_code == 422 and r.json()["error"]["code"] == "CREDIT_WHILE_OWED"
+    # ...but an overpayment waiting to be refunded is still theirs until it is
+    r = env.ru.post("/api/invoices/payments", {"bank_account_id": ib["acct"], "transaction_date": "2026-09-20",
+                                               "items": [{"invoice_id": ib["inv"], "amount": "220.00"}],
+                                               "overpayment": "30.00", "overpayment_invoice_id": ib["inv"],
+                                               "overpayment_kind": "REFUND", "confirm_overpayment": True})
+    assert r.status_code == 201, r.text
     j = env.ru.get(f"/api/invoices/{i['id']}").json()
     assert j["payments"]["customer_credit"]["total"] == "30.00"            # shown on the customer's other invoice
 

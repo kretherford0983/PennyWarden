@@ -678,6 +678,10 @@ class InvoiceMultiPaymentIn(In):              # 2.4.0 (#523): one deposit paying
     payer_entity_id: int | None = None        # default: the invoices' customer when they share one
     overpayment: Amount | None = None         # above the balances: on overpayment_invoice_id (confirmed)
     overpayment_invoice_id: int | None = None
+    # 2.4.0 (#544): the extra stays on a budget (BUDGET: overpayment_budget_id), is the customer's credit (CREDIT, the
+    # default; never while they owe) or an overpayment to be refunded (REFUND: the app opens the Refund form next)
+    overpayment_kind: Literal["BUDGET", "CREDIT", "REFUND"] | None = None
+    overpayment_budget_id: int | None = None
     transaction_date: OptDate = None
     clear_date: OptDate = None
     notes: OptStr(4000) = None
