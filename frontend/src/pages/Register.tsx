@@ -6,7 +6,7 @@ import { EntityForm } from "./Entities";
 import { NO_PAYMENT_DOCUMENTS, PrintCheckDialog } from "./CheckPrint";
 import { DonationReceiptDialog } from "./Donations";
 import { AmountPreview } from "./checkShared";
-import { ApplyToInvoiceModal, type Applied } from "./InvoicePayments";
+import { ApplyToInvoiceModal, RefundForm, type Applied } from "./InvoicePayments";
 
 // 2.1.0 (#262): the register sorts by Date or Cleared, ascending or descending, remembered per user
 const DEFAULT_SORT = "transaction_date:asc";
@@ -333,6 +333,8 @@ export function TxnForm({ account, txn, initial, fys, onClose, onSaved, payment,
   const [parentFiles, setParentFiles] = useState<File[]>([]);
   const [uploadIssues, setUploadIssues] = useState<null | { id: number; failed: string[] }>(null);
   const [savedTxn, setSavedTxn] = useState<any>(null);
+  // 2.4.0 (#544): the overpayments to refund, one Refund form each, once the deposit is saved
+  const [refunds, setRefunds] = useState<null | { list: { invoice_id: number; number: string; amount: string }[]; saved: any; failed: string[] }>(null);
   const [split, setSplit] = useState(txn ? txn.allocations.length > 1 : donLines.length > 1);
   const [nat, setNat] = useState<any>(null);
   const [entities, setEntities] = useState<any[]>([]);
@@ -431,10 +433,27 @@ export function TxnForm({ account, txn, initial, fys, onClose, onSaved, payment,
         try { await dup.upload(`/api/attachments${qs({ owner_type: ot, owner_id: oid })}`, f); }   // #425: Cancel = skip
         catch (x: any) { failed.push(`${f.name}: ${x?.message || "upload failed"}`); }
       }
-      if (failed.length) { setUploadIssues({ id: saved.id, failed }); setSavedTxn(saved); }
+      const toRefund = type === "DEPOSIT" ? allocs.filter((a) => a.apply?.extra === "REFUND").map((a) => {
+        const rest = Math.round(Number(a.amount) * 100) - a.apply!.invoices.reduce((s, x) => s + Math.round(Number(x.amount) * 100), 0);
+        const inv = a.apply!.invoices.find((x) => String(x.invoice_id) === a.apply!.extra_invoice_id) || a.apply!.invoices[a.apply!.invoices.length - 1];
+        return { invoice_id: inv.invoice_id, number: inv.number, amount: (rest / 100).toFixed(2) };
+      }).filter((x) => Number(x.amount) > 0) : [];
+      if (toRefund.length) setRefunds({ list: toRefund, saved, failed });
+      else if (failed.length) { setUploadIssues({ id: saved.id, failed }); setSavedTxn(saved); }
       else onSaved(saved);
     } catch (x) { setErr(x); }
   };
+  if (refunds) {
+    const next = () => {
+      if (refunds.list.length > 1) { setRefunds({ ...refunds, list: refunds.list.slice(1) }); return; }
+      setRefunds(null);
+      if (refunds.failed.length) { setUploadIssues({ id: refunds.saved.id, failed: refunds.failed }); setSavedTxn(refunds.saved); }
+      else onSaved(refunds.saved);
+    };
+    const r = refunds.list[0];
+    return <RefundForm key={r.invoice_id} invoiceId={r.invoice_id} number={r.number} amount={r.amount} bankAccountId={String(account.id)}
+      date={h.transaction_date} afterPayment onClose={next} onDone={next} />;
+  }
   if (uploadIssues) {
     return (
       <Modal title={`Transaction #${uploadIssues.id} saved`} onClose={() => onSaved(savedTxn)}>

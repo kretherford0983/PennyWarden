@@ -126,6 +126,12 @@ PennyWarden 2.4.0 (in progress).
   subject and message set in Donations Setup and goes to the donor's address; sending issues the receipt or statement
   just as printing does. Invoices Setup and Donations Setup can each have their own **Reply-To** and **From name**
   (empty uses the Email setup's), for example invoicing@… and donations@….
+- **What happens to an overpayment (#544).** Everywhere a payment is recorded, the amount above the invoices gets
+  the same choices: kept on a budget (a donation, a fundraiser…), applied to the customer's other open invoices
+  (ticked and filled oldest due date first), kept as account credit, or refunded. A customer who still owes on
+  another invoice is never given credit. Refunding now opens the **Refund** form, linked to the invoice and filled in,
+  so the check number can be entered; nothing is withdrawn until it is recorded. **Record payment…** on an invoice
+  opens the same form as a payment for several invoices, with the customer's other open invoices listed.
 - **Customer credit (#534).** An overpayment not refunded is the customer's **account credit**. It is applied
   automatically when their next invoice is marked as sent (oldest first), shown on the invoice and its PDF (**New
   charges, Account credit applied, Total due**), on their other invoices, in Record a payment and on their statement. A

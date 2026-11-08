@@ -58,15 +58,21 @@ def test_ac_inv_pay_013_the_extra_above_the_invoices(env, base, ib, grants):
     assert t["total"] == "300.00" and all(a["invoice"] for a in t["allocations"])
     i = _inv(env, ib)
     assert i["status"] == "PAID" and i["payments"]["overpaid"] == "80.00" and i["payments"]["refundable"] == "80.00"
-    # refunded at once: a refund withdrawal of the extra, from the same account
+    # #544: to be refunded - an overpayment on the invoice; the app opens the Refund form next, so the system writes
+    # no withdrawal itself
     env.ru.post(f"/api/transactions/{t['id']}/void", {"reason": "Test", "confirm_irreversible": True})
+    r = _dep(env, ib, line("REFUND"), expect=409)
+    assert "Refund form" in r["error"]["warnings"][0]["message"]
     t = _dep(env, ib, line("REFUND"), confirmations=["OVERPAYMENT", "POSSIBLE_DUPLICATE"])
     i = _inv(env, ib)
-    assert i["payments"]["refundable"] == "0.00"
+    assert i["payments"]["refundable"] == "80.00"
     lst = env.ru.get("/api/register", params={"bank_account_id": ib["acct"]}).json()["transactions"]
-    refunds = [x for x in (lst["items"] if isinstance(lst, dict) else lst)
-               if x["transaction_type"] == "WITHDRAWAL" and x["status"] == "ACTIVE"]
-    assert [x["total"] for x in refunds] == ["80.00"]
+    assert not [x for x in (lst["items"] if isinstance(lst, dict) else lst)
+                if x["transaction_type"] == "WITHDRAWAL" and x["status"] == "ACTIVE"]
+    r = env.ru.post(f"/api/invoices/{ib['inv']}/refunds", {"bank_account_id": ib["acct"], "amount": "80.00",
+                                                           "check_number": "1043"})
+    assert r.status_code == 201, r.text
+    assert r.json()["invoice"]["payments"]["refundable"] == "0.00"
 
 
 def test_ac_inv_pay_013_extra_stays_on_its_budget(env, base, ib, grants):
