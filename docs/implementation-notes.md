@@ -2574,3 +2574,26 @@ implementation (plan: project doc `claude/freedger-plan-1.3.md`).
 | Standard Dockerfile | Not built here (Docker Hub blocked by network policy); the bundle-based image was built and run in server mode. |
 | Accessibility | Text + icon status, labelled controls, keyboard-closable dialogs; no formal WCAG audit. |
 | Scale | SQLite single node; PostgreSQL is a documented Day-2 option (SQLAlchemy keeps the path open). |
+
+**2.4.0 — what happens to an overpayment (#544, decided with Kyle 2026-11-07).** `invoice_payments.owed_elsewhere` /
+`no_credit_while_owed` (422 `CREDIT_WHILE_OWED`): what the customer still owes on their open invoices (sent or partly
+paid, no write-off waiting) once this payment's parts are counted. They are checked by Record payment (one invoice: its
+overpayment is credit), by `record_multi` for `overpayment_kind` `CREDIT` (the default), and by `expand_applications`
+for `apply_extra` `CREDIT` once every line of the deposit is counted (so *Link a deposit* that moves a line follows the
+same rule). `record_multi` also takes `overpayment_kind` `BUDGET` with `overpayment_budget_id` (an Income budget that
+is not Invoiced Income; an unlinked deposit line) and `REFUND` (an overpayment on the chosen invoice).
+`GET /api/invoices/payments/extra-budgets?date=` lists those budgets for the deposit date's Fiscal Year. `REFUND` no
+longer writes the withdrawal: `finish_applications` only links. The app opens `RefundForm` (InvoicePayments.tsx; also
+*Refund credit…*) after a multi payment, a Register save or a Link with the rest refunded, pre-filled with the
+invoice, the amount, the bank account and the date. *Not now* leaves the overpayment as the customer's credit.
+`ExtraChoices` is the one set of choices in `MultiPaymentForm` and `ApplyToInvoiceModal`. *Apply it to the other open
+invoices* ticks every open invoice and fills them oldest due date first. *Record payment…* on an invoice opens
+`MultiPaymentForm` with that invoice ticked and the customer's other open invoices unticked (`MoneyForm` is gone).
+Proposed:
+- **BR-INV-OVER-001** the same choices wherever a payment is recorded;
+- **-002** no account credit while the customer owes on another open invoice;
+- **-003** a refund is recorded on the Refund form, linked to the invoice; the system writes no withdrawal itself.
+
+ACs **AC-INV-OVER-001..004**. Tests: `backend/tests/test_v240_overpayment_choices.py` (4); the #533 and #534 tests are
+updated for the rule. E2E: the #533 test (no credit while owed, apply to the other invoice, refund on the form) and
+the #504 test (Record payment opens the one form).

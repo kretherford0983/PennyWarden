@@ -3450,7 +3450,9 @@ test("#165-#166: Administrator sets up a cover letter and an envelope; a Registe
   await page.goto(`/register?account=1&txn=${t.id}`);
   const row = page.locator(`#txn-${t.id}`);
   await expect(row.getByRole("button", { name: `Details for transaction ${t.id}` })).toHaveAttribute("aria-expanded", "true");
-  await expect(page.getByText("2026-11-09")).toBeVisible();        // invoice date in the details
+  // invoice date in the details, beside its invoice number - a bare "2026-11-09" also matched today's "Printed" and
+  // timestamps when CI ran on that day
+  await expect(page.getByRole("cell", { name: "INV-92 (2026-11-09)", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Create payment…" }).click();
   const dlg = page.getByRole("dialog", { name: `Print check – transaction #${t.id}` });
   await dlg.getByLabel("I'm writing the check by hand").check();
@@ -4553,7 +4555,7 @@ test("2.4.0 polish (#504): Record payment lists the register accounts by name an
   const primary = reg.find((a: any) => a.is_primary) ?? (reg.length === 1 ? reg[0] : null);
   await page.goto(`/invoices/${inv.id}`);
   await page.getByRole("button", { name: "Record payment…" }).click();
-  const dlg = page.getByRole("dialog", { name: "Record payment" });
+  const dlg = page.getByRole("dialog", { name: "Record a payment" });               // #544: the one payment form
   const sel = dlg.getByLabel("Bank account");
   expect(reg.length).toBeGreaterThan(0);
   await expect(sel.locator("option")).toHaveCount(reg.length + 1);              // the accounts load after the dialog opens
@@ -4724,6 +4726,43 @@ test("2.4.0 (#533): a deposit entered in the Register is applied to an invoice; 
   await expect(page.getByTestId("inv-credit-applied")).toHaveText("$30.00");
   await expect(page.getByTestId("inv-open")).toHaveText("$70.00");
   await page.screenshot({ path: "e2e-screenshots/light-invoice-credit.png", fullPage: true });
+  // #544: $200 for a $100 invoice while $70 is still owed on another: no credit; the extra goes to the other invoice,
+  // and the rest is refunded - the Refund form opens once the deposit is saved
+  const i4 = await call("POST", "/api/invoices", { customer_entity_id: cust.id, invoice_date: "2026-10-01", lines: [{ product_id: prod.id, quantity: "1" }] });
+  await call("POST", `/api/invoices/${i4.id}/send`);
+  await page.goto("/register");
+  await page.getByRole("button", { name: "New transaction" }).click();
+  await t.getByLabel("Type").selectOption("DEPOSIT");
+  await t.getByLabel("Transaction date").fill("2026-10-02");
+  await t.getByRole("combobox", { name: "Entity (payer)" }).fill("E2E Apply");
+  await page.getByRole("option", { name: /E2E Apply Customer/ }).click();
+  await t.getByLabel("Allocation 1 Fiscal Year").selectOption(String(fy.id));
+  await t.getByLabel("Allocation 1 Budget").selectOption(String(golf.id));
+  await t.getByLabel("Allocation 1 Amount").fill("200.00");
+  await t.getByTestId("allocation-1-apply").getByRole("button", { name: "Apply to invoice…" }).click();
+  await m.getByLabel(`Apply to ${i3.number}`).uncheck();
+  await expect(m.getByLabel(`Apply amount for ${i4.number}`)).toHaveValue("100.00");
+  await expect(m.getByTestId("no-credit-while-owed")).toContainText("$70.00");
+  await expect(m.getByRole("radio", { name: /account credit/ })).toBeDisabled();
+  await m.getByRole("radio", { name: /Apply it to the other open invoices/ }).click();   // an action: it ticks them
+  await expect(m.getByLabel(`Apply amount for ${i3.number}`)).toHaveValue("70.00");
+  await expect(m.getByTestId("apply-extra")).toContainText("The other $30.00");
+  await expect(m.getByTestId("no-credit-while-owed")).toHaveCount(0);
+  await m.getByRole("radio", { name: /Refunded/ }).check();
+  await m.getByRole("button", { name: "Apply", exact: true }).click();
+  await t.getByRole("button", { name: "Save" }).click();
+  const cf = page.getByRole("dialog", { name: "Confirmation required" });
+  await cf.getByLabel("I have reviewed these warnings and explicitly confirm.").check();
+  await cf.getByRole("button", { name: "Confirm and continue" }).click();
+  const rf = page.getByTestId("refund-form");
+  await expect(rf.getByLabel("Refund amount")).toHaveValue("30.00");
+  await rf.getByLabel("Refund check number").fill("2001");
+  await rf.getByRole("button", { name: "Record refund" }).click();
+  await expect(rf).toHaveCount(0);
+  const paid4 = await call("GET", `/api/invoices/${i4.id}`);
+  expect(paid4.status).toBe("PAID");
+  expect(paid4.payments.refundable).toBe("0.00");
+  expect((await call("GET", `/api/invoices/${i3.id}`)).status).toBe("PAID");
   await logout(page);
   await login(page, "admin");
   ({ me, call } = await caller());
