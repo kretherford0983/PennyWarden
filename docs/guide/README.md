@@ -131,7 +131,7 @@ Billing members and customers from a product catalog, with sales tax and payment
 - [Tax-exempt customers](invoices/tax-exempt-customers.md) — Customers who are charged no sales tax.
 - [Creating an invoice](invoices/create-invoice.md) — Invoice Managers: a draft from catalog products.
 - [Sending, revising and voiding](invoices/send-revise-void.md) — Invoice Managers: from draft to sent, and correcting it.
-- [Recording a payment](invoices/record-payment.md) — Register Users: the deposit from an invoice, one payment for several invoices, a Register deposit applied to invoices, and customer credit.
+- [Recording a payment](invoices/record-payment.md) — Register Users: the deposit from an invoice, one payment for several invoices, a Register deposit applied to invoices, what happens to an overpayment, and customer credit.
 - [Many customers at once](invoices/batches.md) — Invoice Managers: a batch of invoices for dues and the like.
 - [Emailing invoices](invoices/email-invoices.md) — Sending invoices and statements by email.
 - [Invoice reports](invoices/invoice-reports.md) — Open invoices, aging, statements, sales tax, and sales reports for the board.

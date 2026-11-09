@@ -490,6 +490,14 @@ def open_for_payment(customer_entity_id: int | None = None, number: str | None =
     return _pay.open_for_payment(db, ctx, customer_entity_id, number)
 
 
+@router.get("/payments/extra-budgets")
+def payment_extra_budgets(date: _dt.date | None = None, db: Session = Depends(get_db),
+                          ctx: Ctx = Depends(require("invoice.record_payment"))):
+    """2.4.0 (#544): the budgets the rest of a payment above the invoices can stay on (Income, not Invoiced Income)."""
+    from ..services import invoice_payments as _pay
+    return _pay.extra_budgets(db, ctx, date or _dt.date.today())
+
+
 @router.post("/payments", status_code=201)
 def record_multi_payment(body: InvoiceMultiPaymentIn, db: Session = Depends(get_db),
                          ctx: Ctx = Depends(require("invoice.record_payment"))):

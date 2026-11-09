@@ -1,11 +1,27 @@
-1. Open the sent invoice and choose **Record payment…**.
-2. Choose the bank account, the date and the amount (the open balance by default).
-3. **Save**. The deposit is created in the Register, split over the lines' budgets and each tax rate's budget.
+1. Open the sent invoice and choose **Record payment…**. The payment form opens with this invoice ticked; the
+   customer's other open invoices are listed below it, unticked.
+2. Enter the **Amount received** (this invoice's open balance by default), then choose the bank account and the date.
+3. **Record payment**. The deposit is created in the Register, split over the lines' budgets and each tax rate's
+   budget.
 
 - A **partial payment** leaves the invoice *Partly paid*; the next payment continues where it stopped.
-- More than the open balance asks first, and the extra is recorded as an **overpayment**; **Refund overpayment…** pays
-  it back.
+- More than the open balance: choose what happens to **the other** amount (see below).
 - **Link a deposit…** attaches a deposit already in the Register instead.
+
+## When a payment is more than the invoices
+
+Wherever a payment is recorded (**Record payment…**, **Record a payment…** for several invoices, or **Apply to
+invoice…** in the Register), the amount above the invoices gets the same choices:
+
+- **Apply it to the other open invoices**: shown when the customer still owes on other invoices. It ticks them and
+  fills them oldest due date first; change any part before saving.
+- **Kept on a budget** (for example a donation or a fundraiser): choose the budget. In the Register it stays on the
+  allocation's budget.
+- **Kept as the customer's account credit**: only when the customer owes nothing else. A customer with an open balance
+  on another invoice isn't given credit; apply the extra to that invoice, keep it on a budget or refund it.
+- **Refunded**: once the payment is saved, the **Refund** form opens for that invoice with the amount, bank account and
+  date filled in. Add the check number and choose **Record refund**. If you choose **Not now**, the amount stays an
+  overpayment on the invoice, and **Refund credit…** there finishes it later.
 
 ## One payment for several invoices
 
@@ -17,8 +33,8 @@ matches the bank:
    stub) and choose **Find** to list that customer's open invoices.
 2. Enter the **Amount received**. It fills the balances **oldest due date first**; change any invoice's part, or
    untick an invoice to leave it out.
-3. If the amount is more than the balances, choose which invoice gets the **overpayment** (you'll be asked to
-   confirm; it can be refunded on that invoice).
+3. If the amount is more than the balances, choose what happens to **the other** amount (see above; you'll be asked
+   to confirm).
 4. **Paid by** is the customer. When the invoices are for different customers (a company or parent paying for
    several members), choose who paid — you'll be asked to confirm.
 5. Choose the bank account and the date, then **Record payment**.
@@ -33,9 +49,10 @@ When you're already entering a deposit in the **Register** and realize it pays a
 1. Choose the **Entity** (the customer who paid) and enter the allocation's amount.
 2. Choose **Apply to invoice…** on that allocation. The customer's open invoices are listed, oldest due date first, and
    the amount fills them in that order; change any invoice's part, or untick one.
-3. If the allocation is more than you apply, choose what happens to **the other** amount: keep it on the allocation's
-   budget (for example a fundraiser or a donation — pick that budget), keep it as the customer's **credit** (an
-   overpayment on an invoice), or **refund** it (a refund withdrawal is recorded with the deposit).
+3. If the allocation is more than you apply, choose what happens to **the other** amount (see above): keep it on the
+   allocation's budget (for example a fundraiser or a donation — pick that budget), apply it to the customer's other
+   open invoices, keep it as their **credit** (only when they owe nothing else), or **refund** it (the Refund form
+   opens once the deposit is saved).
 4. **Save**. The applied part is spread over each invoice's Invoiced Income budgets and tax and linked to the invoice;
    the deposit's other allocations stay as you entered them — one $1,150 check can pay a $1,000 invoice and put $150
    on a fundraiser.
@@ -55,7 +72,7 @@ payment…** and on their **statement**.
   moves onto the new invoice's budgets.
 - **Take credit off…** (Register User, with a reason): the credit applied to an invoice becomes the customer's credit
   again, and the invoice owes that amount again.
-- **Refund credit…** (Register User): a refund of the credit, as before.
+- **Refund credit…** (Register User): a refund of the credit, with its check number.
 - **Move credit…** (Register User, with a reason): for example when the customer says to keep it as a donation — the
   credit moves to another budget and is no longer theirs.
 

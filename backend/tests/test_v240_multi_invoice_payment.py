@@ -74,10 +74,15 @@ def test_ac_inv_pay_010_overpayment_balances_and_another_payer(env, ib, three):
     assert r.status_code == 422                                                   # each invoice once
     r = _post(env, ib, [(three["b"], "110.00")], overpayment="15.00")
     assert r.status_code == 422                                                   # which invoice gets it
-    r = _post(env, ib, [(three["b"], "110.00")], overpayment="15.00", overpayment_invoice_id=three["b"])
+    r = _post(env, ib, [(three["b"], "110.00")], overpayment="15.00", overpayment_invoice_id=three["b"],
+              overpayment_kind="REFUND")
     assert r.status_code == 409 and r.json()["error"]["warnings"][0]["code"] == "OVERPAYMENT"
+    # #544: A and C are still owed, so the extra can't be the customer's credit
     r = _post(env, ib, [(three["b"], "110.00")], overpayment="15.00", overpayment_invoice_id=three["b"],
               confirm_overpayment=True)
+    assert r.status_code == 422 and r.json()["error"]["code"] == "CREDIT_WHILE_OWED"
+    r = _post(env, ib, [(three["b"], "110.00")], overpayment="15.00", overpayment_invoice_id=three["b"],
+              overpayment_kind="REFUND", confirm_overpayment=True)
     assert r.status_code == 201, r.text
     assert r.json()["invoices"][0]["payments"]["overpaid"] == "15.00" and r.json()["transaction"]["total"] == "125.00"
     # a parent or company paying for another customer's invoice: who paid, then a confirmation

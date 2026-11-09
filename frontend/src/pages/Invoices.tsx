@@ -6,7 +6,7 @@ import { useMe } from "../App";
 import { OverdueInvoices } from "./Dashboard";
 import { EmailLog, SendEmail } from "./Email";
 import { InvoiceTemplateEditor } from "./InvoiceTemplate";
-import { MultiPaymentForm, useAccounts } from "./InvoicePayments";
+import { MultiPaymentForm, RefundForm } from "./InvoicePayments";
 
 // 2.4.0 (#251): the Invoices module. Its sections (invoices, products, payments, reports) arrive with the later 2.4.0
 // builds (#252-#255); this page says what the module is for and who does what (separation of duties).
@@ -674,7 +674,11 @@ function Payments({ i, onChanged }: { i: any; onChanged: (i: any) => void }) {
         {can("transaction.manage") && Number(p.credit_applied) > 0 ? <button onClick={() => setTakeOff(true)}>Take credit off…</button> : null}
       </div> : null}
       {takeOff ? <TakeCreditOff i={i} onClose={() => setTakeOff(false)} onDone={(x) => { setTakeOff(false); onChanged(x); }} /> : null}
-      {mode === "pay" || mode === "refund" ? <MoneyForm i={i} refund={mode === "refund"} onClose={() => setMode(null)} onDone={(x) => { setMode(null); onChanged(x); }} /> : null}
+      {/* #544: one payment form - this invoice ticked, the customer's other open invoices listed */}
+      {mode === "pay" ? <MultiPaymentForm invoiceIds={[i.id]} customerIds={[i.customer?.id ?? i.customer_entity_id]} onClose={() => setMode(null)}
+        onDone={() => { setMode(null); api.get(`/api/invoices/${i.id}`).then(onChanged); }} /> : null}
+      {mode === "refund" ? <RefundForm invoiceId={i.id} number={i.number} amount={i.payments.refundable} onClose={() => setMode(null)}
+        onDone={(x) => { setMode(null); onChanged(x); }} /> : null}
       {mode === "link" ? <LinkForm i={i} onClose={() => setMode(null)} onDone={(x) => { setMode(null); onChanged(x); }} /> : null}
       {unlink ? <UnlinkForm i={i} link={unlink} onClose={() => setUnlink(null)} onDone={(x) => { setUnlink(null); onChanged(x); }} /> : null}
     </section>
@@ -703,65 +707,29 @@ function TakeCreditOff({ i, onClose, onDone }: { i: any; onClose: () => void; on
   );
 }
 
-function MoneyForm({ i, refund, onClose, onDone }: { i: any; refund: boolean; onClose: () => void; onDone: (i: any) => void }) {
-  const accts = useAccounts();
-  const { run, dialog } = useConfirmable();
-  const [err, setErr] = useState<unknown>(null);
-  const [v, setV] = useState({ bank_account_id: "", amount: refund ? i.payments.refundable : i.payments.open, transaction_date: todayIso(), check_number: "", notes: "" });
-  // #504: start on the only account, else the Primary account (as the Register does)
-  useEffect(() => {
-    const start = accts.length === 1 ? accts[0] : accts.find((a) => a.is_primary);
-    if (start && !v.bank_account_id) setV((x) => ({ ...x, bank_account_id: String(start.id) }));
-  }, [accts]); // eslint-disable-line react-hooks/exhaustive-deps
-  async function submit(e: FormEvent) {
-    e.preventDefault();
-    setErr(null);
-    try {
-      const r: any = await run((codes) => api.post(`/api/invoices/${i.id}/${refund ? "refunds" : "payments"}`, {
-        bank_account_id: Number(v.bank_account_id), amount: v.amount, transaction_date: v.transaction_date || null, notes: v.notes || null,
-        ...(refund ? { check_number: v.check_number || null, confirmations: codes } : { confirm_overpayment: codes.includes("OVERPAYMENT"), confirmations: codes.filter((c) => c !== "OVERPAYMENT") }),
-      }));
-      if (r) onDone(r.invoice);
-    } catch (x) { setErr(x); }
-  }
-  return (
-    <Modal title={refund ? "Refund credit" : "Record payment"} onClose={onClose}>
-      <form onSubmit={submit}>
-        <ErrorBox error={err} />
-        <p className="hint">{refund
-          ? `A withdrawal that reduces the Invoiced Income budget (up to ${money(i.payments.refundable)}).`
-          : `A deposit for invoice ${i.number}, spread over its lines' Invoiced Income budgets. Open balance ${money(i.payments.open)}; more than that is recorded as an overpayment.`}</p>
-        <Field label="Bank account"><select required value={v.bank_account_id} onChange={(e) => setV({ ...v, bank_account_id: e.target.value })}>
-          <option value="">Choose…</option>{accts.map((a) => <option key={a.id} value={a.id}>{a.label || `${a.account_name} - ${a.account_number_masked}`}</option>)}</select></Field>
-        <Field label="Amount"><input required inputMode="decimal" value={v.amount} onChange={(e) => setV({ ...v, amount: e.target.value })} /></Field>
-        <Field label="Date"><input type="date" required value={v.transaction_date} onChange={(e) => setV({ ...v, transaction_date: e.target.value })} /></Field>
-        {refund ? <Field label="Check number"><input maxLength={20} value={v.check_number} onChange={(e) => setV({ ...v, check_number: e.target.value })} /></Field> : null}
-        <Field label="Notes"><textarea rows={2} maxLength={4000} value={v.notes} onChange={(e) => setV({ ...v, notes: e.target.value })} /></Field>
-        <div className="actions"><button type="button" onClick={onClose}>Cancel</button><button className="primary" type="submit">{refund ? "Record refund" : "Record payment"}</button></div>
-      </form>
-      {dialog}
-    </Modal>
-  );
-}
-
 function LinkForm({ i, onClose, onDone }: { i: any; onClose: () => void; onDone: (i: any) => void }) {
   const { run, dialog } = useConfirmable();
   const { can } = useMe();
   const [rows, setRows] = useState<any[] | null>(null);
   const [err, setErr] = useState<unknown>(null);
   const [extra, setExtra] = useState<Record<number, string>>({});
+  const [refund, setRefund] = useState<null | { amount: string; invoice: any }>(null);   // #544: the rest to refund
   useEffect(() => { api.get(`/api/invoices/${i.id}/link-candidates`).then(setRows, setErr); }, [i.id]);
   const open = Number(i.payments.open);
   async function pick(r: any) {
     setErr(null);
     const more = Number(r.amount) > open;
+    const rest = r.moves && more ? extra[r.allocation_id] || "BUDGET" : null;
     try { const x = await run((codes) => api.post(`/api/invoices/${i.id}/links`, { allocation_id: r.allocation_id, confirmations: codes,
-      ...(r.moves && more ? { extra: extra[r.allocation_id] || "BUDGET" } : {}) })); if (x) onDone(x); }
+      ...(rest ? { extra: rest } : {}) }));
+      if (x && rest === "REFUND") setRefund({ amount: (Number(r.amount) - open).toFixed(2), invoice: x });
+      else if (x) onDone(x); }
     catch (x) { setErr(x); }
   }
   // 2.4.0 (#533): a line on an ordinary Income budget is moved onto this invoice's budgets when linked (a register edit,
   // Register User); the rest of a larger line stays on its budget, is kept as credit or refunded
   const mover = can("transaction.manage");
+  if (refund) return <RefundForm invoiceId={i.id} number={i.number} amount={refund.amount} afterPayment onClose={() => onDone(refund.invoice)} onDone={onDone} />;
   return (
     <Modal title="Link a deposit" onClose={onClose} wide>
       <ErrorBox error={err} />
@@ -775,7 +743,7 @@ function LinkForm({ i, onClose, onDone }: { i: any; onClose: () => void; onDone:
               <td className="num">{money(r.amount)}</td>
               <td>{r.moves && more ? (
                 <select aria-label={`Rest of the ${r.amount} line`} value={extra[r.allocation_id] || "BUDGET"} onChange={(e) => setExtra({ ...extra, [r.allocation_id]: e.target.value })}>
-                  <option value="BUDGET">The rest stays on its budget</option><option value="CREDIT">The rest kept as credit</option><option value="REFUND">The rest refunded</option></select>) : null}
+                  <option value="BUDGET">The rest stays on its budget</option><option value="CREDIT">The rest kept as credit (only if nothing else is owed)</option><option value="REFUND">The rest refunded (opens the Refund form)</option></select>) : null}
                 {r.moves && !mover ? <span className="muted small">A Register User links this one</span>
                   : <button className="small" disabled={!r.moves && more} onClick={() => pick(r)}>Link</button>}</td></tr>;
           })}</tbody></table>
