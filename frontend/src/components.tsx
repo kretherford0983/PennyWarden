@@ -540,7 +540,7 @@ export function EntityPicker({ label, entities, value, onChange, placeholder = "
   label: string;
   entities: any[];
   value: string;
-  onChange: (id: string) => void;
+  onChange: (id: string, byPosition?: boolean) => void;   // 2.4.0 (#551): true when only the position matched
   placeholder?: string;
   extraOption?: { id: string; label: string } | null;
 }) {
@@ -560,8 +560,11 @@ export function EntityPicker({ label, entities, value, onChange, placeholder = "
   const matches = all.filter((e) => !q || nm(e).toLowerCase().includes(q) || (e.display_name || "").toLowerCase().includes(q)
     || (e.name || "").toLowerCase().includes(q) || (e.entity_number || "").toLowerCase().includes(q)
     || (e.position || "").toLowerCase().includes(q)).slice(0, 50);   // 2.4.0 (#551): also by position
+  const byPositionOnly = (e: any) => !!q && (e.position || "").toLowerCase().includes(q) && !nm(e).toLowerCase().includes(q)
+    && !(e.display_name || "").toLowerCase().includes(q) && !(e.name || "").toLowerCase().includes(q)
+    && !(e.entity_number || "").toLowerCase().includes(q);
   const choose = (e: any | null) => {
-    onChange(e ? String(e.id) : "");
+    onChange(e ? String(e.id) : "", e ? byPositionOnly(e) : false);
     setQuery(null);
     setOpen(false);
   };

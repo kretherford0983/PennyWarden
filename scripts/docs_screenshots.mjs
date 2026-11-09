@@ -81,7 +81,7 @@ await step("fundraiser-page", async () => {
   await page.locator("table a, table button").filter({ hasText: /Concert|Mattress|Sale/ }).first().click(); await shot("fundraiser-page", 1100);
 });
 await step("reports", async () => { await go("Reports"); await shot("reports", 1000); });
-await step("notifications", async () => { await page.goto("/notifications"); await shot("notifications", 640); });
+await step("notifications", async () => { await page.goto("/notifications"); await shot("notifications", 1000); });   // 2.4.0 (#551): with tasks
 await step("my-account", async () => { await page.getByRole("link", { name: "My account" }).click(); await shot("my-account", 900); });
 
 // ---- Register User

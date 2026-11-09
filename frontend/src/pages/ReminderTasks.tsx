@@ -13,7 +13,8 @@ export const MAX_TASKS = 25;
 
 /** A task as the editor keeps it (the API's task fields). */
 export type TaskDraft = { id?: number; title: string; done?: boolean; contact_kind: "" | "ENTITY" | "POSITION";
-  contact_entity_id: string; contact_position: string; function_id: string; contact?: any };
+  contact_entity_id: string; contact_position: string; function_id: string; contact?: any;
+  via_entity_id?: string };   // editor only: the person the position was taken from (to offer "This person" back)
 
 export const draftsOf = (tasks: any[] | undefined): TaskDraft[] => (tasks || []).map((t) => ({
   id: t.id, title: t.title, done: !!t.done, contact_kind: t.contact_kind || "", function_id: t.function_id || "",
@@ -25,17 +26,27 @@ export const tasksBody = (drafts: TaskDraft[]) => drafts.map((d) => ({
   contact_entity_id: d.contact_kind === "ENTITY" && d.contact_entity_id ? Number(d.contact_entity_id) : null,
   contact_position: d.contact_kind === "POSITION" ? d.contact_position || null : null, function_id: d.function_id || null }));
 
-/** The button that opens a task's app function, disabled (with the reason) when this user can't open it. */
+/** The optional modules, by the names the Administrator turns on under System/About → General. */
+const MODULE_NAMES: Record<string, string> = { fundraisers: "Events & Fundraisers", checks: "Payments", donations: "Donations", invoices: "Invoices" };
+
+/** The button that opens a task's app function, disabled (with the reason) when this user can't open it: a module
+ * that is turned off is named; otherwise it is the user's access. */
 function FunctionButton({ id }: { id: string }) {
   const { me, can } = useMe();
   const f = functionFor(id);
   if (!f) return null;
-  const allowed = new Set(navFor(me).map((n) => n[0]));
-  if (f.usable({ can, modules: me.modules || {} }, allowed)) {
-    return <Link to={f.path} className="button small" data-testid="task-function">{f.name}</Link>;
-  }
-  return <button type="button" className="small" disabled title={`You don't have access to ${f.name}.`}
-                 data-testid="task-function">{f.name}</button>;
+  const modules = me.modules || {};
+  const usable = (mods: Record<string, boolean | undefined>) =>
+    f.usable({ can, modules: mods }, new Set(navFor({ ...me, modules: mods }).map((n) => n[0])));
+  if (usable(modules)) return <Link to={f.path} className="button small" data-testid="task-function">{f.name}</Link>;
+  const off = Object.keys(MODULE_NAMES).find((k) => !modules[k as keyof typeof modules] && usable({ ...modules, [k]: true }));
+  const why = off ? `The ${MODULE_NAMES[off]} module is turned off.` : `You don't have access to ${f.name}.`;
+  return (
+    <span className="task-function-off">
+      <button type="button" className="small" disabled title={why} data-testid="task-function">{f.name}</button>
+      <span className="muted" data-testid="task-function-why"> {why}</span>
+    </span>
+  );
 }
 
 /** A task's contact: the people with their email, phone and mailing address, or the name/position with a warning. */
@@ -169,7 +180,7 @@ export function TaskEditor({ value, onChange }: { value: TaskDraft[]; onChange: 
             <div className="row fields">
               <Field label="Contact">
                 <select value={d.contact_kind} aria-label={`Task ${i + 1} contact`}
-                        onChange={(e) => put(i, { contact_kind: e.target.value as TaskDraft["contact_kind"], contact_entity_id: "", contact_position: "" })}>
+                        onChange={(e) => put(i, { contact_kind: e.target.value as TaskDraft["contact_kind"], contact_entity_id: "", contact_position: "", via_entity_id: undefined })}>
                   <option value="">— none —</option>
                   <option value="ENTITY">An organization or person</option>
                   <option value="POSITION">Whoever holds a position</option>
@@ -177,7 +188,13 @@ export function TaskEditor({ value, onChange }: { value: TaskDraft[]; onChange: 
               </Field>
               {d.contact_kind === "ENTITY" ? (
                 <EntityPicker label="Organization or person" entities={entities} value={d.contact_entity_id} extraOption={known}
-                              placeholder="Type a name or a position…" onChange={(id) => put(i, { contact_entity_id: id })} />
+                              placeholder="Type a name or a position…" onChange={(id, byPosition) => {
+                                // #551: a person found by their position defaults to "whoever holds" it
+                                const e = entities.find((x) => String(x.id) === id);
+                                const pos = (e?.position || "").trim();
+                                if (byPosition && e?.entity_type === "INDIVIDUAL" && pos) put(i, { contact_kind: "POSITION", contact_position: pos, contact_entity_id: "", via_entity_id: id });
+                                else put(i, { contact_entity_id: id, via_entity_id: undefined });
+                              }} />
               ) : null}
               {d.contact_kind === "POSITION" ? (
                 <Field label="Position" hint="The active individuals with this position when the reminder is shown.">
@@ -200,13 +217,22 @@ export function TaskEditor({ value, onChange }: { value: TaskDraft[]; onChange: 
                 </select>
               </Field>
             </div>
-            {d.contact_kind === "ENTITY" && ent?.entity_type === "INDIVIDUAL" && (ent.position || "").trim() ? (
-              <div className="row" role="radiogroup" aria-label={`Task ${i + 1} contact is`}>
-                <label className="check"><input type="radio" name={`who-${i}`} checked readOnly /> This person ({ent.display_name})</label>
-                <label className="check"><input type="radio" name={`who-${i}`} checked={false}
-                  onChange={() => put(i, { contact_kind: "POSITION", contact_position: ent.position.trim(), contact_entity_id: "" })} /> Whoever is {ent.position.trim()}</label>
-              </div>
-            ) : null}
+            {(() => {
+              // "This person" or "Whoever is <position>" for a person with a position, either way round
+              const p = d.contact_kind === "ENTITY" ? ent : d.contact_kind === "POSITION" && d.via_entity_id
+                ? entities.find((e) => String(e.id) === d.via_entity_id) : undefined;
+              const pos = (p?.position || "").trim();
+              if (!p || p.entity_type !== "INDIVIDUAL" || !pos) return null;
+              const byPos = d.contact_kind === "POSITION";
+              return (
+                <div className="row" role="radiogroup" aria-label={`Task ${i + 1} contact is`}>
+                  <label className="check"><input type="radio" name={`who-${i}`} checked={!byPos}
+                    onChange={() => put(i, { contact_kind: "ENTITY", contact_entity_id: String(p.id), contact_position: "", via_entity_id: undefined })} /> This person ({p.display_name})</label>
+                  <label className="check"><input type="radio" name={`who-${i}`} checked={byPos}
+                    onChange={() => put(i, { contact_kind: "POSITION", contact_position: pos, contact_entity_id: "", via_entity_id: String(p.id) })} /> Whoever is {pos}</label>
+                </div>
+              );
+            })()}
           </div>
         );
       })}

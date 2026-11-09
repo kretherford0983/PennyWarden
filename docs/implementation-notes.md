@@ -2612,6 +2612,11 @@ the UI always shows the name users see (e.g. *End of Year Audit*, never `audit`)
 so with its defaults (#528). The server's list (`FUNCTION_IDS`) is checked against the frontend by a test. Restore: tasks
 travel with *Reminders*; a fixed contact whose entity isn't there is cleared and reported; reinitialize clears personal
 reminders' fixed contacts (organization reminders and their tasks are deleted).
+The disabled function button names a module that is off (it works out which optional module would make the function
+usable) and otherwise says the user has no access. A person picked by their position in the task's entity picker
+(`EntityPicker` reports `byPosition` when only the position matched) becomes *Whoever is <position>*, with *This person*
+offered back. Demo data (`scripts/demo_data.py`) has two reminders with tasks and a City Clerk; the guide's
+`notifications.png` shows them.
 Proposed:
 - **BR-REM-TASK-001** a reminder may have an ordered checklist of up to 25 tasks (one level), ticked in any order once
   the reminder is shown, by whoever may resolve it; each tick records who and when; the first open task is *Next*;

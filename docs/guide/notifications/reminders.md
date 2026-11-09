@@ -25,9 +25,11 @@ A reminder can carry a checklist of **tasks** (up to 25) — for example *Prepar
   reminder reopens it.
 - **Contact:** a task can name *an organization or person* (always that entity) or *whoever holds a position* (for
   example City Clerk — the active individuals with that position when the reminder is shown). Their email, phone and
-  mailing address show on the task. If nobody active holds the position, or the person was inactivated, the task
-  says so: find the contact and edit the task.
+  mailing address show on the task. Typing a position (e.g. *city clerk*) finds the person holding it and picks
+  *Whoever is City Clerk*; switch to *This person* to keep that person instead. If nobody active holds the position,
+  or the person was inactivated, the task says so: find the contact and edit the task.
 - **Opens:** a task can open a report (for example **End of Year Audit**) or a page with one click; a report opens
-  with its default options.
+  with its default options. If you can't open it, the button is greyed out with the reason (for example *The
+  Invoices module is turned off.*).
 - Once a reminder is shown its own details are locked, but Budget Managers (the owner, for a personal one) can still
   change its tasks: **⋯ → Edit tasks…**.

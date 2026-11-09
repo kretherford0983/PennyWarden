@@ -2696,10 +2696,13 @@ test("1.6.7: a recurring organization reminder creates its next occurrence when 
 });
 
 // ---------------------------------------------------------------- 2.4.0 (#551): reminder tasks
-test("#551: reminder tasks - ticked one at a time, a position contact, an app function, the last tick resolves", async ({ page }) => {
+test("#551: reminder tasks - ticked one at a time, contacts by position, app functions, the last tick resolves", async ({ page }) => {
   const now = new Date();
   const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
   await login(page, "bm1");
+  const post = await apiAs(page);
+  expect((await post("/api/entities", { entity_type: "INDIVIDUAL", primary_contact: "Casey Clerk", position: "City Clerk",
+    email: "casey@example.org", confirmations: ["DUPLICATE_ENTITY"] })).status()).toBe(201);
   await page.getByRole("link", { name: /Notifications/ }).click();
   await page.getByRole("button", { name: "New reminder" }).click();
   let dlg = page.getByRole("dialog", { name: "New reminder" });
@@ -2709,40 +2712,54 @@ test("#551: reminder tasks - ticked one at a time, a position contact, an app fu
   await dlg.getByRole("button", { name: "Add a task" }).click();
   await dlg.getByRole("textbox", { name: "Task 1 name" }).fill("Run the audit report");
   await dlg.getByRole("combobox", { name: "Task 1 opens" }).selectOption({ label: "End of Year Audit" });
+  // a person found by their position defaults to "whoever is" that position
   await dlg.getByRole("button", { name: "Add a task" }).click();
   await dlg.getByRole("textbox", { name: "Task 2 name" }).fill("Email the City Clerk");
-  await dlg.getByRole("combobox", { name: "Task 2 contact" }).selectOption("POSITION");
-  await dlg.getByRole("combobox", { name: "Task 2 position" }).fill("City Clerk");
+  await dlg.getByRole("combobox", { name: "Task 2 contact" }).selectOption("ENTITY");
+  await dlg.getByRole("combobox", { name: "Organization or person" }).fill("city clerk");
+  await page.getByRole("listbox").getByRole("option", { name: /Casey Clerk/ }).click();
+  await expect(dlg.getByRole("radio", { name: "Whoever is City Clerk" })).toBeChecked();
+  await expect(dlg.getByRole("combobox", { name: "Task 2 position" })).toHaveValue("City Clerk");
+  // a position nobody holds; a page whose module is off
+  await dlg.getByRole("button", { name: "Add a task" }).click();
+  await dlg.getByRole("textbox", { name: "Task 3 name" }).fill("Invoice the parks department");
+  await dlg.getByRole("combobox", { name: "Task 3 contact" }).selectOption("POSITION");
+  await dlg.getByRole("combobox", { name: "Task 3 position" }).fill("Parks Director");
+  await dlg.getByRole("combobox", { name: "Task 3 opens" }).selectOption({ label: "Invoices" });
   await page.screenshot({ path: "e2e-screenshots/light-reminder-tasks-dialog.png" });
   await dlg.getByRole("button", { name: "Save" }).click();
   const item = page.getByTestId("reminder").filter({ hasText: "Year-end audit for the trustees" });
-  await expect(item.getByTestId("task-progress")).toHaveText("0 of 2 tasks done");
-  await expect(item.getByTestId("reminder-task").first().getByTestId("task-next")).toBeVisible();
-  await expect(item.getByTestId("task-function")).toHaveText("End of Year Audit");
-  // nobody holds the position: the position shows, without contact details
-  await expect(item.getByTestId("task-contact")).toContainText("City Clerk");
-  await expect(item.getByTestId("task-contact")).toContainText("nobody active holds this position");
+  const task = (n: number) => item.getByTestId("reminder-task").nth(n);
+  await expect(item.getByTestId("task-progress")).toHaveText("0 of 3 tasks done");
+  await expect(task(0).getByTestId("task-next")).toBeVisible();
+  await expect(task(0).getByTestId("task-function")).toHaveText("End of Year Audit");
+  await expect(task(1).getByTestId("task-contact")).toContainText("casey@example.org");
+  await expect(task(2).getByTestId("task-contact")).toContainText("nobody active holds this position");
+  await expect(task(2).getByTestId("task-function")).toBeDisabled();
+  await expect(task(2).getByTestId("task-function-why")).toHaveText("The Invoices module is turned off.");
   await logout(page);
 
   // a Register User ticks the first task; Next moves on; the function button opens the report
   await login(page, "ru1", "Brand-New-Pass-99");
   await page.getByRole("link", { name: /Notifications/ }).click();
   await item.getByRole("checkbox", { name: "Tick Run the audit report" }).click();
-  await expect(item.getByTestId("task-progress")).toHaveText("1 of 2 tasks done");
-  await expect(item.getByTestId("reminder-task").nth(1).getByTestId("task-next")).toBeVisible();
+  await expect(item.getByTestId("task-progress")).toHaveText("1 of 3 tasks done");
+  await expect(task(1).getByTestId("task-next")).toBeVisible();
   await page.screenshot({ path: "e2e-screenshots/light-reminder-tasks.png" });
-  await item.getByTestId("task-function").click();
+  await task(0).getByTestId("task-function").click();
   await expect(page.getByRole("heading", { name: "End of Year Audit", level: 1 })).toBeVisible();
   await page.getByRole("link", { name: /Notifications/ }).click();
-  // the last tick resolves the reminder
   await item.getByRole("checkbox", { name: "Tick Email the City Clerk" }).click();
+  await expect(item.getByTestId("task-progress")).toHaveText("2 of 3 tasks done");
+  // the last tick resolves the reminder
+  await item.getByRole("checkbox", { name: "Tick Invoice the parks department" }).click();
   dlg = page.getByRole("dialog", { name: "Last task" });
   await dlg.getByLabel("Note (optional)").fill("Sent to the trustees");
   await dlg.getByRole("button", { name: "Tick and resolve" }).click();
   await expect(item).toHaveCount(0);
   await page.getByRole("tab", { name: "Resolved" }).click();
   await expect(item).toContainText("Sent to the trustees");
-  await expect(item.getByTestId("task-progress")).toHaveText("2 of 2 tasks done");
+  await expect(item.getByTestId("task-progress")).toHaveText("3 of 3 tasks done");
   await logout(page);
 });
 
