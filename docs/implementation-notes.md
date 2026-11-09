@@ -2598,25 +2598,48 @@ ACs **AC-INV-OVER-001..004**. Tests: `backend/tests/test_v240_overpayment_choice
 updated for the rule. E2E: the #533 test (no credit while owed, apply to the other invoice, refund on the form) and
 the #504 test (Record payment opens the one form).
 
-**2.4.0 — reminder tasks (#551, decided with Kyle 2026-11-09).** Table `reminder_task` (migration `0089`): `reminder_id`
-(cascade), `seq`, `title`, `done_at`/`done_by_user_id`, `contact_kind` (ENTITY | POSITION) with `contact_entity_id` (no
-FK, like `reminder.link_id`) or `contact_position`, and `function_id`. `services/reminder_tasks.py` holds the rules;
-`reminders.py` adds `update_tasks`, `tick`, `untick`, the open-task check in `resolve` and the unticked copy in
-`_create_next`. API: `tasks` on `POST`/`PUT /api/reminders` (omitted = unchanged), `PUT /{id}/tasks` (also while shown),
-`POST /{id}/tasks/{tid}/tick {note}`, `POST /{id}/tasks/{tid}/untick`. Each reminder in the API carries `tasks` (with the
-contact resolved: `people` with email, phone and mailing address for `register.view`, `missing`, `inactive`,
-`several`), `tasks_done`, `can_tick`, `can_untick`, `can_edit_tasks`. Audit: `REMINDER_TASK_TICKED`,
-`REMINDER_TASK_UNTICKED`; task edits are in `REMINDER_UPDATED` (the snapshot lists the tasks). App functions are
+**2.4.0 — reminder tasks (#551, decided with Kyle 2026-11-09; rules confirmed the same day).** Table `reminder_task`
+(migration `0089`): `reminder_id` (cascade), `seq`, `title`, `done_at`/`done_by_user_id`, `contact_kind` (ENTITY |
+POSITION) with `contact_entity_id` (no FK, like `reminder.link_id`) or `contact_position`, `function_id` and
+`is_objective`. **Every reminder has one objective task** - the reminder itself, always last (pinned), its `title`
+kept equal to the reminder's; `0089` creates it for every existing reminder (ticked, by the resolver, when resolved).
+Resolving ticks it, reopening unticks it, so `reminder.resolved_*` and the objective's tick always agree.
+`services/reminder_tasks.py` holds the rules (`objective`, `steps`, `set_tasks`); `reminders.py` adds `update_tasks`,
+`tick` (the objective = `resolve`), `untick` (the objective = `reopen`), the open-step check in `resolve` and the
+unticked copy (objective included) in `_create_next`. API: `tasks` (the steps) and `objective` (its contact and
+function) on `POST`/`PUT /api/reminders` (omitted = unchanged), `PUT /{id}/tasks {tasks, objective}` (also while
+shown), `POST /{id}/tasks/{tid}/tick {note}`, `POST /{id}/tasks/{tid}/untick`. Each reminder in the API carries
+`tasks` (steps, then the objective with `objective: true`; contacts resolved: `people` with email, phone and mailing
+address for `register.view`, `missing`, `inactive`, `several`), `steps`, `steps_done`, `can_tick`, `can_untick`,
+`can_edit_tasks`. Audit: `REMINDER_TASK_TICKED`, `REMINDER_TASK_UNTICKED` (steps); the objective's tick is
+`REMINDER_RESOLVED`/`REOPENED`; task edits are in `REMINDER_UPDATED` (the snapshot lists the tasks). App functions are
 `report:<id>` (report registry) or `page:<name>` (`frontend/src/functions.ts`, whose page names `navFor` also uses);
 the UI always shows the name users see (e.g. *End of Year Audit*, never `audit`); a report opens at its plain address,
 so with its defaults (#528). The server's list (`FUNCTION_IDS`) is checked against the frontend by a test. Restore: tasks
 travel with *Reminders*; a fixed contact whose entity isn't there is cleared and reported; reinitialize clears personal
 reminders' fixed contacts (organization reminders and their tasks are deleted).
-The disabled function button names a module that is off (it works out which optional module would make the function
-usable) and otherwise says the user has no access. A person picked by their position in the task's entity picker
-(`EntityPicker` reports `byPosition` when only the position matched) becomes *Whoever is <position>*, with *This person*
-offered back. Demo data (`scripts/demo_data.py`) has two reminders with tasks and a City Clerk; the guide's
-`notifications.png` shows them.
+Confirmed by Kyle (2026-11-09):
+- **BR-REM-TASK-001** a reminder's steps (one level, up to 25 tasks with the objective; personal reminders too) are
+  ticked in any order once it is shown, by whoever may resolve it; each tick records who and when; the first open
+  step (then the objective) is *Next*;
+- **-002** ticking the objective - the last task, named by the reminder's title - completes (resolves) the reminder;
+  with steps open a note is required and they show as skipped; a repeating reminder's next occurrence has every task
+  unticked; unticking a step or the objective of a resolved reminder reopens it (refused as Reopen is);
+- **-003** a task's (the objective's too) contact is a fixed entity or a position; a position resolves when shown to
+  the active individuals holding it (case and outer spaces ignored), all listed with a warning when several; nobody,
+  or an inactive fixed entity, shows the name or position without contact details;
+- **-004** a task's app function is a report or a main page, labelled with its user-facing name, opening with default
+  options, disabled with the reason (a module that is off, or no access) for a user who can't open it;
+- **-005** while shown, the steps (and every task's contact and function) stay editable by whoever may edit the
+  reminder - an exception to CR-036's edit lock, which still holds for the reminder's own fields; the objective is
+  pinned last and never removed; a ticked step can't be removed; removing steps never completes the reminder.
+
+ACs **AC-REM-TASK-001..006** (as in the issue). Tests: `backend/tests/test_v240_reminder_tasks.py` (11, with the 0089
+conversion). E2E: *#551: reminder tasks* (after the 1.6.7 recurring reminder test). The disabled function button names
+a module that is off (it works out which optional module would make the function usable) and otherwise says the user
+has no access. A person picked by their position in a task's entity picker (`EntityPicker` reports `byPosition` when
+only the position matched) becomes *Whoever is <position>*, with *This person* offered back. Demo data
+(`scripts/demo_data.py`) has two reminders with steps and a City Clerk; the guide's `notifications.png` shows them.
 Proposed:
 - **BR-REM-TASK-001** a reminder may have an ordered checklist of up to 25 tasks (one level), ticked in any order once
   the reminder is shown, by whoever may resolve it; each tick records who and when; the first open task is *Next*;

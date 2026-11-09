@@ -41,7 +41,7 @@ export function ReminderItem({ r, onResolve, onReopen, onEdit, onDelete, onEditT
           r.can_resolve && onResolve && { label: "Resolve…", onClick: () => onResolve(r) },
           r.can_reopen && onReopen && { label: "Reopen", onClick: () => onReopen(r) },
           // 2.4.0 (#551): a shown reminder's tasks stay editable (the full Edit covers them before that)
-          r.can_edit_tasks && !r.can_edit && onEditTasks && { label: r.tasks?.length ? "Edit tasks…" : "Add tasks…", onClick: () => onEditTasks(r) },
+          r.can_edit_tasks && !r.can_edit && onEditTasks && { label: r.steps ? "Edit steps…" : "Add steps…", onClick: () => onEditTasks(r) },
           r.can_edit && onDelete && { label: "Delete", onClick: () => onDelete(r), danger: true },
         ]} />
       </div>
@@ -100,7 +100,7 @@ export function ResolveDialog({ r, onClose, onDone }: { r: any; onClose: () => v
   const [note, setNote] = useState("");
   const [stop, setStop] = useState(false);
   const [err, setErr] = useState<unknown>(null);
-  const open: any[] = (r.tasks || []).filter((t: any) => !t.done);   // 2.4.0 (#551): kept as skipped, a note is required
+  const open: any[] = (r.tasks || []).filter((t: any) => !t.done && !t.objective);   // 2.4.0 (#551): steps kept as skipped; a note is required
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     try { await api.post(`/api/reminders/${r.id}/resolve`, { note: note || null, stop_repeating: stop }); onDone(); } catch (x) { setErr(x); }
@@ -112,7 +112,7 @@ export function ResolveDialog({ r, onClose, onDone }: { r: any; onClose: () => v
         <ErrorBox error={err} />
         {open.length ? (
           <div className="alert warn" role="note">
-            {open.length} task{open.length === 1 ? " isn't" : "s aren't"} ticked and will be shown as skipped: {open.map((t) => t.title).join(", ")}. Say why in the note.
+            {open.length} step{open.length === 1 ? " isn't" : "s aren't"} ticked and will be shown as skipped: {open.map((t) => t.title).join(", ")}. Say why in the note.
           </div>
         ) : null}
         <Field label={open.length ? "Note" : "Note (optional)"} hint="Kept with the reminder and in the audit log."><input required={open.length > 0} maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} /></Field>
@@ -172,7 +172,7 @@ function ReminderForm({ current, onClose, onSaved }: { current: any; onClose: ()
                    notify_days_before: Number(v.notify_days_before || 0),
                    link_type: v.link_type || null, link_id: v.link_type && v.link_id ? Number(v.link_id) : null,
                    repeat_every: repeats ? Number(v.repeat_every || 1) : null, repeat_unit: repeats ? v.repeat_unit : null,
-                   repeat_until: repeats && v.repeat_until ? v.repeat_until : null, tasks: tasksBody(tasks) };
+                   repeat_until: repeats && v.repeat_until ? v.repeat_until : null, ...tasksBody(tasks) };
     try {
       if (current.id) await api.put(`/api/reminders/${current.id}`, body); else await api.post("/api/reminders", body);
       onSaved();
@@ -228,7 +228,7 @@ function ReminderForm({ current, onClose, onSaved }: { current: any; onClose: ()
             </Field>
           ) : null}
         </div>
-        <TaskEditor value={tasks} onChange={setTasks} />
+        <TaskEditor title={v.title} value={tasks} onChange={setTasks} />
         <p className="hint">Once it is shown, a reminder stays in everyone's notifications until it is resolved. It can be edited or deleted only before that; its tasks can still be changed.</p>
         <div className="actions"><button type="button" onClick={onClose}>Cancel</button><button className="primary" type="submit">Save</button></div>
       </GuardedForm>

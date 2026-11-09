@@ -12,24 +12,27 @@ reminders also appear on the Dashboard.
 **Resolve** (with an optional note) clears it; a repeating one then creates the next. A resolved reminder can be
 **reopened**.
 
-## Tasks
+## Steps
 
-A reminder can carry a checklist of **tasks** (up to 25) — for example *Prepare the letter*, *Receive approvals*,
-*Print*, *Mail*. Add them under **Tasks** in the reminder form.
+Every reminder is also a task: its **objective**, always the last one. A reminder can carry **steps** in front of it
+(up to 24) — for example *Prepare the letter*, *Receive approvals*, *Print*, *Mail* before *Send the annual holiday
+letter*. Add them under **Steps** in the reminder form; **↑**/**↓** change their order (say, *D* before *C* once you've
+done it a few times). A reminder without steps looks and works as always.
 
-- Tick each task as it is done, in any order; the first open one is marked **Next**. Whoever can resolve the reminder
-  can tick its tasks, once it is shown (set **Show days before** to start a long job early).
-- Ticking the **last** task resolves the reminder (you can add a note). A repeating reminder's next one starts with
-  every task unticked.
-- **Resolve** with tasks still open needs a note; those tasks are shown as *skipped*. Unticking a task of a resolved
-  reminder reopens it.
-- **Contact:** a task can name *an organization or person* (always that entity) or *whoever holds a position* (for
-  example City Clerk — the active individuals with that position when the reminder is shown). Their email, phone and
-  mailing address show on the task. Typing a position (e.g. *city clerk*) finds the person holding it and picks
-  *Whoever is City Clerk*; switch to *This person* to keep that person instead. If nobody active holds the position,
-  or the person was inactivated, the task says so: find the contact and edit the task.
+- Tick each step as it is done, in any order; the first open one is marked **Next**. Whoever can resolve the reminder
+  can tick them, once it is shown (set **Show days before** to start a long job early).
+- Ticking the **objective** (the reminder's own line, *completes the reminder*) — or **Resolve…** — completes it (you can
+  add a note). Ticking the last step doesn't complete it on its own. A repeating reminder's next one starts with every
+  task unticked.
+- Completing with steps still open needs a note; those steps are shown as *skipped*. Unticking a step (or the
+  objective) of a resolved reminder reopens it.
+- **Contact:** any task, the objective too, can name *an organization or person* (always that entity) or *whoever holds
+  a position* (for example City Clerk — the active individuals with that position when the reminder is shown). Their
+  email, phone and mailing address show on the task. Typing a position (e.g. *city clerk*) finds the person holding it
+  and picks *Whoever is City Clerk*; switch to *This person* to keep that person instead. If nobody active holds the
+  position, or the person was inactivated, the task says so: find the contact and edit the task.
 - **Opens:** a task can open a report (for example **End of Year Audit**) or a page with one click; a report opens
   with its default options. If you can't open it, the button is greyed out with the reason (for example *The
   Invoices module is turned off.*).
 - Once a reminder is shown its own details are locked, but Budget Managers (the owner, for a personal one) can still
-  change its tasks: **⋯ → Edit tasks…**.
+  change its steps and every task's contact and link: **⋯ → Edit steps…**.

@@ -429,7 +429,7 @@
         {
           "id": "reminders",
           "title": "Reminders",
-          "summary": "Creating, resolving and repeating reminders, and their task checklists."
+          "summary": "Creating, resolving and repeating reminders, and their steps."
         }
       ]
     },

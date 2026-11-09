@@ -1,9 +1,12 @@
-"""2.4.0 (#551): reminder tasks - a one-level checklist on a reminder (BR-REM-TASK-001..005).
+"""2.4.0 (#551): reminder tasks - a one-level checklist on a reminder (BR-REM-TASK-001..005, Kyle 2026-11-09).
 
-- Tasks are ticked in any order, once the reminder is shown, by whoever may resolve it; each tick records who and
-  when. Ticking the last open task resolves the reminder (and starts the next occurrence of a repeating one).
-- Resolving with open tasks needs a note; those tasks stay unticked and are shown as skipped.
-- Unticking a task of a resolved reminder reopens it (the Reopen rules apply).
+- Every reminder has an **objective** task: always the last one (pinned), named by the reminder's title, able to carry
+  a contact and an app function like a step. Ticking it resolves the reminder (Resolve… ticks it; Reopen unticks it).
+  A reminder with only its objective looks and works as reminders always did.
+- Steps (the tasks in front of the objective) are ticked in any order, once the reminder is shown, by whoever may
+  resolve it; each tick records who and when. Ticking the last step doesn't resolve the reminder; the objective does.
+- Completing with open steps needs a note; those steps stay unticked and are shown as skipped.
+- Unticking a step of a resolved reminder reopens it (the Reopen rules apply).
 - A task's contact is a fixed entity (ENTITY) or a position (POSITION): the active individuals holding it when the
   reminder is shown, compared without case or outer spaces. Nobody found, or an inactive fixed entity, shows the
   name or position without contact details - the signal to find the contact and edit the task.
@@ -28,9 +31,9 @@ FUNCTION_IDS = frozenset({f"report:{r}" for r in REPORT_IDS} | set(PAGE_IDS))
 
 
 def task_snapshot(t: ReminderTask) -> dict:
-    return {"id": t.id, "title": t.title, "done": t.done_at is not None, "contact_kind": t.contact_kind,
-            "contact_entity_id": t.contact_entity_id, "contact_position": t.contact_position,
-            "function_id": t.function_id}
+    return {"id": t.id, "title": t.title, "objective": bool(t.is_objective), "done": t.done_at is not None,
+            "contact_kind": t.contact_kind, "contact_entity_id": t.contact_entity_id,
+            "contact_position": t.contact_position, "function_id": t.function_id}
 
 
 def _norm_position(p: str | None) -> str:
@@ -44,9 +47,9 @@ def _entity_ok(db: Session, ctx, entity_id: int | None) -> Entity | None:
     return e
 
 
-def _clean_item(db: Session, ctx, i: int, item) -> dict:
-    title = (item.title or "").strip()
-    if not title:
+def _clean_item(db: Session, ctx, i: int | str, item, title_needed: bool = True) -> dict:
+    title = (getattr(item, "title", None) or "").strip()
+    if title_needed and not title:
         raise validation("Every task needs a name.", f"tasks.{i}.title")
     kind = item.contact_kind or None
     entity_id = position = None
@@ -65,13 +68,31 @@ def _clean_item(db: Session, ctx, i: int, item) -> dict:
             "function_id": fn}
 
 
-def set_tasks(db: Session, r: Reminder, ctx, items) -> None:
-    """Replace the checklist with ``items`` (in order). Items with an ``id`` keep that task (and its tick); a ticked
-    task left out is refused - untick it first."""
+def objective(r: Reminder) -> ReminderTask:
+    """The reminder's objective task (created when missing - a new reminder), kept last and named by the title."""
+    for t in r.tasks:
+        if t.is_objective:
+            break
+    else:
+        t = ReminderTask(is_objective=True, title=r.title)
+        r.tasks.append(t)
+    t.title = r.title
+    return t
+
+
+def steps(r: Reminder) -> list[ReminderTask]:
+    return [t for t in r.tasks if not t.is_objective]
+
+
+def set_tasks(db: Session, r: Reminder, ctx, items, objective_in=None) -> None:
+    """Replace the steps with ``items`` (in order, in front of the objective) and, when given, the objective's contact
+    and app function. Items with an ``id`` keep that step (and its tick); a ticked step left out is refused - untick
+    it first. The objective is never removed or moved."""
     items = list(items or [])
-    if len(items) > MAX_TASKS:
-        raise validation(f"A reminder can have up to {MAX_TASKS} tasks.", "tasks")
-    current = {t.id: t for t in r.tasks}
+    if len(items) + 1 > MAX_TASKS:
+        raise validation(f"A reminder can have up to {MAX_TASKS} tasks (the steps and the reminder itself).", "tasks")
+    obj = objective(r)
+    current = {t.id: t for t in steps(r)}
     keep_ids = [it.id for it in items if it.id is not None]
     if len(keep_ids) != len(set(keep_ids)) or any(k not in current for k in keep_ids):
         raise validation("A task in the list isn't on this reminder; reload and try again.", "tasks")
@@ -79,8 +100,11 @@ def set_tasks(db: Session, r: Reminder, ctx, items) -> None:
     if any(t.done_at is not None for t in removed):
         raise AppError(409, "REMINDER_TASK_DONE", "A ticked task can't be removed; untick it first.")
     cleaned = [_clean_item(db, ctx, i, it) for i, it in enumerate(items)]
-    for t in removed:
-        r.tasks.remove(t)
+    if objective_in is not None:
+        c = _clean_item(db, ctx, "objective", objective_in, title_needed=False)
+        c.pop("title")
+        for k, val in c.items():
+            setattr(obj, k, val)
     ordered = []
     for seq, (it, c) in enumerate(zip(items, cleaned)):
         t = current[it.id] if it.id is not None else ReminderTask()
@@ -88,16 +112,18 @@ def set_tasks(db: Session, r: Reminder, ctx, items) -> None:
             setattr(t, k, val)
         t.seq = seq
         ordered.append(t)
-    r.tasks[:] = ordered
+    obj.seq = len(ordered)
+    r.tasks[:] = [*ordered, obj]
 
 
 def copy_unticked(r: Reminder) -> list[ReminderTask]:
     return [ReminderTask(seq=t.seq, title=t.title, contact_kind=t.contact_kind, contact_entity_id=t.contact_entity_id,
-                         contact_position=t.contact_position, function_id=t.function_id) for t in r.tasks]
+                         contact_position=t.contact_position, function_id=t.function_id,
+                         is_objective=t.is_objective) for t in r.tasks]
 
 
-def open_tasks(r: Reminder) -> list[ReminderTask]:
-    return [t for t in r.tasks if t.done_at is None]
+def open_steps(r: Reminder) -> list[ReminderTask]:
+    return [t for t in steps(r) if t.done_at is None]
 
 
 def get_task(r: Reminder, tid: int) -> ReminderTask:
@@ -147,6 +173,7 @@ def contact_out(db: Session, ctx, t: ReminderTask) -> dict | None:
 
 
 def tasks_out(db: Session, ctx, r: Reminder, name) -> list[dict]:
-    return [{**task_snapshot(t), "contact": contact_out(db, ctx, t),
+    """The steps, then the objective (always last)."""
+    return [{**task_snapshot(t), "title": r.title if t.is_objective else t.title, "contact": contact_out(db, ctx, t),
              "done_at": t.done_at.isoformat() + "Z" if t.done_at else None,
              "done_by": name(t.done_by_user_id) if t.done_by_user_id else None} for t in r.tasks]

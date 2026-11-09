@@ -897,8 +897,17 @@ class ReminderTaskIn(In):
     function_id: OptStr(48) = None
 
 
+class ReminderObjectiveIn(In):
+    """2.4.0 (#551): the objective task's contact and app function (its name is the reminder's title)."""
+    contact_kind: Literal["ENTITY", "POSITION"] | None = None
+    contact_entity_id: int | None = None
+    contact_position: OptStr(60) = None
+    function_id: OptStr(48) = None
+
+
 class ReminderTasksIn(In):
-    tasks: list[ReminderTaskIn] = Field(default_factory=list, max_length=25)
+    tasks: list[ReminderTaskIn] = Field(default_factory=list, max_length=25)   # the steps, in front of the objective
+    objective: ReminderObjectiveIn | None = None                               # None = left as it is
 
 
 class ReminderTickIn(In):
@@ -917,7 +926,8 @@ class ReminderIn(In):
     repeat_every: int | None = Field(None, ge=1, le=365)
     repeat_unit: Literal["DAY", "WEEK", "MONTH", "YEAR"] | None = None
     repeat_until: Date | None = None
-    tasks: list[ReminderTaskIn] | None = Field(None, max_length=25)   # 2.4.0 (#551): None = leave as is
+    tasks: list[ReminderTaskIn] | None = Field(None, max_length=25)   # 2.4.0 (#551): the steps; None = leave as is
+    objective: ReminderObjectiveIn | None = None                       # 2.4.0 (#551): None = leave as is
 
 
 class ReminderResolveIn(In):

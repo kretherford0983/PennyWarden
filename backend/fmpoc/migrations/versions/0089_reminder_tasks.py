@@ -1,5 +1,6 @@
 """2.4.0 (#551): reminder tasks - a checklist on a reminder, each task with an optional contact (a fixed entity or a
-position) and an optional app function to open.
+position) and an optional app function to open. Every reminder has one objective task (last, named by the reminder's
+title): each existing reminder gets its objective here, ticked when the reminder is already resolved.
 
 Revision ID: 0089_reminder_tasks
 Revises: 0088_invoice_email_sender
@@ -26,8 +27,11 @@ def upgrade() -> None:
         sa.Column("contact_entity_id", sa.Integer, nullable=True),
         sa.Column("contact_position", sa.String(60), nullable=True),
         sa.Column("function_id", sa.String(48), nullable=True),
+        sa.Column("is_objective", sa.Boolean, nullable=False, server_default=sa.false()),
     )
     op.create_index("ix_reminder_task_reminder_id", "reminder_task", ["reminder_id"])
+    op.execute("INSERT INTO reminder_task (reminder_id, seq, title, done_at, done_by_user_id, is_objective) "
+               "SELECT id, 0, title, resolved_at, resolved_by_user_id, 1 FROM reminder")
 
 
 def downgrade() -> None:

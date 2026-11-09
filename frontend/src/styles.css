@@ -384,6 +384,8 @@ td.ua { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space
 .task-editor { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; margin: 8px 0; }
 .task-edit { border-top: 1px solid var(--border); padding-top: 6px; margin-top: 6px; }
 .task-edit-actions { align-items: flex-end; gap: 4px; }
+.task-list-objective { list-style: none; padding-left: 20px; margin-top: 2px; }
+.task-edit-objective { background: var(--surface-2); border-radius: 6px; padding: 6px 8px; }
 /* v1.6.4 CR-037 */
 .pill-fr-cancelled { background: var(--err-bg); color: var(--danger); border-color: var(--err-border); }
 

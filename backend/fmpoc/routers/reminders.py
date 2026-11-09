@@ -63,7 +63,7 @@ def reopen(rid: int, db: Session = Depends(get_db), ctx: Ctx = Depends(viewer)):
 # 2.4.0 (#551): the checklist
 @router.put("/{rid}/tasks")
 def update_tasks(rid: int, body: ReminderTasksIn, db: Session = Depends(get_db), ctx: Ctx = Depends(viewer)):
-    r = svc.update_tasks(db, ctx, svc.get(db, ctx, rid), body.tasks)
+    r = svc.update_tasks(db, ctx, svc.get(db, ctx, rid), body.tasks, body.objective)
     db.commit()
     return svc.out(db, ctx, r)
 
