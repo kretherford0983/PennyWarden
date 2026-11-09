@@ -2640,6 +2640,8 @@ a module that is off (it works out which optional module would make the function
 has no access. A person picked by their position in a task's entity picker (`EntityPicker` reports `byPosition` when
 only the position matched) becomes *Whoever is <position>*, with *This person* offered back. Demo data
 (`scripts/demo_data.py`) has two reminders with steps and a City Clerk; the guide's `notifications.png` shows them.
+The Entities list has a **Position** column and `GET /api/entities?search=` also matches `entity.position` (Kyle,
+2026-11-09).
 Proposed:
 - **BR-REM-TASK-001** a reminder may have an ordered checklist of up to 25 tasks (one level), ticked in any order once
   the reminder is shown, by whoever may resolve it; each tick records who and when; the first open task is *Next*;

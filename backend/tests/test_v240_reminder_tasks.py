@@ -244,3 +244,11 @@ def test_function_ids_match_the_frontend():
                              (src / "pages/reports/registry.ts").read_text().split("export const REPORTS")[1], re.M))
     pages = set(re.findall(r'id: "(page:[a-z-]+)"', (src / "functions.ts").read_text()))
     assert FUNCTION_IDS == {f"report:{r}" for r in reports} | pages
+
+
+def test_entities_search_finds_people_by_position(env):
+    """2.4.0 (#551): the Entities search also looks at the position (and the list shows it)."""
+    person(env.ru, "Jane", "Doe", "City Clerk", "jane@example.org")
+    person(env.ru, "John", "Roe", "Treasurer")
+    found = env.bm.get("/api/entities?search=city%20cl").json()
+    assert [(e["first_name"], e["position"]) for e in found] == [("Jane", "City Clerk")]

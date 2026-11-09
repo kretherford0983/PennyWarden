@@ -178,7 +178,8 @@ PennyWarden 2.4.0 (in progress).
   **whoever holds a position** (e.g. City Clerk, so a new clerk is picked up automatically) — with their email, phone
   and mailing address, and can open a report or page (e.g. **End of Year Audit**) with one click. Steps stay editable
   while the reminder is shown. Existing reminders become reminders with just their objective: nothing changes until
-  steps are added.
+  steps are added. The **Entities** list now shows each person's **position**, and its **Search** finds entities by
+  position as well as name, number or email.
 
 ### Optional modules
 - **Turning a module on or off updates the menu at once (#482)** — no page reload (for the Administrator who changes

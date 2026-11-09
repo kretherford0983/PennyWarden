@@ -2703,6 +2703,11 @@ test("#551: reminder tasks - steps ticked one at a time, contacts by position, a
   const post = await apiAs(page);
   expect((await post("/api/entities", { entity_type: "INDIVIDUAL", primary_contact: "Casey Clerk", position: "City Clerk",
     email: "casey@example.org", confirmations: ["DUPLICATE_ENTITY"] })).status()).toBe(201);
+  // the Entities list shows the position, and Search finds it
+  await page.getByRole("link", { name: "Entities" }).click();
+  await page.getByPlaceholder("Name, number, email or position").fill("city clerk");
+  await expect(page.locator("table tbody tr").filter({ hasText: "Casey Clerk" }).getByTestId("entity-position")).toHaveText("City Clerk");
+  await expect(page.locator("table tbody tr")).toHaveCount(1);
   await page.getByRole("link", { name: /Notifications/ }).click();
   await page.getByRole("button", { name: "New reminder" }).click();
   let dlg = page.getByRole("dialog", { name: "New reminder" });

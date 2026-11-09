@@ -31,21 +31,22 @@ export default function Entities() {
         {manage ? <button className="primary" onClick={() => setEdit({ ...EMPTY })}>New entity</button> : null}
       </div>
       <div className="filters">
-        <Field label="Search"><input value={filter.search} onChange={(e) => setFilter({ ...filter, search: e.target.value })} placeholder="Name, number or email" /></Field>
+        <Field label="Search"><input value={filter.search} onChange={(e) => setFilter({ ...filter, search: e.target.value })} placeholder="Name, number, email or position" /></Field>
         <Field label="Status"><select value={filter.status} onChange={(e) => setFilter({ ...filter, status: e.target.value })}><option value="active">Active</option><option value="inactive">Inactive</option><option value="all">All</option></select></Field>
         <Field label="Financial Institution"><select value={filter.fi} onChange={(e) => setFilter({ ...filter, fi: e.target.value })}><option value="">Any</option><option value="true">Financial Institutions</option><option value="false">Other entities</option></select></Field>
       </div>
       <ErrorBox error={err} />
       {!list ? <Loading /> : (
         <table className="table">
-          <thead><tr><th>Entity #</th><th>Name</th><th>Type</th><th>Contact</th><th>Financial Institution</th><th>Status</th>{manage ? <th /> : null}</tr></thead>
+          <thead><tr><th>Entity #</th><th>Name</th><th>Type</th><th>Position</th><th>Contact</th><th>Financial Institution</th><th>Status</th>{manage ? <th /> : null}</tr></thead>
           <tbody>
-            {list.length === 0 ? <tr><td colSpan={7} className="muted">No entities.</td></tr> : null}
+            {list.length === 0 ? <tr><td colSpan={8} className="muted">No entities.</td></tr> : null}
             {[...list].sort((a, b) => entitySortKey(a).localeCompare(entitySortKey(b))).map((e) => {
               const locked = e.is_financial_institution && !canFi;
               return (
                 <tr key={e.id} className={e.active ? "" : "inactive"}>
-                  <td>{e.entity_number}</td><td>{entityName(e)}{e.display_name !== e.name && e.name ? <span className="muted"> ({e.name})</span> : null}{e.is_organization ? <> <span className="badge green" data-testid="org-badge">Your organization</span></> : null}</td><td>{e.entity_type === "INDIVIDUAL" ? "Individual" : "Organization"}</td>
+                  <td className="nowrap">{e.entity_number}</td><td>{entityName(e)}{e.display_name !== e.name && e.name ? <span className="muted"> ({e.name})</span> : null}{e.is_organization ? <> <span className="badge green" data-testid="org-badge">Your organization</span></> : null}</td><td>{e.entity_type === "INDIVIDUAL" ? "Individual" : "Organization"}</td>
+                  <td data-testid="entity-position">{e.position || ""}</td>{/* 2.4.0 (#551): reminder tasks find people by position */}
                   <td>{[e.email, e.phone_display || e.phone, e.city].filter(Boolean).join(" · ")}</td>
                   <td>{e.is_financial_institution ? "Yes" : "No"}</td><td>{e.active ? "Active" : "Inactive"}</td>
                   {manage ? (
