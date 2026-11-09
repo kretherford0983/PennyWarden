@@ -3450,7 +3450,9 @@ test("#165-#166: Administrator sets up a cover letter and an envelope; a Registe
   await page.goto(`/register?account=1&txn=${t.id}`);
   const row = page.locator(`#txn-${t.id}`);
   await expect(row.getByRole("button", { name: `Details for transaction ${t.id}` })).toHaveAttribute("aria-expanded", "true");
-  await expect(page.getByText("2026-11-09")).toBeVisible();        // invoice date in the details
+  // invoice date in the details, beside its invoice number - a bare "2026-11-09" also matched today's "Printed" and
+  // timestamps when CI ran on that day
+  await expect(page.getByRole("cell", { name: "INV-92 (2026-11-09)", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Create payment…" }).click();
   const dlg = page.getByRole("dialog", { name: `Print check – transaction #${t.id}` });
   await dlg.getByLabel("I'm writing the check by hand").check();
