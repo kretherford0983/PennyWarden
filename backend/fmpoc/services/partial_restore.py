@@ -76,7 +76,7 @@ SETTINGS_SECTIONS = {
     "settings.signers": {"tables": ("check_signer",), "workspace": (),
                          "label": "Signers (checks, letters and donation receipts, with their signature images)"},
 }
-REMINDER_TABLES = ("reminder",)
+REMINDER_TABLES = ("reminder", "reminder_task")   # 2.4.0 (#551): tasks travel with their reminders
 USER_TABLES = ("app_user", "user_role", "user_mfa", "mfa_recovery_code", "user_security_question", "security_notice",
                "check_printer_setting", "trusted_device")
 # never copied from a backup in a partial restore: seed data, live state, the append-only log
@@ -465,6 +465,10 @@ def _clean_references(con) -> dict:
         n += con.execute(f"UPDATE main.reminder SET link_type = NULL, link_id = NULL WHERE link_type = ? AND link_id "
                          f'NOT IN (SELECT id FROM main."{table}")', (lt,)).rowcount
     out["reminder_links"] = n
+    # 2.4.0 (#551): a task's fixed contact that isn't there (a position needs no entity)
+    out["reminder_task_contacts"] = con.execute(
+        "UPDATE main.reminder_task SET contact_kind = NULL, contact_entity_id = NULL WHERE contact_kind = 'ENTITY' "
+        "AND contact_entity_id NOT IN (SELECT id FROM main.entity)").rowcount
     # 2.4.0 (#535): signers named by Payments / Donations Setup that the restored signer list doesn't have
     signers = {r[0] for r in con.execute("SELECT id FROM main.check_signer")}
     n = 0
@@ -590,6 +594,9 @@ def report_lines(facts: dict) -> list[str]:
                    "twice.")
     if c.get("reminder_links"):
         out.append(f"{c['reminder_links']} reminder link(s) to records that aren't there were cleared.")
+    if c.get("reminder_task_contacts"):
+        out.append(f"{c['reminder_task_contacts']} reminder task contact(s) were cleared: that entity isn't there; "
+                   "edit the task to choose the contact again.")
     for h in facts.get("host_settings") or []:
         if not h.get("exists"):
             out.append(f"The restored {h['setting']} ({h['value']}) doesn't exist on this server: scheduled backups "

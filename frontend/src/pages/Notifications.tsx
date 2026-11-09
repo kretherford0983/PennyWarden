@@ -4,16 +4,18 @@ import { api, todayIso } from "../api";
 import { ErrorBox, Field, GuardedForm, Loading, Modal, RowMenu } from "../components";
 import { Link } from "../router";
 import { useMe } from "../App";
+import { TaskEditor, TaskList, TasksDialog, draftsOf, tasksBody, type TaskDraft } from "./ReminderTasks";
 
 type View = "due" | "upcoming" | "resolved";
 export const REMINDERS_CHANGED = "fm:reminders-changed"; // the bell in the top bar listens for this
 
-export function ReminderItem({ r, onResolve, onReopen, onEdit, onDelete }: {
+export function ReminderItem({ r, onResolve, onReopen, onEdit, onDelete, onEditTasks, onChanged }: {
   r: any; onResolve?: (r: any) => void; onReopen?: (r: any) => void; onEdit?: (r: any) => void; onDelete?: (r: any) => void;
+  onEditTasks?: (r: any) => void; onChanged?: () => void;   // 2.4.0 (#551)
 }) {
   // build 13: the item's own flags come from the server; during maintenance mode nobody but an Administrator may act
   const { paused } = useMe();
-  if (paused) { onResolve = onReopen = onEdit = onDelete = undefined; }
+  if (paused) { onResolve = onReopen = onEdit = onDelete = onEditTasks = undefined; r = { ...r, can_tick: false, can_untick: false }; }
   return (
     <li className={`reminder reminder-${r.state.toLowerCase()}`} data-testid="reminder">
       <div className="reminder-main">
@@ -29,6 +31,7 @@ export function ReminderItem({ r, onResolve, onReopen, onEdit, onDelete }: {
           {r.repeat_label ? <> · <span data-testid="reminder-repeat">{r.repeat_label}</span></> : null}
         </div>
         {r.details ? <div className="pre-wrap">{r.details}</div> : null}
+        <TaskList r={r} onChanged={onChanged} />{/* 2.4.0 (#551) */}
         {r.state === "RESOLVED" ? <div className="muted">Resolved {String(r.resolved_at).slice(0, 10)} by {r.resolved_by || "?"}{r.resolution_note ? ` — ${r.resolution_note}` : ""}</div> : null}
       </div>
       <div className="row-actions">
@@ -37,6 +40,8 @@ export function ReminderItem({ r, onResolve, onReopen, onEdit, onDelete }: {
         <RowMenu name={r.title} actions={[
           r.can_resolve && onResolve && { label: "Resolve…", onClick: () => onResolve(r) },
           r.can_reopen && onReopen && { label: "Reopen", onClick: () => onReopen(r) },
+          // 2.4.0 (#551): a shown reminder's tasks stay editable (the full Edit covers them before that)
+          r.can_edit_tasks && !r.can_edit && onEditTasks && { label: r.tasks?.length ? "Edit tasks…" : "Add tasks…", onClick: () => onEditTasks(r) },
           r.can_edit && onDelete && { label: "Delete", onClick: () => onDelete(r), danger: true },
         ]} />
       </div>
@@ -51,6 +56,7 @@ export default function Notifications() {
   const [err, setErr] = useState<unknown>(null);
   const [edit, setEdit] = useState<any>(null);
   const [resolving, setResolving] = useState<any>(null);
+  const [editTasks, setEditTasks] = useState<any>(null);   // 2.4.0 (#551)
   const canCreate = can("reminder.personal") || can("reminder.org_manage");
   const load = () => api.get(`/api/reminders?view=${view}`).then(setItems, setErr);
   useEffect(() => { setItems(null); load(); }, [view]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -77,7 +83,7 @@ export default function Notifications() {
       {!items ? <Loading /> : !items.length ? <p className="muted">{empty[view]}</p> : (
         <ul className="reminders">
           {items.map((r) => (
-            <ReminderItem key={r.id} r={r} onResolve={setResolving} onEdit={setEdit}
+            <ReminderItem key={r.id} r={r} onResolve={setResolving} onEdit={setEdit} onEditTasks={setEditTasks} onChanged={changed}
               onReopen={(x) => act(() => api.post(`/api/reminders/${x.id}/reopen`))}
               onDelete={(x) => window.confirm(`Delete the reminder “${x.title}”?`) && act(() => api.delete(`/api/reminders/${x.id}`))} />
           ))}
@@ -85,6 +91,7 @@ export default function Notifications() {
       )}
       {edit ? <ReminderForm current={edit} onClose={() => setEdit(null)} onSaved={() => { setEdit(null); changed(); }} /> : null}
       {resolving ? <ResolveDialog r={resolving} onClose={() => setResolving(null)} onDone={() => { setResolving(null); changed(); }} /> : null}
+      {editTasks ? <TasksDialog r={editTasks} onClose={() => setEditTasks(null)} onSaved={() => { setEditTasks(null); changed(); }} /> : null}
     </div>
   );
 }
@@ -93,6 +100,7 @@ export function ResolveDialog({ r, onClose, onDone }: { r: any; onClose: () => v
   const [note, setNote] = useState("");
   const [stop, setStop] = useState(false);
   const [err, setErr] = useState<unknown>(null);
+  const open: any[] = (r.tasks || []).filter((t: any) => !t.done);   // 2.4.0 (#551): kept as skipped, a note is required
   const submit = async (e: FormEvent) => {
     e.preventDefault();
     try { await api.post(`/api/reminders/${r.id}/resolve`, { note: note || null, stop_repeating: stop }); onDone(); } catch (x) { setErr(x); }
@@ -102,7 +110,12 @@ export function ResolveDialog({ r, onClose, onDone }: { r: any; onClose: () => v
       <GuardedForm onSubmit={submit}>
         <p><b>{r.title}</b> — due {r.due_date}</p>
         <ErrorBox error={err} />
-        <Field label="Note (optional)" hint="Kept with the reminder and in the audit log."><input maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} /></Field>
+        {open.length ? (
+          <div className="alert warn" role="note">
+            {open.length} task{open.length === 1 ? " isn't" : "s aren't"} ticked and will be shown as skipped: {open.map((t) => t.title).join(", ")}. Say why in the note.
+          </div>
+        ) : null}
+        <Field label={open.length ? "Note" : "Note (optional)"} hint="Kept with the reminder and in the audit log."><input required={open.length > 0} maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} /></Field>
         {r.repeat_label ? (
           r.next_due ? (
             <>
@@ -128,6 +141,7 @@ function ReminderForm({ current, onClose, onSaved }: { current: any; onClose: ()
     repeat: current.repeat_every ? "yes" : "no", repeat_every: String(current.repeat_every ?? 1),
     repeat_unit: current.repeat_unit || "MONTH", repeat_until: current.repeat_until || "",
   });
+  const [tasks, setTasks] = useState<TaskDraft[]>(draftsOf(current.tasks));   // 2.4.0 (#551)
   const [opts, setOpts] = useState<{ value: string; label: string }[]>([]);
   const [err, setErr] = useState<unknown>(null);
   useEffect(() => {
@@ -158,14 +172,14 @@ function ReminderForm({ current, onClose, onSaved }: { current: any; onClose: ()
                    notify_days_before: Number(v.notify_days_before || 0),
                    link_type: v.link_type || null, link_id: v.link_type && v.link_id ? Number(v.link_id) : null,
                    repeat_every: repeats ? Number(v.repeat_every || 1) : null, repeat_unit: repeats ? v.repeat_unit : null,
-                   repeat_until: repeats && v.repeat_until ? v.repeat_until : null };
+                   repeat_until: repeats && v.repeat_until ? v.repeat_until : null, tasks: tasksBody(tasks) };
     try {
       if (current.id) await api.put(`/api/reminders/${current.id}`, body); else await api.post("/api/reminders", body);
       onSaved();
     } catch (x) { setErr(x); }
   };
   return (
-    <Modal title={current.id ? "Edit reminder" : "New reminder"} onClose={onClose}>
+    <Modal title={current.id ? "Edit reminder" : "New reminder"} onClose={onClose} wide>
       <GuardedForm onSubmit={submit}>
         <ErrorBox error={err} />
         {!current.id && org && personal ? (
@@ -214,7 +228,8 @@ function ReminderForm({ current, onClose, onSaved }: { current: any; onClose: ()
             </Field>
           ) : null}
         </div>
-        <p className="hint">Once it is shown, a reminder stays in everyone's notifications until it is resolved. It can be edited or deleted only before that.</p>
+        <TaskEditor value={tasks} onChange={setTasks} />
+        <p className="hint">Once it is shown, a reminder stays in everyone's notifications until it is resolved. It can be edited or deleted only before that; its tasks can still be changed.</p>
         <div className="actions"><button type="button" onClick={onClose}>Cancel</button><button className="primary" type="submit">Save</button></div>
       </GuardedForm>
     </Modal>
@@ -231,7 +246,8 @@ export function DashboardNotifications() {
   return (
     <section className="card" aria-labelledby="dash-notif-h">
       <div className="charts-head"><h2 id="dash-notif-h">Notifications ({items.length})</h2><Link to="/notifications">All reminders</Link></div>
-      <ul className="reminders">{items.map((r) => <ReminderItem key={r.id} r={r} onResolve={setResolving} />)}</ul>
+      <ul className="reminders">{items.map((r) => <ReminderItem key={r.id} r={r} onResolve={setResolving}
+        onChanged={() => { load(); window.dispatchEvent(new Event(REMINDERS_CHANGED)); }} />)}</ul>
       {resolving ? <ResolveDialog r={resolving} onClose={() => setResolving(null)} onDone={() => { setResolving(null); load(); window.dispatchEvent(new Event(REMINDERS_CHANGED)); }} /> : null}
     </section>
   );

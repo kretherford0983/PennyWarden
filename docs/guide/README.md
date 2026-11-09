@@ -140,7 +140,7 @@ Billing members and customers from a product catalog, with sales tax and payment
 
 Reminders for you or the whole organization.
 
-- [Reminders](notifications/reminders.md) — Creating, resolving and repeating reminders.
+- [Reminders](notifications/reminders.md) — Creating, resolving and repeating reminders, and their task checklists.
 
 ## Envelopes and signers
 

@@ -38,6 +38,7 @@ import { ReinitializedBanner } from "./pages/Reinitialize";
 import NamesGate from "./pages/NamesGate";
 import Invoices, { InvoiceBatch, InvoiceDetail, InvoiceSetup } from "./pages/Invoices";
 import { helpFor } from "./help";
+import { PAGE_NAMES } from "./functions";
 // 2.4.0 (#473): the guide is loaded only when Help opens
 const Help = lazy(() => import("./pages/Help"));
 
@@ -176,28 +177,30 @@ export default function App() {
   );
 }
 
-function navFor(me: Me) {
+// 2.4.0 (#551): exported - reminder tasks check which pages a user can open; the page names live in functions.ts
+export function navFor(me: Me) {
+  const N = PAGE_NAMES;
   const fin = [
     ["/", "Dashboard"],
-    ["/fiscal-years", "Fiscal Years"],
-    ["/budgets", "Budgets"],
-    ["/bank-accounts", "Bank Accounts"],
-    ["/register", "Register"],
-    ["/entities", "Entities"],
-    ["/reports", "Reports"],
+    ["/fiscal-years", N["/fiscal-years"]],
+    ["/budgets", N["/budgets"]],
+    ["/bank-accounts", N["/bank-accounts"]],
+    ["/register", N["/register"]],
+    ["/entities", N["/entities"]],
+    ["/reports", N["/reports"]],
   ];
-  if (me.modules?.fundraisers) fin.splice(6, 0, ["/fundraisers", "Events"]); // v1.6.0 CR-033 (optional module); 2.4.0 (#429) "Events"
+  if (me.modules?.fundraisers) fin.splice(6, 0, ["/fundraisers", N["/fundraisers"]]); // v1.6.0 CR-033 (optional module); 2.4.0 (#429) "Events"
   // 2.0.0 (#164): Payments (Payments module) for Register Users, after Register
-  if (me.modules?.checks && me.permissions.includes("checks.print")) fin.splice(fin.findIndex((n) => n[0] === "/register") + 1, 0, ["/payments", "Payments"]);
+  if (me.modules?.checks && me.permissions.includes("checks.print")) fin.splice(fin.findIndex((n) => n[0] === "/register") + 1, 0, ["/payments", N["/payments"]]);
   // 2.2.0 (#325): Donations for the financial roles and Auditors when the Donations module is on, after Register/Payments
   if (me.modules?.donations && me.permissions.includes("donation.view")) {
     const after = Math.max(fin.findIndex((n) => n[0] === "/payments"), fin.findIndex((n) => n[0] === "/register"));
-    fin.splice(after + 1, 0, ["/donations", "Donations"]);
+    fin.splice(after + 1, 0, ["/donations", N["/donations"]]);
   }
   // 2.4.0 (#251): Invoices for the roles that use it when the module is on, after Donations/Payments/Register
   if (me.modules?.invoices && me.permissions.includes("invoice.view")) {
     const after = Math.max(fin.findIndex((n) => n[0] === "/donations"), fin.findIndex((n) => n[0] === "/payments"), fin.findIndex((n) => n[0] === "/register"));
-    fin.splice(after + 1, 0, ["/invoices", "Invoices"]);
+    fin.splice(after + 1, 0, ["/invoices", N["/invoices"]]);
   }
   // 2.0.0 (#156): Payments Setup (check printing) for Administrators when the Payments module is on
   const checkSetup = me.modules?.checks && me.permissions.includes("checks.setup") ? [["/check-setup", "Payments Setup"]] : [];

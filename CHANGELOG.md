@@ -169,6 +169,14 @@ PennyWarden 2.4.0 (in progress).
   that use it and asks first; they then print none. After the upgrade, Branding's logos are the organization logos and
   letters or the invoice PDF with the same file use them, so nothing prints differently.
 
+### Reminders
+- **Reminder tasks (#551).** A reminder can carry a checklist of tasks, ticked one at a time in any order, with the
+  next open one marked **Next** and who ticked each and when. Ticking the last task resolves the reminder (a repeating
+  one starts again with every task unticked); resolving with tasks still open needs a note and shows them as skipped.
+  A task can name a contact — a fixed organization or person, or **whoever holds a position** (e.g. City Clerk, so a
+  new clerk is picked up automatically) — with their email, phone and mailing address, and can open a report or page
+  (e.g. **End of Year Audit**) with one click. Tasks stay editable while the reminder is shown.
+
 ### Optional modules
 - **Turning a module on or off updates the menu at once (#482)** — no page reload (for the Administrator who changes
   it; other users see it at their next sign-in or reload, as before).

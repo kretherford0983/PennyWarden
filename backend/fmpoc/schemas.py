@@ -887,6 +887,24 @@ class FundraiserLineIn(In):
 
 
 # ------------------------------------------------------------------ v1.6.3 CR-036 reminders
+class ReminderTaskIn(In):
+    """2.4.0 (#551): one task of a reminder's checklist; ``id`` keeps an existing task (and its tick)."""
+    id: int | None = None
+    title: Str(200)
+    contact_kind: Literal["ENTITY", "POSITION"] | None = None
+    contact_entity_id: int | None = None
+    contact_position: OptStr(60) = None
+    function_id: OptStr(48) = None
+
+
+class ReminderTasksIn(In):
+    tasks: list[ReminderTaskIn] = Field(default_factory=list, max_length=25)
+
+
+class ReminderTickIn(In):
+    note: OptStr(500) = None       # kept as the resolution note when this tick resolves the reminder
+
+
 class ReminderIn(In):
     scope: Literal["PERSONAL", "ORGANIZATION"] = "PERSONAL"
     title: Str(200)
@@ -899,6 +917,7 @@ class ReminderIn(In):
     repeat_every: int | None = Field(None, ge=1, le=365)
     repeat_unit: Literal["DAY", "WEEK", "MONTH", "YEAR"] | None = None
     repeat_until: Date | None = None
+    tasks: list[ReminderTaskIn] | None = Field(None, max_length=25)   # 2.4.0 (#551): None = leave as is
 
 
 class ReminderResolveIn(In):

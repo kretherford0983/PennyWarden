@@ -2597,3 +2597,35 @@ Proposed:
 ACs **AC-INV-OVER-001..004**. Tests: `backend/tests/test_v240_overpayment_choices.py` (4); the #533 and #534 tests are
 updated for the rule. E2E: the #533 test (no credit while owed, apply to the other invoice, refund on the form) and
 the #504 test (Record payment opens the one form).
+
+**2.4.0 — reminder tasks (#551, decided with Kyle 2026-11-09).** Table `reminder_task` (migration `0089`): `reminder_id`
+(cascade), `seq`, `title`, `done_at`/`done_by_user_id`, `contact_kind` (ENTITY | POSITION) with `contact_entity_id` (no
+FK, like `reminder.link_id`) or `contact_position`, and `function_id`. `services/reminder_tasks.py` holds the rules;
+`reminders.py` adds `update_tasks`, `tick`, `untick`, the open-task check in `resolve` and the unticked copy in
+`_create_next`. API: `tasks` on `POST`/`PUT /api/reminders` (omitted = unchanged), `PUT /{id}/tasks` (also while shown),
+`POST /{id}/tasks/{tid}/tick {note}`, `POST /{id}/tasks/{tid}/untick`. Each reminder in the API carries `tasks` (with the
+contact resolved: `people` with email, phone and mailing address for `register.view`, `missing`, `inactive`,
+`several`), `tasks_done`, `can_tick`, `can_untick`, `can_edit_tasks`. Audit: `REMINDER_TASK_TICKED`,
+`REMINDER_TASK_UNTICKED`; task edits are in `REMINDER_UPDATED` (the snapshot lists the tasks). App functions are
+`report:<id>` (report registry) or `page:<name>` (`frontend/src/functions.ts`, whose page names `navFor` also uses);
+the UI always shows the name users see (e.g. *End of Year Audit*, never `audit`); a report opens at its plain address,
+so with its defaults (#528). The server's list (`FUNCTION_IDS`) is checked against the frontend by a test. Restore: tasks
+travel with *Reminders*; a fixed contact whose entity isn't there is cleared and reported; reinitialize clears personal
+reminders' fixed contacts (organization reminders and their tasks are deleted).
+Proposed:
+- **BR-REM-TASK-001** a reminder may have an ordered checklist of up to 25 tasks (one level), ticked in any order once
+  the reminder is shown, by whoever may resolve it; each tick records who and when; the first open task is *Next*;
+- **-002** ticking the last open task resolves the reminder (optional note; a repeating one gets its next occurrence,
+  every task unticked); resolving with open tasks needs a note and shows them as skipped; unticking a task of a
+  resolved reminder reopens it (refused as Reopen is);
+- **-003** a task's contact is a fixed entity or a position; a position resolves when shown to the active individuals
+  holding it (case and outer spaces ignored), all listed with a warning when several; nobody, or an inactive fixed
+  entity, shows the name or position without contact details;
+- **-004** a task's app function is a report or a main page, labelled with its user-facing name, opening with default
+  options, disabled for a user who can't open it (permission or module);
+- **-005** while shown, the tasks (contacts, functions, order) stay editable by whoever may edit the reminder - an
+  exception to CR-036's edit lock, which still holds for the reminder's own fields; a ticked task can't be removed;
+  nothing changes once resolved.
+
+ACs **AC-REM-TASK-001..006** (as in the issue). Tests: `backend/tests/test_v240_reminder_tasks.py` (9). E2E: *#551:
+reminder tasks* (after the 1.6.7 recurring reminder test).

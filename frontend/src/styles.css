@@ -373,6 +373,17 @@ td.ua { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space
 .reminder-due { border-left-color: var(--warn-border); }
 .reminder-resolved { opacity: 0.85; }
 .reminder-main { display: grid; gap: 2px; }
+/* 2.4.0 (#551): reminder tasks */
+.reminder-tasks { margin-top: 4px; }
+.task-list { margin: 4px 0 0; padding-left: 20px; display: grid; gap: 4px; }
+.task .check { display: inline-flex; gap: 6px; align-items: center; margin-right: 6px; }
+.task-done .task-title { text-decoration: line-through; color: var(--muted); }
+.task-contact { font-size: 13px; margin: 2px 0 0 22px; }
+.task-contact.warn { color: var(--yellow-fg); background: var(--yellow-bg); border-radius: 6px; padding: 2px 8px; }
+.task-person + .task-person { margin-top: 2px; }
+.task-editor { border: 1px solid var(--border); border-radius: 8px; padding: 8px 12px; margin: 8px 0; }
+.task-edit { border-top: 1px solid var(--border); padding-top: 6px; margin-top: 6px; }
+.task-edit-actions { align-items: flex-end; gap: 4px; }
 /* v1.6.4 CR-037 */
 .pill-fr-cancelled { background: var(--err-bg); color: var(--danger); border-color: var(--err-border); }
 
