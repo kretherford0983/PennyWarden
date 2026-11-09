@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api, qs } from "../api";
 import { ErrorBox, Field, Loading, Modal, useConfirmable, GuardedForm, RowMenu } from "../components";
 import { useMe } from "../App";
@@ -16,7 +16,14 @@ export default function Entities() {
   const [filter, setFilter] = useState({ search: "", status: "active", fi: "" });
   const [edit, setEdit] = useState<any>(null);
   const [err, setErr] = useState<unknown>(null);
-  const load = () => api.get(`/api/entities${qs({ search: filter.search, status: filter.status, financial_institution: filter.fi })}`).then(setList, setErr);
+  // 2.4.0: only the latest request's answer is shown - the full list loaded on opening could otherwise arrive after a
+  // search typed straight away and replace the search's results
+  const latest = useRef(0);
+  const load = () => {
+    const n = ++latest.current;
+    api.get(`/api/entities${qs({ search: filter.search, status: filter.status, financial_institution: filter.fi })}`)
+      .then((x) => { if (n === latest.current) setList(x); }, (x) => { if (n === latest.current) setErr(x); });
+  };
   useEffect(() => { load(); }, [filter]);
   const manage = can("entity.manage");
   const canFi = can("entity.manage_financial_institution");
