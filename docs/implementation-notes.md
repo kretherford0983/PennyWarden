@@ -2597,3 +2597,29 @@ Proposed:
 ACs **AC-INV-OVER-001..004**. Tests: `backend/tests/test_v240_overpayment_choices.py` (4); the #533 and #534 tests are
 updated for the rule. E2E: the #533 test (no credit while owed, apply to the other invoice, refund on the form) and
 the #504 test (Record payment opens the one form).
+
+**2.4.0 — Dashboard FY Progress (#553, decided with Kyle 2026-11-09).** `services/fy_progress.py`, used by
+`dashboard.financial` (`budget_summary.progress`).
+- **Result so far:** the budget summary's income actual minus its expense actual, with *surplus* (≥ 0) or *deficit*.
+- **Budgeted:** the income amount minus the expense amount (the active budgets).
+- **Projection,** worked out per type:
+  - YTD + the median of the rest-of-year amounts of up to 3 previous Fiscal Years (`previous_fys`: those ending before
+    this one starts, the most recent first). Each previous FY's amount is its total minus its amount at the same
+    number of days into its year, through `actuals(..., date_to)`, which uses the same budgets as the boxes.
+  - With two previous years the median is their average, to the cent.
+  - With no previous FY: the straight-line pace (YTD × FY months ÷ elapsed months).
+  - `TOO_EARLY` before 3 elapsed months; `YEAR_ENDED` after the end date (the final result).
+
+UI: `FyProgressTile` in Dashboard.tsx (the third tile of the *budget* block), with a link to the guide page
+`dashboard/dashboard-figures`. That page explains every budget-box figure in plain language (Kyle: the app's
+calculations must be documented for users, not kept in a silo).
+
+Proposed:
+- **BR-DASH-FYP-001** the result so far is income actual − expense actual, shown as a surplus or a deficit;
+- **-002** the projected year end per type is YTD + the median rest-of-year of up to 3 previous FYs (their average with
+  2, the one with 1, this year's pace with none). It isn't shown in the first 3 months and is the final result after
+  the year ends;
+- **-003** budgeted is the income budget − the expense budget.
+
+ACs **AC-DASH-FYP-001..004**. Tests: `backend/tests/test_v240_fy_progress.py` (6). E2E: *#553* (after the CR-036
+reminders test).
