@@ -2,7 +2,7 @@
 // objective (the reminder itself, always last: its tick completes the reminder), each
 // task's contact (a fixed entity or whoever holds a position) and app function (a report or a page, by the name users
 // see), and the editor used by the reminder form and by "Edit tasks…" on a shown reminder.
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "../api";
 import { EntityPicker, ErrorBox, Field, GuardedForm, Modal } from "../components";
 import { Link } from "../router";
@@ -15,10 +15,12 @@ export const MAX_TASKS = 25;   // the steps and the objective
 /** A task as the editor keeps it (the API's task fields). The objective is the last draft (``objective``). */
 export type TaskDraft = { id?: number; title: string; done?: boolean; objective?: boolean;
   contact_kind: "" | "ENTITY" | "POSITION"; contact_entity_id: string; contact_position: string; function_id: string;
-  contact?: any; via_entity_id?: string };   // via_entity_id, editor only: the person a position was taken from
+  contact?: any; via_entity_id?: string; key?: string };   // editor only: via_entity_id, the person a position was
+                                                           // taken from; key, a new step's React key (stable when moved)
 
+let newKey = 0;
 const blank = (objective = false): TaskDraft => ({ title: "", objective, contact_kind: "", contact_entity_id: "",
-  contact_position: "", function_id: "" });
+  contact_position: "", function_id: "", key: `new-${++newKey}` });
 
 /** Drafts from the API's tasks: the steps, then the objective (a new reminder gets an empty objective). */
 export const draftsOf = (tasks: any[] | undefined): TaskDraft[] => {
@@ -64,8 +66,49 @@ function FunctionButton({ id }: { id: string }) {
   );
 }
 
-/** A task's contact: the people with their email, phone and mailing address, or the name/position with a warning. */
+/** 2.4.0 polish: a read-only view of a contact's entity (for users who see entity details - register.view). */
+function EntityViewDialog({ id, onClose }: { id: number; onClose: () => void }) {
+  const [e, setE] = useState<any>(null);
+  const [err, setErr] = useState<unknown>(null);
+  useEffect(() => { api.get(`/api/entities/${id}`).then(setE, setErr); }, [id]);
+  const lines = (pre: string) => [[`${pre}address_line1`, `${pre}address_line2`].map((k) => e[k]),
+    [[e[`${pre}city`], e[`${pre}state_region`]].filter(Boolean).join(", "), e[`${pre}postal_code`]].filter(Boolean).join(" "),
+    e[`${pre}country`]].flat().filter(Boolean);
+  const row = (label: string, v: any) => (v ? <><dt>{label}</dt><dd>{v}</dd></> : null);
+  const mailing = e && !e.mailing_same ? lines("mailing_") : [];
+  return (
+    <Modal title={e ? e.display_name : "Entity"} onClose={onClose}>
+      <ErrorBox error={err} />
+      {e ? (
+        <dl className="dl" data-testid="entity-view">
+          {row("Entity number", e.entity_number)}
+          {row("Type", e.entity_type === "INDIVIDUAL" ? "Individual" : "Organization")}
+          {row("Organization", e.organization_name)}
+          {row("Name", [e.first_name, e.last_name].filter(Boolean).join(" "))}
+          {row("Position", e.position)}
+          {row("Email", e.email ? <><a href={`mailto:${e.email}`}>{e.email}</a>{" "}
+            <button type="button" className="small link" aria-label={`Copy ${e.email}`}
+                    onClick={() => navigator.clipboard?.writeText(e.email).catch(() => undefined)}>Copy</button></> : null)}
+          {row("Phone", e.phone_display || e.phone)}
+          {row("Address", lines("").length ? lines("").map((l: string) => <div key={l}>{l}</div>) : null)}
+          {row("Mailing address", mailing.length ? mailing.map((l: string) => <div key={l}>{l}</div>) : null)}
+          {row("EIN", e.ein)}
+          {row("Tax exempt", e.tax_exempt ? `Yes${e.tax_exempt_certificate ? ` (certificate ${e.tax_exempt_certificate})` : ""}` : null)}
+          {row("Financial institution", e.is_financial_institution ? "Yes" : null)}
+          {row("Status", e.active ? null : "Inactive")}
+          {row("Notes", e.notes ? <span className="pre-wrap">{e.notes}</span> : null)}
+        </dl>
+      ) : err ? null : <p className="muted">Loading…</p>}
+      <div className="actions"><button type="button" onClick={onClose}>Close</button></div>
+    </Modal>
+  );
+}
+
+/** A task's contact: the people with their email, phone and mailing address, or the name/position with a warning.
+ * 2.4.0 polish: each name opens a read-only view of the entity, for users who see contact details. */
 function ContactLine({ c }: { c: any }) {
+  const { can } = useMe();
+  const [viewing, setViewing] = useState<number | null>(null);
   if (!c) return null;
   const what = c.kind === "POSITION" ? c.label : (c.label || "A contact that was removed");
   if (c.missing) {
@@ -82,7 +125,10 @@ function ContactLine({ c }: { c: any }) {
       {c.several ? <span className="badge red">More than one active entity holds this position</span> : null}
       {c.people.map((p: any) => (
         <div key={p.id} className="task-person">
-          <b>{p.name}</b>{p.position && c.kind !== "POSITION" ? <span className="muted"> · {p.position}</span> : null}
+          {can("register.view") ? (
+            <button type="button" className="link entity-link" data-testid="task-contact-entity" title="View this entity"
+                    aria-label={`View ${p.name}`} onClick={() => setViewing(p.id)}><b>{p.name}</b></button>
+          ) : <b>{p.name}</b>}{p.position && c.kind !== "POSITION" ? <span className="muted"> · {p.position}</span> : null}
           {p.email ? <> · <a href={`mailto:${p.email}`}>{p.email}</a>{" "}
             <button type="button" className="small link" aria-label={`Copy ${p.email}`}
                     onClick={() => navigator.clipboard?.writeText(p.email).catch(() => undefined)}>Copy</button></> : null}
@@ -90,13 +136,14 @@ function ContactLine({ c }: { c: any }) {
           {p.address?.length ? <div className="muted">{p.address.join(", ")}</div> : null}
         </div>
       ))}
+      {viewing !== null ? <EntityViewDialog id={viewing} onClose={() => setViewing(null)} /> : null}
     </div>
   );
 }
 
 /** The checklist on a reminder: its steps, then its objective, whose tick completes (resolves) the reminder. A reminder
  * with only its objective shows just the objective's contact and app function, if any (it is resolved as always). */
-export function TaskList({ r, onChanged }: { r: any; onChanged?: () => void }) {
+export function TaskList({ r, onChanged, collapsed }: { r: any; onChanged?: () => void; collapsed?: boolean }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<unknown>(null);
   const [completing, setCompleting] = useState(false);
@@ -113,6 +160,9 @@ export function TaskList({ r, onChanged }: { r: any; onChanged?: () => void }) {
       </div>
     );
   }
+  const progress = <div className="muted" data-testid="task-progress">{r.steps_done} of {r.steps} step{r.steps === 1 ? "" : "s"} done</div>;
+  // 2.4.0 polish: a collapsed dashboard card shows only the progress line
+  if (collapsed) return <div className="reminder-tasks">{progress}</div>;
   const resolved = r.state === "RESOLVED";
   const next = resolved ? undefined : steps.find((t) => !t.done) || obj;
   const call = async (path: string) => {
@@ -131,13 +181,13 @@ export function TaskList({ r, onChanged }: { r: any; onChanged?: () => void }) {
           data-testid={t.objective ? "reminder-objective" : "reminder-task"}>
         <label className="check">
           <input type="checkbox" checked={!!t.done} disabled={busy || !canToggle} onChange={() => toggle(t)}
-                 aria-label={`${t.done ? "Untick" : "Tick"} ${t.title}`} />
+                 aria-label={t.done ? `Clear completion of ${t.title}` : `Mark ${t.title} completed`} />
           <span className="task-title">{t.objective ? <b>{t.title}</b> : t.title}</span>
         </label>
         {t.objective && !t.done ? <span className="muted"> — completes the reminder </span> : null}
         {next && next.id === t.id ? <span className="pill pill-approved" data-testid="task-next">Next</span> : null}
         {!t.done && resolved ? <span className="pill">Skipped</span> : null}
-        {t.done && t.done_by ? <span className="muted"> · ticked by {t.done_by} on {String(t.done_at).slice(0, 10)}</span> : null}
+        {t.done && t.done_by ? <span className="muted"> · Marked completed by {t.done_by} on {String(t.done_at).slice(0, 10)}</span> : null}
         {t.function_id ? <> <FunctionButton id={t.function_id} /></> : null}
         <ContactLine c={t.contact} />
       </li>
@@ -145,7 +195,7 @@ export function TaskList({ r, onChanged }: { r: any; onChanged?: () => void }) {
   };
   return (
     <div className="reminder-tasks">
-      <div className="muted" data-testid="task-progress">{r.steps_done} of {r.steps} step{r.steps === 1 ? "" : "s"} done</div>
+      {progress}
       <ErrorBox error={err} />
       <ol className="task-list">{steps.map(row)}</ol>
       <ul className="task-list task-list-objective">{row(obj)}</ul>
@@ -166,17 +216,17 @@ function CompleteDialog({ r, t, open, onClose, onDone }: { r: any; t: any; open:
   return (
     <Modal title="Complete the reminder" onClose={onClose}>
       <GuardedForm onSubmit={submit}>
-        <p>Ticking <b>{t.title}</b> completes the reminder.{r.repeat_label && r.next_due ? ` The next one will be due ${r.next_due}.` : ""}</p>
+        <p>Marking <b>{t.title}</b> completed finishes the reminder.{r.repeat_label && r.next_due ? ` The next one will be due ${r.next_due}.` : ""}</p>
         {open.length ? (
           <div className="alert warn" role="note">
-            {open.length} step{open.length === 1 ? " isn't" : "s aren't"} ticked and will be shown as skipped: {open.map((x) => x.title).join(", ")}. Say why in the note.
+            {open.length} step{open.length === 1 ? " isn't" : "s aren't"} completed and will be shown as skipped: {open.map((x) => x.title).join(", ")}. Say why in the note.
           </div>
         ) : null}
         <ErrorBox error={err} />
         <Field label={open.length ? "Note" : "Note (optional)"} hint="Kept with the reminder and in the audit log.">
           <input required={open.length > 0} maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} />
         </Field>
-        <div className="actions"><button type="button" onClick={onClose}>Cancel</button><button className="primary" type="submit">Tick and complete</button></div>
+        <div className="actions"><button type="button" onClick={onClose}>Cancel</button><button className="primary" type="submit">Mark completed</button></div>
       </GuardedForm>
     </Modal>
   );
@@ -199,7 +249,7 @@ function TaskFields({ d, label, entities, positions, put }: {
   return (
     <>
       <div className="row fields">
-        <Field label="Contact">
+        <Field label="Contact (optional)">
           <select value={d.contact_kind} aria-label={`${label} contact`}
                   onChange={(e) => put({ contact_kind: e.target.value as TaskDraft["contact_kind"], contact_entity_id: "", contact_position: "", via_entity_id: undefined })}>
             <option value="">— none —</option>
@@ -261,22 +311,36 @@ export function TaskEditor({ title, value, onChange }: { title: string; value: T
   const obj = value.find((d) => d.objective) || blank(true);
   const setSteps = (v: TaskDraft[]) => onChange([...v, obj]);
   const put = (i: number, p: Partial<TaskDraft>) => setSteps(steps.map((d, j) => (j === i ? { ...d, ...p } : d)));
-  const move = (i: number, by: number) => {
-    const v = [...steps]; const [d] = v.splice(i, 1); v.splice(i + by, 0, d); setSteps(v);
+  const moveTo = (from: number, to: number) => {
+    if (from === to) return;
+    const v = [...steps]; const [d] = v.splice(from, 1); v.splice(to, 0, d); setSteps(v);
   };
+  const move = (i: number, by: number) => moveTo(i, i + by);
+  // 2.4.0 polish: drag a step by its handle (⠿) to any place in the list; ↑/↓ stay for the keyboard
+  const dragFrom = useRef<number | null>(null);
+  const [dragging, setDragging] = useState<number | null>(null);
+  const [over, setOver] = useState<number | null>(null);
+  const endDrag = () => { dragFrom.current = null; setDragging(null); setOver(null); };
   return (
     <fieldset className="task-editor" data-testid="task-editor">
       <legend>Steps (optional)</legend>
-      <p className="hint">Steps are ticked one at a time, in any order; the reminder itself is the last task, and ticking it completes the reminder.</p>
+      <p className="hint">Steps are marked completed one at a time, in any order; the reminder itself is the last task, and marking it completed finishes the reminder.
+        {steps.length > 1 ? " Drag a step by ⠿, or use ↑ and ↓, to change the order." : ""}</p>
       {steps.map((d, i) => (
-        <div key={d.id ?? `new-${i}`} className="task-edit" data-testid="task-edit">
+        <div key={d.id ?? d.key ?? `new-${i}`} data-testid="task-edit"
+             className={`task-edit${dragging === i ? " dragging" : ""}${over === i && dragging !== null && dragging !== i ? (dragging < i ? " drop-after" : " drop-before") : ""}`}
+             onDragOver={(e) => { if (dragFrom.current === null) return; e.preventDefault(); e.dataTransfer.dropEffect = "move"; if (over !== i) setOver(i); }}
+             onDrop={(e) => { if (dragFrom.current === null) return; e.preventDefault(); moveTo(dragFrom.current, i); endDrag(); }}>
           <div className="row fields">
+            <span className="drag-handle" title="Drag to move this step" aria-hidden="true" draggable data-testid="task-drag"
+                  onDragStart={(e) => { dragFrom.current = i; setDragging(i); e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", String(i)); }}
+                  onDragEnd={endDrag}>⠿</span>
             <Field label={`Step ${i + 1}`}><input required maxLength={200} value={d.title} aria-label={`Step ${i + 1} name`}
                                                   onChange={(e) => put(i, { title: e.target.value })} /></Field>
             <div className="row task-edit-actions">
               <button type="button" className="small" disabled={i === 0} aria-label={`Move step ${i + 1} up`} onClick={() => move(i, -1)}>↑</button>
               <button type="button" className="small" disabled={i === steps.length - 1} aria-label={`Move step ${i + 1} down`} onClick={() => move(i, 1)}>↓</button>
-              <button type="button" className="small danger" disabled={d.done} title={d.done ? "Untick it first." : undefined}
+              <button type="button" className="small danger" disabled={d.done} title={d.done ? "Clear its completion first." : undefined}
                       aria-label={`Remove step ${i + 1}`} onClick={() => setSteps(steps.filter((_x, j) => j !== i))}>Remove</button>
             </div>
           </div>
@@ -305,7 +369,7 @@ export function TasksDialog({ r, onClose, onSaved }: { r: any; onClose: () => vo
   return (
     <Modal title={`Tasks — ${r.title}`} onClose={onClose} wide>
       <GuardedForm onSubmit={submit}>
-        <p className="hint">The reminder is shown, so only its tasks can change. Ticked tasks keep their tick.</p>
+        <p className="hint">The reminder is shown, so only its tasks can change. Completed tasks stay completed.</p>
         <ErrorBox error={err} />
         <TaskEditor title={r.title} value={drafts} onChange={setDrafts} />
         <div className="actions"><button type="button" onClick={onClose}>Cancel</button><button className="primary" type="submit">Save tasks</button></div>

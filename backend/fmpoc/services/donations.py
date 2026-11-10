@@ -1090,9 +1090,16 @@ def print_donation(db: Session, ctx, settings, d: Donation, confirmations: list[
 
 # ------------------------------------------------------------------ deposits: marking (part 1 flow) and receipts
 def _deposit_donations(db: Session, t: RegisterTransaction) -> dict[int, Donation]:
-    """The donations marked on this deposit (origin DEPOSIT), by donor."""
+    """The donations marked on this deposit (origin DEPOSIT), by donor. 2.4.0 (#562): a deposit donation replaced by
+    a Donations page donation is Cancelled and left out (ticking that donor again starts a new one)."""
     return {d.donor_entity_id: d for d in db.scalars(select(Donation).where(
-        Donation.transaction_id == t.id, Donation.origin == DEPOSIT).order_by(Donation.id))}
+        Donation.transaction_id == t.id, Donation.origin == DEPOSIT, Donation.status == ACTIVE).order_by(Donation.id))}
+
+
+def _replaced_deposit_donations(db: Session, t: RegisterTransaction) -> list[Donation]:
+    """2.4.0 (#562): this deposit's donations replaced by a Donations page donation (their receipts show void)."""
+    return list(db.scalars(select(Donation).where(Donation.transaction_id == t.id, Donation.origin == DEPOSIT,
+                                                  Donation.status == CANCELLED).order_by(Donation.id)))
 
 
 def _lines_by_alloc(db: Session, t: RegisterTransaction) -> dict[int, DonationLine]:
@@ -1125,7 +1132,13 @@ def transaction_out(db: Session, ctx, t: RegisterTransaction) -> dict:
                        "dates": [x.isoformat() for x in c["dates"]], "details": c["details"],
                        "current_receipt": cur.number if cur else None, "next_kind": next_kind,
                        "signing": signing_out(db, ctx, cfg, "receipt", cur.signer_id if cur else None)})
+    for d in _replaced_deposit_donations(db, t):        # 2.4.0 (#562): void, replaced by a Donations page donation
+        receipts += _receipts_out(db, d)
     receipts.sort(key=lambda r: r["id"])
+    awaiting_by_donor: dict[int, list[dict]] = {}
+    if printable:
+        for x in awaiting_lines(db, ctx):
+            awaiting_by_donor.setdefault(x["donor_entity_id"], []).append(x)
     page_linked = []
     for d in donations.values():
         if d is not None and d.origin == PAGE and all(p["id"] != d.id for p in page_linked):
@@ -1146,7 +1159,11 @@ def transaction_out(db: Session, ctx, t: RegisterTransaction) -> dict:
                 "goods_description": x.goods_description if x else None,
                 "date_received": x.date_received.isoformat() if x is not None and x.date_received else None,
                 # 2.2.0 (#256): in a fundraiser's donation bucket - the Donation box starts ticked as a suggestion
-                "suggested": x is None and a.id in suggested, "fundraiser": suggested.get(a.id)}
+                "suggested": x is None and a.id in suggested, "fundraiser": suggested.get(a.id),
+                # 2.4.0 (#562): the donor's Donations page donations awaiting a deposit, which this line can be
+                "awaiting": [] if d is not None and d.origin == PAGE else awaiting_by_donor.get(e.id if e else -1, []),
+                "suggested_link": _suggested_link(awaiting_by_donor.get(e.id if e else -1, []), a.amount_cents)
+                if x is None else None}
 
     return {
         "transaction_id": t.id, "status": t.status, "date": t.transaction_date.isoformat(),
@@ -1167,6 +1184,7 @@ class LineIn(BaseModel):
     goods_cents: int | None = Field(default=None, ge=0)
     goods_description: str | None = Field(default=None, max_length=200)
     date_received: dt.date | None = None          # empty = the deposit's date
+    link_line_id: int | None = None               # 2.4.0 (#562): an awaiting Donations page donation line to link
 
 
 class DonorIn(BaseModel):
@@ -1218,9 +1236,11 @@ def _deposit_donation_for(db: Session, ctx, t: RegisterTransaction, donor: Entit
     return d
 
 
-def set_lines(db: Session, ctx, t: RegisterTransaction, items: list[LineIn]) -> None:
+def set_lines(db: Session, ctx, t: RegisterTransaction, items: list[LineIn], settings=None,
+              confirmations: list[str] | None = None) -> None:
     """Part 1: mark deposit lines as donations - one donation per donor on the deposit (origin DEPOSIT). Lines linked
-    to a donation from the Donations page are changed there."""
+    to a donation from the Donations page are changed there. 2.4.0 (#562): a line with `link_line_id` is linked to
+    that awaiting Donations page donation line instead (`link_line`)."""
     if t.status != "ACTIVE":
         raise conflict("TRANSACTION_NOT_ACTIVE", "Donations can only be marked on an active deposit.")
     if reg.is_closed_protected(db, t):
@@ -1228,6 +1248,9 @@ def set_lines(db: Session, ctx, t: RegisterTransaction, items: list[LineIn]) -> 
     allocs = {a.id: a for a in t.live_allocations}
     current = _lines_by_alloc(db, t)
     seen = set()
+    links = [it.link_line_id for it in items if it.donation and it.link_line_id]
+    if len(links) != len(set(links)):
+        raise validation("An awaiting donation can be linked to one deposit line only.", "lines")
     for i, it in enumerate(items):
         a = allocs.get(it.allocation_id)
         if a is None or it.allocation_id in seen:
@@ -1248,6 +1271,13 @@ def set_lines(db: Session, ctx, t: RegisterTransaction, items: list[LineIn]) -> 
                 db.flush()
                 audit.record(db, ctx, "DONATION_MARKED", "register_transaction", t.id, before,
                              {"allocation_id": a.id, "donation": False})
+            continue
+        if it.link_line_id:                     # 2.4.0 (#562): the donation recorded before the money came
+            y = db.get(DonationLine, it.link_line_id)
+            if y is None or y.workspace_id != ctx.workspace_id:
+                raise validation("Unknown donation.", f"lines.{i}.link_line_id")
+            link_line(db, ctx, y, t, a, confirmations or [], settings=settings, field=f"lines.{i}.link_line_id")
+            current[a.id] = y
             continue
         donor = _donor(t, a)
         if donor is None:
@@ -1723,7 +1753,8 @@ def awaiting_lines(db: Session, ctx) -> list[dict]:
         if d is None or d.status != ACTIVE:
             continue
         e = db.get(Entity, d.donor_entity_id)
-        out.append({"id": x.id, "donation_id": d.id, "donor_entity_id": e.id, "donor": e.display_name,
+        cur = _current(_receipts_of(db, d))
+        out.append({"id": x.id, "donation_id": d.id, "receipt": cur.number if cur else None, "donor_entity_id": e.id, "donor": e.display_name,
                     "amount_cents": x.amount_cents or 0, "amount": money(x.amount_cents or 0),
                     "description": x.description or x.purpose or "", "purpose": x.purpose,
                     "date_received": x.date_received.isoformat() if x.date_received else None})
@@ -1736,7 +1767,6 @@ def create_transaction(db: Session, ctx, settings, data, links: list[int | None]
     A line spread over several allocations (split further) becomes one line per allocation, adding up to its amount.
     Lines with no date received get `date_received` (empty = the deposit's date). The donations' printed receipts (and
     printed envelopes) are attached to the deposit."""
-    from . import attachments as att_svc
     if data.transaction_type != "DEPOSIT":
         raise validation("Create transaction makes a deposit.", "transaction_type")
     if len(links) != len(data.allocations):
@@ -1797,15 +1827,146 @@ def create_transaction(db: Session, ctx, settings, data, links: list[int | None]
         audit.record(db, ctx, "DONATION_LINKED", "donation", d.id, before,
                      {"transaction_id": t.id, "line_ids": made, "allocation_ids": [allocs[i].id for i in idx]})
     for d in donations.values():                       # the printed receipts go with the deposit
-        for att in db.scalars(select(Attachment).where(Attachment.donation_id == d.id, Attachment.active.is_(True),
-                                                       Attachment.document_type.in_((RECEIPT_COPY, ENVELOPE_COPY)))
-                              .order_by(Attachment.id)):
-            try:
-                pdf = att_svc.path_for(settings, att).read_bytes()
-            except OSError:
-                continue
-            _store_doc_copy(db, ctx, settings, t, att.document_type, att.original_filename, pdf)
+        _copy_docs_to_deposit(db, ctx, settings, d, t)
     return t
+
+
+def _copy_docs_to_deposit(db: Session, ctx, settings, d: Donation, t: RegisterTransaction) -> None:
+    """The donation's printed receipts and envelopes, copied onto the deposit it was linked to."""
+    from . import attachments as att_svc
+    if settings is None:
+        return
+    for att in db.scalars(select(Attachment).where(Attachment.donation_id == d.id, Attachment.active.is_(True),
+                                                   Attachment.document_type.in_((RECEIPT_COPY, ENVELOPE_COPY)))
+                          .order_by(Attachment.id)):
+        try:
+            pdf = att_svc.path_for(settings, att).read_bytes()
+        except OSError:
+            continue
+        _store_doc_copy(db, ctx, settings, t, att.document_type, att.original_filename, pdf)
+
+
+# ------------------------------------------------------------------ 2.4.0 (#562): link a deposit already in the register
+def _suggested_link(options: list[dict], amount_cents: int) -> int | None:
+    """The awaiting line the register dialog starts on: the donor's only one with the same amount (decision 5)."""
+    same = [o for o in options if o["amount_cents"] == amount_cents]
+    return same[0]["id"] if len(same) == 1 else None
+
+
+def _deposit_line_ok(db: Session, t: RegisterTransaction) -> None:
+    if t.transaction_type != "DEPOSIT" or t.transfer_group:
+        raise conflict("NOT_A_DEPOSIT", "A donation can only be linked to a deposit.")
+    if t.status != "ACTIVE":
+        raise conflict("TRANSACTION_NOT_ACTIVE", "A donation can only be linked to an active deposit.")
+    if reg.is_closed_protected(db, t):
+        raise conflict("FISCAL_YEAR_CLOSED", "The deposit belongs to a Closed Fiscal Year.")
+
+
+def link_candidates(db: Session, ctx, d: Donation, x: DonationLine) -> list[dict]:
+    """The deposit lines an awaiting money line can be linked to (decision 4): active deposits not in a Closed Fiscal
+    Year, lines whose entity is the donor and that aren't linked to another Donations page donation; newest first."""
+    if d.status != ACTIVE or d.origin != PAGE or x.donation_id != d.id or x.kind != MONEY or x.allocation_id:
+        raise conflict("LINE_NOT_AWAITING", f"Donation #{d.id}'s line is not awaiting a deposit.")
+    rows = db.execute(select(TransactionAllocation, RegisterTransaction).join(
+        RegisterTransaction, TransactionAllocation.transaction_id == RegisterTransaction.id).where(
+        RegisterTransaction.workspace_id == ctx.workspace_id, RegisterTransaction.transaction_type == "DEPOSIT",
+        RegisterTransaction.status == "ACTIVE", RegisterTransaction.transfer_group.is_(None),
+        TransactionAllocation.removed_at.is_(None)).order_by(RegisterTransaction.transaction_date.desc(),
+                                                             RegisterTransaction.id.desc(),
+                                                             TransactionAllocation.id)).all()
+    out, closed = [], {}
+    for a, t in rows:
+        e = _donor(t, a)
+        if e is None or e.id != d.donor_entity_id:
+            continue
+        y = db.scalar(select(DonationLine).where(DonationLine.allocation_id == a.id))
+        owner = db.get(Donation, y.donation_id) if y is not None and y.donation_id else None
+        if owner is not None and owner.origin == PAGE:
+            continue
+        if t.id not in closed:
+            closed[t.id] = reg.is_closed_protected(db, t)
+        if closed[t.id]:
+            continue
+        cur = _current(_receipts_of(db, owner)) if owner is not None else None
+        out.append({"allocation_id": a.id, "transaction_id": t.id, "date": t.transaction_date.isoformat(),
+                    "description": a.description or "", "amount": money(a.amount_cents),
+                    "amount_cents": a.amount_cents, "same_amount": a.amount_cents == (x.amount_cents or 0),
+                    "marked": owner is not None, "marked_donation_id": owner.id if owner else None,
+                    "marked_receipt": cur.number if cur else None})
+        if len(out) >= 100:
+            break
+    return out
+
+
+def link_line(db: Session, ctx, x: DonationLine, t: RegisterTransaction, a: TransactionAllocation,
+              confirmations: list[str], settings=None, field: str = "allocation_id") -> Donation:
+    """Links an awaiting money line of a Donations page donation to a deposit line already in the register
+    (BR-DON-LINK-001..003). The amount follows the deposit line (confirmed when it differs). A line already marked
+    as a donation on the deposit moves to this donation (confirmed); a deposit donation left with no lines is
+    Cancelled, so its receipts are void (replaced by this donation). Returns the linked donation."""
+    d = db.get(Donation, x.donation_id) if x.donation_id else None
+    if d is None or d.status != ACTIVE or d.origin != PAGE or x.kind != MONEY or x.allocation_id is not None:
+        raise conflict("LINE_NOT_AWAITING", f"Donation #{d.id if d else '?'}'s line is not awaiting a deposit any more.")
+    _deposit_line_ok(db, t)
+    if a.transaction_id != t.id or a.removed_at is not None:
+        raise validation("Unknown deposit line.", field)
+    e = _donor(t, a)
+    if e is None or e.id != d.donor_entity_id:
+        raise validation(f"The deposit line's entity isn't donation #{d.id}'s donor. Correct the line's entity in the "
+                         "register first.", field)
+    y = db.scalar(select(DonationLine).where(DonationLine.allocation_id == a.id))
+    owner = db.get(Donation, y.donation_id) if y is not None and y.donation_id else None
+    if owner is not None and owner.origin == PAGE:
+        raise conflict("LINKED_TO_DONATION", f"This deposit line is already linked to donation #{owner.id}.")
+    warnings = []
+    if a.amount_cents != (x.amount_cents or 0):
+        warnings.append(Warning_("AMOUNT_DIFFERS", f"Donation #{d.id} was recorded as {money(x.amount_cents or 0)}; "
+                                 f"the deposit line is {money(a.amount_cents)}. The donation will be "
+                                 f"{money(a.amount_cents)}" + (", and its next receipt a corrected one."
+                                                               if _receipts_of(db, d) else ".")))
+    if owner is not None:
+        cur = _current(_receipts_of(db, owner))
+        others = [z for z in lines_of(db, owner) if z.id != y.id]
+        warnings.append(Warning_("REPLACES_MARKED", f"This deposit line is already marked as a donation on deposit "
+                                 f"#{t.id}" + (f" (receipt {cur.number})" if cur else "") + f". It will move to "
+                                 f"donation #{d.id}" + ("" if others or not cur else
+                                                        f", and receipt {cur.number} will be void.")
+                                 + (" The deposit's other donation lines for this donor stay as they are." if others
+                                    else "")))
+    require_confirmations(warnings, confirmations)
+    before = _line_snap(db, x)
+    replaced = None
+    if owner is not None:
+        if x.purpose is None and y.purpose:
+            x.purpose = y.purpose
+        if not x.goods_cents and y.goods_cents:
+            x.goods_cents, x.goods_description = y.goods_cents, y.goods_description
+        if x.date_received is None and y.date_received is not None:
+            x.date_received = y.date_received
+        ysnap = _line_snap(db, y)
+        db.delete(y)
+        db.flush()
+        audit.record(db, ctx, "DONATION_MARKED", "register_transaction", t.id, ysnap,
+                     {"allocation_id": a.id, "donation": False, "replaced_by_donation_id": d.id})
+        if not lines_of(db, owner):
+            replaced = owner.id
+            if _receipts_of(db, owner):
+                owner.status, owner.cancel_reason = CANCELLED, f"Replaced by donation #{d.id}"
+                owner.cancelled_at, owner.cancelled_by_user_id = utcnow(), ctx.user.id
+                owner.updated_by_user_id, owner.updated_at = ctx.user.id, utcnow()
+                db.flush()
+                audit.record(db, ctx, "DONATION_CANCELLED", "donation", owner.id, {"status": ACTIVE},
+                             {"status": CANCELLED, "reason": owner.cancel_reason})
+    if x.date_received is not None and x.date_received > t.transaction_date:
+        x.date_received = None                         # an estimate after the deposit: the deposit's date
+    x.allocation_id, x.amount_cents = a.id, a.amount_cents
+    x.updated_by_user_id, x.updated_at = ctx.user.id, utcnow()
+    db.flush()
+    audit.record(db, ctx, "DONATION_LINKED", "donation", d.id, before,
+                 {**_line_snap(db, x), "transaction_id": t.id, "allocation_ids": [a.id],
+                  "replaced_donation_id": replaced})
+    _copy_docs_to_deposit(db, ctx, settings, d, t)
+    return d
 
 
 # ------------------------------------------------------------------ receipt envelopes (Kyle, 2026-10-23)

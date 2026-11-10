@@ -44,6 +44,8 @@ ACTION_LABELS = {
     # 2.2.0 (#325)
     "DONATION_ENVELOPE_PRINTED": "Donation envelope printed", "DONATION_ENVELOPE_TEST": "Donation envelope test print",
     "ENVELOPE_TAGS_UPDATED": "Envelope template features changed",
+    "DONATION_LINKED": "Donation linked to a deposit", "DONATION_UNLINKED": "Donation unlinked from a deposit",
+    "DONATION_CANCELLED": "Donation cancelled",
     # 2.2.0 (#256)
     "DONATION_STATEMENT_PRINTED": "Year-end giving statement printed",
     "DONATION_STATEMENT_PREVIEW": "Year-end giving statement previewed",

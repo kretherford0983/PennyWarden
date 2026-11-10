@@ -126,6 +126,14 @@ PennyWarden 2.4.0 (in progress).
   subject and message set in Donations Setup and goes to the donor's address; sending issues the receipt or statement
   just as printing does. Invoices Setup and Donations Setup can each have their own **Reply-To** and **From name**
   (empty uses the Email setup's), for example invoicing@… and donations@….
+- **Link a donation to a deposit already in the register (#562).** A donation recorded on the Donations page
+  before the money arrived can now be linked to a deposit that was entered in the register, instead of only through
+  **Create transaction**. Open the donation and use **Link a deposit…** on its line (the donor's deposit lines are
+  listed), or in the register's **Donation receipt…** choose the donation beside the ticked line: it starts on the
+  donor's awaiting donation of the same amount and warns when a donor has one awaiting. The donation takes the
+  deposit's amount (you confirm when it differs) and its printed receipts go with the deposit. If the line was
+  already ticked as a donation with its own receipt, linking it (confirmed) makes that receipt void, so the donor
+  doesn't keep two receipts for one gift.
 - **What happens to an overpayment (#544).** Everywhere a payment is recorded, the amount above the invoices gets
   the same choices: kept on a budget (a donation, a fundraiser…), applied to the customer's other open invoices
   (ticked and filled oldest due date first), kept as account credit, or refunded. A customer who still owes on
@@ -171,15 +179,18 @@ PennyWarden 2.4.0 (in progress).
 
 ### Reminders
 - **Reminder tasks (#551).** A reminder can carry **steps** in front of its **objective** — the reminder itself, always
-  the last task. Steps are ticked one at a time in any order, with the next open one marked **Next** and who ticked
-  each and when; reorder them with ↑/↓ as the routine is refined. Ticking the objective (or **Resolve…**) completes the
-  reminder; with steps still open a note is needed and they show as skipped. A repeating reminder starts again with
-  every task unticked. Any task — the objective too — can name a contact — a fixed organization or person, or
+  the last task. Steps are marked completed one at a time in any order, with the next open one marked **Next** and
+  *Marked completed by* who and when; reorder them by dragging a step by its handle (⠿) or with ↑/↓ as the routine is
+  refined. Marking the objective completed
+  (or **Resolve…**) finishes the reminder; with steps still open a note is needed and they show as skipped. A repeating
+  reminder starts again with no task completed. Any task — the objective too — can name a contact — a fixed organization or person, or
   **whoever holds a position** (e.g. City Clerk, so a new clerk is picked up automatically) — with their email, phone
-  and mailing address, and can open a report or page (e.g. **End of Year Audit**) with one click. Steps stay editable
+  and mailing address (the name opens a read-only view of the entity), and can open a report or page (e.g. **End of Year Audit**) with one click. Steps stay editable
   while the reminder is shown. Existing reminders become reminders with just their objective: nothing changes until
   steps are added. The **Entities** list now shows each person's **position**, and its **Search** finds entities by
-  position as well as name, number or email.
+  position as well as name, number or email. On the **Dashboard**, a reminder with steps starts collapsed to its title,
+  due date and progress (*1 of 4 steps done*); **▸** shows its steps and **▾** hides them again. A reminder without
+  steps is always shown in full, and the Notifications page shows every reminder in full.
 
 ### Dashboard
 - **FY Progress (#553).** A third box beside *Income budget* and *Expense budget*. It shows:
