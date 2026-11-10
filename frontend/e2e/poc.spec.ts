@@ -2770,6 +2770,10 @@ test("#551: reminder tasks - steps ticked one at a time, contacts by position, a
     await page.mouse.move(h.x + h.width / 2, h.y + h.height / 2); await page.mouse.down();
     await page.mouse.move(t.x + t.width / 2, t.y + t.height / 2, { steps: 8 }); await page.mouse.up();
   };
+  // (room for all three rows on screen, so neither the handle nor the drop point is scrolled away)
+  const vp = page.viewportSize()!;
+  await page.setViewportSize({ width: vp.width, height: 1100 });
+  await dlg.getByTestId("task-edit").nth(0).scrollIntoViewIfNeeded();
   await drag(2, 0);
   await expect(dlg.getByRole("textbox", { name: "Step 1 name" })).toHaveValue("Invoice the parks department");
   await expect(dlg.getByRole("textbox", { name: "Step 2 name" })).toHaveValue("Run the audit report");
@@ -2778,6 +2782,7 @@ test("#551: reminder tasks - steps ticked one at a time, contacts by position, a
   await expect(dlg.getByRole("textbox", { name: "Step 1 name" })).toHaveValue("Run the audit report");
   await expect(dlg.getByRole("textbox", { name: "Step 3 name" })).toHaveValue("Invoice the parks department");
   await expect(dlg.getByText("Contact (optional)").first()).toBeVisible();
+  await page.setViewportSize(vp);
   await page.screenshot({ path: "e2e-screenshots/light-reminder-tasks-dialog.png" });
   await dlg.getByRole("button", { name: "Save" }).click();
   const item = page.getByTestId("reminder").filter({ hasText: "Year-end audit for the trustees" });
