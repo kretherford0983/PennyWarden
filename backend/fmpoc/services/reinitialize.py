@@ -35,7 +35,7 @@ from ..models import (Donation, Attachment, AuditEvent, BankAccount, BankAccount
                       DonationReceipt, DonationSettings, DonationStatement, Entity,
                       FiscalYear, FiscalYearReview, Fundraiser, FundraiserBucket, FundraiserBucketCategory, FundraiserBucketLine, FundraiserBudget,
                       FundraiserFyReportNote, FundraiserSeries, FundraiserSeriesResult,
-                      FundraiserClassification, FundraiserExclusion, FundraiserLineContributor, RegisterTransaction, Reminder,
+                      FundraiserClassification, FundraiserExclusion, FundraiserLineContributor, RegisterTransaction, Reminder, ReminderTask,
                       RequestKey,
                       TransactionAllocation, User, Workspace, utcnow, InvoiceProduct, InvoiceProductCategory, InvoiceTaxGroup, InvoiceTaxRate, InvoiceUnitType,
                       Invoice, InvoiceBatch, InvoiceLine, InvoicePayment, InvoiceRevision, EmailLog)
@@ -175,6 +175,10 @@ def wipe(db: Session, ws_id: int, ctx, by: str, backup_name: str, via: str, befo
                .execution_options(synchronize_session=False))
     db.execute(update(Reminder).where(Reminder.workspace_id == ws_id)
                .values(link_type=None, link_id=None).execution_options(synchronize_session=False))
+    # 2.4.0 (#551): personal reminders' tasks lose their fixed contacts (the entities are gone); positions stay
+    db.execute(update(ReminderTask).where(ReminderTask.contact_kind == "ENTITY", ReminderTask.reminder_id.in_(
+        select(Reminder.id).where(Reminder.workspace_id == ws_id)))
+               .values(contact_kind=None, contact_entity_id=None).execution_options(synchronize_session=False))
     db.execute(update(User).where(User.workspace_id == ws_id).values(last_payment_account_id=None)
                .execution_options(synchronize_session=False))
     ws = db.get(Workspace, ws_id)

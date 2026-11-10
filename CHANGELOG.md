@@ -169,6 +169,29 @@ PennyWarden 2.4.0 (in progress).
   that use it and asks first; they then print none. After the upgrade, Branding's logos are the organization logos and
   letters or the invoice PDF with the same file use them, so nothing prints differently.
 
+### Reminders
+- **Reminder tasks (#551).** A reminder can carry **steps** in front of its **objective** — the reminder itself, always
+  the last task. Steps are ticked one at a time in any order, with the next open one marked **Next** and who ticked
+  each and when; reorder them with ↑/↓ as the routine is refined. Ticking the objective (or **Resolve…**) completes the
+  reminder; with steps still open a note is needed and they show as skipped. A repeating reminder starts again with
+  every task unticked. Any task — the objective too — can name a contact — a fixed organization or person, or
+  **whoever holds a position** (e.g. City Clerk, so a new clerk is picked up automatically) — with their email, phone
+  and mailing address, and can open a report or page (e.g. **End of Year Audit**) with one click. Steps stay editable
+  while the reminder is shown. Existing reminders become reminders with just their objective: nothing changes until
+  steps are added. The **Entities** list now shows each person's **position**, and its **Search** finds entities by
+  position as well as name, number or email.
+
+### Dashboard
+- **FY Progress (#553).** A third box beside *Income budget* and *Expense budget*. It shows:
+  - **The result so far:** income minus expenses, as a green **surplus** or a red **deficit**.
+  - **The projected year end:** this year so far plus the middle (median) of what the previous three Fiscal Years did
+    in the rest of their year. Seasonal income and a one-time event in one year are handled; without a previous year
+    it uses this year's pace. It shows *not enough information yet* in the first 3 months.
+  - **The budgeted result:** the income budget minus the expense budget.
+
+  A new user-guide page, **How the budget figures are worked out**, explains every figure in the budget boxes in plain
+  language, with an example. The box links to it.
+
 ### Optional modules
 - **Turning a module on or off updates the menu at once (#482)** — no page reload (for the Administrator who changes
   it; other users see it at their next sign-in or reload, as before).

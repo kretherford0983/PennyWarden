@@ -4,7 +4,7 @@
  *   PDF; the other financial roles and Auditors see them. Numbered per year, kept; Duplicate / Corrected like receipts.
  * - Donor report: totals per donor by year (up to 5), gifts, last gift, items and their internal estimated value; each
  *   donor expands to their donations. PDF and CSV. */
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { api, ApiError, withPreviewToken } from "../api";
 import { useMe } from "../App";
 import { EntityPicker, ErrorBox, Field, Loading, Modal, useConfirmable, SignerPicker, useSignerChoice } from "../components";
@@ -41,7 +41,14 @@ export function StatementsTab() {
   const [viewing, setViewing] = useState<string | null>(null);
   const { run, dialog } = useConfirmable();
   const signer = useSignerChoice(data?.signing);   // 2.3.0 polish: one signer for the whole batch
-  const load = () => api.get(`/api/donations/statements?year=${year}&min_cents=${toCents(min)}`).then(setData, setErr);
+  // 2.4.0: only the latest request's answer is shown - switching years quickly (last year, the default, then this year)
+  // could otherwise let the older year's answer arrive last and fill this year's table
+  const latest = useRef(0);
+  const load = () => {
+    const n = ++latest.current;
+    api.get(`/api/donations/statements?year=${year}&min_cents=${toCents(min)}`)
+      .then((x) => { if (n === latest.current) setData(x); }, (x) => { if (n === latest.current) setErr(x); });
+  };
   useEffect(() => { setData(null); load(); }, [year]); // eslint-disable-line react-hooks/exhaustive-deps
   const printAll = async () => {
     setErr(null);

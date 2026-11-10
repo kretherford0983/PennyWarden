@@ -73,6 +73,11 @@
           "summary": "Balances, budgets, attention items and charts."
         },
         {
+          "id": "dashboard-figures",
+          "title": "How the budget figures are worked out",
+          "summary": "Budget, actual, remaining, FY Progress and the projected year end, step by step."
+        },
+        {
           "id": "customize-dashboard",
           "title": "Customizing the Dashboard",
           "summary": "Choosing which sections and charts you see."
@@ -429,7 +434,7 @@
         {
           "id": "reminders",
           "title": "Reminders",
-          "summary": "Creating, resolving and repeating reminders."
+          "summary": "Creating, resolving and repeating reminders, and their steps."
         }
       ]
     },

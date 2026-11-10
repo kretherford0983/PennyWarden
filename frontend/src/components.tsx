@@ -540,7 +540,7 @@ export function EntityPicker({ label, entities, value, onChange, placeholder = "
   label: string;
   entities: any[];
   value: string;
-  onChange: (id: string) => void;
+  onChange: (id: string, byPosition?: boolean) => void;   // 2.4.0 (#551): true when only the position matched
   placeholder?: string;
   extraOption?: { id: string; label: string } | null;
 }) {
@@ -558,9 +558,13 @@ export function EntityPicker({ label, entities, value, onChange, placeholder = "
   const id = useRef(`ep-${Math.random().toString(36).slice(2)}`).current;
   const q = (query ?? "").trim().toLowerCase();
   const matches = all.filter((e) => !q || nm(e).toLowerCase().includes(q) || (e.display_name || "").toLowerCase().includes(q)
-    || (e.name || "").toLowerCase().includes(q) || (e.entity_number || "").toLowerCase().includes(q)).slice(0, 50);
+    || (e.name || "").toLowerCase().includes(q) || (e.entity_number || "").toLowerCase().includes(q)
+    || (e.position || "").toLowerCase().includes(q)).slice(0, 50);   // 2.4.0 (#551): also by position
+  const byPositionOnly = (e: any) => !!q && (e.position || "").toLowerCase().includes(q) && !nm(e).toLowerCase().includes(q)
+    && !(e.display_name || "").toLowerCase().includes(q) && !(e.name || "").toLowerCase().includes(q)
+    && !(e.entity_number || "").toLowerCase().includes(q);
   const choose = (e: any | null) => {
-    onChange(e ? String(e.id) : "");
+    onChange(e ? String(e.id) : "", e ? byPositionOnly(e) : false);
     setQuery(null);
     setOpen(false);
   };
@@ -589,7 +593,7 @@ export function EntityPicker({ label, entities, value, onChange, placeholder = "
           {matches.map((e, i) => (
             <li key={e.id} role="option" aria-selected={active === i + 1} className={active === i + 1 ? "active" : ""}
                 onMouseDown={(ev) => { ev.preventDefault(); choose(e); }}>
-              {nm(e)} <span className="muted">{e.entity_number}</span>
+              {nm(e)} <span className="muted">{e.position ? `${e.position} · ` : ""}{e.entity_number}</span>
             </li>
           ))}
           {matches.length === 0 ? <li className="muted" aria-disabled="true">No matching entities</li> : null}

@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from ..deps import Ctx, get_db, require
-from ..schemas import ReminderIn, ReminderResolveIn
+from ..schemas import ReminderIn, ReminderResolveIn, ReminderTasksIn, ReminderTickIn
 from ..services import reminders as svc
 
 router = APIRouter(prefix="/api/reminders", tags=["reminders"])
@@ -56,5 +56,27 @@ def resolve(rid: int, body: ReminderResolveIn, db: Session = Depends(get_db), ct
 @router.post("/{rid}/reopen")
 def reopen(rid: int, db: Session = Depends(get_db), ctx: Ctx = Depends(viewer)):
     r = svc.reopen(db, ctx, svc.get(db, ctx, rid))
+    db.commit()
+    return svc.out(db, ctx, r)
+
+
+# 2.4.0 (#551): the checklist
+@router.put("/{rid}/tasks")
+def update_tasks(rid: int, body: ReminderTasksIn, db: Session = Depends(get_db), ctx: Ctx = Depends(viewer)):
+    r = svc.update_tasks(db, ctx, svc.get(db, ctx, rid), body.tasks, body.objective)
+    db.commit()
+    return svc.out(db, ctx, r)
+
+
+@router.post("/{rid}/tasks/{tid}/tick")
+def tick(rid: int, tid: int, body: ReminderTickIn, db: Session = Depends(get_db), ctx: Ctx = Depends(viewer)):
+    r = svc.tick(db, ctx, svc.get(db, ctx, rid), tid, body.note)
+    db.commit()
+    return svc.out(db, ctx, r)
+
+
+@router.post("/{rid}/tasks/{tid}/untick")
+def untick(rid: int, tid: int, db: Session = Depends(get_db), ctx: Ctx = Depends(viewer)):
+    r = svc.untick(db, ctx, svc.get(db, ctx, rid), tid)
     db.commit()
     return svc.out(db, ctx, r)

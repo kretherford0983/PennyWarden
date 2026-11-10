@@ -976,6 +976,30 @@ class Reminder(Base):
     repeat_anchor: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
     repeat_index: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     repeat_source_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    # 2.4.0 (#551): the reminder's checklist
+    tasks: Mapped[list["ReminderTask"]] = relationship(order_by="ReminderTask.seq", cascade="all, delete-orphan",
+                                                       passive_deletes=True, lazy="selectin")
+
+
+class ReminderTask(Base):
+    """2.4.0 (#551): one task of a reminder's checklist (one level). Every reminder has one objective task, pinned
+    last and named by the reminder's title; ticking it resolves the reminder. The steps before it are ticked in any
+    order once the reminder is shown. A task may name a contact - a fixed entity (ENTITY) or whoever
+    holds a position (POSITION, the active individuals with that position when shown) - and an app function to open
+    (``function_id``: ``report:<id>`` or ``page:<name>``, labelled with the user-facing name by the UI)."""
+    __tablename__ = "reminder_task"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    reminder_id: Mapped[int] = mapped_column(ForeignKey("reminder.id", ondelete="CASCADE"), index=True)
+    seq: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    title: Mapped[str] = mapped_column(String(200))
+    done_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    done_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    contact_kind: Mapped[str | None] = mapped_column(String(8), nullable=True)   # ENTITY | POSITION
+    contact_entity_id: Mapped[int | None] = mapped_column(Integer, nullable=True)   # no FK, like reminder.link_id
+    contact_position: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    function_id: Mapped[str | None] = mapped_column(String(48), nullable=True)
+    # the reminder's objective: always its last task, named by the reminder's title; ticking it resolves the reminder
+    is_objective: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
 
 
 class UserSecurityQuestion(Base):
