@@ -98,7 +98,7 @@ def set_tasks(db: Session, r: Reminder, ctx, items, objective_in=None) -> None:
         raise validation("A task in the list isn't on this reminder; reload and try again.", "tasks")
     removed = [t for tid, t in current.items() if tid not in set(keep_ids)]
     if any(t.done_at is not None for t in removed):
-        raise AppError(409, "REMINDER_TASK_DONE", "A ticked task can't be removed; untick it first.")
+        raise AppError(409, "REMINDER_TASK_DONE", "A completed task can't be removed; clear its completion first.")
     cleaned = [_clean_item(db, ctx, i, it) for i, it in enumerate(items)]
     if objective_in is not None:
         c = _clean_item(db, ctx, "objective", objective_in, title_needed=False)

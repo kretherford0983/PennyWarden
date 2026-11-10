@@ -17,7 +17,7 @@ from sqlalchemy.orm import Session
 
 from .. import audit
 from ..deps import Ctx, get_db, require
-from ..errors import AppError
+from ..errors import AppError, not_found
 from ..schemas import TransactionCreateIn
 from ..services import donations as svc
 from ..services import donation_statements as stm
@@ -43,6 +43,7 @@ class PreviewIn(In):
 
 class LinesIn(In):
     lines: list[svc.LineIn] = Field(max_length=200)
+    confirmations: list[str] = Field(default_factory=list, max_length=10)   # 2.4.0 (#562): linking
     donors: list[svc.DonorIn] = Field(default_factory=list, max_length=200)   # {DETAILS} per donor
 
 
@@ -145,9 +146,10 @@ def transaction(txn_id: int, db: Session = Depends(get_db), ctx: Ctx = Depends(v
 
 
 @router.put("/transactions/{txn_id}/lines")
-def set_lines(txn_id: int, body: LinesIn, db: Session = Depends(get_db), ctx: Ctx = Depends(print_ctx)):
+def set_lines(txn_id: int, body: LinesIn, request: Request, db: Session = Depends(get_db),
+              ctx: Ctx = Depends(print_ctx)):
     t = svc.get_deposit(db, ctx, txn_id)
-    svc.set_lines(db, ctx, t, body.lines)
+    svc.set_lines(db, ctx, t, body.lines, request.app.state.settings, body.confirmations)
     svc.set_details(db, ctx, t, body.donors)
     db.commit()
     return svc.transaction_out(db, ctx, t)
@@ -211,6 +213,38 @@ def list_donations(show: str = "all", q: str | None = None, db: Session = Depend
 @router.post("", status_code=201)
 def create_donation(body: svc.DonationIn, db: Session = Depends(get_db), ctx: Ctx = Depends(print_ctx)):
     d = svc.create(db, ctx, body)
+    db.commit()
+    return svc.donation_out(db, ctx, d)
+
+
+class LinkIn(In):                             # 2.4.0 (#562)
+    allocation_id: int
+    confirmations: list[str] = Field(default_factory=list, max_length=10)
+
+
+def _awaiting_line(db: Session, ctx, donation_id: int, line_id: int):
+    d = svc.get_donation(db, ctx, donation_id)
+    x = db.get(svc.DonationLine, line_id)
+    if x is None or x.donation_id != d.id:
+        raise not_found("Donation line")
+    return d, x
+
+
+@router.get("/{donation_id}/lines/{line_id}/link-candidates")
+def link_candidates(donation_id: int, line_id: int, db: Session = Depends(get_db), ctx: Ctx = Depends(print_ctx)):
+    d, x = _awaiting_line(db, ctx, donation_id, line_id)
+    return {"items": svc.link_candidates(db, ctx, d, x), "amount": svc.money(x.amount_cents or 0),
+            "amount_cents": x.amount_cents or 0}
+
+
+@router.post("/{donation_id}/lines/{line_id}/link")
+def link_line(donation_id: int, line_id: int, body: LinkIn, request: Request, db: Session = Depends(get_db),
+              ctx: Ctx = Depends(print_ctx)):
+    d, x = _awaiting_line(db, ctx, donation_id, line_id)
+    a = db.get(svc.TransactionAllocation, body.allocation_id)
+    if a is None or a.transaction.workspace_id != ctx.workspace_id:
+        raise not_found("Deposit line")
+    svc.link_line(db, ctx, x, a.transaction, a, body.confirmations, settings=request.app.state.settings)
     db.commit()
     return svc.donation_out(db, ctx, d)
 

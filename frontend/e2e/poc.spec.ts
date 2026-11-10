@@ -2751,6 +2751,22 @@ test("#551: reminder tasks - steps ticked one at a time, contacts by position, a
   await dlg.getByRole("button", { name: "Move step 3 up" }).click();
   await expect(dlg.getByRole("textbox", { name: "Step 2 name" })).toHaveValue("Invoice the parks department");
   await dlg.getByRole("button", { name: "Move step 2 down" }).click();
+  // 2.4.0 polish: a step can also be dragged by its handle to any place in the list (and back)
+  // (mouse steps: a second locator.dragTo in a row doesn't start an HTML5 drag in Chromium)
+  const drag = async (from: number, to: number) => {
+    const h = (await dlg.getByTestId("task-edit").nth(from).getByTestId("task-drag").boundingBox())!;
+    const t = (await dlg.getByTestId("task-edit").nth(to).boundingBox())!;
+    await page.mouse.move(h.x + h.width / 2, h.y + h.height / 2); await page.mouse.down();
+    await page.mouse.move(t.x + t.width / 2, t.y + t.height / 2, { steps: 8 }); await page.mouse.up();
+  };
+  await drag(2, 0);
+  await expect(dlg.getByRole("textbox", { name: "Step 1 name" })).toHaveValue("Invoice the parks department");
+  await expect(dlg.getByRole("textbox", { name: "Step 2 name" })).toHaveValue("Run the audit report");
+  await expect(dlg.getByRole("combobox", { name: "Step 1 opens" })).toHaveValue("page:invoices");
+  await drag(0, 2);
+  await expect(dlg.getByRole("textbox", { name: "Step 1 name" })).toHaveValue("Run the audit report");
+  await expect(dlg.getByRole("textbox", { name: "Step 3 name" })).toHaveValue("Invoice the parks department");
+  await expect(dlg.getByText("Contact (optional)").first()).toBeVisible();
   await page.screenshot({ path: "e2e-screenshots/light-reminder-tasks-dialog.png" });
   await dlg.getByRole("button", { name: "Save" }).click();
   const item = page.getByTestId("reminder").filter({ hasText: "Year-end audit for the trustees" });
@@ -2768,22 +2784,41 @@ test("#551: reminder tasks - steps ticked one at a time, contacts by position, a
   // a Register User ticks steps; Next moves on; the function button opens the report
   await login(page, "ru1", "Brand-New-Pass-99");
   await page.getByRole("link", { name: /Notifications/ }).click();
-  await item.getByRole("checkbox", { name: "Tick Run the audit report" }).click();
+  await item.getByRole("checkbox", { name: "Mark Run the audit report completed" }).click();
   await expect(item.getByTestId("task-progress")).toHaveText("1 of 3 steps done");
+  await expect(task(0)).toContainText("Marked completed by ru1 on");
   await expect(task(1).getByTestId("task-next")).toBeVisible();
+  // 2.4.0 polish: a contact's name opens a read-only view of the entity
+  await task(1).getByRole("button", { name: "View Casey Clerk" }).click();
+  dlg = page.getByRole("dialog", { name: "Casey Clerk" });
+  await expect(dlg.getByTestId("entity-view")).toContainText("City Clerk");
+  await expect(dlg.getByTestId("entity-view")).toContainText("casey@example.org");
+  await expect(dlg.getByRole("textbox")).toHaveCount(0);
+  await dlg.locator(".actions").getByRole("button", { name: "Close" }).click();
+  await expect(dlg).toHaveCount(0);
   await page.screenshot({ path: "e2e-screenshots/light-reminder-tasks.png" });
+  // 2.4.0 polish: on the dashboard a reminder with steps starts collapsed to its title, due line and progress
+  await page.getByRole("link", { name: "Dashboard" }).click();
+  await expect(item.getByTestId("task-progress")).toHaveText("1 of 3 steps done");
+  await expect(item.getByTestId("reminder-task")).toHaveCount(0);
+  await item.getByRole("button", { name: "Show the steps of Year-end audit for the trustees" }).click();
+  await expect(task(1).getByTestId("task-next")).toBeVisible();
+  await item.getByRole("button", { name: "Hide the steps of Year-end audit for the trustees" }).click();
+  await expect(item.getByTestId("reminder-task")).toHaveCount(0);
+  await page.getByRole("link", { name: /Notifications/ }).click();
+  await expect(item.getByTestId("reminder-toggle")).toHaveCount(0);   // the Notifications page shows every card in full
   await task(0).getByTestId("task-function").click();
   await expect(page.getByRole("heading", { name: "End of Year Audit", level: 1 })).toBeVisible();
   await page.getByRole("link", { name: /Notifications/ }).click();
-  await item.getByRole("checkbox", { name: "Tick Email the City Clerk" }).click();
-  await item.getByRole("checkbox", { name: "Tick Invoice the parks department" }).click();
+  await item.getByRole("checkbox", { name: "Mark Email the City Clerk completed" }).click();
+  await item.getByRole("checkbox", { name: "Mark Invoice the parks department completed" }).click();
   await expect(item.getByTestId("task-progress")).toHaveText("3 of 3 steps done");
   await expect(item.getByTestId("reminder-objective").getByTestId("task-next")).toBeVisible();   // the last step doesn't complete it
   // the objective does
-  await item.getByRole("checkbox", { name: "Tick Year-end audit for the trustees" }).click();
+  await item.getByRole("checkbox", { name: "Mark Year-end audit for the trustees completed" }).click();
   dlg = page.getByRole("dialog", { name: "Complete the reminder" });
   await dlg.getByLabel("Note (optional)").fill("Sent to the trustees");
-  await dlg.getByRole("button", { name: "Tick and complete" }).click();
+  await dlg.getByRole("button", { name: "Mark completed" }).click();
   await expect(item).toHaveCount(0);
   await page.getByRole("tab", { name: "Resolved" }).click();
   await expect(item).toContainText("Sent to the trustees");

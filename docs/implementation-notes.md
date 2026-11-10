@@ -159,6 +159,29 @@ uses them over the Email setup's; the From address is always the server account'
   Tests: `backend/tests/test_v240_donation_email.py` (5).
 
 
+**2.4.0 — link an awaiting donation to a deposit already in the register (#562, decided with Kyle 2026-11-10).**
+Gap in #325: only *Create transaction* linked an awaiting money line, and the register dialog's tick always made a new
+DEPOSIT donation (a second receipt for one gift). `services/donations.link_line(x, t, a, confirmations)` is shared by
+`GET /api/donations/{id}/lines/{line_id}/link-candidates` + `POST .../link` (Donations page) and
+`PUT /transactions/{id}/lines` (`LineIn.link_line_id`, `LinesIn.confirmations`). Candidates (`link_candidates`):
+live allocations of ACTIVE deposits (no transfers), entity (or parent entity) = donor, not linked to a PAGE donation,
+not Closed-protected, newest first, at most 100. Warnings `AMOUNT_DIFFERS` (the line takes the allocation's amount)
+and `REPLACES_MARKED` (the allocation's DEPOSIT donation line is deleted; purpose, goods and date carry over when the
+awaiting line has none; a DEPOSIT donation left with no lines and with receipts is CANCELLED, reason *Replaced by
+donation #N*, so its receipts are void). `_deposit_donations` returns ACTIVE ones only (ticking the donor again starts
+a new one); `transaction_out` lists the replaced ones' receipts, and per line `awaiting` (the donor's awaiting lines,
+with `receipt`) and `suggested_link` (the only same-amount one, for unmarked lines). Date: the estimate is kept unless
+after the deposit. Receipts and envelopes are copied onto the deposit (`_copy_docs_to_deposit`, shared with Create
+transaction). Audit `DONATION_LINKED` (with `replaced_donation_id`), `DONATION_MARKED` (donation false,
+`replaced_by_donation_id`), `DONATION_CANCELLED`. No migration.
+- Proposed **BR-DON-LINK-001** an awaiting money line can be linked to an existing deposit line of the same donor,
+  from the Donations page or the register dialog; **-002** the amount follows the deposit line, confirmed when it
+  differs; **-003** linking a line already marked on the deposit is confirmed and voids that deposit donation's
+  receipts when it is left empty (replaced by the linked donation); **-004** the register dialog starts on the donor's
+  only same-amount awaiting donation and notes any others. ACs **AC-DON-LINK-001..005** (link from the page; from the
+  dialog; amount confirmation; replacing a marked line voids its receipt; wrong donor / void deposit refused).
+  Tests: `backend/tests/test_v240_donation_link.py` (5).
+
 **2.4.0 — customer account credit (#534, decided with Kyle 2026-11-06).** A customer's credit is every
 `OVERPAYMENT` link not refunded (`figures().refundable`) on their invoices - existing ones included (migration `0087`
 adds only `invoice_payment.credit_from_invoice_id`). `invoice_payments.credit_sources` / `credit_out`
@@ -2618,6 +2641,8 @@ the UI always shows the name users see (e.g. *End of Year Audit*, never `audit`)
 so with its defaults (#528). The server's list (`FUNCTION_IDS`) is checked against the frontend by a test. Restore: tasks
 travel with *Reminders*; a fixed contact whose entity isn't there is cleared and reported; reinitialize clears personal
 reminders' fixed contacts (organization reminders and their tasks are deleted).
+UI wording (Kyle, 2026-11-10): users read *mark completed* / *Marked completed by … on …* / *clear its completion*,
+never *tick*; the code keeps `tick`/`untick`.
 Confirmed by Kyle (2026-11-09):
 - **BR-REM-TASK-001** a reminder's steps (one level, up to 25 tasks with the objective; personal reminders too) are
   ticked in any order once it is shown, by whoever may resolve it; each tick records who and when; the first open
@@ -2659,6 +2684,18 @@ Proposed:
 
 ACs **AC-REM-TASK-001..006** (as in the issue). Tests: `backend/tests/test_v240_reminder_tasks.py` (9). E2E: *#551:
 reminder tasks* (after the 1.6.7 recurring reminder test).
+
+**2.4.0 polish — reminder tasks from testing (Kyle, 2026-11-10).** UI only, no rule change:
+- The editor's **Contact** is labelled *(optional)*, like **Opens**.
+- Steps can be dragged by a handle (⠿, HTML5 drag and drop, as the invoice column order) to any place; ↑/↓ stay for the
+  keyboard. New steps get a stable client key (`TaskDraft.key`) so a moved row keeps its inputs.
+- `DashboardNotifications` passes `collapsible` to `ReminderItem`: a reminder with steps starts collapsed to its title,
+  due line and progress (details and the checklist hidden), with a ▸/▾ toggle (`aria-expanded`); one without steps has
+  no toggle and is shown in full. Not remembered between visits. The Notifications page is unchanged.
+- A contact's name opens `EntityViewDialog`, a read-only view of the entity (`GET /api/entities/{id}`), for users with
+  `register.view` (the same permission that sees contact details); others see the name as plain text.
+E2E: the *#551: reminder tasks* test drags a step there and back, checks the collapsed dashboard card, and opens the
+entity view.
 
 **2.4.0 — Dashboard FY Progress (#553, decided with Kyle 2026-11-09).** `services/fy_progress.py`, used by
 `dashboard.financial` (`budget_summary.progress`).
