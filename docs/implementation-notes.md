@@ -159,6 +159,29 @@ uses them over the Email setup's; the From address is always the server account'
   Tests: `backend/tests/test_v240_donation_email.py` (5).
 
 
+**2.4.0 — link an awaiting donation to a deposit already in the register (#562, decided with Kyle 2026-11-10).**
+Gap in #325: only *Create transaction* linked an awaiting money line, and the register dialog's tick always made a new
+DEPOSIT donation (a second receipt for one gift). `services/donations.link_line(x, t, a, confirmations)` is shared by
+`GET /api/donations/{id}/lines/{line_id}/link-candidates` + `POST .../link` (Donations page) and
+`PUT /transactions/{id}/lines` (`LineIn.link_line_id`, `LinesIn.confirmations`). Candidates (`link_candidates`):
+live allocations of ACTIVE deposits (no transfers), entity (or parent entity) = donor, not linked to a PAGE donation,
+not Closed-protected, newest first, at most 100. Warnings `AMOUNT_DIFFERS` (the line takes the allocation's amount)
+and `REPLACES_MARKED` (the allocation's DEPOSIT donation line is deleted; purpose, goods and date carry over when the
+awaiting line has none; a DEPOSIT donation left with no lines and with receipts is CANCELLED, reason *Replaced by
+donation #N*, so its receipts are void). `_deposit_donations` returns ACTIVE ones only (ticking the donor again starts
+a new one); `transaction_out` lists the replaced ones' receipts, and per line `awaiting` (the donor's awaiting lines,
+with `receipt`) and `suggested_link` (the only same-amount one, for unmarked lines). Date: the estimate is kept unless
+after the deposit. Receipts and envelopes are copied onto the deposit (`_copy_docs_to_deposit`, shared with Create
+transaction). Audit `DONATION_LINKED` (with `replaced_donation_id`), `DONATION_MARKED` (donation false,
+`replaced_by_donation_id`), `DONATION_CANCELLED`. No migration.
+- Proposed **BR-DON-LINK-001** an awaiting money line can be linked to an existing deposit line of the same donor,
+  from the Donations page or the register dialog; **-002** the amount follows the deposit line, confirmed when it
+  differs; **-003** linking a line already marked on the deposit is confirmed and voids that deposit donation's
+  receipts when it is left empty (replaced by the linked donation); **-004** the register dialog starts on the donor's
+  only same-amount awaiting donation and notes any others. ACs **AC-DON-LINK-001..005** (link from the page; from the
+  dialog; amount confirmation; replacing a marked line voids its receipt; wrong donor / void deposit refused).
+  Tests: `backend/tests/test_v240_donation_link.py` (5).
+
 **2.4.0 — customer account credit (#534, decided with Kyle 2026-11-06).** A customer's credit is every
 `OVERPAYMENT` link not refunded (`figures().refundable`) on their invoices - existing ones included (migration `0087`
 adds only `invoice_payment.credit_from_invoice_id`). `invoice_payments.credit_sources` / `credit_out`

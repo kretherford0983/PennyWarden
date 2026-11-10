@@ -288,7 +288,11 @@ export default function DonationSetup() {
 }
 
 // ------------------------------------------------------------------ a deposit's donations (register)
-type Line = { allocation_id: number; donor: string; donor_entity_id: number | null; donor_is_organization: boolean; description: string; amount: string; donation: boolean; purpose: string; goods: string; goods_description: string; date: string; amount_cents: number; linked_donation_id?: number | null; suggested?: boolean; fundraiser?: string | null };
+type Line = { allocation_id: number; donor: string; donor_entity_id: number | null; donor_is_organization: boolean; description: string; amount: string; donation: boolean; purpose: string; goods: string; goods_description: string; date: string; amount_cents: number; linked_donation_id?: number | null; suggested?: boolean; fundraiser?: string | null;
+  // 2.4.0 (#562): the donor's Donations page donations awaiting a deposit, and the one chosen (null: a new donation)
+  awaiting: Awaiting[]; link: number | null };
+type Awaiting = { id: number; donation_id: number; amount: string; amount_cents: number; receipt: string | null; date_received: string | null };
+const awaitingLabel = (a: Awaiting) => `Donation #${a.donation_id} (awaiting deposit, ${a.amount}${a.receipt ? `, receipt ${a.receipt}` : ""})`;
 
 const cents = (s: string): number | null => {
   const t = s.replace(/[$,\s]/g, "");
@@ -326,7 +330,8 @@ export function DonationReceiptDialog({ txn, onClose, onChanged }: { txn: any; o
     setLines(x.lines.map((l: any) => ({ allocation_id: l.allocation_id, donor: l.donor, donor_entity_id: l.donor_entity_id, donor_is_organization: !!l.donor_is_organization, description: l.description, amount: l.amount, amount_cents: l.amount_cents,
       // 2.2.0 (#256): a line in a fundraiser's donation bucket starts ticked as a suggestion; Save confirms it
       donation: l.donation || (!!l.suggested && canPrint && x.printable), suggested: !!l.suggested, fundraiser: l.fundraiser || null, purpose: l.purpose || "", goods: l.goods_cents ? (l.goods_cents / 100).toFixed(2) : "", goods_description: l.goods_description || "",
-      date: l.date_received || x.date, linked_donation_id: l.linked_donation_id })));
+      date: l.date_received || x.date, linked_donation_id: l.linked_donation_id, awaiting: l.awaiting || [],
+      link: !l.donation && l.suggested && canPrint && x.printable ? l.suggested_link ?? null : null })));
     setDetails(Object.fromEntries(x.donors.map((o: any) => [o.entity_id, o.details || ""])));
   };
   // each load and save is numbered; a reply is shown only if nothing newer was started since, so a reload that comes
@@ -343,16 +348,16 @@ export function DonationReceiptDialog({ txn, onClose, onChanged }: { txn: any; o
   };
   useEffect(() => { load(); }, [txn.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const editable = !!d && canPrint && d.printable;
-  const original = d ? JSON.stringify([d.lines.map((l: any) => [l.donation, l.purpose || "", l.goods_cents ? (l.goods_cents / 100).toFixed(2) : "", l.goods_description || "", l.date_received || d.date]),
+  const original = d ? JSON.stringify([d.lines.map((l: any) => [l.donation, l.purpose || "", l.goods_cents ? (l.goods_cents / 100).toFixed(2) : "", l.goods_description || "", l.date_received || d.date, null]),
     d.donors.map((o: any) => o.details || "")]) : "";
-  const dirty = d && JSON.stringify([lines.map((l) => [l.donation, l.purpose, l.goods, l.goods_description, l.date]),
+  const dirty = d && JSON.stringify([lines.map((l) => [l.donation, l.purpose, l.goods, l.goods_description, l.date, l.donation ? l.link : null]),
     d.donors.map((o: any) => details[o.entity_id] || "")]) !== original;
   const setDetail = (id: number, v: string) => { edits.current++; setSaved(false); setDetails({ ...details, [id]: v }); };
   // the donors as on screen: ticking a line shows its donor straight away (no Save needed first)
   const savedDonors = new Map<number, any>((d?.donors || []).map((o: any) => [o.entity_id, o]));
   const groups: { entity_id: number; name: string; cents: number; goods: number; dates: string[]; saved: any }[] = [];
   for (const l of lines) {
-    if (!l.donation || !l.donor_entity_id || l.linked_donation_id) continue;   // 2.2.0: Donations page ones print there
+    if (!l.donation || !l.donor_entity_id || l.linked_donation_id || l.link) continue;   // 2.2.0: Donations page ones print there
     let g = groups.find((x) => x.entity_id === l.donor_entity_id);
     if (!g) { g = { entity_id: l.donor_entity_id, name: l.donor, cents: 0, goods: 0, dates: [], saved: savedDonors.get(l.donor_entity_id) }; groups.push(g); }
     g.cents += l.amount_cents || 0;
@@ -365,11 +370,18 @@ export function DonationReceiptDialog({ txn, onClose, onChanged }: { txn: any; o
   const printLabel = (g: any) => (!g.saved ? "Print receipt" : dirty ? (g.saved.current_receipt ? "Print" : "Print receipt")
     : g.saved.next_kind === "ORIGINAL" ? "Print receipt" : g.saved.next_kind === "DUPLICATE" ? "Print duplicate" : "Print corrected receipt");
   const canPrintNow = !!(canPrint && d?.printable && !d?.setup_missing.length);
+  /** 2.4.0 (#562): ticking a line starts on the donor's only awaiting donation of the same amount (not already chosen) */
+  const suggestedLink = (i: number): number | null => {
+    const l = lines[i];
+    const same = l.awaiting.filter((a) => a.amount_cents === l.amount_cents && !lines.some((o, j) => j !== i && o.donation && o.link === a.id));
+    return same.length === 1 ? same[0].id : null;
+  };
   const setLine = (i: number, patch: Partial<Line>) => { edits.current++; setSaved(false); setLines(lines.map((l, j) => (j === i ? { ...l, ...patch } : l))); };
   /** the lines and details on screen, as the API takes them (null: a goods value that isn't an amount) */
   const payload = () => {
     const body = lines.map((l) => {
       const g = l.donation ? cents(l.goods) : null;
+      if (l.donation && l.link) return { allocation_id: l.allocation_id, donation: true, link_line_id: l.link };   // 2.4.0 (#562)
       return { allocation_id: l.allocation_id, donation: l.donation, purpose: l.donation ? l.purpose || null : null,
         goods_cents: g && !Number.isNaN(g) ? g : g === null ? null : -1, goods_description: l.donation ? l.goods_description || null : null,
         date_received: l.donation && l.date && l.date !== d.date ? l.date : null };
@@ -385,8 +397,9 @@ export function DonationReceiptDialog({ txn, onClose, onChanged }: { txn: any; o
     const apply = latest(take);
     try {
       // 2.3.0 (#393): details with the EIN while it's off ask for a confirmation and a reason, then save again
-      const r = await ein.run((o) => api.put(`/api/donations/transactions/${txn.id}/lines`,
-        { ...p, donors: p.donors.map((x: any) => (usesEin(x.details) && o.confirm_ein_override ? { ...x, ...o } : x)) }));
+      // 2.4.0 (#562): linking a donation awaiting a deposit can ask for confirmations (amount, a line already marked)
+      const r = await ein.run((o) => run((c) => api.put(`/api/donations/transactions/${txn.id}/lines`,
+        { ...p, confirmations: c, donors: p.donors.map((x: any) => (usesEin(x.details) && o.confirm_ein_override ? { ...x, ...o } : x)) })));
       if (r === undefined) return false;
       apply(r); setSaved(true); onChanged(); return true;
     } catch (x) { setErr(x); return false; }
@@ -464,14 +477,24 @@ export function DonationReceiptDialog({ txn, onClose, onChanged }: { txn: any; o
                 <tr key={l.allocation_id}>
                   <td><input type="checkbox" aria-label={`Donation: ${l.donor || "no donor"} ${l.amount}`} checked={l.donation} disabled={!editable || ((!l.donor_entity_id || l.donor_is_organization) && !l.donation)}
                              title={l.donor_is_organization ? "Your own organization can't be the donor: record the donor as the line's entity" : undefined}
-                             onChange={(e) => setLine(i, { donation: e.target.checked })} /></td>
-                  <td>{l.donor || <span className="muted">No entity</span>}</td>
+                             onChange={(e) => setLine(i, { donation: e.target.checked, link: e.target.checked && !l.donation ? suggestedLink(i) : l.link })} /></td>
+                  <td>{l.donor || <span className="muted">No entity</span>}
+                    {/* 2.4.0 (#562): the donor's donations awaiting a deposit (recorded on the Donations page first) */}
+                    {l.donation && l.awaiting.length > 0 ? (
+                      <select className="block" aria-label={`Which donation: ${l.donor} ${l.amount}`} data-testid="donation-link" value={l.link ?? ""} disabled={!editable}
+                              onChange={(e) => setLine(i, { link: e.target.value ? Number(e.target.value) : null })}>
+                        <option value="">New donation</option>
+                        {l.awaiting.filter((a) => a.id === l.link || !lines.some((o, j) => j !== i && o.donation && o.link === a.id))
+                          .map((a) => <option key={a.id} value={a.id}>{awaitingLabel(a)}</option>)}
+                      </select>) : null}
+                    {l.donation && l.awaiting.length > 0 && !l.link ? <div className="hint" data-testid="donation-awaiting-note">{l.donor} has {l.awaiting.length === 1 ? "a donation" : `${l.awaiting.length} donations`} awaiting a deposit. Choose it if this is that money, so the donor doesn't get two receipts.</div> : null}
+                  </td>
                   <td>{l.description}{l.suggested ? <span className="badge grey" data-testid="donation-suggested" title={`In a donation bucket of the fundraiser ${l.fundraiser}: ticked as a suggestion, saved only when you Save`}> Suggested ({l.fundraiser})</span> : null}</td>
                   <td className="num">{l.amount}</td>
-                  <td>{l.donation ? <input type="date" aria-label={`Date received: ${l.donor} ${l.amount}`} value={l.date} max={d.date} disabled={!editable}
-                                           title="When the donation was received, if before the deposit" onChange={(e) => setLine(i, { date: e.target.value || d.date })} /> : null}</td>
-                  <td>{l.donation ? <input aria-label="Purpose" maxLength={200} value={l.purpose} disabled={!editable} placeholder="Optional" onChange={(e) => setLine(i, { purpose: e.target.value })} /> : null}</td>
-                  <td>{l.donation ? (
+                  <td>{l.donation && !l.link ? <input type="date" aria-label={`Date received: ${l.donor} ${l.amount}`} value={l.date} max={d.date} disabled={!editable}
+                                           title="When the donation was received, if before the deposit" onChange={(e) => setLine(i, { date: e.target.value || d.date })} /> : l.donation && l.link ? <span className="hint" data-testid="donation-link-note">Linked to donation #{l.awaiting.find((a) => a.id === l.link)?.donation_id} when saved: its date, purpose and receipts come from the Donations page{l.awaiting.find((a) => a.id === l.link)?.amount_cents !== l.amount_cents ? ` (its amount becomes ${l.amount})` : ""}.</span> : null}</td>
+                  <td>{l.donation && !l.link ? <input aria-label="Purpose" maxLength={200} value={l.purpose} disabled={!editable} placeholder="Optional" onChange={(e) => setLine(i, { purpose: e.target.value })} /> : null}</td>
+                  <td>{l.donation && !l.link ? (
                     <span className="row">
                       <input aria-label="Goods or services value" className="num narrow" inputMode="decimal" value={l.goods} disabled={!editable} placeholder="None" onChange={(e) => setLine(i, { goods: e.target.value })} />
                       {l.goods ? <input aria-label="Goods or services description" maxLength={200} value={l.goods_description} disabled={!editable} placeholder="e.g. Dinner for two" onChange={(e) => setLine(i, { goods_description: e.target.value })} /> : null}
