@@ -56,6 +56,7 @@ export default function Dashboard() {
             <div className="muted">Actual {money(d.budget_summary[k].actual)} · Remaining <Remaining x={d.budget_summary[k]} /></div>
           </div>
         ))}
+        {d.budget_summary.progress ? <FyProgressTile p={d.budget_summary.progress} /> : null}
       </div>
     ) : null,
     invoices: invoices ? <OverdueInvoices /> : null,
@@ -236,3 +237,36 @@ export function OverdueInvoices({ reminders = false }: { reminders?: boolean }) 
     </section>
   );
 }
+
+/** 2.4.0 (#553): signed amount with "surplus" / "deficit", green or red. */
+function SignedResult({ v, word, testId }: { v: string; word: string; testId?: string }) {
+  const n = Number(v);
+  return <span className={n < 0 ? "neg" : "above"} data-testid={testId}>{n < 0 ? "−" : "+"}{money(String(Math.abs(n)))} {word}</span>;
+}
+
+const FY_PROGRESS_NOTE = "Result so far: this Fiscal Year's income actual minus its expense actual (the two boxes beside it). "
+  + "Projected year end, worked out separately for income and expenses: this year so far plus the median of what the up to 3 "
+  + "previous Fiscal Years brought in or spent in the rest of their year after the same point - so being ahead or behind "
+  + "carries over and a one-time event in one year doesn't skew it. Without a previous Fiscal Year: this year's pace. "
+  + "Shown after the first 3 months. Budgeted: the income budget minus the expense budget. "
+  + "Help → Dashboard → How the budget figures are worked out has the details and an example.";
+
+/** 2.4.0 (#553): FY Progress - the result so far, the projected year end and the budgeted result. */
+function FyProgressTile({ p }: { p: any }) {
+  const pr = p.projection;
+  const basis = pr.basis?.kind === "THIS_YEAR_PACE" ? " (this year's pace; no previous year to compare)" : "";
+  return (
+    <div className="tile" data-testid="fy-progress">
+      <div className="tile-label">FY Progress <InfoTip label="About FY Progress" text={FY_PROGRESS_NOTE} /></div>
+      <div className="tile-value"><SignedResult v={p.result} word={p.result_word} testId="fy-progress-result" /></div>
+      <div className="muted" data-testid="fy-progress-sub">
+        {pr.state === "YEAR_ENDED" ? <>Year ended</>
+          : pr.state === "TOO_EARLY" ? <>Projected year end: not enough information yet</>
+          : <>Projected year end <SignedResult v={pr.result} word={pr.result_word} testId="fy-progress-projected" />{basis}</>}
+        {" · "}Budgeted <SignedResult v={p.budgeted} word={p.budgeted_word} />
+      </div>
+      <div><Link to="/help/dashboard/dashboard-figures" className="small-link">How is this worked out?</Link></div>
+    </div>
+  );
+}
+

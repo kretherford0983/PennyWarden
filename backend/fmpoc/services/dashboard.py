@@ -40,6 +40,8 @@ def financial(db: Session, ctx) -> dict:
     if fy is not None:
         t = bsvc.tree(db, fy)
         summary = {"income": t["income_summary"], "expense": t["expense_summary"]}
+        from . import fy_progress
+        summary["progress"] = fy_progress.progress(db, fy, summary)      # 2.4.0 (#553): the FY Progress box
     accounts = [bank.out(db, a) for a in db.scalars(select(BankAccount).where(
         BankAccount.workspace_id == ws, BankAccount.status == "ACTIVE").order_by(*bank.listing_order()))]
     uncleared = db.scalar(select(func.count(RegisterTransaction.id)).where(

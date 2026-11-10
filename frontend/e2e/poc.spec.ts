@@ -2659,6 +2659,21 @@ test("CR-036: organization and personal reminders - bell, dashboard, resolve wit
   await logout(page);
 });
 
+// ---------------------------------------------------------------- 2.4.0 (#553): FY Progress on the Dashboard
+test("#553: the Dashboard's FY Progress box - result so far, projection, budgeted; the guide explains the figures", async ({ page }) => {
+  await login(page, "bm1");
+  const box = page.getByTestId("fy-progress");
+  await expect(box).toContainText("FY Progress");
+  await expect(box.getByTestId("fy-progress-result")).toHaveText(/^[+−]\$[\d,]+\.\d\d (surplus|deficit)$/);
+  await expect(box.getByTestId("fy-progress-sub")).toContainText("Budgeted");
+  await expect(box.getByTestId("fy-progress-sub")).toContainText(/Projected year end|Year ended/);
+  await page.screenshot({ path: "e2e-screenshots/light-dashboard-fy-progress.png" });
+  await box.getByRole("link", { name: "How is this worked out?" }).click();
+  await expect(page.getByRole("heading", { name: "How the budget figures are worked out" })).toBeVisible();
+  await expect(page.getByText("Take the middle of those three amounts", { exact: false })).toBeVisible();
+  await logout(page);
+});
+
 // ---------------------------------------------------------------- 1.6.7: recurring organization reminders
 test("1.6.7: a recurring organization reminder creates its next occurrence when resolved", async ({ page }) => {
   const now = new Date();
