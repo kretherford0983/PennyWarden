@@ -2752,12 +2752,18 @@ test("#551: reminder tasks - steps ticked one at a time, contacts by position, a
   await expect(dlg.getByRole("textbox", { name: "Step 2 name" })).toHaveValue("Invoice the parks department");
   await dlg.getByRole("button", { name: "Move step 2 down" }).click();
   // 2.4.0 polish: a step can also be dragged by its handle to any place in the list (and back)
-  const drag = (n: number) => dlg.getByTestId("task-edit").nth(n).getByTestId("task-drag");
-  await drag(2).dragTo(dlg.getByTestId("task-edit").nth(0));
+  // (mouse steps: a second locator.dragTo in a row doesn't start an HTML5 drag in Chromium)
+  const drag = async (from: number, to: number) => {
+    const h = (await dlg.getByTestId("task-edit").nth(from).getByTestId("task-drag").boundingBox())!;
+    const t = (await dlg.getByTestId("task-edit").nth(to).boundingBox())!;
+    await page.mouse.move(h.x + h.width / 2, h.y + h.height / 2); await page.mouse.down();
+    await page.mouse.move(t.x + t.width / 2, t.y + t.height / 2, { steps: 8 }); await page.mouse.up();
+  };
+  await drag(2, 0);
   await expect(dlg.getByRole("textbox", { name: "Step 1 name" })).toHaveValue("Invoice the parks department");
   await expect(dlg.getByRole("textbox", { name: "Step 2 name" })).toHaveValue("Run the audit report");
   await expect(dlg.getByRole("combobox", { name: "Step 1 opens" })).toHaveValue("page:invoices");
-  await drag(0).dragTo(dlg.getByTestId("task-edit").nth(2));
+  await drag(0, 2);
   await expect(dlg.getByRole("textbox", { name: "Step 1 name" })).toHaveValue("Run the audit report");
   await expect(dlg.getByRole("textbox", { name: "Step 3 name" })).toHaveValue("Invoice the parks department");
   await expect(dlg.getByText("Contact (optional)").first()).toBeVisible();
@@ -2788,7 +2794,8 @@ test("#551: reminder tasks - steps ticked one at a time, contacts by position, a
   await expect(dlg.getByTestId("entity-view")).toContainText("City Clerk");
   await expect(dlg.getByTestId("entity-view")).toContainText("casey@example.org");
   await expect(dlg.getByRole("textbox")).toHaveCount(0);
-  await dlg.getByRole("button", { name: "Close" }).click();
+  await dlg.locator(".actions").getByRole("button", { name: "Close" }).click();
+  await expect(dlg).toHaveCount(0);
   await page.screenshot({ path: "e2e-screenshots/light-reminder-tasks.png" });
   // 2.4.0 polish: on the dashboard a reminder with steps starts collapsed to its title, due line and progress
   await page.getByRole("link", { name: "Dashboard" }).click();
