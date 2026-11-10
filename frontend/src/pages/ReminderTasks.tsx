@@ -69,34 +69,52 @@ function FunctionButton({ id }: { id: string }) {
 
 /** 2.4.0 polish: a read-only view of a contact's entity (for users who see entity details - register.view). */
 function EntityViewDialog({ id, onClose }: { id: number; onClose: () => void }) {
+  const { me } = useMe();
   const [e, setE] = useState<any>(null);
   const [err, setErr] = useState<unknown>(null);
   useEffect(() => { api.get(`/api/entities/${id}`).then(setE, setErr); }, [id]);
-  const lines = (pre: string) => [[`${pre}address_line1`, `${pre}address_line2`].map((k) => e[k]),
-    [[e[`${pre}city`], e[`${pre}state_region`]].filter(Boolean).join(", "), e[`${pre}postal_code`]].filter(Boolean).join(" "),
-    e[`${pre}country`]].flat().filter(Boolean);
-  const row = (label: string, v: any) => (v ? <><dt>{label}</dt><dd>{v}</dd></> : null);
-  const mailing = e && !e.mailing_same ? lines("mailing_") : [];
+  // Every field of the entity form, in its order and with its labels; a blank one shows as "—" so it's clear it is
+  // empty (Kyle, 2026-11-10). Fields that exist only for one type (EIN, Position) follow the form's rule.
+  const row = (label: string, v: any) => {
+    const blank = v === null || v === undefined || (typeof v === "string" && !v.trim());
+    return <><dt>{label}</dt><dd className={blank ? "muted" : undefined}>{blank ? "—" : v}</dd></>;
+  };
+  const yes = (b: any) => (b ? "Yes" : "No");
+  const ind = e?.entity_type === "INDIVIDUAL";
+  const address = (pre: string, label: (x: string) => string) => <>
+    {row(label("Address line 1"), e[`${pre}address_line1`])}
+    {row(label("Address line 2"), e[`${pre}address_line2`])}
+    {row(label("City"), e[`${pre}city`])}
+    {row(label("State/Region"), e[`${pre}state_region`])}
+    {row(label("Postal code"), e[`${pre}postal_code`])}
+    {row(label("Country"), e[`${pre}country`])}
+  </>;
   return (
     <Modal title={e ? e.display_name : "Entity"} onClose={onClose}>
       <ErrorBox error={err} />
       {e ? (
         <dl className="dl" data-testid="entity-view">
           {row("Entity number", e.entity_number)}
-          {row("Type", e.entity_type === "INDIVIDUAL" ? "Individual" : "Organization")}
-          {row("Organization", e.organization_name)}
-          {row("Name", [e.first_name, e.last_name].filter(Boolean).join(" "))}
-          {row("Position", e.position)}
+          {row("Type", ind ? "Individual" : "Organization")}
+          {row("Status", e.active ? "Active" : "Inactive")}
+          {row("Organization Name", e.organization_name)}
+          {row(ind ? "First name" : "Contact first name", e.first_name)}
+          {row(ind ? "Last name" : "Contact last name", e.last_name)}
+          {row("Display name", e.display_name_same ? "Same as Name" : e.display_name_custom)}
+          {!ind ? row("EIN", e.ein) : null}
+          {me?.modules?.invoices || e.tax_exempt ? <>
+            {row("Tax-exempt customer", yes(e.tax_exempt))}
+            {e.tax_exempt ? row("Exemption certificate #", e.tax_exempt_certificate) : null}
+          </> : null}
+          {ind ? row("Position in the organization", e.position) : null}
           {row("Email", e.email ? <><a href={`mailto:${e.email}`}>{e.email}</a>{" "}
             <button type="button" className="small link" aria-label={`Copy ${e.email}`}
                     onClick={() => navigator.clipboard?.writeText(e.email).catch(() => undefined)}>Copy</button></> : null)}
           {row("Phone", e.phone_display || e.phone)}
-          {row("Address", lines("").length ? lines("").map((l: string) => <div key={l}>{l}</div>) : null)}
-          {row("Mailing address", mailing.length ? mailing.map((l: string) => <div key={l}>{l}</div>) : null)}
-          {row("EIN", e.ein)}
-          {row("Tax exempt", e.tax_exempt ? `Yes${e.tax_exempt_certificate ? ` (certificate ${e.tax_exempt_certificate})` : ""}` : null)}
-          {row("Financial institution", e.is_financial_institution ? "Yes" : null)}
-          {row("Status", e.active ? null : "Inactive")}
+          {address("", (x) => x)}
+          {e.mailing_same ? row("Mailing address", "Same as Address")
+            : address("mailing_", (x) => `Mailing ${x.charAt(0).toLowerCase()}${x.slice(1)}`)}
+          {row("Financial institution", yes(e.is_financial_institution))}
           {row("Notes", e.notes ? <span className="pre-wrap">{e.notes}</span> : null)}
         </dl>
       ) : err ? null : <p className="muted">Loading…</p>}
