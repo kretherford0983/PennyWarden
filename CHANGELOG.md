@@ -126,6 +126,14 @@ PennyWarden 2.4.0 (in progress).
   subject and message set in Donations Setup and goes to the donor's address; sending issues the receipt or statement
   just as printing does. Invoices Setup and Donations Setup can each have their own **Reply-To** and **From name**
   (empty uses the Email setup's), for example invoicing@… and donations@….
+- **Link a donation to a deposit already in the register (#562).** A donation recorded on the Donations page
+  before the money arrived can now be linked to a deposit that was entered in the register, instead of only through
+  **Create transaction**. Open the donation and use **Link a deposit…** on its line (the donor's deposit lines are
+  listed), or in the register's **Donation receipt…** choose the donation beside the ticked line: it starts on the
+  donor's awaiting donation of the same amount and warns when a donor has one awaiting. The donation takes the
+  deposit's amount (you confirm when it differs) and its printed receipts go with the deposit. If the line was
+  already ticked as a donation with its own receipt, linking it (confirmed) makes that receipt void, so the donor
+  doesn't keep two receipts for one gift.
 - **What happens to an overpayment (#544).** Everywhere a payment is recorded, the amount above the invoices gets
   the same choices: kept on a budget (a donation, a fundraiser…), applied to the customer's other open invoices
   (ticked and filled oldest due date first), kept as account credit, or refunded. A customer who still owes on
