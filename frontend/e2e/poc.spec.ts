@@ -2744,7 +2744,18 @@ test("#551: reminder tasks - steps ticked one at a time, contacts by position, a
   await dlg.getByRole("button", { name: "Add a step" }).click();
   await dlg.getByRole("textbox", { name: "Step 3 name" }).fill("Invoice the parks department");
   await dlg.getByRole("combobox", { name: "Step 3 contact" }).selectOption("POSITION");
-  await dlg.getByRole("combobox", { name: "Step 3 position" }).fill("Parks Director");
+  // 2.4.0 polish: the position field suggests the positions held, matched anywhere (or by holder), with who holds them
+  const posBox = dlg.getByRole("combobox", { name: "Step 3 position" });
+  const posList = page.getByRole("listbox", { name: "Step 3 position suggestions" });
+  await posBox.fill("clerk");
+  await expect(posList.getByRole("option", { name: "City Clerk · Casey Clerk" })).toBeVisible();
+  await posBox.fill("casey");
+  await posList.getByRole("option", { name: /^City Clerk/ }).click();
+  await expect(posBox).toHaveValue("City Clerk");
+  await posBox.fill("Parks Director");
+  await expect(posList).toContainText("No one has this position yet");
+  await posBox.press("Escape");
+  await expect(posList).toHaveCount(0);
   await dlg.getByRole("combobox", { name: "Step 3 opens" }).selectOption({ label: "Invoices" });
   // the reminder itself is the last task, pinned: move step 3 up past step 2 (refining the order)
   await expect(dlg.getByTestId("task-edit-objective")).toContainText("Last: Year-end audit for the trustees");
@@ -2759,6 +2770,10 @@ test("#551: reminder tasks - steps ticked one at a time, contacts by position, a
     await page.mouse.move(h.x + h.width / 2, h.y + h.height / 2); await page.mouse.down();
     await page.mouse.move(t.x + t.width / 2, t.y + t.height / 2, { steps: 8 }); await page.mouse.up();
   };
+  // (room for all three rows on screen, so neither the handle nor the drop point is scrolled away)
+  const vp = page.viewportSize()!;
+  await page.setViewportSize({ width: vp.width, height: 1100 });
+  await dlg.getByTestId("task-edit").nth(0).scrollIntoViewIfNeeded();
   await drag(2, 0);
   await expect(dlg.getByRole("textbox", { name: "Step 1 name" })).toHaveValue("Invoice the parks department");
   await expect(dlg.getByRole("textbox", { name: "Step 2 name" })).toHaveValue("Run the audit report");
@@ -2767,6 +2782,7 @@ test("#551: reminder tasks - steps ticked one at a time, contacts by position, a
   await expect(dlg.getByRole("textbox", { name: "Step 1 name" })).toHaveValue("Run the audit report");
   await expect(dlg.getByRole("textbox", { name: "Step 3 name" })).toHaveValue("Invoice the parks department");
   await expect(dlg.getByText("Contact (optional)").first()).toBeVisible();
+  await page.setViewportSize(vp);
   await page.screenshot({ path: "e2e-screenshots/light-reminder-tasks-dialog.png" });
   await dlg.getByRole("button", { name: "Save" }).click();
   const item = page.getByTestId("reminder").filter({ hasText: "Year-end audit for the trustees" });

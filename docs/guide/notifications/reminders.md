@@ -29,7 +29,10 @@ A step's **Contact** and **Opens** are both optional. A reminder without steps l
 - Finishing with steps still open needs a note; those steps are shown as *skipped*. Clearing the completion of a step
   (or of the objective) of a resolved reminder reopens it.
 - **Contact:** any task, the objective too, can name *an organization or person* (always that entity) or *whoever holds
-  a position* (for example City Clerk — the active individuals with that position when the reminder is shown). Their
+  a position* (for example City Clerk — the active individuals with that position when the reminder is shown). Both
+  fields suggest as you type, matching any part of the text: *john* finds John Doe and Steve Johnson, and *city* finds
+  *City Clerk* and *Mayor of the City of …*, each position listed with who holds it (typing a holder's name finds their
+  position too), so you don't need to remember exactly how it was entered. Their
   name, email (with **Copy**), phone and mailing address show on the task; click the name to see the whole entity,
   read only. Typing a position (e.g. *city clerk*) finds the person holding it
   and picks *Whoever is City Clerk*; switch to *This person* to keep that person instead. If nobody active holds the
