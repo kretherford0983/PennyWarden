@@ -2659,6 +2659,21 @@ test("CR-036: organization and personal reminders - bell, dashboard, resolve wit
   await logout(page);
 });
 
+// ---------------------------------------------------------------- 2.4.0 (#553): FY Progress on the Dashboard
+test("#553: the Dashboard's FY Progress box - result so far, projection, budgeted; the guide explains the figures", async ({ page }) => {
+  await login(page, "bm1");
+  const box = page.getByTestId("fy-progress");
+  await expect(box).toContainText("FY Progress");
+  await expect(box.getByTestId("fy-progress-result")).toHaveText(/^[+−]\$[\d,]+\.\d\d (surplus|deficit)$/);
+  await expect(box.getByTestId("fy-progress-sub")).toContainText("Budgeted");
+  await expect(box.getByTestId("fy-progress-sub")).toContainText(/Projected year end|Year ended/);
+  await page.screenshot({ path: "e2e-screenshots/light-dashboard-fy-progress.png" });
+  await box.getByRole("link", { name: "How is this worked out?" }).click();
+  await expect(page.getByRole("heading", { name: "How the budget figures are worked out" })).toBeVisible();
+  await expect(page.getByText("Take the middle of those three amounts", { exact: false })).toBeVisible();
+  await logout(page);
+});
+
 // ---------------------------------------------------------------- 1.6.7: recurring organization reminders
 test("1.6.7: a recurring organization reminder creates its next occurrence when resolved", async ({ page }) => {
   const now = new Date();
@@ -2692,6 +2707,87 @@ test("1.6.7: a recurring organization reminder creates its next occurrence when 
   page.once("dialog", (d) => d.accept());
   await rowAction(page, "Reconcile the bank statement", "Delete");
   await expect(item).toHaveCount(0);
+  await logout(page);
+});
+
+// ---------------------------------------------------------------- 2.4.0 (#551): reminder tasks
+test("#551: reminder tasks - steps ticked one at a time, contacts by position, app functions, the objective completes it", async ({ page }) => {
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  await login(page, "bm1");
+  const post = await apiAs(page);
+  expect((await post("/api/entities", { entity_type: "INDIVIDUAL", primary_contact: "Casey Clerk", position: "City Clerk",
+    email: "casey@example.org", confirmations: ["DUPLICATE_ENTITY"] })).status()).toBe(201);
+  // the Entities list shows the position, and Search finds it
+  await page.getByRole("link", { name: "Entities" }).click();
+  await page.getByPlaceholder("Name, number, email or position").fill("city clerk");
+  await expect(page.locator("table tbody tr").filter({ hasText: "Casey Clerk" }).getByTestId("entity-position")).toHaveText("City Clerk");
+  await expect(page.locator("table tbody tr")).toHaveCount(1);
+  await page.getByRole("link", { name: /Notifications/ }).click();
+  await page.getByRole("button", { name: "New reminder" }).click();
+  let dlg = page.getByRole("dialog", { name: "New reminder" });
+  await dlg.getByRole("combobox").first().selectOption("ORGANIZATION");
+  await dlg.getByLabel("Reminder", { exact: true }).fill("Year-end audit for the trustees");
+  await dlg.getByLabel("Due date").fill(today);
+  await dlg.getByRole("button", { name: "Add a step" }).click();
+  await dlg.getByRole("textbox", { name: "Step 1 name" }).fill("Run the audit report");
+  await dlg.getByRole("combobox", { name: "Step 1 opens" }).selectOption({ label: "End of Year Audit" });
+  // a person found by their position defaults to "whoever is" that position
+  await dlg.getByRole("button", { name: "Add a step" }).click();
+  await dlg.getByRole("textbox", { name: "Step 2 name" }).fill("Email the City Clerk");
+  await dlg.getByRole("combobox", { name: "Step 2 contact" }).selectOption("ENTITY");
+  await dlg.getByRole("combobox", { name: "Step 2: organization or person" }).fill("city clerk");
+  await page.getByRole("listbox").getByRole("option", { name: /Casey Clerk/ }).click();
+  await expect(dlg.getByRole("radio", { name: "Whoever is City Clerk" })).toBeChecked();
+  await expect(dlg.getByRole("combobox", { name: "Step 2 position" })).toHaveValue("City Clerk");
+  // a position nobody holds; a page whose module is off
+  await dlg.getByRole("button", { name: "Add a step" }).click();
+  await dlg.getByRole("textbox", { name: "Step 3 name" }).fill("Invoice the parks department");
+  await dlg.getByRole("combobox", { name: "Step 3 contact" }).selectOption("POSITION");
+  await dlg.getByRole("combobox", { name: "Step 3 position" }).fill("Parks Director");
+  await dlg.getByRole("combobox", { name: "Step 3 opens" }).selectOption({ label: "Invoices" });
+  // the reminder itself is the last task, pinned: move step 3 up past step 2 (refining the order)
+  await expect(dlg.getByTestId("task-edit-objective")).toContainText("Last: Year-end audit for the trustees");
+  await dlg.getByRole("button", { name: "Move step 3 up" }).click();
+  await expect(dlg.getByRole("textbox", { name: "Step 2 name" })).toHaveValue("Invoice the parks department");
+  await dlg.getByRole("button", { name: "Move step 2 down" }).click();
+  await page.screenshot({ path: "e2e-screenshots/light-reminder-tasks-dialog.png" });
+  await dlg.getByRole("button", { name: "Save" }).click();
+  const item = page.getByTestId("reminder").filter({ hasText: "Year-end audit for the trustees" });
+  const task = (n: number) => item.getByTestId("reminder-task").nth(n);
+  await expect(item.getByTestId("task-progress")).toHaveText("0 of 3 steps done");
+  await expect(task(0).getByTestId("task-next")).toBeVisible();
+  await expect(task(0).getByTestId("task-function")).toHaveText("End of Year Audit");
+  await expect(task(1).getByTestId("task-contact")).toContainText("casey@example.org");
+  await expect(task(2).getByTestId("task-contact")).toContainText("nobody active holds this position");
+  await expect(task(2).getByTestId("task-function")).toBeDisabled();
+  await expect(task(2).getByTestId("task-function-why")).toHaveText("The Invoices module is turned off.");
+  await expect(item.getByTestId("reminder-objective")).toContainText("completes the reminder");
+  await logout(page);
+
+  // a Register User ticks steps; Next moves on; the function button opens the report
+  await login(page, "ru1", "Brand-New-Pass-99");
+  await page.getByRole("link", { name: /Notifications/ }).click();
+  await item.getByRole("checkbox", { name: "Tick Run the audit report" }).click();
+  await expect(item.getByTestId("task-progress")).toHaveText("1 of 3 steps done");
+  await expect(task(1).getByTestId("task-next")).toBeVisible();
+  await page.screenshot({ path: "e2e-screenshots/light-reminder-tasks.png" });
+  await task(0).getByTestId("task-function").click();
+  await expect(page.getByRole("heading", { name: "End of Year Audit", level: 1 })).toBeVisible();
+  await page.getByRole("link", { name: /Notifications/ }).click();
+  await item.getByRole("checkbox", { name: "Tick Email the City Clerk" }).click();
+  await item.getByRole("checkbox", { name: "Tick Invoice the parks department" }).click();
+  await expect(item.getByTestId("task-progress")).toHaveText("3 of 3 steps done");
+  await expect(item.getByTestId("reminder-objective").getByTestId("task-next")).toBeVisible();   // the last step doesn't complete it
+  // the objective does
+  await item.getByRole("checkbox", { name: "Tick Year-end audit for the trustees" }).click();
+  dlg = page.getByRole("dialog", { name: "Complete the reminder" });
+  await dlg.getByLabel("Note (optional)").fill("Sent to the trustees");
+  await dlg.getByRole("button", { name: "Tick and complete" }).click();
+  await expect(item).toHaveCount(0);
+  await page.getByRole("tab", { name: "Resolved" }).click();
+  await expect(item).toContainText("Sent to the trustees");
+  await expect(item.getByTestId("task-progress")).toHaveText("3 of 3 steps done");
   await logout(page);
 });
 

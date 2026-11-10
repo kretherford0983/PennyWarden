@@ -26,6 +26,7 @@ Your password, two-step verification, security questions and display choices.
 The page that opens after you sign in.
 
 - [What the Dashboard shows](dashboard/dashboard.md) — Balances, budgets, attention items and charts.
+- [How the budget figures are worked out](dashboard/dashboard-figures.md) — Budget, actual, remaining, FY Progress and the projected year end, step by step.
 - [Customizing the Dashboard](dashboard/customize-dashboard.md) — Choosing which sections and charts you see.
 
 ## Fiscal Years
@@ -140,7 +141,7 @@ Billing members and customers from a product catalog, with sales tax and payment
 
 Reminders for you or the whole organization.
 
-- [Reminders](notifications/reminders.md) — Creating, resolving and repeating reminders.
+- [Reminders](notifications/reminders.md) — Creating, resolving and repeating reminders, and their steps.
 
 ## Envelopes and signers
 
