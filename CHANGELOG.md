@@ -185,8 +185,10 @@ PennyWarden 2.4.0 (in progress).
   (or **Resolve…**) finishes the reminder; with steps still open a note is needed and they show as skipped. A repeating
   reminder starts again with no task completed. Any task — the objective too — can name a contact — a fixed organization or person, or
   **whoever holds a position** (e.g. City Clerk, so a new clerk is picked up automatically) — with their email, phone
-  and mailing address (the name opens a read-only view of the entity), and can open a report or page (e.g. **End of Year Audit**) with one click. Steps stay editable
-  while the reminder is shown. Existing reminders become reminders with just their objective: nothing changes until
+  and mailing address (the name opens a read-only view of the entity), and can open a report or page
+  (e.g. **End of Year Audit**) with one click. The Position field suggests the positions already held as you type —
+  matching any part of the title or a holder's name, each listed with who holds it — like the organization or person
+  field. Steps stay editable while the reminder is shown. Existing reminders become reminders with just their objective: nothing changes until
   steps are added. The **Entities** list now shows each person's **position**, and its **Search** finds entities by
   position as well as name, number or email. On the **Dashboard**, a reminder with steps starts collapsed to its title,
   due date and progress (*1 of 4 steps done*); **▸** shows its steps and **▾** hides them again. A reminder without
