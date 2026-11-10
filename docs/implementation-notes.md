@@ -2690,7 +2690,7 @@ reminder tasks* (after the 1.6.7 recurring reminder test).
 - Steps can be dragged by a handle (⠿, HTML5 drag and drop, as the invoice column order) to any place; ↑/↓ stay for the
   keyboard. New steps get a stable client key (`TaskDraft.key`) so a moved row keeps its inputs.
 - `DashboardNotifications` passes `collapsible` to `ReminderItem`: a reminder with steps starts collapsed to its title,
-  due line and progress (details and the checklist hidden), with a ▸/▾ toggle (`aria-expanded`); one without steps has
+  due line and progress (details and the checklist hidden), with a ▸/▾ toggle (`aria-expanded`; 20px, sub-text colour, not link-styled — Kyle 2026-11-10); one without steps has
   no toggle and is shown in full. Not remembered between visits. The Notifications page is unchanged.
 - The Position field is `SuggestInput` (components.tsx; the app's own listbox instead of a `<datalist>`, whose matching
   and look vary by browser): positions of active individuals, case variants listed once, each with its holders'
