@@ -4,7 +4,8 @@
 // see), and the editor used by the reminder form and by "Edit tasks…" on a shown reminder.
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { api } from "../api";
-import { EntityPicker, ErrorBox, Field, GuardedForm, Modal } from "../components";
+import { entityName } from "../names";
+import { EntityPicker, ErrorBox, Field, GuardedForm, Modal, SuggestInput } from "../components";
 import { Link } from "../router";
 import { navFor, useMe } from "../App";
 import { FUNCTIONS, functionFor } from "../functions";
@@ -234,13 +235,12 @@ function CompleteDialog({ r, t, open, onClose, onDone }: { r: any; t: any; open:
 
 /** A task's contact and "Opens" fields (a step's or the objective's). */
 function TaskFields({ d, label, entities, positions, put }: {
-  d: TaskDraft; label: string; entities: any[]; positions: string[]; put: (p: Partial<TaskDraft>) => void;
+  d: TaskDraft; label: string; entities: any[]; positions: { value: string; hint?: string }[]; put: (p: Partial<TaskDraft>) => void;
 }) {
   const ent = entities.find((e) => String(e.id) === d.contact_entity_id);
   const known = d.contact_kind === "ENTITY" && d.contact_entity_id && !ent && d.contact?.label
     ? { id: d.contact_entity_id, label: `${d.contact.label} (inactive)` } : null;
   const reportsByGroup = GROUPS.map((g) => ({ g, list: REPORTS.filter((r) => r.group === g.id) })).filter((x) => x.list.length);
-  const listId = `positions-${label.replace(/\W+/g, "-")}`;
   // "This person" or "Whoever is <position>" for a person with a position, either way round
   const p = d.contact_kind === "ENTITY" ? ent : d.contact_kind === "POSITION" && d.via_entity_id
     ? entities.find((e) => String(e.id) === d.via_entity_id) : undefined;
@@ -269,9 +269,9 @@ function TaskFields({ d, label, entities, positions, put }: {
         ) : null}
         {d.contact_kind === "POSITION" ? (
           <Field label="Position" hint="The active individuals with this position when the reminder is shown.">
-            <input list={listId} required maxLength={60} value={d.contact_position} aria-label={`${label} position`}
-                   onChange={(e) => put({ contact_position: e.target.value })} />
-            <datalist id={listId}>{positions.map((x) => <option key={x} value={x} />)}</datalist>
+            <SuggestInput required maxLength={60} value={d.contact_position} ariaLabel={`${label} position`}
+                          suggestions={positions} empty="No one has this position yet"
+                          onChange={(v) => put({ contact_position: v })} />
           </Field>
         ) : null}
         <Field label="Opens (optional)">
@@ -290,9 +290,9 @@ function TaskFields({ d, label, entities, positions, put }: {
       </div>
       {p && p.entity_type === "INDIVIDUAL" && pos ? (
         <div className="row" role="radiogroup" aria-label={`${label} contact is`}>
-          <label className="check"><input type="radio" name={`who-${listId}`} checked={!byPos}
+          <label className="check"><input type="radio" name={`who-${label.replace(/\W+/g, "-")}`} checked={!byPos}
             onChange={() => put({ contact_kind: "ENTITY", contact_entity_id: String(p.id), contact_position: "", via_entity_id: undefined })} /> This person ({p.display_name})</label>
-          <label className="check"><input type="radio" name={`who-${listId}`} checked={byPos}
+          <label className="check"><input type="radio" name={`who-${label.replace(/\W+/g, "-")}`} checked={byPos}
             onChange={() => put({ contact_kind: "POSITION", contact_position: pos, contact_entity_id: "", via_entity_id: String(p.id) })} /> Whoever is {pos}</label>
         </div>
       ) : null}
@@ -305,8 +305,16 @@ function TaskFields({ d, label, entities, positions, put }: {
 export function TaskEditor({ title, value, onChange }: { title: string; value: TaskDraft[]; onChange: (v: TaskDraft[]) => void }) {
   const [entities, setEntities] = useState<any[]>([]);
   useEffect(() => { api.get("/api/entities?status=active&limit=2000").then((es) => setEntities(es.filter((e: any) => !e.is_system)), () => setEntities([])); }, []);
-  const positions = Array.from(new Set(entities.filter((e) => e.entity_type === "INDIVIDUAL" && (e.position || "").trim())
-    .map((e) => e.position.trim()))).sort((a, b) => a.localeCompare(b));
+  // 2.4.0 polish: each position with who holds it, so "city" finds "City Clerk" and "Mayor of the City of …", and a
+  // holder's name finds their position (positions resolve case-insensitively, so case variants are listed once)
+  const held = new Map<string, { value: string; names: string[] }>();
+  entities.filter((e) => e.entity_type === "INDIVIDUAL" && (e.position || "").trim()).forEach((e) => {
+    const k = e.position.trim().toLowerCase();
+    if (!held.has(k)) held.set(k, { value: e.position.trim(), names: [] });
+    held.get(k)!.names.push(entityName(e));
+  });
+  const positions = [...held.values()].sort((a, b) => a.value.localeCompare(b.value))
+    .map((p) => ({ value: p.value, hint: p.names.sort((a, b) => a.localeCompare(b)).join(", ") }));
   const steps = value.filter((d) => !d.objective);
   const obj = value.find((d) => d.objective) || blank(true);
   const setSteps = (v: TaskDraft[]) => onChange([...v, obj]);

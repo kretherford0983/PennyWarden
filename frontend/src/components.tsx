@@ -603,6 +603,47 @@ export function EntityPicker({ label, entities, value, onChange, placeholder = "
   );
 }
 
+/** 2.4.0 polish: a free-text field with the app's own suggestion list (not the browser's datalist, which matches and
+ * looks different in every browser). A suggestion matches when the typed text appears anywhere in its value or its
+ * hint (e.g. the people holding a position); the typed text may also be kept as it is. */
+export function SuggestInput({ value, onChange, suggestions, ariaLabel, required, maxLength, empty = "No matches" }: {
+  value: string; onChange: (v: string) => void; suggestions: { value: string; hint?: string }[];
+  ariaLabel: string; required?: boolean; maxLength?: number; empty?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(-1);
+  const id = useRef(`si-${Math.random().toString(36).slice(2)}`).current;
+  const q = value.trim().toLowerCase();
+  const matches = suggestions.filter((s) => !q || s.value.toLowerCase().includes(q) || (s.hint || "").toLowerCase().includes(q))
+    .slice(0, 50);
+  const choose = (s: { value: string }) => { onChange(s.value); setOpen(false); setActive(-1); };
+  const onKey = (ev: React.KeyboardEvent) => {
+    if (ev.key === "ArrowDown") { ev.preventDefault(); setOpen(true); setActive((a) => Math.min(a + 1, matches.length - 1)); }
+    else if (ev.key === "ArrowUp") { ev.preventDefault(); setActive((a) => Math.max(a - 1, -1)); }
+    else if (ev.key === "Enter" && open && active >= 0 && matches[active]) { ev.preventDefault(); choose(matches[active]); }
+    else if (ev.key === "Escape" && open) { ev.preventDefault(); ev.stopPropagation(); setOpen(false); }
+  };
+  return (
+    <div className="entity-picker">
+      <input role="combobox" aria-expanded={open} aria-controls={`${id}-list`} aria-autocomplete="list" aria-label={ariaLabel}
+             autoComplete="off" required={required} maxLength={maxLength} value={value}
+             onChange={(e) => { onChange(e.target.value); setOpen(true); setActive(-1); }}
+             onFocus={() => setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 150)} onKeyDown={onKey} />
+      {open && (matches.length || q) ? (
+        <ul className="picker-list" role="listbox" id={`${id}-list`} aria-label={`${ariaLabel} suggestions`}>
+          {matches.map((s, i) => (
+            <li key={s.value} role="option" aria-selected={active === i} className={active === i ? "active" : ""}
+                onMouseDown={(ev) => { ev.preventDefault(); choose(s); }}>
+              {s.value}{s.hint ? <span className="muted"> · {s.hint}</span> : null}
+            </li>
+          ))}
+          {matches.length === 0 ? <li className="muted" aria-disabled="true">{empty}</li> : null}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
 function utcText(iso: string): string {
   return iso.replace("T", " ").replace("Z", " UTC");
 }
