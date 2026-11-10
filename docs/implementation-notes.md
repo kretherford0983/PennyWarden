@@ -2662,6 +2662,18 @@ Proposed:
 ACs **AC-REM-TASK-001..006** (as in the issue). Tests: `backend/tests/test_v240_reminder_tasks.py` (9). E2E: *#551:
 reminder tasks* (after the 1.6.7 recurring reminder test).
 
+**2.4.0 polish — reminder tasks from testing (Kyle, 2026-11-10).** UI only, no rule change:
+- The editor's **Contact** is labelled *(optional)*, like **Opens**.
+- Steps can be dragged by a handle (⠿, HTML5 drag and drop, as the invoice column order) to any place; ↑/↓ stay for the
+  keyboard. New steps get a stable client key (`TaskDraft.key`) so a moved row keeps its inputs.
+- `DashboardNotifications` passes `collapsible` to `ReminderItem`: a reminder with steps starts collapsed to its title,
+  due line and progress (details and the checklist hidden), with a ▸/▾ toggle (`aria-expanded`); one without steps has
+  no toggle and is shown in full. Not remembered between visits. The Notifications page is unchanged.
+- A contact's name opens `EntityViewDialog`, a read-only view of the entity (`GET /api/entities/{id}`), for users with
+  `register.view` (the same permission that sees contact details); others see the name as plain text.
+E2E: the *#551: reminder tasks* test drags a step there and back, checks the collapsed dashboard card, and opens the
+entity view.
+
 **2.4.0 — Dashboard FY Progress (#553, decided with Kyle 2026-11-09).** `services/fy_progress.py`, used by
 `dashboard.financial` (`budget_summary.progress`).
 - **Result so far:** the budget summary's income actual minus its expense actual, with *surplus* (≥ 0) or *deficit*.

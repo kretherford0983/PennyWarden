@@ -9,17 +9,27 @@ import { TaskEditor, TaskList, TasksDialog, draftsOf, tasksBody, type TaskDraft 
 type View = "due" | "upcoming" | "resolved";
 export const REMINDERS_CHANGED = "fm:reminders-changed"; // the bell in the top bar listens for this
 
-export function ReminderItem({ r, onResolve, onReopen, onEdit, onDelete, onEditTasks, onChanged }: {
+export function ReminderItem({ r, onResolve, onReopen, onEdit, onDelete, onEditTasks, onChanged, collapsible }: {
   r: any; onResolve?: (r: any) => void; onReopen?: (r: any) => void; onEdit?: (r: any) => void; onDelete?: (r: any) => void;
   onEditTasks?: (r: any) => void; onChanged?: () => void;   // 2.4.0 (#551)
+  collapsible?: boolean;   // 2.4.0 polish: the dashboard starts a reminder with steps collapsed
 }) {
+  const [open, setOpen] = useState(false);
   // build 13: the item's own flags come from the server; during maintenance mode nobody but an Administrator may act
   const { paused } = useMe();
   if (paused) { onResolve = onReopen = onEdit = onDelete = onEditTasks = undefined; r = { ...r, can_tick: false, can_untick: false }; }
+  // only a reminder with steps collapses (to its title, due line and progress); one without steps is always shown in full
+  const folds = !!collapsible && (r.tasks || []).some((t: any) => !t.objective);
+  const shut = folds && !open;
   return (
     <li className={`reminder reminder-${r.state.toLowerCase()}`} data-testid="reminder">
       <div className="reminder-main">
         <div className="reminder-title">
+          {folds ? (
+            <button type="button" className="small link reminder-toggle" aria-expanded={open} data-testid="reminder-toggle"
+                    aria-label={`${open ? "Hide" : "Show"} the steps of ${r.title}`} title={open ? "Hide the steps" : "Show the steps"}
+                    onClick={() => setOpen(!open)}>{open ? "▾" : "▸"}</button>
+          ) : null}
           <b>{r.title}</b>{" "}
           <span className={`pill ${r.scope === "ORGANIZATION" ? "pill-approved" : ""}`}>{r.scope === "ORGANIZATION" ? "Organization" : "Personal"}</span>
           {r.overdue_days > 0 ? <span className="badge red">{r.overdue_days} day{r.overdue_days === 1 ? "" : "s"} overdue</span> : null}
@@ -30,8 +40,8 @@ export function ReminderItem({ r, onResolve, onReopen, onEdit, onDelete, onEditT
           {r.link ? <> · <Link to={r.link.url}>{r.link.label}</Link></> : null}
           {r.repeat_label ? <> · <span data-testid="reminder-repeat">{r.repeat_label}</span></> : null}
         </div>
-        {r.details ? <div className="pre-wrap">{r.details}</div> : null}
-        <TaskList r={r} onChanged={onChanged} />{/* 2.4.0 (#551) */}
+        {r.details && !shut ? <div className="pre-wrap">{r.details}</div> : null}
+        <TaskList r={r} onChanged={onChanged} collapsed={shut} />{/* 2.4.0 (#551) */}
         {r.state === "RESOLVED" ? <div className="muted">Resolved {String(r.resolved_at).slice(0, 10)} by {r.resolved_by || "?"}{r.resolution_note ? ` — ${r.resolution_note}` : ""}</div> : null}
       </div>
       <div className="row-actions">
@@ -246,7 +256,7 @@ export function DashboardNotifications() {
   return (
     <section className="card" aria-labelledby="dash-notif-h">
       <div className="charts-head"><h2 id="dash-notif-h">Notifications ({items.length})</h2><Link to="/notifications">All reminders</Link></div>
-      <ul className="reminders">{items.map((r) => <ReminderItem key={r.id} r={r} onResolve={setResolving}
+      <ul className="reminders">{items.map((r) => <ReminderItem key={r.id} r={r} onResolve={setResolving} collapsible
         onChanged={() => { load(); window.dispatchEvent(new Event(REMINDERS_CHANGED)); }} />)}</ul>
       {resolving ? <ResolveDialog r={resolving} onClose={() => setResolving(null)} onDone={() => { setResolving(null); load(); window.dispatchEvent(new Event(REMINDERS_CHANGED)); }} /> : null}
     </section>
