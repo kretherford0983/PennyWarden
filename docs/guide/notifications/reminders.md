@@ -19,13 +19,14 @@ Every reminder is also a task: its **objective**, always the last one. A reminde
 letter*. Add them under **Steps** in the reminder form; **↑**/**↓** change their order (say, *D* before *C* once you've
 done it a few times). A reminder without steps looks and works as always.
 
-- Tick each step as it is done, in any order; the first open one is marked **Next**. Whoever can resolve the reminder
-  can tick them, once it is shown (set **Show days before** to start a long job early).
-- Ticking the **objective** (the reminder's own line, *completes the reminder*) — or **Resolve…** — completes it (you can
-  add a note). Ticking the last step doesn't complete it on its own. A repeating reminder's next one starts with every
-  task unticked.
-- Completing with steps still open needs a note; those steps are shown as *skipped*. Unticking a step (or the
-  objective) of a resolved reminder reopens it.
+- Mark each step completed (its checkbox) as it is done, in any order; the first open one is marked **Next**, and each
+  completed step shows *Marked completed by* who and when. Whoever can resolve the reminder can mark steps completed,
+  once it is shown (set **Show days before** to start a long job early).
+- Marking the **objective** completed (the reminder's own line, *completes the reminder*) — or **Resolve…** — finishes
+  the reminder (you can add a note). Completing the last step doesn't finish it on its own. A repeating reminder's next
+  one starts with no task completed.
+- Finishing with steps still open needs a note; those steps are shown as *skipped*. Clearing the completion of a step
+  (or of the objective) of a resolved reminder reopens it.
 - **Contact:** any task, the objective too, can name *an organization or person* (always that entity) or *whoever holds
   a position* (for example City Clerk — the active individuals with that position when the reminder is shown). Their
   email, phone and mailing address show on the task. Typing a position (e.g. *city clerk*) finds the person holding it

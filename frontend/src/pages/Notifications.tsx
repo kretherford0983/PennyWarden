@@ -112,7 +112,7 @@ export function ResolveDialog({ r, onClose, onDone }: { r: any; onClose: () => v
         <ErrorBox error={err} />
         {open.length ? (
           <div className="alert warn" role="note">
-            {open.length} step{open.length === 1 ? " isn't" : "s aren't"} ticked and will be shown as skipped: {open.map((t) => t.title).join(", ")}. Say why in the note.
+            {open.length} step{open.length === 1 ? " isn't" : "s aren't"} completed and will be shown as skipped: {open.map((t) => t.title).join(", ")}. Say why in the note.
           </div>
         ) : null}
         <Field label={open.length ? "Note" : "Note (optional)"} hint="Kept with the reminder and in the audit log."><input required={open.length > 0} maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} /></Field>

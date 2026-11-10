@@ -282,7 +282,7 @@ def resolve(db: Session, ctx, r: Reminder, note: str | None, stop_repeating: boo
     if not is_due(r):
         raise AppError(409, "REMINDER_NOT_DUE", "This reminder is not due yet; edit or delete it instead.")
     if tasks_svc.open_steps(r) and not (note or "").strip():   # 2.4.0 (#551): open steps are kept as skipped
-        raise validation("Some steps aren't ticked: add a note saying why the reminder is complete anyway.", "note")
+        raise validation("Some steps aren't completed: add a note saying why the reminder is complete anyway.", "note")
     before = snapshot(r)
     r.resolved_at, r.resolved_by_user_id, r.resolution_note = utcnow(), ctx.user.id, (note or "").strip() or None
     tasks_svc.mark(tasks_svc.objective(r), ctx.user.id)    # 2.4.0 (#551): resolving = ticking the objective
@@ -352,9 +352,9 @@ def tick(db: Session, ctx, r: Reminder, tid: int, note: str | None = None) -> Re
     if r.resolved_at is not None:
         raise AppError(409, "INVALID_STATE", "This reminder is already resolved.")
     if not is_due(r):
-        raise AppError(409, "REMINDER_NOT_DUE", "This reminder isn't shown yet, so its tasks can't be ticked.")
+        raise AppError(409, "REMINDER_NOT_DUE", "This reminder isn't shown yet, so its tasks can't be marked completed.")
     if t.done_at is not None:
-        raise AppError(409, "INVALID_STATE", "This task is already ticked.")
+        raise AppError(409, "INVALID_STATE", "This task is already marked completed.")
     tasks_svc.mark(t, ctx.user.id)
     db.flush()
     audit.record(db, ctx, "REMINDER_TASK_TICKED", "reminder", r.id, None,
@@ -371,7 +371,7 @@ def untick(db: Session, ctx, r: Reminder, tid: int) -> Reminder:
     if not _can_resolve(ctx, r):
         raise forbidden()
     if t.done_at is None:
-        raise AppError(409, "INVALID_STATE", "This task isn't ticked.")
+        raise AppError(409, "INVALID_STATE", "This task isn't marked completed.")
     if r.resolved_at is not None:
         reopen(db, ctx, r)
     before = tasks_svc.task_snapshot(t)

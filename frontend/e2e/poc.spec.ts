@@ -2768,22 +2768,23 @@ test("#551: reminder tasks - steps ticked one at a time, contacts by position, a
   // a Register User ticks steps; Next moves on; the function button opens the report
   await login(page, "ru1", "Brand-New-Pass-99");
   await page.getByRole("link", { name: /Notifications/ }).click();
-  await item.getByRole("checkbox", { name: "Tick Run the audit report" }).click();
+  await item.getByRole("checkbox", { name: "Mark Run the audit report completed" }).click();
   await expect(item.getByTestId("task-progress")).toHaveText("1 of 3 steps done");
+  await expect(task(0)).toContainText("Marked completed by ru1 on");
   await expect(task(1).getByTestId("task-next")).toBeVisible();
   await page.screenshot({ path: "e2e-screenshots/light-reminder-tasks.png" });
   await task(0).getByTestId("task-function").click();
   await expect(page.getByRole("heading", { name: "End of Year Audit", level: 1 })).toBeVisible();
   await page.getByRole("link", { name: /Notifications/ }).click();
-  await item.getByRole("checkbox", { name: "Tick Email the City Clerk" }).click();
-  await item.getByRole("checkbox", { name: "Tick Invoice the parks department" }).click();
+  await item.getByRole("checkbox", { name: "Mark Email the City Clerk completed" }).click();
+  await item.getByRole("checkbox", { name: "Mark Invoice the parks department completed" }).click();
   await expect(item.getByTestId("task-progress")).toHaveText("3 of 3 steps done");
   await expect(item.getByTestId("reminder-objective").getByTestId("task-next")).toBeVisible();   // the last step doesn't complete it
   // the objective does
-  await item.getByRole("checkbox", { name: "Tick Year-end audit for the trustees" }).click();
+  await item.getByRole("checkbox", { name: "Mark Year-end audit for the trustees completed" }).click();
   dlg = page.getByRole("dialog", { name: "Complete the reminder" });
   await dlg.getByLabel("Note (optional)").fill("Sent to the trustees");
-  await dlg.getByRole("button", { name: "Tick and complete" }).click();
+  await dlg.getByRole("button", { name: "Mark completed" }).click();
   await expect(item).toHaveCount(0);
   await page.getByRole("tab", { name: "Resolved" }).click();
   await expect(item).toContainText("Sent to the trustees");

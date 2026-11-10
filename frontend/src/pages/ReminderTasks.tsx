@@ -131,13 +131,13 @@ export function TaskList({ r, onChanged }: { r: any; onChanged?: () => void }) {
           data-testid={t.objective ? "reminder-objective" : "reminder-task"}>
         <label className="check">
           <input type="checkbox" checked={!!t.done} disabled={busy || !canToggle} onChange={() => toggle(t)}
-                 aria-label={`${t.done ? "Untick" : "Tick"} ${t.title}`} />
+                 aria-label={t.done ? `Clear completion of ${t.title}` : `Mark ${t.title} completed`} />
           <span className="task-title">{t.objective ? <b>{t.title}</b> : t.title}</span>
         </label>
         {t.objective && !t.done ? <span className="muted"> — completes the reminder </span> : null}
         {next && next.id === t.id ? <span className="pill pill-approved" data-testid="task-next">Next</span> : null}
         {!t.done && resolved ? <span className="pill">Skipped</span> : null}
-        {t.done && t.done_by ? <span className="muted"> · ticked by {t.done_by} on {String(t.done_at).slice(0, 10)}</span> : null}
+        {t.done && t.done_by ? <span className="muted"> · Marked completed by {t.done_by} on {String(t.done_at).slice(0, 10)}</span> : null}
         {t.function_id ? <> <FunctionButton id={t.function_id} /></> : null}
         <ContactLine c={t.contact} />
       </li>
@@ -166,17 +166,17 @@ function CompleteDialog({ r, t, open, onClose, onDone }: { r: any; t: any; open:
   return (
     <Modal title="Complete the reminder" onClose={onClose}>
       <GuardedForm onSubmit={submit}>
-        <p>Ticking <b>{t.title}</b> completes the reminder.{r.repeat_label && r.next_due ? ` The next one will be due ${r.next_due}.` : ""}</p>
+        <p>Marking <b>{t.title}</b> completed finishes the reminder.{r.repeat_label && r.next_due ? ` The next one will be due ${r.next_due}.` : ""}</p>
         {open.length ? (
           <div className="alert warn" role="note">
-            {open.length} step{open.length === 1 ? " isn't" : "s aren't"} ticked and will be shown as skipped: {open.map((x) => x.title).join(", ")}. Say why in the note.
+            {open.length} step{open.length === 1 ? " isn't" : "s aren't"} completed and will be shown as skipped: {open.map((x) => x.title).join(", ")}. Say why in the note.
           </div>
         ) : null}
         <ErrorBox error={err} />
         <Field label={open.length ? "Note" : "Note (optional)"} hint="Kept with the reminder and in the audit log.">
           <input required={open.length > 0} maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} />
         </Field>
-        <div className="actions"><button type="button" onClick={onClose}>Cancel</button><button className="primary" type="submit">Tick and complete</button></div>
+        <div className="actions"><button type="button" onClick={onClose}>Cancel</button><button className="primary" type="submit">Mark completed</button></div>
       </GuardedForm>
     </Modal>
   );
@@ -267,7 +267,7 @@ export function TaskEditor({ title, value, onChange }: { title: string; value: T
   return (
     <fieldset className="task-editor" data-testid="task-editor">
       <legend>Steps (optional)</legend>
-      <p className="hint">Steps are ticked one at a time, in any order; the reminder itself is the last task, and ticking it completes the reminder.</p>
+      <p className="hint">Steps are marked completed one at a time, in any order; the reminder itself is the last task, and marking it completed finishes the reminder.</p>
       {steps.map((d, i) => (
         <div key={d.id ?? `new-${i}`} className="task-edit" data-testid="task-edit">
           <div className="row fields">
@@ -276,7 +276,7 @@ export function TaskEditor({ title, value, onChange }: { title: string; value: T
             <div className="row task-edit-actions">
               <button type="button" className="small" disabled={i === 0} aria-label={`Move step ${i + 1} up`} onClick={() => move(i, -1)}>↑</button>
               <button type="button" className="small" disabled={i === steps.length - 1} aria-label={`Move step ${i + 1} down`} onClick={() => move(i, 1)}>↓</button>
-              <button type="button" className="small danger" disabled={d.done} title={d.done ? "Untick it first." : undefined}
+              <button type="button" className="small danger" disabled={d.done} title={d.done ? "Clear its completion first." : undefined}
                       aria-label={`Remove step ${i + 1}`} onClick={() => setSteps(steps.filter((_x, j) => j !== i))}>Remove</button>
             </div>
           </div>
@@ -305,7 +305,7 @@ export function TasksDialog({ r, onClose, onSaved }: { r: any; onClose: () => vo
   return (
     <Modal title={`Tasks — ${r.title}`} onClose={onClose} wide>
       <GuardedForm onSubmit={submit}>
-        <p className="hint">The reminder is shown, so only its tasks can change. Ticked tasks keep their tick.</p>
+        <p className="hint">The reminder is shown, so only its tasks can change. Completed tasks stay completed.</p>
         <ErrorBox error={err} />
         <TaskEditor title={r.title} value={drafts} onChange={setDrafts} />
         <div className="actions"><button type="button" onClick={onClose}>Cancel</button><button className="primary" type="submit">Save tasks</button></div>

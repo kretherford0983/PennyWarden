@@ -2618,6 +2618,8 @@ the UI always shows the name users see (e.g. *End of Year Audit*, never `audit`)
 so with its defaults (#528). The server's list (`FUNCTION_IDS`) is checked against the frontend by a test. Restore: tasks
 travel with *Reminders*; a fixed contact whose entity isn't there is cleared and reported; reinitialize clears personal
 reminders' fixed contacts (organization reminders and their tasks are deleted).
+UI wording (Kyle, 2026-11-10): users read *mark completed* / *Marked completed by … on …* / *clear its completion*,
+never *tick*; the code keeps `tick`/`untick`.
 Confirmed by Kyle (2026-11-09):
 - **BR-REM-TASK-001** a reminder's steps (one level, up to 25 tasks with the objective; personal reminders too) are
   ticked in any order once it is shown, by whoever may resolve it; each tick records who and when; the first open
