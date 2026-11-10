@@ -2744,7 +2744,18 @@ test("#551: reminder tasks - steps ticked one at a time, contacts by position, a
   await dlg.getByRole("button", { name: "Add a step" }).click();
   await dlg.getByRole("textbox", { name: "Step 3 name" }).fill("Invoice the parks department");
   await dlg.getByRole("combobox", { name: "Step 3 contact" }).selectOption("POSITION");
-  await dlg.getByRole("combobox", { name: "Step 3 position" }).fill("Parks Director");
+  // 2.4.0 polish: the position field suggests the positions held, matched anywhere (or by holder), with who holds them
+  const posBox = dlg.getByRole("combobox", { name: "Step 3 position" });
+  const posList = page.getByRole("listbox", { name: "Step 3 position suggestions" });
+  await posBox.fill("clerk");
+  await expect(posList.getByRole("option", { name: "City Clerk · Casey Clerk" })).toBeVisible();
+  await posBox.fill("casey");
+  await posList.getByRole("option", { name: /^City Clerk/ }).click();
+  await expect(posBox).toHaveValue("City Clerk");
+  await posBox.fill("Parks Director");
+  await expect(posList).toContainText("No one has this position yet");
+  await posBox.press("Escape");
+  await expect(posList).toHaveCount(0);
   await dlg.getByRole("combobox", { name: "Step 3 opens" }).selectOption({ label: "Invoices" });
   // the reminder itself is the last task, pinned: move step 3 up past step 2 (refining the order)
   await expect(dlg.getByTestId("task-edit-objective")).toContainText("Last: Year-end audit for the trustees");
