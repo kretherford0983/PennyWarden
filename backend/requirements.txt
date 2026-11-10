@@ -51,21 +51,21 @@ pillow==13.0.0
     #   reportlab
 pycparser==3.11
     # via cffi
-pydantic==2.14.2
+pydantic==2.14.3
     # via
     #   -r requirements.in
     #   fastapi
-pydantic-core==2.50.2
+pydantic-core==2.50.4
     # via pydantic
 pyotp==2.10.0
     # via -r requirements.in
 pypdf==6.21.4
     # via -r requirements.in
-pypdfium2==5.14.0
+pypdfium2==5.15.0
     # via -r requirements.in
 python-docx==1.2.0
     # via -r requirements.in
-python-multipart==0.0.32
+python-multipart==0.0.33
     # via -r requirements.in
 python-pptx==1.0.2
     # via -r requirements.in
@@ -73,7 +73,7 @@ reportlab==5.1.0
     # via -r requirements.in
 segno==1.6.6
     # via -r requirements.in
-sqlalchemy==2.1.6
+sqlalchemy==2.1.8
     # via
     #   -r requirements.in
     #   alembic

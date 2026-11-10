@@ -10,13 +10,13 @@
 # Check for advisories with: pip-audit -r backend/requirements.txt
 fastapi==0.162.0
 starlette==1.10.0
-pydantic==2.14.2
+pydantic==2.14.3
 uvicorn==0.54.0
-SQLAlchemy==2.1.6
+SQLAlchemy==2.1.8
 alembic==1.20.1
 argon2-cffi==25.1.0
 cryptography==50.0.2
-python-multipart==0.0.32
+python-multipart==0.0.33
 pillow==13.0.0
 reportlab==5.1.0
 pypdf==6.21.4
@@ -25,7 +25,7 @@ segno==1.6.6
 # v1.6.0 CR-033: linear-time regular expressions for the fundraiser filter (no catastrophic backtracking)
 google-re2==1.1.20251105
 # 2.0.0 build 11 (#217): PDFium renders the Payments Setup previews as pictures (Safari shows inline PDFs blank)
-pypdfium2==5.14.0
+pypdfium2==5.15.0
 # 2.1.0 (#275): the fundraiser stakeholder report as an editable Word document (.docx); MIT, uses lxml
 python-docx==1.2.0
 # 2.1.0 (#276): the fundraiser presentation (.pptx with native charts); MIT, XlsxWriter (BSD) writes the chart data
