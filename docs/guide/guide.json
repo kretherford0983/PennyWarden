@@ -434,7 +434,7 @@
         {
           "id": "reminders",
           "title": "Reminders",
-          "summary": "Creating, resolving and repeating reminders."
+          "summary": "Creating, resolving and repeating reminders, and their steps."
         }
       ]
     },

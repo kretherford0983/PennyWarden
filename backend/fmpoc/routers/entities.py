@@ -37,7 +37,8 @@ def list_entities(
         q = q.where(or_(Entity.organization_name.ilike(like, escape="\\"), Entity.first_name.ilike(like, escape="\\"),
                         Entity.last_name.ilike(like, escape="\\"), full.ilike(like, escape="\\"),
                         Entity.display_name_custom.ilike(like, escape="\\"),
-                        Entity.entity_number.ilike(like, escape="\\"), Entity.email.ilike(like, escape="\\")))
+                        Entity.entity_number.ilike(like, escape="\\"), Entity.email.ilike(like, escape="\\"),
+                        Entity.position.ilike(like, escape="\\")))     # 2.4.0 (#551): and the position
     col = SORTS[sort]
     q = q.order_by(col.desc() if direction == "desc" else col.asc(), Entity.id).limit(limit)
     return [svc.out(e) for e in db.scalars(q)]

@@ -196,9 +196,9 @@ def main(base: str) -> dict:
             body.update(address_line1=street, city=city, state_region="OH", postal_code="45999")
         return bm.post("/api/entities", body)
 
-    def person(name, position=None):
+    def person(name, position=None, **more):
         return bm.post("/api/entities", {"entity_type": "INDIVIDUAL", "primary_contact": name, "position": position,
-                                         "confirmations": ["DUPLICATE_ENTITY"]})
+                                         "confirmations": ["DUPLICATE_ENTITY"], **more})
 
     bank = org("First River Credit Union", bank=True)
     e = {n: org(n) for n in ("Harmony Music Supply", "Valley Coach Lines", "Stitchworks Uniforms",
@@ -207,6 +207,9 @@ def main(base: str) -> dict:
     person("Dana Whitfield", "Treasurer")
     person("Marcus Ortega", "President")
     person("Priya Raman", "Audit Committee Chair")
+    # 2.4.0 (#551): a reminder task names the City Clerk by position (synthetic contact)
+    person("Jordan Ellis", "City Clerk", email="clerk@example.org", address_line1="100 Civic Plaza",
+           city="Riverside", state_region="OH", postal_code="45999")
     acct = {}
     for key, name, kind, number, opening, primary in (
             ("chk", "Operating Checking", "CHECKING", "000123456789", "8450.00", True),
@@ -340,6 +343,20 @@ def main(base: str) -> dict:
                                "due_date": month_end.isoformat(), "notify_days_before": 14,
                                "link_type": "FISCAL_YEAR", "link_id": fy["id"]})
     bm.post("/api/reminders", {"scope": "PERSONAL", "title": "Order deposit slips", "due_date": today.isoformat()})
+    # 2.4.0 (#551): reminders with tasks - a checklist part done, a contact by position, a report to open
+    letter = bm.post("/api/reminders", {
+        "scope": "ORGANIZATION", "title": "Send the annual holiday letter", "due_date": today.isoformat(),
+        "repeat_every": 1, "repeat_unit": "YEAR",
+        "tasks": [{"title": "Prepare the letter"}, {"title": "Receive approvals from the board"},
+                  {"title": "Print"}, {"title": "Mail"}]})
+    for t in letter["tasks"][:2]:
+        ru.post(f"/api/reminders/{letter['id']}/tasks/{t['id']}/tick", {})
+    bm.post("/api/reminders", {
+        "scope": "ORGANIZATION", "title": "Year-end audit for the trustees", "due_date": today.isoformat(),
+        "repeat_every": 1, "repeat_unit": "YEAR",
+        "tasks": [{"title": "Run the year-end audit report", "function_id": "report:audit"},
+                  {"title": "Email the report to the City Clerk", "contact_kind": "POSITION",
+                   "contact_position": "City Clerk"}]})
     bm.post("/api/reminders", {"scope": "ORGANIZATION", "title": "Renew the liability insurance",
                                "due_date": (today + dt.timedelta(days=75)).isoformat(), "notify_days_before": 30,
                                "repeat_every": 1, "repeat_unit": "YEAR"})
