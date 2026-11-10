@@ -2690,14 +2690,17 @@ reminder tasks* (after the 1.6.7 recurring reminder test).
 - Steps can be dragged by a handle (⠿, HTML5 drag and drop, as the invoice column order) to any place; ↑/↓ stay for the
   keyboard. New steps get a stable client key (`TaskDraft.key`) so a moved row keeps its inputs.
 - `DashboardNotifications` passes `collapsible` to `ReminderItem`: a reminder with steps starts collapsed to its title,
-  due line and progress (details and the checklist hidden), with a ▸/▾ toggle (`aria-expanded`); one without steps has
+  due line and progress (details and the checklist hidden), with a ▸/▾ toggle (`aria-expanded`; 20px, sub-text colour, not link-styled — Kyle 2026-11-10); one without steps has
   no toggle and is shown in full. Not remembered between visits. The Notifications page is unchanged.
 - The Position field is `SuggestInput` (components.tsx; the app's own listbox instead of a `<datalist>`, whose matching
   and look vary by browser): positions of active individuals, case variants listed once, each with its holders'
   names; a suggestion matches the typed text anywhere in the position or the names. Free text is still allowed (a
   position nobody holds yet shows *No one has this position yet*). The organization or person field (`EntityPicker`)
   already matched any part of the name, number or position.
-- A contact's name opens `EntityViewDialog`, a read-only view of the entity (`GET /api/entities/{id}`), for users with
+- A contact's name opens `EntityViewDialog`, a read-only view of the entity (`GET /api/entities/{id}`) that lists every
+  field of the entity form in its order and with its labels, blank ones as "—" (Kyle, 2026-11-10; EIN only for
+  organizations, Position only for individuals, Tax-exempt when the Invoices module is on or it is set, the mailing
+  fields or *Same as Address*), for users with
   `register.view` (the same permission that sees contact details); others see the name as plain text.
 E2E: the *#551: reminder tasks* test drags a step there and back, checks the collapsed dashboard card, and opens the
 entity view.
