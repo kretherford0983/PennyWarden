@@ -396,9 +396,8 @@ td.ua { max-width: 320px; overflow: hidden; text-overflow: ellipsis; white-space
 .task-edit.drop-after { box-shadow: inset 0 -3px 0 var(--primary); }
 /* 2.4.0 polish: a reminder card with steps starts collapsed on the dashboard */
 /* (Kyle 2026-11-10: bigger, not link-styled - the sub-text colour, not underlined) */
-button.link.reminder-toggle { min-width: 1.4em; font-size: 20px; line-height: 1; padding: 0 4px 0 0; color: var(--muted);
-  text-decoration: none; vertical-align: -2px; }
-button.link.reminder-toggle:hover, button.link.reminder-toggle:focus-visible { color: var(--text); }
+/* the same small ▸/▾ button as the Register's expandable rows */
+button.small.reminder-toggle { margin-right: 6px; }
 .task-person button.entity-link { height: auto; min-height: 0; font: inherit; color: var(--link); }   /* opens the entity, read only */
 /* v1.6.4 CR-037 */
 .pill-fr-cancelled { background: var(--err-bg); color: var(--danger); border-color: var(--err-border); }
