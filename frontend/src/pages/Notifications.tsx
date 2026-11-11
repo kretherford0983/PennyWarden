@@ -26,7 +26,7 @@ export function ReminderItem({ r, onResolve, onReopen, onEdit, onDelete, onEditT
       <div className="reminder-main">
         <div className="reminder-title">
           {folds ? (
-            <button type="button" className="small link reminder-toggle" aria-expanded={open} data-testid="reminder-toggle"
+            <button type="button" className="small reminder-toggle" aria-expanded={open} data-testid="reminder-toggle"
                     aria-label={`${open ? "Hide" : "Show"} the steps of ${r.title}`} title={open ? "Hide the steps" : "Show the steps"}
                     onClick={() => setOpen(!open)}>{open ? "▾" : "▸"}</button>
           ) : null}
