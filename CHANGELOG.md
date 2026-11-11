@@ -191,7 +191,8 @@ PennyWarden 2.4.0 (in progress).
   field. Steps stay editable while the reminder is shown. Existing reminders become reminders with just their objective: nothing changes until
   steps are added. The **Entities** list now shows each person's **position**, and its **Search** finds entities by
   position as well as name, number or email. On the **Dashboard**, a reminder with steps starts collapsed to its title,
-  due date and progress (*1 of 4 steps done*); **▸** shows its steps and **▾** hides them again. A reminder without
+  due date and progress (*1 of 4 steps done*); the **▸** button (the same one as the Register's expandable
+  rows) shows its steps and **▾** hides them again. A reminder without
   steps is always shown in full, and the Notifications page shows every reminder in full.
 
 ### Dashboard
