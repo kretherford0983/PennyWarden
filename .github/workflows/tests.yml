@@ -62,7 +62,12 @@ jobs:
       - name: E2E UI tests (Playwright)
         run: |
           cd frontend
-          npx playwright install --with-deps chromium
+          # The runner image already has the libraries Chromium needs; --with-deps only added fonts through apt, so
+          # an Ubuntu mirror outage (2026-11-11: DNS failures for *.ubuntu.com) failed the whole job. Download the
+          # browser alone, then try the system packages briefly and carry on without them if apt can't reach Ubuntu.
+          npx playwright install chromium
+          timeout 120 npx playwright install-deps chromium \
+            || echo "::warning::playwright install-deps failed or timed out (Ubuntu mirrors?); running E2E without it"
           FM_PYTHON=python npx playwright test
       - uses: actions/upload-artifact@v7
         if: always()
