@@ -2810,6 +2810,12 @@ test("#551: reminder tasks - steps ticked one at a time, contacts by position, a
   await expect(dlg.getByTestId("entity-view")).toContainText("City Clerk");
   await expect(dlg.getByTestId("entity-view")).toContainText("casey@example.org");
   await expect(dlg.getByRole("textbox")).toHaveCount(0);
+  // every field of the entity form is listed, a blank one as "—"
+  const view = dlg.getByTestId("entity-view");
+  for (const f of ["Entity number", "First name", "Last name", "Display name", "Position in the organization", "Phone",
+                   "Address line 1", "Address line 2", "City", "State/Region", "Postal code", "Country", "Financial institution", "Notes"])
+    await expect(view.locator("dt", { hasText: new RegExp(`^${f}$`) })).toHaveCount(1);
+  await expect(view.locator("dd", { hasText: /^—$/ }).first()).toBeVisible();
   await dlg.locator(".actions").getByRole("button", { name: "Close" }).click();
   await expect(dlg).toHaveCount(0);
   await page.screenshot({ path: "e2e-screenshots/light-reminder-tasks.png" });
