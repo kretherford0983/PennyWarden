@@ -34,7 +34,7 @@ A step's **Contact** and **Opens** are both optional. A reminder without steps l
   *City Clerk* and *Mayor of the City of …*, each position listed with who holds it (typing a holder's name finds their
   position too), so you don't need to remember exactly how it was entered. Their
   name, email (with **Copy**), phone and mailing address show on the task; click the name to see the whole entity,
-  read only. Typing a position (e.g. *city clerk*) finds the person holding it
+  read only — every field of the entity form, with *—* for any that are blank. Typing a position (e.g. *city clerk*) finds the person holding it
   and picks *Whoever is City Clerk*; switch to *This person* to keep that person instead. If nobody active holds the
   position, or the person was inactivated, the task says so: find the contact and edit the task.
 - **Opens:** a task can open a report (for example **End of Year Audit**) or a page with one click; a report opens
