@@ -16,6 +16,7 @@
   <header class="top">
     <a class="brand" href="#"><img src="favicon.svg" alt="" width="28" height="28"> PennyWarden</a>
     <nav aria-label="Page">
+      <a href="#invoices">Invoices</a>
       <a href="#payments">Payments</a>
       <a href="#features">Features</a>
       <a href="#download">Download</a>
@@ -33,9 +34,10 @@
         <p class="lead">PennyWarden is free bookkeeping for <b>clubs, booster groups, associations and other small
           organizations</b> that keep a checkbook, a budget and an annual audit. It runs on your own Windows PC, Mac or
           Linux server. Your data stays in one folder you control — no subscription, no cloud account.</p>
-        <p class="new"><span class="tag">New in 2.1</span> Fundraiser reports for your committee — a stakeholder report
-          and a slide deck, the same event across years — a Budget Review and Planning Sheet for next year's budget, and
-          the optional <b>Donations</b> module for donation receipt letters.</p>
+        <p class="new"><span class="tag">New in 2.4</span> <a href="#invoices"><b>Invoices</b></a> — bill members and
+          customers from your own product list, email or print the invoice, and record the payment into the right
+          budget. Also new: <b>Events &amp; Fundraisers</b>, reminders with steps to tick off, one organization logo for
+          everything you print, and a <a href="guide/">user guide</a> built into the app.</p>
         <p class="cta"><a class="button primary" href="#download">Download PennyWarden</a>
           <span class="muted" id="hero-version"></span></p>
       </div>
@@ -47,6 +49,31 @@
       <div><h2>What did we plan?</h2><p>Income and expense budgets for each Fiscal Year, with sub-budgets where you need detail, approved and locked with the year.</p></div>
       <div><h2>What actually happened?</h2><p>One register per bank account. Split a check across budgets, record transfers once, and see the bank's balance next to everything you have written.</p></div>
       <div><h2>Can we prove it?</h2><p>Attach the receipt to each transaction. One printable audit report holds the budgets and every transaction followed by its documents.</p></div>
+    </section>
+
+    <section id="invoices" class="payments">
+      <p class="tag">New in 2.4</p>
+      <h2>Invoices: from the bill you send to the money in the bank</h2>
+      <p class="lead">Membership dues, instrument rentals, t-shirts, sponsorships: pick the products, and PennyWarden
+        adds the sales tax, numbers the invoice and prints or emails it. When the check arrives, the payment is recorded
+        once and lands in the right budget.</p>
+      <div class="pair">
+        <figure><img class="shot" src="screenshots/invoices.png" width="1280" height="590" loading="lazy"
+             alt="The Invoices page: who does what, and a list of invoices with their customer, due date, status and total">
+          <figcaption>Every invoice with its status (Draft, Sent, Paid), and who does what.</figcaption></figure>
+        <figure><img class="shot" src="screenshots/invoice.png" width="1280" height="460" loading="lazy"
+             alt="An invoice: a membership and a taxable t-shirt, each with its budget, the sales tax and the total">
+          <figcaption>Each line already knows its budget; sales tax is added only where it applies.</figcaption></figure>
+      </div>
+      <ul class="facts">
+        <li><b>Bill from your own catalog.</b> Products with their price, unit and budget; sales tax rates you can combine, tax-exempt customers, and discounts that print their reason. Numbers follow your pattern and are never reused.</li>
+        <li><b>Your invoice, your look.</b> Choose the font, colors, logo and columns with a live preview, and add a tear-off payment stub. Print it or email the PDF through your own mail server, one at a time or a whole batch of dues at once.</li>
+        <li><b>Payments land in the right budget.</b> One check can pay several invoices; an overpayment is refunded or kept as the customer's credit; a deposit already in the register can be applied to an invoice.</li>
+        <li><b>Know who still owes what.</b> Overdue invoices on the dashboard, plus open invoices, aging, customer statements, sales tax collected and sales reports to share with your board.</li>
+      </ul>
+      <p class="small">The Invoices module is optional: an Administrator turns it on in System/About. A new
+        <b>Invoice Manager</b> role decides what is billed, while Register Users receive the money, so no one person
+        has to handle both. <a href="guide/">See the Invoices chapter in the user guide</a>.</p>
     </section>
 
     <section id="payments" class="payments">
@@ -85,16 +112,17 @@
       </div>
       <div class="feature">
         <img src="screenshots/audit-report-transaction.png" alt="An audit report page: a transaction with its receipt reproduced beneath it" loading="lazy">
-        <div><h3>Audit-ready reports</h3><p>The End of Year Audit report, the Fiscal Year Close report and the Financial Flow Report for your board: printable PDFs, built from what is already in the books.</p></div>
+        <div><h3>Audit-ready reports</h3><p>The End of Year Audit report, the Fiscal Year Close report, quarterly and annual reports and the Financial Flow Report for your board, all in one Reports catalog: printable PDFs, built from what is already in the books. The dashboard shows how the year is going and where it is likely to end, and the user guide explains how every figure is worked out.</p></div>
       </div>
       <div class="feature">
         <img src="screenshots/fundraiser.png" alt="A fundraiser with income, expenses, the net result and charts" loading="lazy">
-        <div><h3>Fundraisers, donations and reminders</h3><p>Follow an event from the first poster to the last deposit, with a printable cash count sheet and a report for the committee. Thank donors with a receipt letter printed from the deposit. Reminders — once or repeating — keep the treasurer's duties from being forgotten when the treasurer changes.</p></div>
+        <div><h3>Events, fundraisers, donations and reminders</h3><p>Follow an event or a fundraiser from the first poster to the last deposit, with a printable cash count sheet and a report for the committee. Thank donors with a receipt letter, printed or emailed, and send year-end giving statements. Reminders, once or repeating and with steps to tick off, keep the treasurer's duties from being forgotten when the treasurer changes.</p></div>
       </div>
       <ul class="facts">
         <li><b>Your data, your computer.</b> One folder, encrypted backups you can schedule, moves between Windows, Mac and Linux.</li>
         <li><b>Safe by default.</b> Encrypted bank account numbers, two-step sign-in, and an audit log of every change in plain words, exportable for your auditors.</li>
         <li><b>One person or a committee.</b> Run it alone on a laptop, or for several people on a Linux or Windows server with separate roles — installed with one command on either.</li>
+        <li><b>Help on every screen.</b> The <b>?</b> opens the user guide at the page for what you are looking at. It is part of the app, so it matches your version and works offline.</li>
         <li><b>Easy to look after.</b> Administrators get a security overview, signed-in sessions, system health, maintenance mode and settings that can be changed in the application.</li>
         <li><b>Free and open.</b> Licensed under the AGPL-3.0; the source code is on GitHub.</li>
       </ul>
