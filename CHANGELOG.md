@@ -292,6 +292,9 @@ PennyWarden 2.4.0 (in progress).
   TypedDicts and pydantic dataclasses with `extra="allow"`). PennyWarden uses neither aliases nor those types - its
   request models refuse unknown fields - so it was not affected; updated as a precaution. Also XlsxWriter 3.3.1 (used
   for the presentations' chart data) and, for the tests only, pytest 9.2.0. No change in how PennyWarden behaves.
+- **opentelemetry-api 1.45.2 (CVE-2026-126360).** A crafted `traceparent` value could make the W3C trace-context
+  propagator spend a very long time matching it. The package comes in with FastAPI; PennyWarden never extracts trace
+  context, so it was not affected. Updated so the security check passes. No change in how PennyWarden behaves.
 
 ### Under the hood
 - **Faster checks (CI).** The automatic checks on every pull request run in three jobs side by side (backend tests,
