@@ -2,15 +2,26 @@
 
 Versions are `Breaking.Major.Minor` from 1.6.0 (docs/branching.md).
 
-## 2.4.0 — unreleased
-PennyWarden 2.4.0 (in progress).
+## 2.4.1 — unreleased
+Product page and README update for 2.4.0. No database migration and no change to the application; going back to
+2.4.0 is just reinstalling it.
+- **pennywarden.org shows what is new in 2.4.** The page still highlighted 2.1. It now leads with the Invoices module,
+  has an **Invoices** section with two screenshots next to Payments, and mentions Events & Fundraisers, reminders with
+  steps, emailed donation receipts, the Reports catalog and help on every screen. The README's "New in" box, feature
+  sections and feature table are brought up to date the same way.
+- **2.4.0 release notes:** the opening line and the first Invoices entry still described the Invoices module as it
+  was in an early test build; both now describe the released module.
+
+## 2.4.0 — 2026-11-14
+PennyWarden 2.4.0 adds the optional **Invoices** module, Events & Fundraisers, reminders with steps, one organization
+logo for everything that prints, and the user guide built into the app.
 
 ### Invoices
 - **The Invoices module and the Invoice Manager role (#251).** An Administrator turns on **Invoices** under
   System/About → General (off by default; audited). A new Financial role, **Invoice Manager**, decides what is billed;
-  give it under Users, alone or with the other Financial roles (never with Administrator or Auditor). The invoice
-  pages themselves arrive with the next 2.4.0 test builds; for now **Invoices** explains who does what, and
-  **Invoices Setup** (Administrator) is a placeholder.
+  give it under Users, alone or with the other Financial roles (never with Administrator or Auditor). The
+  **Invoices** page explains who does what, and **Invoices Setup** (Administrator) holds numbering, terms, custom
+  fields and the invoice PDF.
 - **Invoices (#253).** Invoice Managers create invoices for a customer (an entity) from catalog products: enter the
   quantity, and the product's description and price are copied onto the line. Discounts - a fixed amount or a
   percentage, on a line or the whole invoice - need a reason that is printed on the invoice; a whole-invoice discount
