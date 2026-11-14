@@ -122,7 +122,7 @@ test("AC-INIT-001..007: fresh install wizard bootstraps a working Administrator"
   // 1.9.0 (#54): on a local install the first user holds every role - one account runs the organization's books
   const nav = page.getByRole("navigation", { name: "Main navigation" });
   await expect(nav.getByRole("link")).toHaveText(["Dashboard", "Fiscal Years", "Budgets", "Bank Accounts", "Register",
-    "Entities", "Reports", "Users", "Audit Log", "System/About"]);
+    "Entities", "Reports", "Users", "Audit Log", "System/About", "Help"]);   // 2.4.0 (#473): Help is last for every role
   await nav.getByRole("link", { name: "Users" }).click();
   const row = page.getByRole("row", { name: /admin/ });
   await expect(row).toContainText("COMBINED");
@@ -144,7 +144,7 @@ test("AC-INIT-001..007: fresh install wizard bootstraps a working Administrator"
   await expect(ed).toHaveCount(0);
   await page.reload();
   await expect(page.getByRole("heading", { name: "Users" })).toBeVisible();
-  await expect(nav.getByRole("link")).toHaveText(["Dashboard", "Users", "Audit Log", "System/About"]);
+  await expect(nav.getByRole("link")).toHaveText(["Dashboard", "Users", "Audit Log", "System/About", "Help"]);
   await expect(page.getByRole("row", { name: /admin/ })).toContainText("ADMINISTRATOR");
   await nav.getByRole("link", { name: "Audit Log" }).click();
   await expect(page.locator(".audit-action", { hasText: "Application initialized" })).toBeVisible();   // 2.0.0 (#133)
@@ -344,6 +344,50 @@ test("AC-FY-VIS-006 / AC-REG-001 / AC-SEC-011: Register User allocates to Draft 
   await row.getByRole("button", { name: /Details/ }).click();
   await expect(page.getByRole("cell", { name: "FY2027", exact: true })).toBeVisible();
   expect(await page.evaluate(() => (window as any).__xss)).toBeUndefined();
+});
+
+test("#473 / #488 AC-DOC-001..004: Help opens the bundled book at the page for this screen, for every role, with no outside requests", async ({ page }) => {
+  const outside: string[] = [];
+  page.on("request", (r) => { const h = new URL(r.url()).hostname; if (!["127.0.0.1", "localhost"].includes(h)) outside.push(r.url()); });
+  await login(page, "ru1");
+  const nav = page.getByRole("navigation", { name: "Main navigation" });
+  await nav.getByRole("link", { name: "Register" }).click();
+  // AC-DOC-001: the top bar's help opens the guide page about this screen, with its version
+  await page.getByRole("link", { name: "Help for this page" }).click();
+  await expect(page).toHaveURL(/\/help\/register\/read-register$/);
+  const doc = page.getByTestId("help-doc");
+  await expect(doc.getByRole("heading", { level: 1, name: "Reading the register" })).toBeVisible();
+  await expect(doc.getByText(/^Applies to PennyWarden \d+\.\d+$/)).toBeVisible();
+  await expect(doc.locator("img.help-img").first()).toBeVisible();                     // #488: pictures in the page
+  // the next page of the chapter, and the chapter itself
+  await doc.getByRole("link", { name: /Entering a transaction →/ }).click();
+  await expect(page).toHaveURL(/\/help\/register\/enter-transaction$/);
+  await doc.getByRole("navigation", { name: "Breadcrumb" }).getByRole("link", { name: "Register" }).click();
+  await expect(doc.getByRole("heading", { level: 1, name: "Register" })).toBeVisible();
+  // #488: search
+  await doc.getByLabel("Search the guide").fill("void");
+  await doc.getByRole("button", { name: "Search" }).click();
+  await expect(page.getByTestId("help-results").getByRole("link", { name: "Voiding or deleting a transaction" })).toBeVisible();
+  // the 2.4.0 address of a reference guide still opens it
+  await page.goto("/help/check-printing");
+  await expect(doc.getByRole("heading", { level: 1, name: "Check printing" })).toBeVisible();
+  // AC-DOC-002: Help in the menu opens the contents
+  await nav.getByRole("link", { name: "Help", exact: true }).click();
+  await expect(doc.getByRole("heading", { level: 1, name: "PennyWarden user guide" })).toBeVisible();
+  await expect(doc.getByRole("link", { name: "Setting up sales tax" })).toBeVisible();
+  // AC-DOC-003: the guide came from the app itself
+  expect(outside).toEqual([]);
+  await logout(page);
+
+  await login(page, "admin");
+  await expect(nav.getByRole("link", { name: "Help", exact: true })).toBeVisible();
+  await nav.getByRole("link", { name: "Users" }).click();
+  await page.getByRole("link", { name: "Help for this page" }).click();
+  await expect(page).toHaveURL(/\/help\/users\/manage-users$/);
+  // AC-DOC-004: on a module the Administrator can't open, help points at the contents, not the module
+  await page.goto("/register");
+  await expect(page.getByText("You are not authorized to view this module.")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Help for this page" })).toHaveAttribute("href", "/help");
 });
 
 test("AC-AUTH-SELF-001/004: self-service password change", async ({ page }) => {
@@ -678,7 +722,7 @@ test("#375: Reports - a catalog by purpose, search, a page and address per repor
   await expect(side.getByRole("link", { name: "Planning Sheet", exact: true })).toBeVisible();
   await expect(side.getByRole("link", { name: "Financial Flow", exact: true })).toHaveCount(0);
   await side.getByLabel("Find a report").fill("");
-  // opening a report records the run and remembers the options
+  // opening a report records the run; Recently run opens it with those options, the catalog with the defaults (#528)
   await page.getByLabel("Include VOID transactions").uncheck();
   const popup = page.context().waitForEvent("page");
   await page.getByRole("link", { name: "Open", exact: true }).click();
@@ -686,10 +730,13 @@ test("#375: Reports - a catalog by purpose, search, a page and address per repor
   await page.getByRole("link", { name: "← All reports" }).click();
   await expect(recent.getByRole("link").first()).toContainText("End of Year Audit");
   await page.goto("/reports/audit");
+  await expect(page.getByLabel("Include VOID transactions")).toBeChecked();             // the catalog: the defaults
+  await page.getByRole("link", { name: "← All reports" }).click();
+  await recent.getByRole("link").first().click();                                         // Recently run: that run's options
   await expect(page.getByLabel("Include VOID transactions")).not.toBeChecked();
   await page.getByLabel("Include VOID transactions").check();
   await page.screenshot({ path: "e2e-screenshots/light-report-page.png", fullPage: true });
-  const again = page.context().waitForEvent("page");          // remembered as before for the later tests
+  const again = page.context().waitForEvent("page");          // the latest run with the defaults, for the later tests
   await page.getByRole("link", { name: "Open", exact: true }).click();
   await (await again).close();
   await logout(page);
@@ -725,8 +772,59 @@ test("#373: the Quarterly / Annual financial report - period choice, commentary,
   await page.screenshot({ path: "e2e-screenshots/light-period-report.png", fullPage: true });
 });
 
+// 2.4.0 (#513): the invoice reports for formal publication, in Share with the board and members
+test("#513: Sales by product & category and the Sales overview - quarter or year, dates of my choice, names hidden, PDF and presentation", async ({ page }) => {
+  const modules = async (on: boolean) => {
+    await login(page, "admin");
+    const me = await (await page.request.get("/api/auth/me")).json();
+    expect((await page.request.put("/api/system/modules", { headers: { "X-CSRF-Token": me.csrf_token }, data: { invoices: on } })).status()).toBe(200);
+    await logout(page);
+  };
+  await modules(true);
+  await login(page, "bm1");
+  await page.getByRole("link", { name: "Reports", exact: true }).click();
+  const share = page.locator("section").filter({ has: page.getByRole("heading", { name: /^Share with the board and members/ }) }).first();
+  await expect(share.getByRole("link", { name: "Sales overview", exact: true })).toBeVisible();
+  // a slow options answer must not reset the period chosen meanwhile (CI, PR #515)
+  await page.route("**/api/invoices/formal/options**", async (r) => { await new Promise((ok) => setTimeout(ok, 400)); await r.continue(); });
+  await openReport(page, "Sales by product & category");
+  await expect(page.getByLabel("Quarter or year").locator("option")).toHaveCount(5);
+  await page.getByLabel("Quarter or year").selectOption("ANNUAL");
+  await page.waitForTimeout(1000);                         // a second, late answer would have reset it by now
+  await expect(page.getByLabel("Quarter or year")).toHaveValue("ANNUAL");
+  await page.unroute("**/api/invoices/formal/options**");
+  await expect(page.getByLabel("Quarter or year").locator("option")).toHaveCount(5);
+  await page.getByLabel("Quarter or year").selectOption("ANNUAL");
+  await page.getByLabel("Commentary (optional)").fill("Dues renewals came in early.");
+  const href = (await page.getByRole("link", { name: "Open", exact: true }).getAttribute("href"))!;
+  expect(href).toContain("/api/invoices/formal/inv-sales-formal?");
+  expect(href).toContain("period=ANNUAL");
+  const pdf = await page.request.get(href);
+  expect(pdf.status()).toBe(200);
+  expect((await pdf.body()).subarray(0, 5).toString()).toBe("%PDF-");
+  await page.screenshot({ path: "e2e-screenshots/light-invoice-sales-formal.png", fullPage: true });
+  await page.goto("/reports/inv-overview");
+  await page.getByLabel("Dates of my choice").check();
+  await page.getByLabel("From", { exact: true }).fill("2026-09-30");
+  await page.getByLabel("Through", { exact: true }).fill("2026-09-01");
+  await expect(page.getByRole("alert")).toContainText("From must be on or before Through");
+  await expect(page.getByRole("button", { name: "Download PPTX" })).toBeDisabled();
+  await page.getByLabel("From", { exact: true }).fill("2026-07-01");
+  await page.getByLabel("Show customer names").uncheck();
+  const deckHref = (await page.getByRole("link", { name: "Download PPTX" }).getAttribute("href"))!;
+  expect(deckHref).toContain("show_names=false");
+  expect(deckHref).toContain("date_from=2026-07-01");
+  const deck = await page.request.get(deckHref);
+  expect(deck.status()).toBe(200);
+  expect(deck.headers()["content-type"]).toContain("presentationml");
+  await logout(page);
+  await modules(false);                                    // leave the module off, as the later tests expect
+});
+
 // ---------------------------------------------------------------- v1.3 enhancements
 const PDF = Buffer.from("%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[]/Count 0>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n");
+// 2.4.0 (#425): a PDF with content of its own (the same file twice on one record asks first)
+const pdfOf = (tag: string) => Buffer.from(PDF.toString("latin1").replace("%PDF-1.4\n", `%PDF-1.4\n% ${tag}\n`), "latin1");
 
 async function pickTravel(dlg: any, i = 1) {
   await dlg.getByLabel(`Allocation ${i} Fiscal Year`).selectOption({ label: "FY2027 — Draft" });
@@ -817,7 +915,7 @@ test("CR-007 / CR-008: Fiscal Year document types, approval rules and the Close 
   await dlg.getByRole("button", { name: "Approve" }).click();
   await expect(page.getByRole("heading", { name: /FY2031/, level: 1 })).toContainText("Approved");
   // an "other" document can be re-labelled as the Audit Signoff
-  await page.getByLabel(/Add other document/).setInputFiles({ name: "auditor-letter.pdf", mimeType: "application/pdf", buffer: PDF });
+  await page.getByLabel(/Add other document/).setInputFiles({ name: "auditor-letter.pdf", mimeType: "application/pdf", buffer: pdfOf("auditor-letter") });
   await page.getByLabel("Document type of auditor-letter.pdf").selectOption("AUDIT_SIGNOFF");
   const signoff = page.locator(".fy-docs section.attachments", { has: page.getByRole("heading", { name: /Audit Signoff/ }) });
   await expect(signoff).toContainText("auditor-letter.pdf");
@@ -983,10 +1081,20 @@ test("2.1.0 (#262, #260, #259): register sort, electronic payment, reorder attac
   // #259: two attachments, reordered
   await row.getByRole("button", { name: /Details for transaction/ }).click();
   const files = page.locator("section.attachments").filter({ hasText: "Transaction attachments" }).first();
-  for (const n of ["first-invoice.pdf", "second-receipt.pdf"]) {
-    await files.locator("input[type=file]").setInputFiles({ name: n, mimeType: "application/pdf", buffer: PDF });
-    await expect(files).toContainText(n);
-  }
+  await files.locator("input[type=file]").setInputFiles({ name: "first-invoice.pdf", mimeType: "application/pdf", buffer: PDF });
+  await expect(files).toContainText("first-invoice.pdf");
+  // 2.4.0 (#425): the identical file again on the same transaction asks first - Cancel adds nothing
+  await files.locator("input[type=file]").setInputFiles({ name: "second-receipt.pdf", mimeType: "application/pdf", buffer: PDF });
+  let same = page.getByRole("dialog", { name: "Same file already attached" });
+  await expect(same).toContainText("first-invoice.pdf");
+  await same.getByRole("button", { name: "Cancel" }).click();
+  await expect(same).toHaveCount(0);
+  await expect(files).not.toContainText("second-receipt.pdf");
+  // ... Attach anyway adds it
+  await files.locator("input[type=file]").setInputFiles({ name: "second-receipt.pdf", mimeType: "application/pdf", buffer: PDF });
+  same = page.getByRole("dialog", { name: "Same file already attached" });
+  await same.getByRole("button", { name: "Attach anyway" }).click();
+  await expect(files).toContainText("second-receipt.pdf");
   await files.getByRole("button", { name: "Reorder…" }).click();
   const order = page.locator("section.attachments").filter({ hasText: "set the order" });
   await order.getByRole("button", { name: "Move second-receipt.pdf up" }).click();
@@ -1695,6 +1803,30 @@ test("#56 / #57: the Register shows Opening, Current (bank) and Available; the b
     allocations: [{ budget_id: opts[0].id, amount: "1.00" }] } });
   expect(bad.status()).toBe(422);
   await page.screenshot({ path: "e2e-screenshots/light-register-balances.png" });
+  // 2.4.0 polish (#468): the system Print - a short header (title, applied filters, balances) instead of the screen's
+  // header, filters and tiles
+  await page.emulateMedia({ media: "print" });
+  const head = page.getByTestId("register-print-head");
+  await expect(head).toBeVisible();
+  await expect(head).toContainText("Register — ");
+  await expect(head).toContainText("Fiscal Year: ");
+  await expect(head).toContainText("Available (incl. uncleared)");
+  await expect(page.locator(".register-sticky")).toBeHidden();
+  expect((await head.boundingBox())!.height).toBeLessThanOrEqual(1.5 * 96);
+  // two lines per transaction (Kyle, 2026-11-02): Date … Balance, then Entity, Description, Status; no 📎
+  await expect(page.locator(".register-page .table-wrap")).toBeHidden();
+  const pt = page.getByTestId("register-print-table");
+  await expect(pt).toBeVisible();
+  for (const h of ["Date", "Cleared", "Check #", "Invoice #", "Deposit", "Withdrawal", "Entity", "Description", "Status"])
+    await expect(pt.locator("thead th", { hasText: h }).first()).toBeVisible();
+  await expect(pt.locator("thead th", { hasText: "📎" })).toHaveCount(0);
+  expect(await pt.locator("tbody tr").count()).toBe(2 * await page.locator("table.register tbody tr[id^='txn-']").count());
+  // long entity names and descriptions are shortened with an ellipsis (whole text in the title)
+  for (const cell of await pt.locator("td.rp-entity, td.rp-desc").all())
+    expect(((await cell.textContent()) || "").length).toBeLessThanOrEqual(45);
+  await page.pdf({ path: "e2e-screenshots/register-print.pdf" });
+  await page.emulateMedia({ media: "screen" });
+  await expect(head).toBeHidden();
 });
 
 // ---------------------------------------------------------------- 1.7.3 #104/#105: Budget filter and Budgets links
@@ -2107,16 +2239,19 @@ test("CR-033: Administrator turns on fundraisers; Budget Manager creates, filter
   await login(page, "admin");
   await page.getByRole("link", { name: "System/About" }).click();
   await aboutTab(page, "General");
-  await page.getByLabel("Fundraiser module").check();
+  await page.getByLabel("Events & Fundraisers module").check();
   await expect(page.getByRole("status").filter({ hasText: "Saved." })).toBeVisible();
-  await expect(page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Fundraisers" })).toHaveCount(0);
+  await expect(page.getByRole("navigation", { name: "Main navigation" }).getByRole("link", { name: "Events", exact: true })).toHaveCount(0);
   await logout(page);
 
   await login(page, "bm1");
-  await page.getByRole("link", { name: "Fundraisers" }).click();
-  await page.getByRole("button", { name: "New fundraiser" }).click();
-  let dlg = page.getByRole("dialog", { name: "New fundraiser" });
+  await page.getByRole("link", { name: "Events", exact: true }).click();
+  await page.getByRole("button", { name: "New event or fundraiser" }).click();
+  let dlg = page.getByRole("dialog", { name: "New event or fundraiser" });
   await dlg.getByLabel("Name").fill("Harvest Dinner");
+  // 2.4.0 (#429): a dinner that isn't a fundraiser - an Event needs only an Expense budget
+  await dlg.getByRole("combobox", { name: /^Type/ }).selectOption("EVENT");
+  await expect(dlg.getByLabel("Goal (optional)")).toHaveCount(0);
   await dlg.getByLabel("Event start date").fill("2026-10-15");
   const exp = dlg.getByLabel("Expense budget (FY2027)");
   await exp.selectOption({ label: "1000 Operations" });
@@ -2125,33 +2260,39 @@ test("CR-033: Administrator turns on fundraisers; Budget Manager creates, filter
   await exp.selectOption(travel!);
   await expect(dlg.getByRole("note").filter({ hasText: "includes all of its sub-budgets" })).toHaveCount(0);
   await expect(dlg.getByTestId("fr-preview")).toContainText("will be included");
-  await dlg.getByRole("button", { name: "Create fundraiser" }).click();
+  await dlg.getByRole("button", { name: "Create event" }).click();
   await expect(page.getByRole("heading", { name: /Harvest Dinner/ })).toBeVisible();
+  await expect(page.getByTestId("fr-type")).toHaveText("Event");
   await expect(page.getByTestId("fr-event")).toHaveText("2026-10-15");
   await expect(page.getByRole("row", { name: /FY2027 Expense 1000-01 Travel/ })).toBeVisible();
   // a filter that matches nothing: warning + no lines
   await page.getByRole("button", { name: "Edit" }).click();
-  dlg = page.getByRole("dialog", { name: "Edit fundraiser" });
+  dlg = page.getByRole("dialog", { name: "Edit event" });
   await dlg.getByLabel("Description filter (optional)").fill("zzz-no-match");
-  await dlg.getByLabel("Goal (optional)").fill("500");   // 2.3.0 (#372)
   await expect(dlg.getByText("Filter in use:")).toBeVisible();
   await expect(dlg.getByTestId("fr-preview")).toContainText("0 of");
   await dlg.getByRole("button", { name: "Save" }).click();
   await expect(page.locator("[data-code=FILTER]")).toBeVisible();
   await expect(page.getByTestId("fr-totals")).toContainText("$0.00");
-  await expect(page.getByTestId("fr-goal")).toContainText("$500.00");
-  await expect(page.getByTestId("fr-goal")).toContainText("$500.00 to go");
+  await expect(page.getByTestId("fr-goal")).toHaveCount(0);
   await page.screenshot({ path: "e2e-screenshots/light-fundraiser-detail.png", fullPage: true });
   // a shell for an event beyond every Fiscal Year: no budgets yet, listed as upcoming
-  await page.getByRole("link", { name: "← Fundraisers" }).click();
-  await page.getByRole("button", { name: "New fundraiser" }).click();
-  dlg = page.getByRole("dialog", { name: "New fundraiser" });
+  await page.getByRole("link", { name: "← Events & Fundraisers" }).click();
+  await page.getByRole("button", { name: "New event or fundraiser" }).click();
+  dlg = page.getByRole("dialog", { name: "New event or fundraiser" });
   await dlg.getByLabel("Name").fill("Spring Fair 2028");
   await dlg.getByLabel("Event start date").fill("2028-03-04");
   await expect(dlg.getByText("No open Fiscal Year is within 3 months of the event yet")).toBeVisible();
   await dlg.getByRole("button", { name: "Create fundraiser" }).click();
   await expect(page.locator("[data-code=NO_BUDGETS]")).toBeVisible();
-  await page.getByRole("link", { name: "← Fundraisers" }).click();
+  // 2.3.0 (#372): a Fundraiser's goal (a shell is allowed with no budgets, #429)
+  await page.getByRole("button", { name: "Edit" }).click();
+  dlg = page.getByRole("dialog", { name: "Edit fundraiser" });
+  await dlg.getByLabel("Goal (optional)").fill("500");
+  await dlg.getByRole("button", { name: "Save" }).click();
+  await expect(page.getByTestId("fr-goal")).toContainText("$500.00");
+  await expect(page.getByTestId("fr-goal")).toContainText("$500.00 to go");
+  await page.getByRole("link", { name: "← Events & Fundraisers" }).click();
   await expect(page.getByTestId("fundraiser-list")).toContainText("Harvest Dinner");
   await page.getByLabel("Fundraisers Fiscal Year").selectOption({ label: "Upcoming — no Fiscal Year yet" });
   await expect(page.getByTestId("fundraiser-list")).toContainText("Spring Fair 2028");
@@ -2160,8 +2301,8 @@ test("CR-033: Administrator turns on fundraisers; Budget Manager creates, filter
 
   // viewers see it, without management buttons
   await login(page, "ru1", "Brand-New-Pass-99");
-  await page.getByRole("link", { name: "Fundraisers" }).click();
-  await expect(page.getByRole("button", { name: "New fundraiser" })).toHaveCount(0);
+  await page.getByRole("link", { name: "Events", exact: true }).click();
+  await expect(page.getByRole("button", { name: "New event or fundraiser" })).toHaveCount(0);
   await page.getByRole("link", { name: "Harvest Dinner" }).click();
   await expect(page.getByRole("heading", { name: /Harvest Dinner/ })).toBeVisible();
   await expect(page.getByRole("button", { name: "Edit" })).toHaveCount(0);
@@ -2172,10 +2313,10 @@ test("CR-033: Administrator turns on fundraisers; Budget Manager creates, filter
 test("CR-034: buckets, cash float, exclusion and fundraiser documents", async ({ page }) => {
   // Budget Manager: no filter, the whole Operations budget (so the fundraiser has expense lines)
   await login(page, "bm1");
-  await page.getByRole("link", { name: "Fundraisers" }).click();
+  await page.getByRole("link", { name: "Events", exact: true }).click();
   await page.getByRole("link", { name: "Harvest Dinner" }).click();
   await page.getByRole("button", { name: "Edit" }).click();
-  let dlg = page.getByRole("dialog", { name: "Edit fundraiser" });
+  let dlg = page.getByRole("dialog", { name: "Edit event" });
   await dlg.getByLabel("Description filter (optional)").fill("");
   await dlg.getByLabel("Expense budget (FY2027)").selectOption({ label: "1000 Operations" });
   await dlg.getByRole("button", { name: "Save" }).click();
@@ -2184,7 +2325,7 @@ test("CR-034: buckets, cash float, exclusion and fundraiser documents", async ({
 
   // Register User manages the lines
   await login(page, "ru1", "Brand-New-Pass-99");
-  await page.getByRole("link", { name: "Fundraisers" }).click();
+  await page.getByRole("link", { name: "Events", exact: true }).click();
   await page.getByRole("link", { name: "Harvest Dinner" }).click();
   await page.getByRole("button", { name: "New bucket" }).click();
   dlg = page.getByRole("dialog", { name: "New bucket" });
@@ -2217,15 +2358,15 @@ test("CR-034: buckets, cash float, exclusion and fundraiser documents", async ({
   await expect(page.getByTestId("fr-lines").locator("tr.fr-excluded")).toContainText("Excluded: Not for the dinner");
   await expect(page.getByTestId("fr-adjustments")).toContainText("1 excluded line");
   // fundraiser document
-  await page.locator("section.attachments").filter({ hasText: "Fundraiser documents" }).locator("input[type=file]")
+  await page.locator("section.attachments").filter({ hasText: "Event documents" }).locator("input[type=file]")
     .setInputFiles({ name: "flyer.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4\n1 0 obj<</Type/Catalog/Pages 2 0 R>>endobj\n2 0 obj<</Type/Pages/Kids[]/Count 0>>endobj\ntrailer<</Root 1 0 R>>\n%%EOF\n") });
-  await expect(page.getByRole("heading", { name: "Fundraiser documents (1)" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Event documents (1)" })).toBeVisible();
   await page.screenshot({ path: "e2e-screenshots/light-fundraiser-manage.png", fullPage: true });
   await logout(page);
 
   // a fundraiser in use cannot be deleted
   await login(page, "bm1");
-  await page.getByRole("link", { name: "Fundraisers" }).click();
+  await page.getByRole("link", { name: "Events", exact: true }).click();
   await page.getByRole("link", { name: "Harvest Dinner" }).click();
   await page.getByRole("button", { name: "Delete…" }).click();
   await page.getByRole("dialog", { name: "Delete fundraiser" }).getByRole("button", { name: "Delete" }).click();
@@ -2235,7 +2376,7 @@ test("CR-034: buckets, cash float, exclusion and fundraiser documents", async ({
 
 test("2.1.0 (#278): bucket categories with subtotals, reorder, and Charge / Less on a line", async ({ page }) => {
   await login(page, "ru1", "Brand-New-Pass-99");
-  await page.getByRole("link", { name: "Fundraisers" }).click();
+  await page.getByRole("link", { name: "Events", exact: true }).click();
   await page.getByRole("link", { name: "Harvest Dinner" }).click();
   await page.getByRole("button", { name: "New category" }).click();
   let dlg = page.getByRole("dialog", { name: "New category" });
@@ -2288,18 +2429,18 @@ test("2.1.0 (#278): bucket categories with subtotals, reorder, and Charge / Less
 
 test("2.1.0 (#277): next year's fundraiser continues the series, prior years entered, Fiscal Year report and deck", async ({ page }) => {
   await login(page, "bm1");
-  await page.getByRole("link", { name: "Fundraisers" }).click();
+  await page.getByRole("link", { name: "Events", exact: true }).click();
   await page.getByRole("link", { name: "Harvest Dinner" }).click();
   await page.getByRole("button", { name: "Create next year's…" }).click();
-  let dlg = page.getByRole("dialog", { name: "New fundraiser (next year)" });
+  let dlg = page.getByRole("dialog", { name: "New event or fundraiser (next year)" });
   await expect(dlg.getByLabel("Name")).not.toHaveValue("");
-  await expect(dlg.getByLabel("Continues from (previous fundraiser)")).not.toHaveValue("");
+  await expect(dlg.getByLabel("Continues from (previous year)")).not.toHaveValue("");
   await dlg.getByLabel("Name").fill("Harvest Dinner next year");
-  await dlg.getByRole("button", { name: "Create fundraiser" }).click();
+  await dlg.getByRole("button", { name: "Create event" }).click();
   await expect(page.getByTestId("fr-series")).toContainText("continues Harvest Dinner");
   // the series list: enter a year before PennyWarden
-  await page.getByRole("link", { name: "Fundraisers" }).first().click();
-  await page.getByRole("link", { name: "Fundraiser series" }).click();
+  await page.getByRole("link", { name: "Events", exact: true }).first().click();
+  await page.getByRole("link", { name: "Series", exact: true }).click();
   await page.getByRole("button", { name: "Enter a prior year…" }).first().click();
   dlg = page.getByRole("dialog", { name: /Enter a prior year/ });
   await dlg.getByLabel("Fiscal Year (include the year)").fill("FY2019");
@@ -2308,7 +2449,7 @@ test("2.1.0 (#277): next year's fundraiser continues the series, prior years ent
   await expect(page.locator("section.card").first()).toContainText("FY2019");
   await page.screenshot({ path: "e2e-screenshots/light-fundraiser-series.png", fullPage: true });
   // the Fiscal Year report for the ticked fundraisers
-  await page.getByRole("link", { name: "← Fundraisers" }).click();
+  await page.getByRole("link", { name: "← Events & Fundraisers" }).click();
   await expect(page.getByTestId("fundraiser-list")).toBeVisible();
   await page.getByRole("button", { name: "Fiscal Year report…" }).click();
   // 2.3.0 (#375): a shortcut to the report's page in Reports, with this year and the ticked fundraisers
@@ -2331,7 +2472,7 @@ test("2.1.0 (#277): next year's fundraiser continues the series, prior years ent
 test("2.1.0 (#292): prior years for an event with nothing earlier in PennyWarden - Start a series, Enter prior years", async ({ page }) => {
   await login(page, "bm1");
   // on a fundraiser already in a series, Enter prior years… opens that series' entry
-  await page.getByRole("link", { name: "Fundraisers" }).click();
+  await page.getByRole("link", { name: "Events", exact: true }).click();
   await page.getByRole("link", { name: "Harvest Dinner", exact: true }).click();
   await page.getByRole("button", { name: "Enter prior years…" }).click();
   let dlg = page.getByRole("dialog", { name: "Enter a prior year — Harvest Dinner" });
@@ -2369,9 +2510,9 @@ test("2.1.0 (#292): prior years for an event with nothing earlier in PennyWarden
 test("2.2.0 (#302, #351): add a second same-year fundraiser to a series; years newest first, flipped and remembered", async ({ page }) => {
   await login(page, "bm1");
   // a second Spring Fair in the same year: nothing earlier to continue from, so Add to a series…
-  await page.getByRole("link", { name: "Fundraisers" }).click();
-  await page.getByRole("button", { name: "New fundraiser" }).click();
-  let dlg = page.getByRole("dialog", { name: "New fundraiser" });
+  await page.getByRole("link", { name: "Events", exact: true }).click();
+  await page.getByRole("button", { name: "New event or fundraiser" }).click();
+  let dlg = page.getByRole("dialog", { name: "New event or fundraiser" });
   await dlg.getByLabel("Name").fill("Spring Fair Encore 2028");
   await dlg.getByLabel("Event start date").fill("2028-05-06");
   await dlg.getByRole("button", { name: "Create fundraiser" }).click();
@@ -2382,8 +2523,8 @@ test("2.2.0 (#302, #351): add a second same-year fundraiser to a series; years n
   await dlg.getByRole("button", { name: "Add to series" }).click();
   await expect(page.getByTestId("fr-series")).toContainText("Spring Fair");
   // the series page: one list, newest year first (same year: newest start first), with the hint
-  await page.getByRole("link", { name: "← Fundraisers" }).click();
-  await page.getByRole("link", { name: "Fundraiser series" }).click();
+  await page.getByRole("link", { name: "← Events & Fundraisers" }).click();
+  await page.getByRole("link", { name: "Series", exact: true }).click();
   await expect(page.getByTestId("series-twice-hint")).toContainText("more than once a year");
   const card = page.locator("section.card").filter({ has: page.getByRole("heading", { name: "Spring Fair", exact: true }) });
   const rows = card.locator("tbody tr");
@@ -2400,8 +2541,8 @@ test("2.2.0 (#302, #351): add a second same-year fundraiser to a series; years n
   for (const th of await page.locator("section.card thead th").filter({ hasText: "Year" }).all()) await expect(th).toHaveAttribute("aria-sort", "ascending");
   await logout(page);
   await login(page, "bm1");
-  await page.getByRole("link", { name: "Fundraisers" }).click();
-  await page.getByRole("link", { name: "Fundraiser series" }).click();
+  await page.getByRole("link", { name: "Events", exact: true }).click();
+  await page.getByRole("link", { name: "Series", exact: true }).click();
   await expect(rows.nth(0)).toContainText("FY2025");
   await page.getByRole("button", { name: "Reset to default" }).click();
   await expect(page.locator(".sort-note")).toHaveCount(0);
@@ -2412,7 +2553,7 @@ test("2.2.0 (#302, #351): add a second same-year fundraiser to a series; years n
 // ---------------------------------------------------------------- v1.6.2 CR-035: fundraiser report
 test("CR-035: fundraiser report PDF; Audit and Close reports can include fundraisers", async ({ page }) => {
   await login(page, "bm1");
-  await page.getByRole("link", { name: "Fundraisers" }).click();
+  await page.getByRole("link", { name: "Events", exact: true }).click();
   await page.getByRole("link", { name: "Harvest Dinner" }).click();
   // 2.1.0 (#275): the page's Report… is the stakeholder report (PDF or Word), with options
   await page.getByRole("button", { name: "Report…" }).first().click();
@@ -2518,6 +2659,21 @@ test("CR-036: organization and personal reminders - bell, dashboard, resolve wit
   await logout(page);
 });
 
+// ---------------------------------------------------------------- 2.4.0 (#553): FY Progress on the Dashboard
+test("#553: the Dashboard's FY Progress box - result so far, projection, budgeted; the guide explains the figures", async ({ page }) => {
+  await login(page, "bm1");
+  const box = page.getByTestId("fy-progress");
+  await expect(box).toContainText("FY Progress");
+  await expect(box.getByTestId("fy-progress-result")).toHaveText(/^[+−]\$[\d,]+\.\d\d (surplus|deficit)$/);
+  await expect(box.getByTestId("fy-progress-sub")).toContainText("Budgeted");
+  await expect(box.getByTestId("fy-progress-sub")).toContainText(/Projected year end|Year ended/);
+  await page.screenshot({ path: "e2e-screenshots/light-dashboard-fy-progress.png" });
+  await box.getByRole("link", { name: "How is this worked out?" }).click();
+  await expect(page.getByRole("heading", { name: "How the budget figures are worked out" })).toBeVisible();
+  await expect(page.getByText("Take the middle of those three amounts", { exact: false })).toBeVisible();
+  await logout(page);
+});
+
 // ---------------------------------------------------------------- 1.6.7: recurring organization reminders
 test("1.6.7: a recurring organization reminder creates its next occurrence when resolved", async ({ page }) => {
   const now = new Date();
@@ -2554,10 +2710,148 @@ test("1.6.7: a recurring organization reminder creates its next occurrence when 
   await logout(page);
 });
 
+// ---------------------------------------------------------------- 2.4.0 (#551): reminder tasks
+test("#551: reminder tasks - steps ticked one at a time, contacts by position, app functions, the objective completes it", async ({ page }) => {
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
+  await login(page, "bm1");
+  const post = await apiAs(page);
+  expect((await post("/api/entities", { entity_type: "INDIVIDUAL", primary_contact: "Casey Clerk", position: "City Clerk",
+    email: "casey@example.org", confirmations: ["DUPLICATE_ENTITY"] })).status()).toBe(201);
+  // the Entities list shows the position, and Search finds it
+  await page.getByRole("link", { name: "Entities" }).click();
+  await page.getByPlaceholder("Name, number, email or position").fill("city clerk");
+  await expect(page.locator("table tbody tr").filter({ hasText: "Casey Clerk" }).getByTestId("entity-position")).toHaveText("City Clerk");
+  await expect(page.locator("table tbody tr")).toHaveCount(1);
+  await page.getByRole("link", { name: /Notifications/ }).click();
+  await page.getByRole("button", { name: "New reminder" }).click();
+  let dlg = page.getByRole("dialog", { name: "New reminder" });
+  await dlg.getByRole("combobox").first().selectOption("ORGANIZATION");
+  await dlg.getByLabel("Reminder", { exact: true }).fill("Year-end audit for the trustees");
+  await dlg.getByLabel("Due date").fill(today);
+  await dlg.getByRole("button", { name: "Add a step" }).click();
+  await dlg.getByRole("textbox", { name: "Step 1 name" }).fill("Run the audit report");
+  await dlg.getByRole("combobox", { name: "Step 1 opens" }).selectOption({ label: "End of Year Audit" });
+  // a person found by their position defaults to "whoever is" that position
+  await dlg.getByRole("button", { name: "Add a step" }).click();
+  await dlg.getByRole("textbox", { name: "Step 2 name" }).fill("Email the City Clerk");
+  await dlg.getByRole("combobox", { name: "Step 2 contact" }).selectOption("ENTITY");
+  await dlg.getByRole("combobox", { name: "Step 2: organization or person" }).fill("city clerk");
+  await page.getByRole("listbox").getByRole("option", { name: /Casey Clerk/ }).click();
+  await expect(dlg.getByRole("radio", { name: "Whoever is City Clerk" })).toBeChecked();
+  await expect(dlg.getByRole("combobox", { name: "Step 2 position" })).toHaveValue("City Clerk");
+  // a position nobody holds; a page whose module is off
+  await dlg.getByRole("button", { name: "Add a step" }).click();
+  await dlg.getByRole("textbox", { name: "Step 3 name" }).fill("Invoice the parks department");
+  await dlg.getByRole("combobox", { name: "Step 3 contact" }).selectOption("POSITION");
+  // 2.4.0 polish: the position field suggests the positions held, matched anywhere (or by holder), with who holds them
+  const posBox = dlg.getByRole("combobox", { name: "Step 3 position" });
+  const posList = page.getByRole("listbox", { name: "Step 3 position suggestions" });
+  await posBox.fill("clerk");
+  await expect(posList.getByRole("option", { name: "City Clerk · Casey Clerk" })).toBeVisible();
+  await posBox.fill("casey");
+  await posList.getByRole("option", { name: /^City Clerk/ }).click();
+  await expect(posBox).toHaveValue("City Clerk");
+  await posBox.fill("Parks Director");
+  await expect(posList).toContainText("No one has this position yet");
+  await posBox.press("Escape");
+  await expect(posList).toHaveCount(0);
+  await dlg.getByRole("combobox", { name: "Step 3 opens" }).selectOption({ label: "Invoices" });
+  // the reminder itself is the last task, pinned: move step 3 up past step 2 (refining the order)
+  await expect(dlg.getByTestId("task-edit-objective")).toContainText("Last: Year-end audit for the trustees");
+  await dlg.getByRole("button", { name: "Move step 3 up" }).click();
+  await expect(dlg.getByRole("textbox", { name: "Step 2 name" })).toHaveValue("Invoice the parks department");
+  await dlg.getByRole("button", { name: "Move step 2 down" }).click();
+  // 2.4.0 polish: a step can also be dragged by its handle to any place in the list (and back)
+  // (mouse steps: a second locator.dragTo in a row doesn't start an HTML5 drag in Chromium)
+  const drag = async (from: number, to: number) => {
+    const h = (await dlg.getByTestId("task-edit").nth(from).getByTestId("task-drag").boundingBox())!;
+    const t = (await dlg.getByTestId("task-edit").nth(to).boundingBox())!;
+    await page.mouse.move(h.x + h.width / 2, h.y + h.height / 2); await page.mouse.down();
+    await page.mouse.move(t.x + t.width / 2, t.y + t.height / 2, { steps: 8 }); await page.mouse.up();
+  };
+  // (room for all three rows on screen, so neither the handle nor the drop point is scrolled away)
+  const vp = page.viewportSize()!;
+  await page.setViewportSize({ width: vp.width, height: 1100 });
+  await dlg.getByTestId("task-edit").nth(0).scrollIntoViewIfNeeded();
+  await drag(2, 0);
+  await expect(dlg.getByRole("textbox", { name: "Step 1 name" })).toHaveValue("Invoice the parks department");
+  await expect(dlg.getByRole("textbox", { name: "Step 2 name" })).toHaveValue("Run the audit report");
+  await expect(dlg.getByRole("combobox", { name: "Step 1 opens" })).toHaveValue("page:invoices");
+  await drag(0, 2);
+  await expect(dlg.getByRole("textbox", { name: "Step 1 name" })).toHaveValue("Run the audit report");
+  await expect(dlg.getByRole("textbox", { name: "Step 3 name" })).toHaveValue("Invoice the parks department");
+  await expect(dlg.getByText("Contact (optional)").first()).toBeVisible();
+  await page.setViewportSize(vp);
+  await page.screenshot({ path: "e2e-screenshots/light-reminder-tasks-dialog.png" });
+  await dlg.getByRole("button", { name: "Save" }).click();
+  const item = page.getByTestId("reminder").filter({ hasText: "Year-end audit for the trustees" });
+  const task = (n: number) => item.getByTestId("reminder-task").nth(n);
+  await expect(item.getByTestId("task-progress")).toHaveText("0 of 3 steps done");
+  await expect(task(0).getByTestId("task-next")).toBeVisible();
+  await expect(task(0).getByTestId("task-function")).toHaveText("End of Year Audit");
+  await expect(task(1).getByTestId("task-contact")).toContainText("casey@example.org");
+  await expect(task(2).getByTestId("task-contact")).toContainText("nobody active holds this position");
+  await expect(task(2).getByTestId("task-function")).toBeDisabled();
+  await expect(task(2).getByTestId("task-function-why")).toHaveText("The Invoices module is turned off.");
+  await expect(item.getByTestId("reminder-objective")).toContainText("completes the reminder");
+  await logout(page);
+
+  // a Register User ticks steps; Next moves on; the function button opens the report
+  await login(page, "ru1", "Brand-New-Pass-99");
+  await page.getByRole("link", { name: /Notifications/ }).click();
+  await item.getByRole("checkbox", { name: "Mark Run the audit report completed" }).click();
+  await expect(item.getByTestId("task-progress")).toHaveText("1 of 3 steps done");
+  await expect(task(0)).toContainText("Marked completed by ru1 on");
+  await expect(task(1).getByTestId("task-next")).toBeVisible();
+  // 2.4.0 polish: a contact's name opens a read-only view of the entity
+  await task(1).getByRole("button", { name: "View Casey Clerk" }).click();
+  dlg = page.getByRole("dialog", { name: "Casey Clerk" });
+  await expect(dlg.getByTestId("entity-view")).toContainText("City Clerk");
+  await expect(dlg.getByTestId("entity-view")).toContainText("casey@example.org");
+  await expect(dlg.getByRole("textbox")).toHaveCount(0);
+  // every field of the entity form is listed, a blank one as "—"
+  const view = dlg.getByTestId("entity-view");
+  for (const f of ["Entity number", "First name", "Last name", "Display name", "Position in the organization", "Phone",
+                   "Address line 1", "Address line 2", "City", "State/Region", "Postal code", "Country", "Financial institution", "Notes"])
+    await expect(view.locator("dt", { hasText: new RegExp(`^${f}$`) })).toHaveCount(1);
+  await expect(view.locator("dd", { hasText: /^—$/ }).first()).toBeVisible();
+  await dlg.locator(".actions").getByRole("button", { name: "Close" }).click();
+  await expect(dlg).toHaveCount(0);
+  await page.screenshot({ path: "e2e-screenshots/light-reminder-tasks.png" });
+  // 2.4.0 polish: on the dashboard a reminder with steps starts collapsed to its title, due line and progress
+  await page.getByRole("link", { name: "Dashboard" }).click();
+  await expect(item.getByTestId("task-progress")).toHaveText("1 of 3 steps done");
+  await expect(item.getByTestId("reminder-task")).toHaveCount(0);
+  await item.getByRole("button", { name: "Show the steps of Year-end audit for the trustees" }).click();
+  await expect(task(1).getByTestId("task-next")).toBeVisible();
+  await item.getByRole("button", { name: "Hide the steps of Year-end audit for the trustees" }).click();
+  await expect(item.getByTestId("reminder-task")).toHaveCount(0);
+  await page.getByRole("link", { name: /Notifications/ }).click();
+  await expect(item.getByTestId("reminder-toggle")).toHaveCount(0);   // the Notifications page shows every card in full
+  await task(0).getByTestId("task-function").click();
+  await expect(page.getByRole("heading", { name: "End of Year Audit", level: 1 })).toBeVisible();
+  await page.getByRole("link", { name: /Notifications/ }).click();
+  await item.getByRole("checkbox", { name: "Mark Email the City Clerk completed" }).click();
+  await item.getByRole("checkbox", { name: "Mark Invoice the parks department completed" }).click();
+  await expect(item.getByTestId("task-progress")).toHaveText("3 of 3 steps done");
+  await expect(item.getByTestId("reminder-objective").getByTestId("task-next")).toBeVisible();   // the last step doesn't complete it
+  // the objective does
+  await item.getByRole("checkbox", { name: "Mark Year-end audit for the trustees completed" }).click();
+  dlg = page.getByRole("dialog", { name: "Complete the reminder" });
+  await dlg.getByLabel("Note (optional)").fill("Sent to the trustees");
+  await dlg.getByRole("button", { name: "Mark completed" }).click();
+  await expect(item).toHaveCount(0);
+  await page.getByRole("tab", { name: "Resolved" }).click();
+  await expect(item).toContainText("Sent to the trustees");
+  await expect(item.getByTestId("task-progress")).toHaveText("3 of 3 steps done");
+  await logout(page);
+});
+
 // ---------------------------------------------------------------- v1.6.4 CR-037 / CR-038
 test("CR-037 / CR-038: cash count sheet PDF; mark a fundraiser as cancelled and reinstate it", async ({ page }) => {
   await login(page, "bm1");
-  await page.getByRole("link", { name: "Fundraisers" }).click();
+  await page.getByRole("link", { name: "Events", exact: true }).click();
   await page.getByRole("link", { name: "Harvest Dinner" }).click();
   await page.getByRole("button", { name: "Cash count sheet…" }).click();
   // 2.3.0 (#375): a shortcut to the count sheet's page in Reports, with this fundraiser chosen
@@ -2604,7 +2898,7 @@ test("CR-037 / CR-038: cash count sheet PDF; mark a fundraiser as cancelled and 
   await expect(page.getByTestId("fr-cancelled")).toContainText("Hall double-booked");
   await expect(page.getByRole("heading", { name: /Harvest Dinner/ })).toContainText("Cancelled");
   await expect(page.getByTestId("fr-lines")).toBeVisible(); // transactions still listed
-  await page.getByRole("link", { name: "← Fundraisers" }).click();
+  await page.getByRole("link", { name: "← Events & Fundraisers" }).click();
   await expect(page.getByRole("row", { name: /Harvest Dinner/ })).toContainText("Cancelled");
   await page.getByRole("link", { name: "Harvest Dinner" }).click();
   await page.getByRole("button", { name: "Reinstate" }).click();
@@ -3250,14 +3544,17 @@ test("#165-#166: Administrator sets up a cover letter and an envelope; a Registe
   await page.getByRole("button", { name: "Signed by" }).click();
   // build 13: a new letter is a draft until saved; a logo can be added once it is saved
   await expect(page.getByTestId("draft-note")).toBeVisible();
-  await expect(page.getByLabel("Logo image")).toHaveCount(0);
+  await expect(page.getByLabel("letter logo image")).toHaveCount(0);
   await page.getByRole("button", { name: "Save" }).click();
   await expect(page.getByRole("status").filter({ hasText: "Saved." })).toBeVisible();
   await expect(page.getByTestId("draft-note")).toHaveCount(0);
   // #176: a logo (a tiny PNG made here: synthetic) and #177: the address for a window envelope
   const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAADAAAAAYCAIAAAAzn+mLAAAAN0lEQVR4nO3OMQHAIADAMEDINCERqfv39GRHoiDz2Wf8ybod+BIqQkWoCBWhIlSEilARKkJFqLyoawE+y3CGBgAAAABJRU5ErkJggg==", "base64");
-  await page.getByLabel("Logo image").setInputFiles({ name: "logo.png", mimeType: "image/png", buffer: png });
-  await expect(page.getByRole("img", { name: "The letter's logo" })).toBeVisible();
+  // 2.4.0 polish (#503): Logo - Organization logo / Its own logo / No logo (new letters start with none)
+  await expect(page.getByTestId("logo-choice-letter").getByRole("combobox")).toHaveValue("NONE");
+  await page.getByTestId("logo-choice-letter").getByRole("combobox").selectOption("OWN");
+  await page.getByLabel("letter logo image").setInputFiles({ name: "logo.png", mimeType: "image/png", buffer: png });
+  await expect(page.getByTestId("logo-choice-letter").getByRole("img", { name: "This logo" })).toBeVisible();
   await page.getByLabel("Address for a window envelope").selectOption("LETTER");
   await expect(page.getByLabel("Payee address – right (in)")).toBeVisible();
   await page.getByLabel("Address for a window envelope").selectOption("NONE");
@@ -3306,7 +3603,9 @@ test("#165-#166: Administrator sets up a cover letter and an envelope; a Registe
   await page.goto(`/register?account=1&txn=${t.id}`);
   const row = page.locator(`#txn-${t.id}`);
   await expect(row.getByRole("button", { name: `Details for transaction ${t.id}` })).toHaveAttribute("aria-expanded", "true");
-  await expect(page.getByText("2026-11-09")).toBeVisible();        // invoice date in the details
+  // invoice date in the details, beside its invoice number - a bare "2026-11-09" also matched today's "Printed" and
+  // timestamps when CI ran on that day
+  await expect(page.getByRole("cell", { name: "INV-92 (2026-11-09)", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Create payment…" }).click();
   const dlg = page.getByRole("dialog", { name: `Print check – transaction #${t.id}` });
   await dlg.getByLabel("I'm writing the check by hand").check();
@@ -4289,6 +4588,7 @@ test("#325: a receipt before the money and an item on the Donations page, then C
   await dlg.getByRole("button", { name: "Save donation" }).click();
   const ed = page.getByRole("dialog", { name: /Donation #\d+ – Sample Donor Alpha/ });
   await expect(ed.getByText("Awaiting deposit")).toBeVisible();
+  await expect(ed.getByRole("button", { name: "Email receipt…" })).toHaveCount(0);      // #539: no mail server set up
   // not received: the receipt prints the date blank, after a confirmation
   await ed.getByRole("button", { name: "Print receipt" }).click();
   const conf = page.getByRole("dialog", { name: "Confirmation required" });
@@ -4368,6 +4668,262 @@ test("#256: a Register User prints a year-end giving statement; the donor report
   await logout(page);
 });
 
+test("2.4.0 polish (#504): Record payment lists the register accounts by name and starts on the Primary account", async ({ page }) => {
+  // runs before #125 (Reinitialize wipes the financial data this needs: FY2027, the accounts)
+  const caller = async () => {
+    const me = await (await page.request.get("/api/auth/me")).json();
+    const call = async (method: string, url: string, data?: any) => {
+      const r = await page.request.fetch(url, { method, headers: { "X-CSRF-Token": me.csrf_token }, data });
+      expect(r.ok(), `${method} ${url}: ${await r.text()}`).toBeTruthy();
+      return r.status() === 204 ? null : r.json();
+    };
+    return { me, call };
+  };
+  // Administrator: the Invoices module on, and Rae (Register User) also an Invoice Manager for this test
+  await login(page, "admin");
+  let { me, call } = await caller();
+  const wasOn = !!me.modules?.invoices;
+  await call("PUT", "/api/system/modules", { invoices: true });
+  const ru = (await call("GET", "/api/users")).find((u: any) => u.username === "ru1");
+  const ruRoles: string[] = ru.roles;
+  await call("PATCH", `/api/users/${ru.id}`, { roles: [...ruRoles, "INVOICE_MANAGER"] });
+  await logout(page);
+  // Budget Manager: an Invoiced Income budget in FY2027
+  await login(page, "bm1");
+  ({ me, call } = await caller());
+  const fy = (await call("GET", "/api/fiscal-years")).find((f: any) => f.display_name === "FY2027");
+  const bud = await call("POST", "/api/budgets", { fiscal_year_id: fy.id, code: "4950", name: "E2E Dues", amount: "500.00", budget_type: "INCOME" });
+  await call("PUT", `/api/budgets/${bud.id}/invoiced-income`, { invoiced_income: true });
+  await logout(page);
+  // Rae: a product, a customer and a sent invoice, then Record payment…
+  await login(page, "ru1", "Brand-New-Pass-99");          // Rae changed her password earlier in the suite
+  ({ me, call } = await caller());
+  const units = await call("GET", "/api/invoices/catalog/unit-types");
+  const leaf = (await call("GET", `/api/budgets/selectable?fiscal_year_id=${fy.id}&transaction_type=DEPOSIT`)).find((o: any) => o.label.startsWith("4950 E2E Dues"));
+  const prod = await call("POST", "/api/invoices/catalog/products", { name: "E2E Dues", unit_price: "50.00", unit_type_id: units[0].id, budget_id: leaf.id });
+  const cust = await call("POST", "/api/entities", { entity_type: "ORGANIZATION", organization_name: "E2E Paying Member", confirmations: ["DUPLICATE_ENTITY"] });
+  const inv = await call("POST", "/api/invoices", { customer_entity_id: cust.id, invoice_date: "2026-09-15", lines: [{ product_id: prod.id, quantity: "1" }] });
+  await call("POST", `/api/invoices/${inv.id}/send`);
+  const reg = (await call("GET", "/api/bank-accounts")).filter((a: any) => a.status === "ACTIVE" && a.register_enabled);
+  const primary = reg.find((a: any) => a.is_primary) ?? (reg.length === 1 ? reg[0] : null);
+  await page.goto(`/invoices/${inv.id}`);
+  await page.getByRole("button", { name: "Record payment…" }).click();
+  const dlg = page.getByRole("dialog", { name: "Record a payment" });               // #544: the one payment form
+  const sel = dlg.getByLabel("Bank account");
+  expect(reg.length).toBeGreaterThan(0);
+  await expect(sel.locator("option")).toHaveCount(reg.length + 1);              // the accounts load after the dialog opens
+  const names = (await sel.locator("option").allTextContents()).slice(1);         // after "Choose…"
+  expect(names).toEqual(reg.map((a: any) => a.label));                            // named, register accounts only
+  if (primary) await expect(sel).toHaveValue(String(primary.id));                  // starts on the Primary account
+  await dlg.getByRole("button", { name: "Cancel" }).click();
+  await call("POST", `/api/invoices/${inv.id}/void`, { reason: "E2E test invoice" });
+  await logout(page);
+  // put things back
+  await login(page, "admin");
+  ({ me, call } = await caller());
+  await call("PATCH", `/api/users/${ru.id}`, { roles: ruRoles });
+  if (!wasOn) await call("PUT", "/api/system/modules", { invoices: false });
+  await logout(page);
+});
+
+test("2.4.0 (#523): a Register User records one payment for several invoices - ticked in the list, or found by invoice number", async ({ page }) => {
+  // runs before #125 (Reinitialize wipes the financial data this needs)
+  const caller = async () => {
+    const me = await (await page.request.get("/api/auth/me")).json();
+    const call = async (method: string, url: string, data?: any) => {
+      const r = await page.request.fetch(url, { method, headers: { "X-CSRF-Token": me.csrf_token }, data });
+      expect(r.ok(), `${method} ${url}: ${await r.text()}`).toBeTruthy();
+      return r.status() === 204 ? null : r.json();
+    };
+    return { me, call };
+  };
+  await login(page, "admin");
+  let { me, call } = await caller();
+  const wasOn = !!me.modules?.invoices;
+  await call("PUT", "/api/system/modules", { invoices: true });
+  const ru = (await call("GET", "/api/users")).find((u: any) => u.username === "ru1");
+  const ruRoles: string[] = ru.roles;
+  await call("PATCH", `/api/users/${ru.id}`, { roles: [...ruRoles, "INVOICE_MANAGER"] });
+  await logout(page);
+  await login(page, "bm1");
+  ({ me, call } = await caller());
+  const fy = (await call("GET", "/api/fiscal-years")).find((f: any) => f.display_name === "FY2027");
+  const bud = await call("POST", "/api/budgets", { fiscal_year_id: fy.id, code: "4951", name: "E2E Fees", amount: "500.00", budget_type: "INCOME" });
+  await call("PUT", `/api/budgets/${bud.id}/invoiced-income`, { invoiced_income: true });
+  await logout(page);
+  await login(page, "ru1", "Brand-New-Pass-99");
+  ({ me, call } = await caller());
+  const units = await call("GET", "/api/invoices/catalog/unit-types");
+  const leaf = (await call("GET", `/api/budgets/selectable?fiscal_year_id=${fy.id}&transaction_type=DEPOSIT`)).find((o: any) => o.label.startsWith("4951 E2E Fees"));
+  const prod = await call("POST", "/api/invoices/catalog/products", { name: "E2E Fee", unit_price: "50.00", unit_type_id: units[0].id, budget_id: leaf.id });
+  const cust = await call("POST", "/api/entities", { entity_type: "ORGANIZATION", organization_name: "E2E Three Invoices", confirmations: ["DUPLICATE_ENTITY"] });
+  const invs: any[] = [];
+  for (const [d, q] of [["2026-09-01", "1"], ["2026-09-10", "1"], ["2026-09-20", "2"]]) {
+    const i = await call("POST", "/api/invoices", { customer_entity_id: cust.id, invoice_date: d, lines: [{ product_id: prod.id, quantity: q }] });
+    await call("POST", `/api/invoices/${i.id}/send`);
+    invs.push(i);
+  }
+  // tick the two oldest in the list: one payment of 75.00 pays the oldest and part of the next
+  await page.goto("/invoices");
+  await page.getByLabel("Search invoices").fill("E2E Three");
+  await page.getByLabel(`Pay ${invs[0].number}`).check();
+  await page.getByLabel(`Pay ${invs[1].number}`).check();
+  await page.getByRole("button", { name: "Record payment for 2 invoices…" }).click();
+  const dlg = page.getByRole("dialog", { name: "Record a payment" });
+  await expect(dlg.getByLabel("Amount received")).toHaveValue("100.00");          // both balances
+  await dlg.getByLabel("Amount received").fill("75.00");
+  await expect(dlg.getByLabel(`Amount for ${invs[0].number}`)).toHaveValue("50.00"); // oldest due first
+  await expect(dlg.getByLabel(`Amount for ${invs[1].number}`)).toHaveValue("25.00");
+  await dlg.getByLabel("Date").fill("2026-09-28");
+  await page.screenshot({ path: "e2e-screenshots/light-invoice-multi-payment.png" });
+  await dlg.getByRole("button", { name: "Record payment" }).click();
+  await expect(dlg).toHaveCount(0);
+  const a = await call("GET", `/api/invoices/${invs[0].id}`);
+  const b = await call("GET", `/api/invoices/${invs[1].id}`);
+  expect([a.status, b.status]).toEqual(["PAID", "PARTLY_PAID"]);
+  const txns = new Set([...a.payments.links, ...b.payments.links].map((x: any) => x.transaction_id));
+  expect(txns.size).toBe(1);                                                       // one deposit
+  // from a payment stub: type the newest invoice's number; the customer's open invoices are listed
+  await page.getByRole("button", { name: "Record a payment…" }).click();
+  const d2 = page.getByRole("dialog", { name: "Record a payment" });
+  await d2.getByLabel("Invoice number").fill(invs[2].number);
+  await d2.getByRole("button", { name: "Find" }).click();
+  await expect(d2.getByTestId("multi-payment-invoices").locator("tbody tr")).toHaveCount(2);   // 25.00 left on #2, and #3
+  await expect(d2.getByLabel("Amount received")).toHaveValue("125.00");
+  await d2.getByRole("button", { name: "Cancel" }).click();
+  // #528: a report run "to today" is remembered as such, so it reopens through the day it is opened (not a stale date)
+  await page.goto("/reports/inv-register");
+  const pop = page.context().waitForEvent("page");
+  await page.getByRole("link", { name: "Open", exact: true }).click();
+  await (await pop).close();
+  await expect.poll(async () => (await call("GET", "/api/me/report-preferences")).last?.["inv-register"]).toBeTruthy();
+  const last = (await call("GET", "/api/me/report-preferences")).last["inv-register"];
+  expect(last.date_to ?? null).toBeNull();
+  expect(last.date_from ?? null).toBeNull();
+  await logout(page);
+  await login(page, "admin");
+  ({ me, call } = await caller());
+  await call("PATCH", `/api/users/${ru.id}`, { roles: ruRoles });
+  if (!wasOn) await call("PUT", "/api/system/modules", { invoices: false });
+  await logout(page);
+});
+
+test("2.4.0 (#533): a deposit entered in the Register is applied to an invoice; the rest stays on its budget", async ({ page }) => {
+  // runs before #125 (Reinitialize wipes the financial data this needs)
+  const caller = async () => {
+    const me = await (await page.request.get("/api/auth/me")).json();
+    const call = async (method: string, url: string, data?: any) => {
+      const r = await page.request.fetch(url, { method, headers: { "X-CSRF-Token": me.csrf_token }, data });
+      expect(r.ok(), `${method} ${url}: ${await r.text()}`).toBeTruthy();
+      return r.status() === 204 ? null : r.json();
+    };
+    return { me, call };
+  };
+  await login(page, "admin");
+  let { me, call } = await caller();
+  const wasOn = !!me.modules?.invoices;
+  await call("PUT", "/api/system/modules", { invoices: true });
+  const ru = (await call("GET", "/api/users")).find((u: any) => u.username === "ru1");
+  const ruRoles: string[] = ru.roles;
+  await call("PATCH", `/api/users/${ru.id}`, { roles: [...ruRoles, "INVOICE_MANAGER"] });
+  await logout(page);
+  await login(page, "bm1");
+  ({ me, call } = await caller());
+  const fy = (await call("GET", "/api/fiscal-years")).find((f: any) => f.display_name === "FY2027");
+  const inv = await call("POST", "/api/budgets", { fiscal_year_id: fy.id, code: "4953", name: "E2E Program Fees", amount: "500.00", budget_type: "INCOME" });
+  await call("PUT", `/api/budgets/${inv.id}/invoiced-income`, { invoiced_income: true });
+  await call("POST", "/api/budgets", { fiscal_year_id: fy.id, code: "4954", name: "E2E Golf", amount: "500.00", budget_type: "INCOME" });
+  await logout(page);
+  await login(page, "ru1", "Brand-New-Pass-99");
+  ({ me, call } = await caller());
+  const sel = await call("GET", `/api/budgets/selectable?fiscal_year_id=${fy.id}&transaction_type=DEPOSIT`);
+  const fees = sel.find((o: any) => o.label.startsWith("4953"));
+  const golf = sel.find((o: any) => o.label.startsWith("4954"));
+  const units = await call("GET", "/api/invoices/catalog/unit-types");
+  const prod = await call("POST", "/api/invoices/catalog/products", { name: "E2E Program", unit_price: "100.00", unit_type_id: units[0].id, budget_id: fees.id });
+  const cust = await call("POST", "/api/entities", { entity_type: "ORGANIZATION", organization_name: "E2E Apply Customer", confirmations: ["DUPLICATE_ENTITY"] });
+  const i = await call("POST", "/api/invoices", { customer_entity_id: cust.id, invoice_date: "2026-09-02", lines: [{ product_id: prod.id, quantity: "1" }] });
+  await call("POST", `/api/invoices/${i.id}/send`);
+  // a $150 check: $100 for the invoice, $50 for the golf outing - all entered in the Register
+  await page.goto("/register");
+  await page.getByRole("button", { name: "New transaction" }).click();
+  const t = page.getByRole("dialog", { name: /New transaction/ });
+  await t.getByLabel("Type").selectOption("DEPOSIT");
+  await t.getByLabel("Transaction date").fill("2026-09-29");
+  await t.getByRole("combobox", { name: "Entity (payer)" }).fill("E2E Apply");
+  await page.getByRole("option", { name: /E2E Apply Customer/ }).click();
+  await t.getByLabel("Allocation 1 Fiscal Year").selectOption(String(fy.id));
+  await t.getByLabel("Allocation 1 Budget").selectOption(String(golf.id));
+  await t.getByLabel("Allocation 1 Amount").fill("150.00");
+  await t.getByTestId("allocation-1-apply").getByRole("button", { name: "Apply to invoice…" }).click();
+  const m = page.getByTestId("apply-to-invoice");
+  await expect(m.getByLabel(`Apply amount for ${i.number}`)).toHaveValue("100.00");       // the invoice's balance
+  await expect(m.getByTestId("apply-extra")).toContainText("The other $50.00");
+  await page.screenshot({ path: "e2e-screenshots/light-apply-to-invoice.png" });
+  await m.getByRole("button", { name: "Apply", exact: true }).click();
+  await expect(t.getByTestId("allocation-1-apply")).toContainText(`Applied to ${i.number} ($100.00); the rest stays on this budget`);
+  await t.getByRole("button", { name: "Save" }).click();
+  await expect(t).toHaveCount(0);
+  const after = await call("GET", `/api/invoices/${i.id}`);
+  expect(after.status).toBe("PAID");
+  const txn = await call("GET", `/api/transactions/${after.payments.links[0].transaction_id}`);
+  expect(txn.total).toBe("150.00");
+  expect(txn.allocations.filter((a: any) => !a.invoice).map((a: any) => [a.amount, a.budget.label.split(" ")[0]])).toEqual([["50.00", "4954"]]);
+  // #534: a $30 overpayment is the customer's credit, applied when their next invoice is marked as sent
+  const i2 = await call("POST", "/api/invoices", { customer_entity_id: cust.id, invoice_date: "2026-09-30", lines: [{ product_id: prod.id, quantity: "1" }] });
+  await call("POST", `/api/invoices/${i2.id}/send`);
+  await call("POST", `/api/invoices/${i2.id}/payments`, { bank_account_id: txn.bank_account_id, amount: "130.00", transaction_date: "2026-09-30", confirm_overpayment: true, confirmations: ["POSSIBLE_DUPLICATE"] });
+  const i3 = await call("POST", "/api/invoices", { customer_entity_id: cust.id, invoice_date: "2026-09-30", lines: [{ product_id: prod.id, quantity: "1" }] });
+  await page.goto(`/invoices/${i3.id}`);
+  await page.getByRole("button", { name: "Mark as sent" }).click();
+  await expect(page.getByTestId("inv-credit-applied")).toHaveText("$30.00");
+  await expect(page.getByTestId("inv-open")).toHaveText("$70.00");
+  await page.screenshot({ path: "e2e-screenshots/light-invoice-credit.png", fullPage: true });
+  // #544: $200 for a $100 invoice while $70 is still owed on another: no credit; the extra goes to the other invoice,
+  // and the rest is refunded - the Refund form opens once the deposit is saved
+  const i4 = await call("POST", "/api/invoices", { customer_entity_id: cust.id, invoice_date: "2026-10-01", lines: [{ product_id: prod.id, quantity: "1" }] });
+  await call("POST", `/api/invoices/${i4.id}/send`);
+  await page.goto("/register");
+  await page.getByRole("button", { name: "New transaction" }).click();
+  await t.getByLabel("Type").selectOption("DEPOSIT");
+  await t.getByLabel("Transaction date").fill("2026-10-02");
+  await t.getByRole("combobox", { name: "Entity (payer)" }).fill("E2E Apply");
+  await page.getByRole("option", { name: /E2E Apply Customer/ }).click();
+  await t.getByLabel("Allocation 1 Fiscal Year").selectOption(String(fy.id));
+  await t.getByLabel("Allocation 1 Budget").selectOption(String(golf.id));
+  await t.getByLabel("Allocation 1 Amount").fill("200.00");
+  await t.getByTestId("allocation-1-apply").getByRole("button", { name: "Apply to invoice…" }).click();
+  await m.getByLabel(`Apply to ${i3.number}`).uncheck();
+  await expect(m.getByLabel(`Apply amount for ${i4.number}`)).toHaveValue("100.00");
+  await expect(m.getByTestId("no-credit-while-owed")).toContainText("$70.00");
+  await expect(m.getByRole("radio", { name: /account credit/ })).toBeDisabled();
+  await m.getByRole("radio", { name: /Apply it to the other open invoices/ }).click();   // an action: it ticks them
+  await expect(m.getByLabel(`Apply amount for ${i3.number}`)).toHaveValue("70.00");
+  await expect(m.getByTestId("apply-extra")).toContainText("The other $30.00");
+  await expect(m.getByTestId("no-credit-while-owed")).toHaveCount(0);
+  await m.getByRole("radio", { name: /Refunded/ }).check();
+  await m.getByRole("button", { name: "Apply", exact: true }).click();
+  await t.getByRole("button", { name: "Save" }).click();
+  const cf = page.getByRole("dialog", { name: "Confirmation required" });
+  await cf.getByLabel("I have reviewed these warnings and explicitly confirm.").check();
+  await cf.getByRole("button", { name: "Confirm and continue" }).click();
+  const rf = page.getByTestId("refund-form");
+  await expect(rf.getByLabel("Refund amount")).toHaveValue("30.00");
+  await rf.getByLabel("Refund check number").fill("2001");
+  await rf.getByRole("button", { name: "Record refund" }).click();
+  await expect(rf).toHaveCount(0);
+  const paid4 = await call("GET", `/api/invoices/${i4.id}`);
+  expect(paid4.status).toBe("PAID");
+  expect(paid4.payments.refundable).toBe("0.00");
+  expect((await call("GET", `/api/invoices/${i3.id}`)).status).toBe("PAID");
+  await logout(page);
+  await login(page, "admin");
+  ({ me, call } = await caller());
+  await call("PATCH", `/api/users/${ru.id}`, { roles: ruRoles });
+  if (!wasOn) await call("PUT", "/api/system/modules", { invoices: false });
+  await logout(page);
+});
+
 test("#125: an Administrator reinitializes (keeping the users); everyone sees the notice until it is acknowledged", async ({ page }) => {
   await login(page, "admin");
   await page.getByRole("link", { name: "System/About" }).click();
@@ -4416,7 +4972,7 @@ test("#280: an Administrator brands reports - a palette, a custom palette checke
   await card.getByRole("button", { name: "Save branding" }).click();
   await expect(card.getByRole("status")).toHaveText("Saved.");
   // the logo shows in the live preview at once
-  await card.getByLabel("Full logo image").setInputFiles({ name: "logo.png", mimeType: "image/png", buffer: BRAND_LOGO });
+  await card.getByLabel("branding-full logo image").setInputFiles({ name: "logo.png", mimeType: "image/png", buffer: BRAND_LOGO });
   await expect(page.getByTestId("branding-preview").getByRole("img", { name: "Full logo" })).toBeVisible();
   await card.screenshot({ path: "e2e-screenshots/light-branding.png" });
   await card.getByRole("button", { name: "Reset to the PennyWarden palette" }).click();
@@ -4436,7 +4992,7 @@ test("#376: an Administrator groups the Reports catalog by Subject, renames and 
   await card.getByLabel("Category of Financial Flow").selectOption({ label: "This Fiscal Year" });
   // removing a category with reports asks where they go
   await card.getByRole("button", { name: "Remove…" }).last().click();       // System: no reports, removed at once
-  await expect(card.getByTestId("rs-category")).toHaveCount(5);
+  await expect(card.getByTestId("rs-category")).toHaveCount(6)   // 2.4.0 (#255): + Invoices;
   await card.getByRole("button", { name: "Remove…" }).nth(3).click();       // Entities: has a report
   await expect(card.getByRole("group", { name: "Remove Entities" })).toBeVisible();
   await card.getByRole("button", { name: "Keep it" }).click();
@@ -4460,7 +5016,7 @@ test("#376: an Administrator groups the Reports catalog by Subject, renames and 
   page.once("dialog", (d) => d.accept());
   await card.getByRole("button", { name: "Reset to defaults" }).click();
   await expect(card.getByRole("status")).toHaveText("Saved.");
-  await expect(card.getByTestId("rs-category")).toHaveCount(6);
+  await expect(card.getByTestId("rs-category")).toHaveCount(7);
   await card.getByRole("radio", { name: /Purpose/ }).check();
   await card.getByRole("button", { name: "Save and group by Purpose" }).click();
   await expect(card.getByRole("status")).toHaveText("Saved.");
@@ -4491,7 +5047,7 @@ test("#386: light and dark themes - presentations dark for a new setup, a dark p
   await card.getByLabel("Use a separate logo on dark backgrounds").check();
   await card.getByRole("button", { name: "Save branding" }).click();
   await expect(card.getByRole("status")).toHaveText("Saved.");
-  await card.getByLabel("Full logo for dark backgrounds image").setInputFiles({ name: "logo-dark.png", mimeType: "image/png", buffer: BRAND_LOGO });
+  await card.getByLabel("branding-dark_full logo image").setInputFiles({ name: "logo-dark.png", mimeType: "image/png", buffer: BRAND_LOGO });
   await expect(page.getByTestId("branding-preview-dark").getByRole("img", { name: "Full logo" })).toBeVisible();
   await card.screenshot({ path: "e2e-screenshots/light-branding-dark-theme.png" });
   // the light theme is unchanged
@@ -4500,6 +5056,40 @@ test("#386: light and dark themes - presentations dark for a new setup, a dark p
 });
 
 // ---------------------------------------------------------------- 2.2.0 #315 / #316: entity names
+test("2.4.0 polish (#503): an organization logo used by Branding; removing it lists where it is used", async ({ page }) => {
+  await login(page, "admin");
+  await page.getByRole("link", { name: "System/About" }).click();
+  await aboutTab(page, "General");
+  const logos = page.getByTestId("org-logos");
+  await expect(logos.getByTestId("org-logo-full")).toContainText("Not used anywhere yet.");
+  await logos.getByLabel("Logo image", { exact: true }).setInputFiles({ name: "logo.png", mimeType: "image/png", buffer: BRAND_LOGO });
+  await expect(logos.getByRole("img", { name: "Logo", exact: true })).toBeVisible();
+  // Branding's full logo: the organization logo, shown in the preview
+  await aboutTab(page, "Branding");
+  const card = page.getByRole("region", { name: "Organization branding" });
+  const full = card.getByTestId("logo-choice-branding-full");
+  const before = await full.getByRole("combobox").inputValue();
+  await full.getByRole("combobox").selectOption("ORG");
+  await expect(full.getByRole("img", { name: "The organization logo" })).toBeVisible();
+  await expect(page.getByTestId("branding-preview").getByRole("img", { name: "Full logo" })).toBeVisible();
+  // removing the organization logo asks first and names the places that use it
+  await aboutTab(page, "General");
+  await expect(logos.getByTestId("org-logo-full")).toContainText("Used by: Branding: logo");
+  await logos.getByTestId("org-logo-full").getByRole("button", { name: "Remove" }).click();
+  const dlg = page.getByRole("dialog", { name: "Confirmation required" });
+  await expect(dlg).toContainText("Branding: logo");
+  await dlg.getByLabel(/explicitly confirm/).check();
+  await dlg.getByRole("button", { name: "Confirm and continue" }).click();
+  await expect(logos.getByTestId("org-logo-full")).toContainText("None.");
+  await page.screenshot({ path: "e2e-screenshots/light-organization-logos.png" });
+  // Branding still says Organization logo, and explains there is none now; put it back as it was
+  await aboutTab(page, "Branding");
+  await expect(full.getByRole("note")).toContainText("No organization logo yet");
+  await full.getByRole("combobox").selectOption(before);
+  await expect(full.getByRole("combobox")).toHaveValue(before);
+  await logout(page);
+});
+
 test("#315 / #316: first and last name, a display name and mailing address; each user's name order", async ({ page }) => {
   await login(page, "ru1", "Brand-New-Pass-99");
   await page.getByRole("link", { name: "Entities" }).click();
@@ -4537,5 +5127,64 @@ test("#315 / #316: first and last name, a display name and mailing address; each
   await page.goto("/account");
   await Promise.all([page.waitForResponse((r) => r.url().includes("/api/me/preferences") && r.ok()),
                      page.getByLabel("Show people's names as").selectOption("FIRST_LAST")]);
+  await logout(page);
+});
+
+// ---------------------------------------------------------------- 2.4.0 polish: module switch, invoice setup
+test("2.4.0 polish (#482, #481, #477, #480): turning Invoices on shows Invoices Setup at once; Next invoice follows the pattern; the PDF editor suggests variables and lines up its columns", async ({ page }) => {
+  await login(page, "admin");
+  await page.goto("/about/general");
+  const nav = page.getByRole("navigation", { name: "Main navigation" });
+  const box = page.getByLabel("Invoices module");
+  const wasOn = await box.isChecked();
+  if (wasOn) {
+    await box.uncheck();
+    await expect(nav.getByRole("link", { name: "Invoices Setup" })).toHaveCount(0);
+  }
+  await box.check();                                       // #482: no reload needed
+  await expect(nav.getByRole("link", { name: "Invoices Setup" })).toBeVisible();
+  await nav.getByRole("link", { name: "Invoices Setup" }).click();
+  // #481: the example follows the pattern while typing
+  const pattern = page.getByLabel("Invoice number pattern");
+  await pattern.fill("INV-{SEQ:6}");
+  await expect(page.getByTestId("inv-next-number")).toHaveText(/^INV-\d{6}$/);
+  await pattern.fill("INV-{YYYY}");
+  await expect(page.getByTestId("inv-next-number-error")).toContainText("{SEQ}");
+  // #477: letterhead lines one per row, with {VARIABLE} suggestions
+  const tpl = page.getByTestId("invoice-template");
+  const lh = tpl.locator("fieldset").filter({ has: page.locator("legend", { hasText: /^Letterhead$/ }) });
+  await expect(lh.getByLabel("Letterhead line 1", { exact: true })).toHaveValue("{ORG}");
+  await lh.getByRole("button", { name: "+ Add line" }).click();
+  const added = lh.locator("input").last();
+  await added.fill("{ORG.E");
+  await expect(tpl.locator("ul.autocomplete [role=option]").first()).toContainText("{ORG.EMAIL}");
+  const boxes = await lh.locator("input").all();
+  const ys = await Promise.all(boxes.map(async (b) => (await b.boundingBox())!.y));
+  expect(new Set(ys.map((y) => Math.round(y))).size).toBe(ys.length);      // one row each
+  // #480: every column heading box starts at the same x
+  const heads = await page.getByTestId("inv-columns").locator("input").all();
+  const xs = await Promise.all(heads.map(async (h) => Math.round((await h.boundingBox())!.x)));
+  expect(new Set(xs).size).toBe(1);
+  // #501: dragging a column by its handle reorders the list (the first column moves below the second)
+  const colKeys = async () => (await page.getByTestId("inv-columns").locator("input").evaluateAll((els) => els.map((e) => e.id)));
+  const before = await colKeys();
+  const k0 = before[0].replace("inv-col-", ""), k1 = before[1].replace("inv-col-", "");
+  await page.getByTestId(`inv-col-handle-${k0}`).dragTo(page.getByTestId(`inv-col-handle-${k1}`));
+  await expect.poll(colKeys).toEqual([before[1], before[0], ...before.slice(2)]);
+  await page.getByRole("button", { name: `Move ${k0} up` }).click();      // and back with the arrow
+  await expect.poll(colKeys).toEqual(before);
+  await page.screenshot({ path: "e2e-screenshots/light-invoice-pdf-setup.png" });
+  // #522: the payment stub's settings show once it is turned on (not saved: the later tests keep the default)
+  const stub = page.getByTestId("inv-stub");
+  await expect(stub.getByLabel("Make checks payable to")).toHaveCount(0);
+  await stub.getByLabel("Payment stub (detach and return with payment) on invoices").check();
+  await expect(stub.getByLabel("Make checks payable to")).toHaveValue("{ORG}");
+  await stub.getByLabel("Place the address for a #9 return envelope window").check();
+  await expect(stub.getByLabel("Address – down (in)")).toBeVisible();
+  if (!wasOn) {                                            // leave the module as it was
+    await page.goto("/about/general");
+    await page.getByLabel("Invoices module").uncheck();
+    await expect(nav.getByRole("link", { name: "Invoices Setup" })).toHaveCount(0);
+  }
   await logout(page);
 });

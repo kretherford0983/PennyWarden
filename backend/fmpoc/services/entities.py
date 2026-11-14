@@ -14,7 +14,8 @@ FIELDS = ["entity_type", "organization_name", "first_name", "last_name", "positi
           "city", "state_region", "postal_code", "country", "phone", "email", "notes", "is_financial_institution",
           # 2.2.0 (#315): "same as" falls back at read time - empty means same
           "display_name_custom", "mailing_address_line1", "mailing_address_line2", "mailing_city",
-          "mailing_state_region", "mailing_postal_code", "mailing_country", "ein"]
+          "mailing_state_region", "mailing_postal_code", "mailing_country", "ein",
+          "tax_exempt", "tax_exempt_certificate"]                       # 2.4.0 polish (#485)
 MAILING = ["mailing_address_line1", "mailing_address_line2", "mailing_city", "mailing_state_region",
            "mailing_postal_code", "mailing_country"]
 
@@ -86,10 +87,17 @@ def _incoming(data, fields: set[str]) -> dict:
         if ein and not EIN_RE.match(ein):
             raise validation("The EIN is 9 digits written as 12-3456789.", "ein")
         v["ein"] = ein
-    for f in ("first_name", "last_name", "display_name_custom", *MAILING):
+    for f in ("first_name", "last_name", "display_name_custom", "tax_exempt_certificate", *MAILING):
         if f in v:
             v[f] = (v[f] or "").strip() or None
     return v
+
+
+def _exempt(new: dict) -> None:
+    """2.4.0 polish (#485): the flag is a yes/no; a certificate number only with the flag."""
+    new["tax_exempt"] = bool(new.get("tax_exempt"))
+    if not new["tax_exempt"]:
+        new["tax_exempt_certificate"] = None
 
 
 def duplicates(db: Session, ws_id: int, display: str, email: str | None, exclude_id: int | None = None) -> list[Entity]:
@@ -151,6 +159,7 @@ def create(db: Session, ctx, data) -> Entity:
     _validate_names(new["entity_type"], new["organization_name"], new["first_name"])
     if new["ein"] and new["entity_type"] != "ORGANIZATION":
         raise validation("An EIN is for organizations.", "ein")
+    _exempt(new)
     if data.is_financial_institution:
         ctx.require("entity.create_financial_institution")
     matches = _dup_matches(db, ctx.workspace_id, new)
@@ -197,6 +206,7 @@ def update(db: Session, ctx, e: Entity, data) -> Entity:
         new["position"] = None
     if new["ein"] and new["entity_type"] != "ORGANIZATION":
         raise validation("An EIN is for organizations.", "ein")
+    _exempt(new)
     if "phone" in fields:
         new["phone"] = clean_phone(data.phone, e.phone)
     key = name_key(_display_for(new))

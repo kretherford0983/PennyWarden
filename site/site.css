@@ -71,3 +71,33 @@ footer img { vertical-align: -3px; }
   .hero h1 { font-size: 1.8em; }
 }
 .feature img { max-height: 440px; width: auto; justify-self: center; }
+/* 2.4.0 (#473): the user guide, current and archived */
+.guide { max-width: 900px; padding-bottom: 40px; }
+.guide-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 18px 0; border-bottom: 1px solid var(--line); }
+.guide-bar select { font: inherit; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
+#guide-doc h1 { font-size: 1.9em; margin: 24px 0 12px; }
+#guide-doc h2 { margin-top: 36px; padding-top: 14px; border-top: 1px solid var(--line); }
+#guide-doc h2, #guide-doc h3 { scroll-margin-top: 12px; }
+#guide-doc code { background: var(--bg-soft); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; font-size: .92em; }
+#guide-doc pre { background: var(--bg-soft); border: 1px solid var(--line); border-radius: 8px; padding: 12px; overflow-x: auto; }
+#guide-doc pre code { background: none; padding: 0; }
+#guide-doc blockquote { margin: 14px 0; padding: 4px 16px; border-left: 4px solid var(--gold); background: var(--bg-soft); }
+.guide-table { overflow-x: auto; }
+.guide-table table { border-collapse: collapse; margin: 10px 0; }
+.guide-table th, .guide-table td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
+.guide-table th { background: var(--bg-soft); }
+/* 2.4.0 (#488): the guide as a book */
+.guide-search { display: flex; gap: 8px; margin: 16px 0 8px; max-width: 520px; }
+.guide-search input { flex: 1; font: inherit; padding: 6px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg); color: var(--ink); }
+.guide-search button { font: inherit; padding: 6px 12px; border-radius: 6px; border: 1px solid var(--line); background: var(--bg-soft); color: var(--ink); cursor: pointer; }
+.guide-crumbs { margin: 8px 0 0; }
+.guide-applies { margin: -6px 0 10px; opacity: .8; }
+.guide-lead { font-size: 1.08em; opacity: .85; }
+.guide-chapters { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
+.guide-card { border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; }
+#guide-doc .guide-card h2 { margin: 0 0 4px; padding: 0; border: 0; font-size: 1.08em; }
+.guide-card ul { margin: 6px 0 0; padding-left: 18px; }
+.guide-pages { list-style: none; padding: 0; }
+.guide-pages li { padding: 8px 0; border-bottom: 1px solid var(--line); }
+.guide-img { display: block; max-width: 100%; height: auto; border: 1px solid var(--line); border-radius: 6px; margin: 10px 0; }
+.guide-prevnext { display: flex; justify-content: space-between; gap: 12px; margin-top: 28px; padding-top: 12px; border-top: 1px solid var(--line); }

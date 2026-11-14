@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PennyWarden user guide</title>
+  <meta name="description" content="How to use PennyWarden, one task at a time: chapters, pages, pictures and search, for each release.">
+  <link rel="icon" href="../favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="../site.css">
+  <!-- 2.4.0 (#473): same strict policy as the product page; the guide is plain Markdown fetched from this site and
+       turned into page elements with textContent only (never parsed as HTML). -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self'; style-src 'self'; script-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'">
+</head>
+<body>
+  <header class="top">
+    <a class="brand" href="../"><img src="../favicon.svg" alt="" width="28" height="28"> PennyWarden</a>
+    <nav aria-label="Page">
+      <a href="../#features">Features</a>
+      <a href="../#download">Download</a>
+      <a href="./" aria-current="page">User guide</a>
+    </nav>
+  </header>
+  <main class="guide">
+    <div class="guide-bar">
+      <label for="guide-version">Applies to</label>
+      <select id="guide-version" aria-describedby="guide-version-note"></select>
+      <span id="guide-version-note" class="small">Choose your PennyWarden version. Releases before 2.4 have a single
+        "what's new" document.</span>
+    </div>
+    <article id="guide-doc" aria-live="polite"><p class="muted">Loading the guide…</p></article>
+  </main>
+  <footer>
+    <p><img src="../favicon.svg" alt="" width="18" height="18"> PennyWarden · free software under the
+      <a href="https://github.com/kretherford0983/PennyWarden/blob/main/LICENSE">AGPL-3.0</a> ·
+      <a href="https://github.com/kretherford0983/PennyWarden">Source code</a></p>
+  </footer>
+  <script src="guide.js"></script>
+</body>
+</html>

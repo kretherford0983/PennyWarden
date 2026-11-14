@@ -261,6 +261,9 @@ def view(db: Session, ctx) -> dict:
     dk = dark_palette_of(b)
     return {**pal, "footer_text": b.footer_text if b else None,
             "logos": {slot: _logo_info(b, slot) for slot in SLOTS},
+            # 2.4.0 polish (#503): per slot, the organization logo, Branding's own, or none; the organization's logos
+            "logo_sources": _org().branding_sources(b),
+            "org_logos": {slot: _org().info(_org().get(db, ctx.workspace_id, slot)) for slot in SLOTS},
             # 2.3.0 (#386)
             "dark": {**dk, "contrast": contrast_report(dk["colors"], dark=True),
                      "similar_series": [list(p) for p in similar_series(dk["series"])]},
@@ -278,6 +281,42 @@ def view(db: Session, ctx) -> dict:
             "contrast_pairs": [list(p) for p in CONTRAST_PAIRS], "minimum_contrast": AA,
             "similar_delta_e": SIMILAR_DELTA_E, "footer_max": FOOTER_MAX,
             "updated_at": b.updated_at.isoformat() if b and b.updated_at else None}
+
+
+def _org():
+    from . import org_logos
+    return org_logos
+
+
+def slot_logo(db: Session, b: BrandingSettings | None, slot: str) -> tuple[bytes | None, tuple[int, int] | None]:
+    """2.4.0 polish (#503): the logo a Branding slot uses - the organization's, its own upload, or none."""
+    if b is None:
+        return None, None
+    src = _org().branding_sources(b)[slot]
+    if src == "ORG":
+        r = _org().get(db, b.workspace_id, slot)
+        return (r.png, (r.width, r.height)) if r is not None else (None, None)
+    if src == "OWN" and getattr(b, f"logo_{slot}_png") is not None:
+        return getattr(b, f"logo_{slot}_png"), (getattr(b, f"logo_{slot}_width"), getattr(b, f"logo_{slot}_height"))
+    return None, None
+
+
+def set_logo_source(db: Session, ctx, slot: str, source: str) -> dict:
+    """#503: a slot's Logo choice - ORG, OWN or NONE. Audited."""
+    if slot not in SLOTS or source not in _org().SOURCES:
+        raise validation("Choose the organization logo, Branding's own logo, or none.", "source")
+    b = _ensure(db, ctx.workspace_id)
+    srcs = _org().branding_sources(b)
+    if srcs[slot] == source:
+        return view(db, ctx)
+    before = dict(srcs)
+    srcs[slot] = source
+    b.logo_sources = json.dumps(srcs, sort_keys=True)
+    b.updated_at, b.updated_by_user_id = utcnow(), ctx.user.id
+    db.flush()
+    audit.record(db, ctx, "BRANDING_LOGO_SOURCE_SET", "branding_settings", b.id, {"logo_sources": before},
+                 {"logo_sources": srcs})
+    return view(db, ctx)
 
 
 def _logo_info(b: BrandingSettings | None, slot: str) -> dict | None:
@@ -438,6 +477,10 @@ def set_logo(db: Session, ctx, slot: str, data: bytes | None) -> dict:
         for k in ("png", "sha256", "width", "height"):
             setattr(b, f"logo_{slot}_{k}", None)
         action = "BRANDING_LOGO_REMOVED"
+        srcs = _org().branding_sources(b)
+        if srcs[slot] == "OWN":                          # #503: nothing of its own left (OWN with none = none anyway)
+            srcs[slot] = "NONE"
+            b.logo_sources = json.dumps(srcs, sort_keys=True)
     else:
         png, w, h = normalize_logo(data, max_bytes=MAX_LOGO_BYTES)
         setattr(b, f"logo_{slot}_png", png)
@@ -445,6 +488,9 @@ def set_logo(db: Session, ctx, slot: str, data: bytes | None) -> dict:
         setattr(b, f"logo_{slot}_width", w)
         setattr(b, f"logo_{slot}_height", h)
         action = "BRANDING_LOGO_SET"
+        srcs = _org().branding_sources(b)                # #503: uploading here means "use this one"
+        srcs[slot] = "OWN"
+        b.logo_sources = json.dumps(srcs, sort_keys=True)
     b.updated_at, b.updated_by_user_id = utcnow(), ctx.user.id
     db.flush()
     audit.record(db, ctx, action, "branding_settings", b.id, before,
@@ -454,8 +500,10 @@ def set_logo(db: Session, ctx, slot: str, data: bytes | None) -> dict:
 
 
 def logo_png(db: Session, ctx, slot: str) -> bytes | None:
-    b = _row(db, ctx.workspace_id)
-    return getattr(b, f"logo_{slot}_png") if b is not None and slot in SLOTS else None
+    """The logo the slot uses now (#503: the organization's, its own, or none) - for the editor's preview."""
+    if slot not in SLOTS:
+        return None
+    return slot_logo(db, _row(db, ctx.workspace_id), slot)[0]
 
 
 # ------------------------------------------------------------------ the theme while a document is built
@@ -498,10 +546,11 @@ def load(db: Session, ws_id: int | None = None, output: str = "reports") -> Them
         return _DEFAULT_THEME if not dark else Theme(dark_palette_of(None), dark=True)
 
     def logo(slot: str):
-        if dark and b.dark_logos and getattr(b, f"logo_dark_{slot}_png") is not None:
-            slot = f"dark_{slot}"        # off, or no dark version of this logo: the light one is used
-        png = getattr(b, f"logo_{slot}_png")
-        return png, ((getattr(b, f"logo_{slot}_width"), getattr(b, f"logo_{slot}_height")) if png else None)
+        if dark and b.dark_logos:
+            png, size = slot_logo(db, b, f"dark_{slot}")
+            if png is not None:          # off, or no dark version of this logo: the light one is used
+                return png, size
+        return slot_logo(db, b, slot)    # #503: the organization's, Branding's own, or none
     (full, full_size), (mark, mark_size) = logo("full"), logo("mark")
     return Theme(dark_palette_of(b) if dark else palette_of(b), b.footer_text, full, mark, full_size, mark_size,
                  dark=dark)

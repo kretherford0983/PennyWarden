@@ -58,6 +58,8 @@ class Workspace(Base):
     checks_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
     # 2.1.0 (#312): the Donations module (optional; donation receipt letters)
     donations_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
+    # 2.4.0 (#251): the Invoices module (optional)
+    invoices_enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
     # 2.0.0 (#126): Administrators are warned after this many days without a backup (0 = off)
     backup_warning_days: Mapped[int] = mapped_column(Integer, default=7, server_default="7", nullable=False)
     # 2.0.0 (#130): maintenance mode - on while a message is set (from maintenance_starts_at, if given): everyone but
@@ -215,6 +217,8 @@ class Budget(Base):
     continues_former_budget_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     status_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # 2.4.0 (#250): Invoiced Income - set on an Income parent, carried by its sub-budgets and Other (BR-016)
+    invoiced_income: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
     created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("app_user.id"), nullable=True)
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
@@ -260,6 +264,9 @@ class Entity(Base):
     # 2.1.0 (#314): the organization itself - one per workspace, maintained by Administrators in System/About
     is_organization: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
     ein: Mapped[str | None] = mapped_column(String(10), nullable=True)       # 12-3456789 (#314; other entities #315)
+    # 2.4.0 polish (#485): invoices to a tax-exempt customer charge no sales tax (drafts and new revisions)
+    tax_exempt: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
+    tax_exempt_certificate: Mapped[str | None] = mapped_column(String(60), nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
     name_key: Mapped[str] = mapped_column(String(200), index=True)  # normalized name for duplicate search
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
@@ -486,7 +493,8 @@ class Attachment(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
     original_filename: Mapped[str] = mapped_column(String(255))
-    storage_key: Mapped[str] = mapped_column(String(80), unique=True)  # application generated
+    # application generated; 2.4.0 (#425): shared by every attachment record with identical content (not unique)
+    storage_key: Mapped[str] = mapped_column(String(80), index=True)
     mime_type: Mapped[str] = mapped_column(String(40))
     size_bytes: Mapped[int] = mapped_column(Integer)
     sha256: Mapped[str] = mapped_column(String(64))
@@ -501,6 +509,8 @@ class Attachment(Base):
     donation_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     # 2.2.0 (#256): a year-end giving statement's kept copy (and its envelope)
     donation_statement_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    # 2.4.0 (#253): a sent invoice's PDF (every revision's stays)
+    invoice_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     removed_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     removed_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("app_user.id"), nullable=True)
@@ -511,6 +521,8 @@ class Attachment(Base):
     system_generated: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
     # 2.1.0 (#259): position among its owner's attachments; None = upload order (listed by COALESCE(sort_order, id))
     sort_order: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    __table_args__ = (Index("ix_attachment_workspace_sha256", "workspace_id", "sha256"),)   # 2.4.0 (#425)
 
 
 class RequestKey(Base):
@@ -640,6 +652,9 @@ class Fundraiser(Base):
     continues_from_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # 2.3.0 (#372): optional goal, compared with the net (informational only; never blocks activity)
     goal_amount_cents: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 2.4.0 (#429): FUNDRAISER | EVENT (an Event hides the goal and donation receipts; required budgets differ)
+    event_type: Mapped[str] = mapped_column(String(20), default="FUNDRAISER", server_default="FUNDRAISER",
+                                            nullable=False)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
     created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
@@ -817,6 +832,9 @@ class BrandingSettings(Base):
     logo_dark_mark_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     logo_dark_mark_width: Mapped[int | None] = mapped_column(Integer, nullable=True)
     logo_dark_mark_height: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # 2.4.0 polish (#503): per slot, where the logo comes from - {"full": "ORG" | "OWN" | "NONE", ...}; a slot not
+    # listed is OWN (the logo uploaded here, if any), as before
+    logo_sources: Mapped[str | None] = mapped_column(Text, nullable=True)
     updated_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     updated_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("app_user.id"), nullable=True)
 
@@ -958,6 +976,30 @@ class Reminder(Base):
     repeat_anchor: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
     repeat_index: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
     repeat_source_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    # 2.4.0 (#551): the reminder's checklist
+    tasks: Mapped[list["ReminderTask"]] = relationship(order_by="ReminderTask.seq", cascade="all, delete-orphan",
+                                                       passive_deletes=True, lazy="selectin")
+
+
+class ReminderTask(Base):
+    """2.4.0 (#551): one task of a reminder's checklist (one level). Every reminder has one objective task, pinned
+    last and named by the reminder's title; ticking it resolves the reminder. The steps before it are ticked in any
+    order once the reminder is shown. A task may name a contact - a fixed entity (ENTITY) or whoever
+    holds a position (POSITION, the active individuals with that position when shown) - and an app function to open
+    (``function_id``: ``report:<id>`` or ``page:<name>``, labelled with the user-facing name by the UI)."""
+    __tablename__ = "reminder_task"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    reminder_id: Mapped[int] = mapped_column(ForeignKey("reminder.id", ondelete="CASCADE"), index=True)
+    seq: Mapped[int] = mapped_column(Integer, default=0, server_default="0")
+    title: Mapped[str] = mapped_column(String(200))
+    done_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    done_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    contact_kind: Mapped[str | None] = mapped_column(String(8), nullable=True)   # ENTITY | POSITION
+    contact_entity_id: Mapped[int | None] = mapped_column(Integer, nullable=True)   # no FK, like reminder.link_id
+    contact_position: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    function_id: Mapped[str | None] = mapped_column(String(48), nullable=True)
+    # the reminder's objective: always its last task, named by the reminder's title; ticking it resolves the reminder
+    is_objective: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
 
 
 class UserSecurityQuestion(Base):
@@ -1174,6 +1216,12 @@ class DonationSettings(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), unique=True)
     config_json: Mapped[str] = mapped_column(Text)
+    # 2.4.0 polish (#503): the receipt letter's and the year-end statement's own logos (used when their Logo choice
+    # is "Its own logo"; PNG, validated and re-encoded)
+    receipt_logo_png: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    receipt_logo_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    statement_logo_png: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    statement_logo_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
     updated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
@@ -1298,3 +1346,313 @@ class DonationStatement(Base):
     printed_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # 2.3.0 polish (0069): who signed it (empty: no signature, or printed before 2.3.0)
     signer_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+# ---------------------------------------------------------------- 2.4.0 (#252): Invoices - the product catalog
+class InvoiceUnitType(Base):
+    """A unit a product is sold in (each, hour, month...). Maintained by Invoice Managers; retired, never deleted."""
+    __tablename__ = "invoice_unit_type"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
+    name: Mapped[str] = mapped_column(String(40))
+    active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=sa_true(), nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    updated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class InvoiceProductCategory(Base):
+    """A product category (dues, sponsorships, event fees...). Maintained by Invoice Managers; retired, never deleted."""
+    __tablename__ = "invoice_product_category"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
+    name: Mapped[str] = mapped_column(String(80))
+    # 2.4.0 polish (#483): the Invoiced Income budget its products follow unless they set their own; (#486) the
+    # default product code pattern ({YY}/{YYYY}, {SEQ}/{SEQ:n}) and its counters as JSON {"<year or 0>": next}
+    budget_id: Mapped[int | None] = mapped_column(ForeignKey("budget.id"), nullable=True)
+    code_pattern: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    code_counters: Mapped[str | None] = mapped_column(Text, nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=sa_true(), nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    updated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class InvoiceProduct(Base):
+    """What the organization bills for: price, unit, category, taxable, and the Invoiced Income budget the money goes
+    to. An invoice line copies its description and price (a later catalog change never alters an issued invoice).
+    `is_system` marks the built-in Discount item (no budget, no price)."""
+    __tablename__ = "invoice_product"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    code: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    description: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    unit_price_cents: Mapped[int] = mapped_column(BigInteger, default=0)
+    unit_type_id: Mapped[int | None] = mapped_column(ForeignKey("invoice_unit_type.id"), nullable=True)
+    category_id: Mapped[int | None] = mapped_column(ForeignKey("invoice_product_category.id"), nullable=True)
+    taxable: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
+    budget_id: Mapped[int | None] = mapped_column(ForeignKey("budget.id"), nullable=True, index=True)
+    is_system: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
+    # 2.4.0 polish (#487): the tax group whose rates apply to this product (none = not taxed; replaces `taxable`,
+    # which is kept equal to "has a group")
+    tax_group_id: Mapped[int | None] = mapped_column(ForeignKey("invoice_tax_group.id"), nullable=True)
+    # 2.4.0 polish (#484): the product-scope custom fields asked for on lines with this product (JSON list of ids)
+    custom_field_ids: Mapped[str | None] = mapped_column(Text, nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=sa_true(), nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    updated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class InvoiceTaxRate(Base):
+    """A sales tax rate (in thousandths of a percent: 7.25 % = 7250) and the Invoiced Income budget it is collected
+    into. Kept in the catalog so the Administrator stays out of budgets (BR-003)."""
+    __tablename__ = "invoice_tax_rate"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
+    name: Mapped[str] = mapped_column(String(80))
+    rate_milli_pct: Mapped[int] = mapped_column(Integer)
+    budget_id: Mapped[int | None] = mapped_column(ForeignKey("budget.id"), nullable=True, index=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=sa_true(), nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    updated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class InvoiceTaxGroup(Base):
+    """2.4.0 polish (#487): a named set of tax rates (e.g. Lodging = Hotel tax + State tax) a product picks; every
+    rate in it applies to the product's lines. Maintained by Invoice Managers; inactivated, never deleted."""
+    __tablename__ = "invoice_tax_group"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
+    name: Mapped[str] = mapped_column(String(80))
+    rate_ids: Mapped[str] = mapped_column(Text, default="[]")                 # JSON list of invoice_tax_rate ids
+    active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=sa_true(), nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    updated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+# ---------------------------------------------------------------- 2.4.0 (#253): Invoices
+class InvoiceSettings(Base):
+    """The Administrator's module setup: numbering, default terms and notes (one row per workspace)."""
+    __tablename__ = "invoice_settings"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), unique=True)
+    number_pattern: Mapped[str] = mapped_column(String(60), default="INV-{YYYY}-{SEQ:4}")
+    next_seq: Mapped[int] = mapped_column(Integer, default=1)          # one sequence, never restarts or reused
+    terms_days: Mapped[int] = mapped_column(Integer, default=30)
+    terms_text: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    default_notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    overdue_reminder_days: Mapped[int] = mapped_column(Integer, default=0, server_default="0")   # 2.4.0 (#255)
+    # 2.4.0 (#539): invoice emails' Reply-To and From name (empty: the Email setup's)
+    email_reply_to: Mapped[str | None] = mapped_column(String(254), nullable=True)
+    email_from_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    template_json: Mapped[str | None] = mapped_column(Text, nullable=True)        # 2.4.0 (#253 part 3): PDF template
+    logo_png: Mapped[bytes | None] = mapped_column(LargeBinary, nullable=True)
+    logo_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    updated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class Invoice(Base):
+    """A customer invoice. Its number is taken when the draft is created and never reused (BR-001); a sent invoice
+    is changed by a revision (same number, -R<n>). Void and write-off have no financial or budget effect."""
+    __tablename__ = "invoice"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
+    number: Mapped[str] = mapped_column(String(60))
+    seq: Mapped[int] = mapped_column(Integer)
+    revision: Mapped[int] = mapped_column(Integer, default=0)
+    customer_entity_id: Mapped[int] = mapped_column(ForeignKey("entity.id"), index=True)
+    invoice_date: Mapped[dt.date] = mapped_column(Date)
+    due_date: Mapped[dt.date] = mapped_column(Date)
+    terms_text: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    notes: Mapped[str | None] = mapped_column(String(2000), nullable=True)
+    tax_rate_id: Mapped[int | None] = mapped_column(ForeignKey("invoice_tax_rate.id"), nullable=True)
+    tax_name: Mapped[str | None] = mapped_column(String(80), nullable=True)          # copied, like line prices
+    tax_rate_milli_pct: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    tax_budget_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    discount_kind: Mapped[str | None] = mapped_column(String(10), nullable=True)    # AMOUNT | PERCENT (whole invoice)
+    discount_value: Mapped[int | None] = mapped_column(BigInteger, nullable=True)  # cents | thousandths of a percent
+    discount_reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    status: Mapped[str] = mapped_column(String(14), default="DRAFT", index=True)  # DRAFT|SENT|PARTLY_PAID|PAID|VOID|WRITTEN_OFF
+    sent_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    sent_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    void_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    voided_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    voided_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    write_off_status: Mapped[str | None] = mapped_column(String(10), nullable=True)   # PENDING|APPROVED|REJECTED
+    write_off_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    write_off_requested_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    write_off_requested_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    write_off_decided_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    write_off_decided_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    write_off_note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    write_off_self_approved: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
+    custom_values: Mapped[str | None] = mapped_column(Text, nullable=True)     # 2.4.0 (#253 part 2): JSON {field id: value}
+    batch_id: Mapped[int | None] = mapped_column(ForeignKey("invoice_batch.id"), nullable=True, index=True)   # 2.4.0 (#248)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    updated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    lines: Mapped[list["InvoiceLine"]] = relationship(
+        back_populates="invoice", lazy="selectin", cascade="all, delete-orphan", order_by="InvoiceLine.position")
+
+    __table_args__ = (UniqueConstraint("workspace_id", "seq", name="uq_invoice_ws_seq"),)
+
+
+class InvoiceLine(Base):
+    """A line from the catalog: the product's description, price, unit, taxable flag and budget are copied when it is
+    added (a catalog change never alters an issued invoice); the Invoice Manager enters the quantity and an optional
+    line discount with its reason."""
+    __tablename__ = "invoice_line"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    invoice_id: Mapped[int] = mapped_column(ForeignKey("invoice.id"), index=True)
+    position: Mapped[int] = mapped_column(Integer)
+    product_id: Mapped[int] = mapped_column(ForeignKey("invoice_product.id"))
+    description: Mapped[str] = mapped_column(String(1000))
+    unit_type: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    unit_price_cents: Mapped[int] = mapped_column(BigInteger)
+    quantity_milli: Mapped[int] = mapped_column(BigInteger)                  # quantity x 1000 (0.5 hour = 500)
+    taxable: Mapped[bool] = mapped_column(Boolean, default=False)
+    budget_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    discount_kind: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    discount_value: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    discount_reason: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    custom_values: Mapped[str | None] = mapped_column(Text, nullable=True)     # 2.4.0 (#253 part 2): JSON {field id: value}
+    # 2.4.0 polish (#487): the rates that apply to this line, copied from its product's tax group when the invoice
+    # is saved (a draft or a new revision): JSON [{"rate_id", "name", "milli", "budget_id"}]
+    taxes: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    invoice: Mapped["Invoice"] = relationship(back_populates="lines")
+
+
+class InvoiceRevision(Base):
+    """A sent version of an invoice: the snapshot that was sent and its PDF (kept as the invoice's attachment)."""
+    __tablename__ = "invoice_revision"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    invoice_id: Mapped[int] = mapped_column(ForeignKey("invoice.id"), index=True)
+    revision: Mapped[int] = mapped_column(Integer)
+    number: Mapped[str] = mapped_column(String(70))
+    total_cents: Mapped[int] = mapped_column(BigInteger)
+    snapshot: Mapped[str] = mapped_column(Text)
+    attachment_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    reason: Mapped[str | None] = mapped_column(String(500), nullable=True)   # why the next revision was made
+    sent_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    sent_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class InvoiceCustomField(Base):
+    """2.4.0 (#253 part 2): an Administrator-defined field on invoices or on their lines - text, number, date or a
+    pick-list - with a required flag and a show-on-PDF flag. Retired, never deleted (values stay on old invoices)."""
+    __tablename__ = "invoice_custom_field"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
+    level: Mapped[str] = mapped_column(String(10))            # INVOICE | LINE
+    name: Mapped[str] = mapped_column(String(60))
+    field_type: Mapped[str] = mapped_column(String(10))       # TEXT | NUMBER | DATE | PICKLIST
+    options: Mapped[str | None] = mapped_column(Text, nullable=True)        # JSON list for a pick-list
+    required: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
+    show_on_pdf: Mapped[bool] = mapped_column(Boolean, default=True, server_default=sa_true(), nullable=False)
+    position: Mapped[int] = mapped_column(Integer, default=0)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, server_default=sa_true(), nullable=False)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    updated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class InvoiceBatch(Base):
+    """2.4.0 (#248): invoices created together for many customers (one draft each). A label on the invoices: each one
+    stays an ordinary invoice."""
+    __tablename__ = "invoice_batch"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
+    name: Mapped[str] = mapped_column(String(120))
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class EmailSettings(Base):
+    """2.4.0 (#249): the outgoing mail server, set by the Administrator. The password is encrypted with the application
+    key, never shown again after saving (replace only) and never logged, audited or returned (BR-103/104)."""
+    __tablename__ = "email_settings"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), unique=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
+    host: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    port: Mapped[int] = mapped_column(Integer, default=587)
+    security: Mapped[str] = mapped_column(String(10), default="STARTTLS")        # STARTTLS | SSL | NONE
+    username: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    password_enc: Mapped[str | None] = mapped_column(Text, nullable=True)
+    from_address: Mapped[str | None] = mapped_column(String(254), nullable=True)
+    from_name: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    reply_to: Mapped[str | None] = mapped_column(String(254), nullable=True)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    updated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class EmailLog(Base):
+    """2.4.0 (#249): every email sent (or attempted) to a customer: what, to whom, by whom, when, the attachment's
+    SHA-256 and the result. Never the mail server's password; the message text is kept as sent."""
+    __tablename__ = "email_log"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(12))                          # INVOICE | STATEMENT | TEST | RECEIPT | DONOR_STMT (#539)
+    invoice_id: Mapped[int | None] = mapped_column(ForeignKey("invoice.id"), nullable=True, index=True)
+    customer_entity_id: Mapped[int | None] = mapped_column(Integer, nullable=True, index=True)
+    to_address: Mapped[str] = mapped_column(String(1000))
+    cc_address: Mapped[str | None] = mapped_column(String(1000), nullable=True)
+    subject: Mapped[str] = mapped_column(String(200))
+    body: Mapped[str | None] = mapped_column(Text, nullable=True)
+    attachment_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    attachment_sha256: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    status: Mapped[str] = mapped_column(String(8))                         # SENT | FAILED
+    error: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    sent_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    sent_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class InvoicePayment(Base):
+    """2.4.0 (#254): a deposit allocation that pays an invoice (PAYMENT), its overpayment (OVERPAYMENT), or a refund
+    withdrawal allocation of that overpayment (REFUND). The amount is the allocation's; only ACTIVE transactions
+    count. Unlinking keeps the row (removed_at), never deletes it (BR-001)."""
+    __tablename__ = "invoice_payment"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
+    invoice_id: Mapped[int] = mapped_column(ForeignKey("invoice.id"), index=True)
+    allocation_id: Mapped[int] = mapped_column(ForeignKey("transaction_allocation.id"), index=True)
+    kind: Mapped[str] = mapped_column(String(12))          # PAYMENT | OVERPAYMENT | REFUND
+    # 2.4.0 (#534): a payment made of the customer's credit - the invoice whose overpayment it came from
+    credit_from_invoice_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    removed_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    removed_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    remove_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+
+
+# ---------------------------------------------------------------- 2.4.0 polish (#503) organization logos
+class OrganizationLogo(Base):
+    """The organization's logos (System/About -> General -> Organization logos): the logo, the small mark and their
+    dark-background versions. Cover letters, envelopes, the invoice PDF, donation letters and Branding can each use
+    them ("Organization logo"), their own upload, or none. Organization settings (BR-003), not financial data."""
+    __tablename__ = "organization_logo"
+    __table_args__ = (UniqueConstraint("workspace_id", "slot", name="uq_organization_logo_slot"),)
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    workspace_id: Mapped[int] = mapped_column(ForeignKey("workspace.id"), index=True)
+    slot: Mapped[str] = mapped_column(String(10))                 # full | mark | dark_full | dark_mark
+    png: Mapped[bytes] = mapped_column(LargeBinary)
+    sha256: Mapped[str] = mapped_column(String(64))
+    width: Mapped[int] = mapped_column(Integer)
+    height: Mapped[int] = mapped_column(Integer)
+    updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
+    updated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)

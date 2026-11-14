@@ -197,6 +197,41 @@ export function useConfirmable() {
   return { run, dialog };
 }
 
+/** 2.4.0 (#425): uploads a file; when the identical file is already attached to the same record the server answers
+ * DUPLICATE_ON_RECORD and the user decides - Cancel (nothing added) or Attach anyway (sent again with attach_anyway).
+ * Resolves true when the file was added, false when cancelled. */
+export function useAttachmentUpload() {
+  const [pending, setPending] = useState<null | { name: string; message: string; decide: (attach: boolean) => void }>(null);
+  async function upload(url: string, file: File): Promise<boolean> {
+    try {
+      await api.upload(url, file);
+      return true;
+    } catch (e) {
+      if (!(e instanceof ApiError && e.code === "DUPLICATE_ON_RECORD")) throw e;
+      const attach = await new Promise<boolean>((resolve) => {
+        let done = false;
+        setPending({ name: file.name, message: e.message, decide: (a) => { if (done) return; done = true; setPending(null); resolve(a); } });
+      });
+      if (!attach) return false;
+      await api.upload(`${url}${url.includes("?") ? "&" : "?"}attach_anyway=true`, file);
+      return true;
+    }
+  }
+  const dialog = pending ? (
+    <Modal title="Same file already attached" onClose={() => pending.decide(false)}>
+      <div className="alert warn" role="alert">
+        <p><strong>{pending.name}</strong>: {pending.message}</p>
+        <p>If you meant to choose a different file, cancel and pick it.</p>
+      </div>
+      <div className="actions">
+        <button onClick={() => pending.decide(false)}>Cancel</button>
+        <button className="primary" onClick={() => pending.decide(true)}>Attach anyway</button>
+      </div>
+    </Modal>
+  ) : null;
+  return { upload, dialog };
+}
+
 export function Lock({ open }: { open: boolean }) {
   return (
     <svg width="14" height="14" viewBox="0 0 24 24" aria-hidden="true" className="lock-icon">
@@ -313,6 +348,7 @@ export function Attachments({ ownerType, ownerId, canUpload, canRemove, title = 
   const [err, setErr] = useState<unknown>(null);
   const [viewIdx, setViewIdx] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
+  const dup = useAttachmentUpload();   // #425
   const items = documentTypes ? all.filter((a) => documentTypes.includes(a.document_type || "UNSPECIFIED")) : all;
   const load = () => api.get(`/api/attachments${qs({ owner_type: ownerType, owner_id: ownerId })}`).then(setAll, setErr);
   useEffect(() => {
@@ -331,9 +367,11 @@ export function Attachments({ ownerType, ownerId, canUpload, canRemove, title = 
     }
     setBusy(true);
     try {
-      await api.upload(`/api/attachments${qs({ owner_type: ownerType, owner_id: ownerId, document_type: documentTypes?.[0] })}`, f);
-      await load();
-      onChanged?.();
+      const added = await dup.upload(`/api/attachments${qs({ owner_type: ownerType, owner_id: ownerId, document_type: documentTypes?.[0] })}`, f);
+      if (added) {
+        await load();
+        onChanged?.();
+      }
     } catch (e) {
       setErr(e);
     } finally {
@@ -445,6 +483,7 @@ export function Attachments({ ownerType, ownerId, canUpload, canRemove, title = 
           )}
         </Modal>
       ) : null}
+      {dup.dialog}
     </section>
   );
 }
@@ -501,7 +540,7 @@ export function EntityPicker({ label, entities, value, onChange, placeholder = "
   label: string;
   entities: any[];
   value: string;
-  onChange: (id: string) => void;
+  onChange: (id: string, byPosition?: boolean) => void;   // 2.4.0 (#551): true when only the position matched
   placeholder?: string;
   extraOption?: { id: string; label: string } | null;
 }) {
@@ -519,9 +558,13 @@ export function EntityPicker({ label, entities, value, onChange, placeholder = "
   const id = useRef(`ep-${Math.random().toString(36).slice(2)}`).current;
   const q = (query ?? "").trim().toLowerCase();
   const matches = all.filter((e) => !q || nm(e).toLowerCase().includes(q) || (e.display_name || "").toLowerCase().includes(q)
-    || (e.name || "").toLowerCase().includes(q) || (e.entity_number || "").toLowerCase().includes(q)).slice(0, 50);
+    || (e.name || "").toLowerCase().includes(q) || (e.entity_number || "").toLowerCase().includes(q)
+    || (e.position || "").toLowerCase().includes(q)).slice(0, 50);   // 2.4.0 (#551): also by position
+  const byPositionOnly = (e: any) => !!q && (e.position || "").toLowerCase().includes(q) && !nm(e).toLowerCase().includes(q)
+    && !(e.display_name || "").toLowerCase().includes(q) && !(e.name || "").toLowerCase().includes(q)
+    && !(e.entity_number || "").toLowerCase().includes(q);
   const choose = (e: any | null) => {
-    onChange(e ? String(e.id) : "");
+    onChange(e ? String(e.id) : "", e ? byPositionOnly(e) : false);
     setQuery(null);
     setOpen(false);
   };
@@ -550,10 +593,51 @@ export function EntityPicker({ label, entities, value, onChange, placeholder = "
           {matches.map((e, i) => (
             <li key={e.id} role="option" aria-selected={active === i + 1} className={active === i + 1 ? "active" : ""}
                 onMouseDown={(ev) => { ev.preventDefault(); choose(e); }}>
-              {nm(e)} <span className="muted">{e.entity_number}</span>
+              {nm(e)} <span className="muted">{e.position ? `${e.position} · ` : ""}{e.entity_number}</span>
             </li>
           ))}
           {matches.length === 0 ? <li className="muted" aria-disabled="true">No matching entities</li> : null}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
+
+/** 2.4.0 polish: a free-text field with the app's own suggestion list (not the browser's datalist, which matches and
+ * looks different in every browser). A suggestion matches when the typed text appears anywhere in its value or its
+ * hint (e.g. the people holding a position); the typed text may also be kept as it is. */
+export function SuggestInput({ value, onChange, suggestions, ariaLabel, required, maxLength, empty = "No matches" }: {
+  value: string; onChange: (v: string) => void; suggestions: { value: string; hint?: string }[];
+  ariaLabel: string; required?: boolean; maxLength?: number; empty?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [active, setActive] = useState(-1);
+  const id = useRef(`si-${Math.random().toString(36).slice(2)}`).current;
+  const q = value.trim().toLowerCase();
+  const matches = suggestions.filter((s) => !q || s.value.toLowerCase().includes(q) || (s.hint || "").toLowerCase().includes(q))
+    .slice(0, 50);
+  const choose = (s: { value: string }) => { onChange(s.value); setOpen(false); setActive(-1); };
+  const onKey = (ev: React.KeyboardEvent) => {
+    if (ev.key === "ArrowDown") { ev.preventDefault(); setOpen(true); setActive((a) => Math.min(a + 1, matches.length - 1)); }
+    else if (ev.key === "ArrowUp") { ev.preventDefault(); setActive((a) => Math.max(a - 1, -1)); }
+    else if (ev.key === "Enter" && open && active >= 0 && matches[active]) { ev.preventDefault(); choose(matches[active]); }
+    else if (ev.key === "Escape" && open) { ev.preventDefault(); ev.stopPropagation(); setOpen(false); }
+  };
+  return (
+    <div className="entity-picker">
+      <input role="combobox" aria-expanded={open} aria-controls={`${id}-list`} aria-autocomplete="list" aria-label={ariaLabel}
+             autoComplete="off" required={required} maxLength={maxLength} value={value}
+             onChange={(e) => { onChange(e.target.value); setOpen(true); setActive(-1); }}
+             onFocus={() => setOpen(true)} onBlur={() => setTimeout(() => setOpen(false), 150)} onKeyDown={onKey} />
+      {open && (matches.length || q) ? (
+        <ul className="picker-list" role="listbox" id={`${id}-list`} aria-label={`${ariaLabel} suggestions`}>
+          {matches.map((s, i) => (
+            <li key={s.value} role="option" aria-selected={active === i} className={active === i ? "active" : ""}
+                onMouseDown={(ev) => { ev.preventDefault(); choose(s); }}>
+              {s.value}{s.hint ? <span className="muted"> · {s.hint}</span> : null}
+            </li>
+          ))}
+          {matches.length === 0 ? <li className="muted" aria-disabled="true">{empty}</li> : null}
         </ul>
       ) : null}
     </div>

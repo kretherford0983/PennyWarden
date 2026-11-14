@@ -21,7 +21,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import inch
 from reportlab.lib.utils import ImageReader
-from reportlab.platypus import Image, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.platypus import Flowable, Image, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 
 from .. import letter_fit
 from ..letter_fit import FixedSpacer
@@ -61,6 +61,7 @@ FOLD_SHADES = {"LIGHT": 0.78, "MEDIUM": 0.6, "DARK": 0.35}             # gray (1
 FoldPlace = Literal["NONE", "FRONT", "BACK"]
 WINDOW_OFFSET_MAX = 0.75
 LOGO_MAX_W, LOGO_MAX_H = 2.5, 1.0        # inches (#176)
+ENVELOPE_LOGO_MAX_W, ENVELOPE_LOGO_MAX_H = 1.25, 0.6   # 2.4.0 polish (#503): beside the return address
 
 
 DEFAULT_ADDRESSEE = ["{PAYEE.NAME}", "{PAYEE.MAILING_ADDRESS}"]      # 2.2.0 (#317): today's block
@@ -93,7 +94,12 @@ class LetterConfig(_M):
     signature_mode: Literal["NONE", "PRINTED", "IMAGE", "SPACE"] = "PRINTED"
     include_by_default: bool = True
     # #176: logo position (the logo itself is stored with the template) and pre-printed letterhead paper
-    logo_position: Literal["LEFT", "CENTER"] = "LEFT"
+    # 2.4.0 polish: RIGHT_BESIDE - top right, level with the letterhead's first line; the letter text is not pushed
+    # down. #520: RIGHT_ABOVE - top right, above the letterhead (the text moves down), as on donation letters. A
+    # letter saved as RIGHT (before #520) was beside the letterhead and stays so.
+    logo_position: Literal["LEFT", "CENTER", "RIGHT_ABOVE", "RIGHT_BESIDE"] = "LEFT"
+    # 2.4.0 polish (#503): where the logo comes from - the organization logo, this letter's own upload, or none
+    logo_source: Literal["NONE", "ORG", "OWN"] = "NONE"
     preprinted: bool = False
     preprinted_margin: float = Field(default=2.0, ge=1.0, le=4.0)      # inches kept blank at the top
     # #177: #10 double-window envelope - the address on the letter itself, or on a separate address page
@@ -113,6 +119,11 @@ class LetterConfig(_M):
     # 2.2.0 (#317): the addressee block - up to 6 lines like the letterhead, from {PAYEE.*} (default: name + mailing
     # address, so existing templates print as before)
     addressee: list[str] = Field(default_factory=lambda: list(DEFAULT_ADDRESSEE), max_length=6)
+
+    @field_validator("logo_position", mode="before")
+    @classmethod
+    def _logo_position(cls, v):                    # #520: the earlier RIGHT was beside the letterhead
+        return "RIGHT_BESIDE" if v == "RIGHT" else v
 
     @field_validator("addressee")
     @classmethod
@@ -165,6 +176,8 @@ class EnvelopeConfig(_M):
     dx: float = Field(default=0, ge=-FEED_OFFSET_MAX, le=FEED_OFFSET_MAX)
     dy: float = Field(default=0, ge=-FEED_OFFSET_MAX, le=FEED_OFFSET_MAX)
     note: str | None = Field(default="Feed the envelope through the manual feed, stamp end first.", max_length=200)
+    # 2.4.0 polish (#503): a logo left of the return address - the organization logo, the template's own, or none
+    logo_source: Literal["NONE", "ORG", "OWN"] = "NONE"
 
     @field_validator("return_lines")
     @classmethod
@@ -258,10 +271,26 @@ def window_blocks(cfg: LetterConfig, texts: dict, payee_lines: list[str]) -> lis
     return out
 
 
-def _logo_size(png: bytes) -> tuple[float, float]:
+def _logo_size(png: bytes, max_w: float = LOGO_MAX_W, max_h: float = LOGO_MAX_H) -> tuple[float, float]:
     iw, ih = ImageReader(io.BytesIO(png)).getSize()
-    scale = min(LOGO_MAX_W * PT / iw, LOGO_MAX_H * PT / ih)
+    scale = min(max_w * PT / iw, max_h * PT / ih)
     return iw * scale, ih * scale
+
+
+class _ClearBelow(Flowable):
+    """2.4.0 polish (logo top right): space only as far as needed for what follows to start `depth` below the top
+    of the first page's text area - clear of a logo drawn beside the letterhead. Zero once already past it."""
+
+    def __init__(self, depth: float):
+        super().__init__()
+        self.depth = depth
+
+    def wrap(self, avail_width, avail_height):
+        used = (9 * inch - 12) - avail_height          # the first frame: 9 in tall, 6 pt padding top and bottom
+        return avail_width, max(0.0, self.depth - used)
+
+    def draw(self):
+        pass
 
 
 def fold_ticks(c, cfg: LetterConfig) -> None:
@@ -329,9 +358,14 @@ def _letter_once(cfg: LetterConfig, data: LetterData, title: str, logo: bytes | 
     base = ParagraphStyle("base", fontName=reg, fontSize=size, leading=size * 1.25)
     strong = ParagraphStyle("strong", parent=base, fontName=bold)
     centred = cfg.logo_position == "CENTER" and logo is not None
-    head = ParagraphStyle("head", parent=base, alignment=1 if centred else 0)
-    head_b = ParagraphStyle("head_b", parent=strong, alignment=1 if centred else 0)
     windowed = cfg.window != "NONE"
+    # 2.4.0 polish: top right, beside the letterhead (drawn on the page, so the text is not pushed down); the
+    # letterhead and date lines wrap short of it
+    beside = cfg.logo_position == "RIGHT_BESIDE" and logo is not None and not windowed and not cfg.preprinted
+    logo_wh = _logo_size(logo) if beside else (0.0, 0.0)
+    indent = logo_wh[0] + 0.25 * inch if beside else 0
+    head = ParagraphStyle("head", parent=base, alignment=1 if centred else 0, rightIndent=indent)
+    head_b = ParagraphStyle("head_b", parent=strong, alignment=1 if centred else 0, rightIndent=indent)
     blocks = window_blocks(cfg, texts, data.payee_lines) if windowed else []
     org = data.values.get("ORG", "")
     check_no = data.values.get("CHECK_NUMBER", "")
@@ -344,6 +378,9 @@ def _letter_once(cfg: LetterConfig, data: LetterData, title: str, logo: bytes | 
         later_page(c, doc)
         if fold == "FRONT":
             fold_ticks(c, cfg)
+        if beside:
+            w, h = logo_wh                                   # level with the first letterhead line, at the right margin
+            c.drawImage(ImageReader(io.BytesIO(logo)), 7.5 * PT - w, 10 * PT - 6 - h, w, h, mask="auto")
         if not windowed and not test:
             return
         c.saveState()
@@ -388,15 +425,19 @@ def _letter_once(cfg: LetterConfig, data: LetterData, title: str, logo: bytes | 
     elif cfg.preprinted:
         story.append(FixedSpacer(1, (cfg.preprinted_margin - 1) * inch))  # the paper's own letterhead is above
     else:
-        if logo is not None:
+        if logo is not None and not beside:
             w, h = _logo_size(logo)
-            story.append(Image(io.BytesIO(logo), width=w, height=h, hAlign="CENTER" if centred else "LEFT"))
+            story.append(Image(io.BytesIO(logo), width=w, height=h,
+                               hAlign="CENTER" if centred else "RIGHT" if cfg.logo_position.startswith("RIGHT") else "LEFT"))
             story.append(Spacer(1, size * 0.6))
         for i, line in enumerate(texts["letterhead"]):
             if line.strip():
                 story.append(Paragraph(escape(line), head_b if i == 0 else head))
     if cfg.show_date:
-        story.append(Paragraph(escape(data.values.get("TODAY", "")), base))
+        story.append(Paragraph(escape(data.values.get("TODAY", "")),
+                               ParagraphStyle("date", parent=base, rightIndent=indent) if beside else base))
+    if beside:
+        story.append(_ClearBelow(logo_wh[1]))
     story.append(Spacer(1, size * 1.4))
     if data.payee_lines and cfg.window != "LETTER":
         story.append(Paragraph(f"<font name='{bold}'>To:</font><br/>{'<br/>'.join(escape(x) for x in data.payee_lines)}",
@@ -494,7 +535,7 @@ def _envelope_page(c, cfg: EnvelopeConfig, page: str, guide: str, dx: float, dy:
 
 def envelope_pdf(cfg: EnvelopeConfig, ret: list[str], to: list[str], *, page: str | None = None,
                  guide: str | None = None, dx: float = 0.0, dy: float = 0.0, test: bool = False,
-                 preview: bool = False) -> bytes:
+                 preview: bool = False, logo: bytes | None = None) -> bytes:
     """`preview` (#186): the envelope itself, upright on an envelope-sized page with its edge drawn - for the setup
     screen's live preview, never printed."""
     from reportlab.pdfgen import canvas as rl_canvas
@@ -534,10 +575,16 @@ def envelope_pdf(cfg: EnvelopeConfig, ret: list[str], to: list[str], *, page: st
         c.restoreState()
     name = fonts.ps_name(cfg.font)
     lead = cfg.size * 1.2
+    rx = cfg.return_x
+    if logo is not None:            # 2.4.0 polish (#503): the logo at the return corner, the return address beside it
+        lw, lh = _logo_size(logo, ENVELOPE_LOGO_MAX_W, ENVELOPE_LOGO_MAX_H)
+        c.drawImage(ImageReader(io.BytesIO(logo)), cfg.return_x * PT, (h - cfg.return_y) * PT - lh, lw, lh,
+                    mask="auto")
+        rx = cfg.return_x + lw / PT + 0.12
     c.setFont(name, cfg.size - 1)
     y = (h - cfg.return_y) * PT - cfg.size
     for line in ret:
-        c.drawString(cfg.return_x * PT, y, line)
+        c.drawString(rx * PT, y, line)
         y -= lead * 0.95
     c.setFont(name, cfg.size)
     y = (h - cfg.address_y) * PT - cfg.size

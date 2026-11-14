@@ -42,7 +42,7 @@ mako==1.4.3
     # via alembic
 markupsafe==3.0.4
     # via mako
-opentelemetry-api==1.45.1
+opentelemetry-api==1.45.2
     # via fastapi
 pillow==13.0.0
     # via
@@ -51,21 +51,21 @@ pillow==13.0.0
     #   reportlab
 pycparser==3.11
     # via cffi
-pydantic==2.14.1
+pydantic==2.14.3
     # via
     #   -r requirements.in
     #   fastapi
-pydantic-core==2.50.1
+pydantic-core==2.50.4
     # via pydantic
 pyotp==2.10.0
     # via -r requirements.in
 pypdf==6.21.4
     # via -r requirements.in
-pypdfium2==5.14.0
+pypdfium2==5.15.0
     # via -r requirements.in
 python-docx==1.2.0
     # via -r requirements.in
-python-multipart==0.0.32
+python-multipart==0.0.33
     # via -r requirements.in
 python-pptx==1.0.2
     # via -r requirements.in
@@ -73,7 +73,7 @@ reportlab==5.1.0
     # via -r requirements.in
 segno==1.6.6
     # via -r requirements.in
-sqlalchemy==2.1.6
+sqlalchemy==2.1.8
     # via
     #   -r requirements.in
     #   alembic
@@ -100,7 +100,7 @@ typing-inspection==0.4.4
     #   pydantic
 uvicorn==0.54.0
     # via -r requirements.in
-xlsxwriter==3.3.0
+xlsxwriter==3.3.1
     # via
     #   -r requirements.in
     #   python-pptx

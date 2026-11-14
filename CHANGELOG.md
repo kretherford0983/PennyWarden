@@ -2,7 +2,308 @@
 
 Versions are `Breaking.Major.Minor` from 1.6.0 (docs/branching.md).
 
-## 2.3.0 — unreleased
+## 2.4.0 — unreleased
+PennyWarden 2.4.0 (in progress).
+
+### Invoices
+- **The Invoices module and the Invoice Manager role (#251).** An Administrator turns on **Invoices** under
+  System/About → General (off by default; audited). A new Financial role, **Invoice Manager**, decides what is billed;
+  give it under Users, alone or with the other Financial roles (never with Administrator or Auditor). The invoice
+  pages themselves arrive with the next 2.4.0 test builds; for now **Invoices** explains who does what, and
+  **Invoices Setup** (Administrator) is a placeholder.
+- **Invoices (#253).** Invoice Managers create invoices for a customer (an entity) from catalog products: enter the
+  quantity, and the product's description and price are copied onto the line. Discounts - a fixed amount or a
+  percentage, on a line or the whole invoice - need a reason that is printed on the invoice; a whole-invoice discount
+  is spread over the lines' budgets. Sales tax (one rate per invoice) is added on taxable lines after discounts.
+  Totals are calculated to the cent.
+- **Numbers** follow the pattern set in **Invoices Setup** (for example `INV-{YYYY}-{SEQ:4}` → INV-2027-0042); one
+  sequence that never restarts, and a number is never reused - not even after a void. Setup also holds the default
+  terms (due date) and notes, and a test print with sample data.
+- **Custom fields** (Invoices Setup): the Administrator adds fields to invoices or to their lines - text, number,
+  date or a pick-list - each required or not and shown on the PDF or not. A field no longer needed is retired; values
+  already entered stay.
+- **Mark as sent** keeps the invoice's PDF with it. A sent invoice is changed by **Revise**: the same number with
+  -R1, -R2…, and every earlier PDF stays attached. **Void** (with a reason) is for an invoice with no payments.
+  A **write-off** is requested by the Invoice Manager with a reason and approved or rejected by a Budget Manager
+  (*Write-off pending* until then; *self-approved* when one person holds both roles). Void and write-off change no
+  budget or balance. Everything is in the audit log. Register Users, Budget Managers, Budget Users and Auditors can
+  view invoices.
+- **Invoice PDF template (#253).** **Invoices Setup → Invoice PDF**: the Administrator chooses the font, an accent
+  color, the logo and where it goes, the letterhead and *Bill to* lines, the title, which columns the line table shows
+  (and their order and headings), whether invoice fields, terms and notes print, and a footer - with {VARIABLES} for
+  the organization, the customer and the invoice (e.g. `{INVOICE.BALANCE}`). A live preview with sample data shows
+  each change. Paid amounts and the balance due print on partly paid invoices.
+- **Email invoices and statements (#249).** An Administrator sets the outgoing mail server under System/About →
+  Settings → **Email** (server, port, security, user name, password, sender) and sends a test email. The password is
+  stored encrypted and never shown again (leave the field empty to keep it). Invoice Managers then use **Email…** on a
+  sent invoice, or *Email to the customer…* on the Customer statement report: the customer's address, a subject and a
+  message are filled in and can be changed; one click sends one email with the PDF. Nothing is emailed
+  automatically. Every email (and any failure) is listed on the invoice and in the audit log.
+- **Batch invoicing (#248).** **New batch…** on the Invoices page: choose the customers (search, *Choose all shown*)
+  and the lines and dates once; one draft invoice is created for each customer. The batch page lists them - open and
+  change any one on its own - then **Mark all drafts as sent** and print them as one **Combined PDF**.
+- **Invoice reports (#255).** **Reports** has an **Invoices** group: *Open invoices*, *Aging* (current, 1–30, 31–60,
+  61–90, over 90 days), *Customer statement* (PDF), *Sales tax collected* (charged and collected per rate),
+  *Invoice register*, *Sales by product / category* (or Income budget) and *Payments, write-offs, discounts and
+  refunds* (self-approved write-offs marked) - on screen, as PDF and as CSV, with Recently run and deep links like
+  the other reports. Invoice Managers, Register Users, Budget Managers, Budget Users and Auditors can run them (not the
+  Administrator); Invoice Managers now have **Reports** in their menu for these.
+- **Overdue invoices:** a dashboard section for everyone who can view invoices, and reminders for Invoice Managers on
+  the Invoices page from the due date plus a number of days the Administrator sets in Invoices Setup (default 0).
+- The **Fiscal Year Close** report lists invoices still open at the year's end (for information; they don't prevent
+  closing), and the restore re-entry report lists invoices created after the backup.
+- **Payments (#254).** A Register User records a payment from the invoice (**Record payment…**): one deposit,
+  spread over the invoice lines' Invoiced Income budgets and the sales tax; the invoice becomes *Partly paid* or
+  *Paid*. An existing deposit on an Invoiced Income budget can be linked instead (**Link a deposit…**, Invoice
+  Manager or Register User); a payment from someone other than the customer asks for confirmation. More than the open
+  balance is an **overpayment** (confirmed first) that a Register User can **refund** - the only withdrawal allowed on
+  an Income budget, and it reduces that income. While the module is on, a deposit on an Invoiced Income budget can't
+  be entered directly in the Register, and a linked line keeps its amount and budget until a Register User unlinks it
+  on the invoice (moving it to another budget). Voiding a payment in the Register re-opens the invoice. A revised
+  invoice can't total less than what has been paid, and an invoice with payments can't be voided.
+- **Product catalog (#252).** On the **Invoices** page Invoice Managers keep the products the organization bills for
+  (name, code, description, unit price, unit type, category, taxable, and the Invoiced Income budget the money goes
+  to), the sales **tax rates** (with their Invoiced Income budget), **unit types** (Each, Hour, Day, Week, Month,
+  Year to start with) and **categories**. A built-in **Discount** item is ready for invoices. The budget list offers
+  only Invoiced Income budgets, by code and name. Nothing is deleted: entries are inactivated and can be restored;
+  every change is in the audit log. Budget Managers, Budget Users and Auditors can see the catalog. A product whose
+  budget isn't continued into the current Fiscal Year shows **Needs budget**.
+- **Separation of duties:** the Budget Manager decides budgets, the Invoice Manager what is billed, the Register User
+  receives the money, the Auditor reviews. One person may hold several roles; System/About → **Security** lists any
+  account holding Budget Manager + Invoice Manager + Register User (information only).
+- An **Invoice Manager** sees the Register read-only (and its transaction documents), and creates and edits customer
+  entities - not Financial Institutions, budgets, Fiscal Years, the Dashboard or reports.
+- **Invoiced Income budgets (#250).** A Budget Manager can mark an Income budget as **Invoiced Income** (budget row
+  menu → *Mark as Invoiced Income*); its sub-budgets and Other carry it. It is shown with a 🧾 *Invoiced income* label
+  on the budget lists and in the Audit / Close report, and copying the budget into a new Fiscal Year keeps it. On an
+  Approved budget it can be changed only after unlocking the budget with a reason. Each change is in the audit log.
+  The budget still counts as income everywhere; the designation is groundwork for the Invoices module later in 2.4.0
+  and has no effect on the Register until that module is turned on.
+- **Invoice PDF setup polish (#477–#480).** The letterhead and Bill to lines are listed one per row (Remove, + Add
+  line), and every text suggests `{VARIABLES}` as you type, as on the cover letter. The logo can go **left**,
+  **center** (between the letterhead and the title) or **right** (now at the right margin, over the title). Invoices
+  get **fold marks** (front or back) and the **#10 double-window layout** (letterhead and Bill to in the windows, the
+  invoice below the first fold; the preview draws the windows), as on the cover letter. The line-table columns line
+  up in a grid and can be **dragged** into order (↑/↓ stay for the keyboard).
+- **Next invoice follows the pattern as you type (#481)**, or says what is wrong with it, before you save.
+- **Category defaults (#483, #486).** A product category can have an **Invoiced Income budget** — its products use it
+  unless they have their own, and changing it moves them too — and a **product code pattern** such as
+  `MBRSHP-{YY}-{SEQ:4}`. On the product form **Category comes first**: picking it fills in the next code (editable)
+  and offers the category's budget. Each category counts its own numbers, starting again each year when the pattern
+  shows the year; a number is used only when a product is saved with it, and a code already in use is skipped.
+- **Tax groups — several taxes per item (#487).** Sales tax is no longer one rate per invoice. The Invoice Manager
+  sets up **tax rates** (name, %, budget), groups them into **tax groups** (for example *Lodging* = Hotel tax +
+  State tax, *Food* = Food tax) and picks a **tax group on each product** (none = not taxed; it replaces the
+  *Taxable* box). Each line is charged every rate of its product's group; each rate is worked out once per invoice
+  on its own lines, shown on its own total line and on the PDF, and paid into its own budget. A night and a meal
+  billed together show three taxes on two lines. Changing a rate or a group reaches drafts (and revisions) when they
+  are saved or sent; sent invoices keep what they were sent with. The Sales tax collected report lists each rate.
+- **Tax-exempt customers (#485).** An entity can be marked **Tax-exempt customer**, with an optional exemption
+  certificate number. Invoices to it charge no sales tax on any line, and the PDF says *Tax exempt — certificate
+  #…*. Turning it on or off reaches drafts (and revisions) when they are saved; sent invoices keep their tax. There is
+  no per-invoice override: change the entity.
+- **Custom fields for chosen products (#484).** The Administrator can define a field *on lines of chosen products*
+  (for example **Serial number**); the Invoice Manager ticks it on those products in the catalog. It is asked on each
+  invoice line that uses such a product — required if the field says so — and prints after the line's description
+  when *show on PDF* is on.
+- **Payment stub on invoices and statements (#522).** Invoices Setup → Invoice PDF can add a **payment stub** the
+  customer detaches and returns with their payment: below a dashed cut line on the invoice's last page (a page of its
+  own when there's no room), with the invoice number in large type, the dates, the customer and customer number, the
+  amount due, an Amount enclosed line, and who to pay and where to mail it (from the organization profile, editable),
+  optionally placed for a #9 return envelope window. Customer statements have their own stub setting, listing the open
+  invoices. Off until turned on.
+- **Restore settings piece by piece (#535).** In **What to restore**, Invoices Setup, Email (the mail server),
+  Organization logos and Signers are now sections of their own (they were part of General and Payments Setup). If a
+  restored Payments or Donations Setup names a signer that isn't in the restored signer list, that choice is cleared
+  and the restore says so; the next invoice number always follows the highest invoice, so no number is used twice.
+- **Reports open with their defaults (#528).** A report opened from the Reports catalog starts with its usual choices
+  (today's date, this month, the current Fiscal Year) instead of your last run's - which left newer invoices out of
+  the invoice reports. **Recently run** still opens a report with that run's choices; a run "to today" (or "as of
+  today", or from the first of the month) reopens to the current day. Dates the screens fill in (a new invoice, a
+  payment, report periods) are your calendar date; before, they could show tomorrow in the evening.
+- **Email donation receipts and statements (#539).** With the mail server set up (the one Invoices use), donation
+  receipts and year-end statements have an **Email…** button (none when email isn't set up). The email starts from a
+  subject and message set in Donations Setup and goes to the donor's address; sending issues the receipt or statement
+  just as printing does. Invoices Setup and Donations Setup can each have their own **Reply-To** and **From name**
+  (empty uses the Email setup's), for example invoicing@… and donations@….
+- **Link a donation to a deposit already in the register (#562).** A donation recorded on the Donations page
+  before the money arrived can now be linked to a deposit that was entered in the register, instead of only through
+  **Create transaction**. Open the donation and use **Link a deposit…** on its line (the donor's deposit lines are
+  listed), or in the register's **Donation receipt…** choose the donation beside the ticked line: it starts on the
+  donor's awaiting donation of the same amount and warns when a donor has one awaiting. The donation takes the
+  deposit's amount (you confirm when it differs) and its printed receipts go with the deposit. If the line was
+  already ticked as a donation with its own receipt, linking it (confirmed) makes that receipt void, so the donor
+  doesn't keep two receipts for one gift.
+- **What happens to an overpayment (#544).** Everywhere a payment is recorded, the amount above the invoices gets
+  the same choices: kept on a budget (a donation, a fundraiser…), applied to the customer's other open invoices
+  (ticked and filled oldest due date first), kept as account credit, or refunded. A customer who still owes on
+  another invoice is never given credit. Refunding now opens the **Refund** form, linked to the invoice and filled in,
+  so the check number can be entered; nothing is withdrawn until it is recorded. **Record payment…** on an invoice
+  opens the same form as a payment for several invoices, with the customer's other open invoices listed.
+- **Customer credit (#534).** An overpayment not refunded is the customer's **account credit**. It is applied
+  automatically when their next invoice is marked as sent (oldest first), shown on the invoice and its PDF (**New
+  charges, Account credit applied, Total due**), on their other invoices, in Record a payment and on their statement. A
+  Register User can take an applied credit back off, refund it, or move it to another budget (for example a donation)
+  with a reason. Existing overpayments count as credit.
+- **Apply a Register deposit to an invoice (#533).** A deposit entered in the Register can pay invoices: **Apply to
+  invoice…** on an allocation lists the customer's open invoices (oldest due first) and, when saved, spreads the
+  applied part over each invoice's budgets and links it - while the deposit's other allocations stay as entered (one
+  check for an invoice and a fundraiser). Above the invoices, the rest stays on its budget, is kept as the customer's
+  credit, or is refunded at once. **Link a deposit…** on an invoice now also takes a deposit already saved on another
+  Income budget and moves it onto the invoice's budgets. Before, a deposit entered first could not reach an invoice.
+- **One payment for several invoices (#523).** When one check pays several invoices, a Register User records it once:
+  tick the invoices in the list (**Record payment for N invoices…**) or choose **Record a payment…** and pick the
+  customer — or type an invoice number from a payment stub. The amount received fills the balances oldest due date
+  first and each part can be changed; the Register gets **one deposit** that matches the bank, linked to each invoice.
+  An amount above the balances is an overpayment on the invoice you choose (confirmed). Invoices of different customers
+  can be paid together (a company or parent paying for several members), with a confirmation. Voiding the deposit
+  re-opens every invoice it paid; unlinking on one invoice affects only that invoice.
+- **Invoice reports for the board and members (#513).** Two reports made for publishing, each a PDF report and a
+  presentation with charts, in **Reports → Share with the board and members**: **Sales by product & category** (by
+  category, by product within each category and by Income budget, with share, collected and last year) and **Sales
+  overview** (sales, sales tax, money collected and refunded by month, open and overdue amounts, discounts and
+  write-offs, top customers and products). Run them for a Fiscal Year quarter or the year — compared with the same
+  period last year — or for dates of your choice. Sales are invoiced amounts (after discounts, before tax) with what has
+  been collected beside them. **Show customer names** can be turned off (*Customer 1, 2, …*), and a commentary is
+  printed on the first page and on its own slide.
+
+### Organization logos
+- **One logo for everything (#503).** **System/About → General → Organization logos** holds the organization's logo,
+  small mark and their dark-background versions. Every place that prints a logo has a **Logo** choice: the
+  **Organization logo** (replace it once and every such place prints the new one), **Its own logo**, or **No logo**:
+  each cover letter, the invoice PDF and the four Branding logos, and now also the **donation receipt letter**, the
+  **year-end statement** (the same as the receipt, or its own choice) and **envelopes** (at the return-address corner,
+  with the return address beside it). New templates start with no logo. Removing an organization logo lists the places
+  that use it and asks first; they then print none. After the upgrade, Branding's logos are the organization logos and
+  letters or the invoice PDF with the same file use them, so nothing prints differently.
+
+### Reminders
+- **Reminder tasks (#551).** A reminder can carry **steps** in front of its **objective** — the reminder itself, always
+  the last task. Steps are marked completed one at a time in any order, with the next open one marked **Next** and
+  *Marked completed by* who and when; reorder them by dragging a step by its handle (⠿) or with ↑/↓ as the routine is
+  refined. Marking the objective completed
+  (or **Resolve…**) finishes the reminder; with steps still open a note is needed and they show as skipped. A repeating
+  reminder starts again with no task completed. Any task — the objective too — can name a contact — a fixed organization or person, or
+  **whoever holds a position** (e.g. City Clerk, so a new clerk is picked up automatically) — with their email, phone
+  and mailing address (the name opens a read-only view of the entity listing every field, blank ones as *—*), and can open a report or page
+  (e.g. **End of Year Audit**) with one click. The Position field suggests the positions already held as you type —
+  matching any part of the title or a holder's name, each listed with who holds it — like the organization or person
+  field. Steps stay editable while the reminder is shown. Existing reminders become reminders with just their objective: nothing changes until
+  steps are added. The **Entities** list now shows each person's **position**, and its **Search** finds entities by
+  position as well as name, number or email. On the **Dashboard**, a reminder with steps starts collapsed to its title,
+  due date and progress (*1 of 4 steps done*); the **▸** button (the same one as the Register's expandable
+  rows) shows its steps and **▾** hides them again. A reminder without
+  steps is always shown in full, and the Notifications page shows every reminder in full.
+
+### Dashboard
+- **FY Progress (#553).** A third box beside *Income budget* and *Expense budget*. It shows:
+  - **The result so far:** income minus expenses, as a green **surplus** or a red **deficit**.
+  - **The projected year end:** this year so far plus the middle (median) of what the previous three Fiscal Years did
+    in the rest of their year. Seasonal income and a one-time event in one year are handled; without a previous year
+    it uses this year's pace. It shows *not enough information yet* in the first 3 months.
+  - **The budgeted result:** the income budget minus the expense budget.
+
+  A new user-guide page, **How the budget figures are worked out**, explains every figure in the budget boxes in plain
+  language, with an example. The box links to it.
+
+### Optional modules
+- **Turning a module on or off updates the menu at once (#482)** — no page reload (for the Administrator who changes
+  it; other users see it at their next sign-in or reload, as before).
+
+### Events & Fundraisers
+- **Highlight boxes keep words whole (#509).** In the Fiscal Year fundraising report (and the fundraiser report and the
+  Quarterly / Annual report), a long name in a highlight box such as *Top fundraiser* moves whole words to the next line
+  and, only if a word still doesn't fit, uses a smaller type - "Golf Tournament" no longer prints as "Golf Tourna-ment".
+  The dollar figures beside it keep their size.
+- **The Fundraisers module is now Events & Fundraisers (#429).** The menu item is **Events**; the module setting and
+  the pages read *Events & Fundraisers*, and the setting lists examples (fundraisers, a Summer Cookout, an annual
+  picnic…). Nothing moves: every fundraiser, its buckets, reports and history stay where they were.
+- **Each record is a Fundraiser or an Event.** Choose the **Type** when you create or edit it. An Event (for example
+  a cookout that isn't meant to raise money) shows income, expenses and net, without the goal or donation receipts. A
+  Fundraiser works as before. Every existing record is a Fundraiser after the upgrade.
+- **Changing the type** keeps the goal and receipt settings (hidden while it is an Event) and is recorded in the audit
+  log. A series holds one type: *Continues from* lists only the same type, and an event linked with others is taken
+  out of its series before its type changes.
+- **Required budgets.** Once budgets are chosen, a **Fundraiser** needs an Income and an Expense budget, and an
+  **Event** an Expense budget (Income optional), in each Fiscal Year it uses. A record with no budgets yet can still be
+  saved. Results can't be marked final while a required budget is missing; a record from before the upgrade that
+  misses one shows a warning until it is added (or the type is changed).
+- An event using two Fiscal Years shows **one Income and one Expense budget figure** (combined).
+- **Reports:** the stakeholder report and presentation work for both (an Event's report says "event" and has no goal);
+  the Fiscal Year fundraising report and presentation list Events in a **separate section**, not in the fundraising
+  totals; the Quarterly/Annual report shows no goal for an Event.
+- **One Report… button (#489).** The fundraiser page's Stakeholder report card no longer repeats the Report… button
+  from the page header.
+- **Presentation charts stay readable in any color scheme (#490).** Category names sit below the chart (a negative bar
+  can't cover them), value labels sit on a small box in the slide's color (a line or bar behind them never touches
+  the text), and a scheme color too close to the slide background is darkened or lightened in the presentation until
+  it stands out (at least 3:1). Your branding settings don't change.
+
+### Attachments
+- **Identical files are stored once (#425).** When you attach a file that is already stored anywhere in PennyWarden,
+  the file is not saved to disk again: the new attachment is linked to the stored copy. Nothing changes on screen —
+  each record still has its own attachment, with its own name, uploader and date, and removing it never affects
+  another record. PennyWarden's own saved PDFs (Close report, check record copies, receipt, statement and envelope
+  copies) follow the same rule. The audit log notes when an added attachment shares a stored file.
+- **Same file twice on one record asks first.** If the file you pick is already attached to the record you are
+  adding it to, PennyWarden asks *Same file already attached* — **Cancel** (nothing is added; pick the file you
+  meant) or **Attach anyway**. A match on a different record never asks.
+- **The upgrade merges existing duplicates.** At the first start after the upgrade (after the installer's pre-upgrade
+  backup), attachments with identical content are linked to one stored file and the extra copies are removed. Each
+  file's checksum is verified first; a file that no longer matches its recorded checksum is left alone and reported in
+  the log and the audit event. A restore of a backup from an earlier version is merged the same way.
+- System/About → **Health** shows how many files are shared and the space saved.
+
+### Register
+- **Clean printout (#468).** Printing the Register with the browser's or app's Print now gives a portrait page with a
+  short header — *Register — bank account* and the printed date, the filters that are applied, and the balances on one
+  line — followed by the register as filtered on screen, two lines per transaction: Date, Cleared, Check #, Invoice #,
+  Deposit, Withdrawal and balance, then Entity, Description and Status. Long entity names and descriptions are
+  shortened with "…". The screen's filters and balance tiles, the ▸ details and the 📎 column are not printed; long
+  registers repeat the column headings on each page.
+- **Voids sort by their date when sorted by Cleared (#471).** A voided (or deleted) transaction that never cleared is
+  final, not outstanding, so it is now placed by its transaction date instead of with the uncleared items at the top or
+  bottom. Uncleared transactions that are not voided still stay together as outstanding.
+
+### Help and the user guide
+- **The user guide is a book (#473, #488).** A **Contents** page lists the chapters (Getting started, Register,
+  Budgets, Invoices …); each chapter lists its pages, and each page explains one task step by step, with **pictures**
+  of the screens (taken from the made-up demo organization). **Search** on every page finds pages by their words. It
+  replaces the single long guide; the "what's new" notes of earlier releases are kept in `docs/archive/`.
+- **Help in the app.** **Help** at the bottom of the menu opens the contents for every role, and the **?** at the top
+  right opens the page about the screen you are on (on a screen your roles can't open, the contents). Each page says
+  which version it applies to. The guide is part of the app, so it matches the version you have installed and works
+  without an internet connection.
+- **On pennywarden.org.** The **User guide** page has the same book, with an **Applies to** list on every page to
+  switch to another version: the book for 2.4 and later, the single "what's new" document for 1.10 to 2.3.
+
+### Check printing
+- **Cover letter logo top right (#466).** A third logo position, **Top right, beside the letterhead**: the logo sits
+  level with the organization's name at the right margin, and the letter text is not pushed down. The letterhead and
+  date lines wrap short of the logo; the address starts below the logo only when the logo is taller than those lines.
+- **Top right: above or beside the letterhead (#520).** Donation receipt letters and year-end statements, and payment
+  cover letters, offer the same four logo positions: **Top left**, **Top center**, **Top right, above the
+  letterhead** (the letter text moves down) and **Top right, beside the letterhead** (the text stays where it is).
+  Letters already set to Top right keep their look: above on donation letters, beside on cover letters.
+
+### Security
+- **pydantic 2.14.2 (Dependabot #476).** Fixes two pydantic security advisories (GHSA-qpmf-fgh3-ff25: JSON input
+  matching an unused alias or field name was silently dropped instead of refused; GHSA-3r8g-cqwr-jr29: extra data in
+  TypedDicts and pydantic dataclasses with `extra="allow"`). PennyWarden uses neither aliases nor those types - its
+  request models refuse unknown fields - so it was not affected; updated as a precaution. Also XlsxWriter 3.3.1 (used
+  for the presentations' chart data) and, for the tests only, pytest 9.2.0. No change in how PennyWarden behaves.
+- **opentelemetry-api 1.45.2 (CVE-2026-126360).** A crafted `traceparent` value could make the W3C trace-context
+  propagator spend a very long time matching it. The package comes in with FastAPI; PennyWarden never extracts trace
+  context, so it was not affected. Updated so the security check passes. No change in how PennyWarden behaves.
+
+### Under the hood
+- **Faster checks (CI).** The automatic checks on every pull request run in three jobs side by side (backend tests,
+  the web build with the browser tests, the version, notices and dependency checks), the backend tests use every core
+  of the build machine (pytest-xdist 3.8.0, for the tests only), and each test starts from a database migrated once
+  instead of migrating its own, with cheaper password hashing for the test users only. The tests are unchanged and
+  PennyWarden itself keeps its password hashing; no change in how it behaves.
+
+## 2.3.0 — 2026-11-01
 PennyWarden 2.3.0 (in progress).
 
 ### Reports

@@ -15,7 +15,7 @@ def test_defaults_cover_every_report_once():
 def test_catalog_default_is_purpose_and_admin_switches_scheme(env, base):
     g = env.bm.get("/api/reports/grouping").json()
     assert g["scheme"] == "PURPOSE" and not g["customized"]
-    assert [c["id"] for c in g["categories"]] == ["share", "audit", "analyze", "plan", "fundraisers"]
+    assert [c["id"] for c in g["categories"]] == ["share", "audit", "analyze", "plan", "fundraisers", "invoices"]  # 2.4.0 (#255): Invoices
     v = env.admin.put(URL, {"scheme": "AUDIENCE"}).json()
     assert v["scheme"] == "AUDIENCE"
     g = env.auditor.get("/api/reports/grouping").json()
@@ -71,3 +71,10 @@ def test_administrators_only_and_display_only(env, base):
     cats = [{"name": "Everything", "reports": list(REPORT_IDS)}]
     assert env.admin.put(URL, {"scheme": "PURPOSE", "categories": cats}).status_code == 200
     assert env.ru.get(f"/api/reports/budget-review?fiscal_year_id={base['fy']['id']}&format=json").status_code == 403
+
+
+def test_511_default_category_follows_the_module_name():
+    """2.4.0 polish (#511): the fundraiser reports' default category is named like the module, Events & Fundraisers."""
+    from fmpoc.services import report_grouping as rg
+    names = [c["name"] for scheme in rg.DEFAULTS.values() for c in scheme if c["id"] == "fundraisers"]
+    assert names and all(n == "Events & Fundraisers" for n in names)

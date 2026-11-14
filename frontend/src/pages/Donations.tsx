@@ -11,6 +11,8 @@ import { Link } from "../router";
 import { LivePreview, PatternInput, PdfViewer, PinToggle, Section, SetupLayout, usePdf, usePin } from "./checkShared";
 import { DocFocus, DocumentEditor } from "./CheckDocuments";
 import { EnvelopeLibrary, ReceiptEnvelopePanel } from "./Envelopes";
+import { LogoChoice } from "../LogoChoice";
+import { EmailDocumentButton } from "./Email";
 
 /** 2.3.0 (#393): details that include the EIN while it is turned off for donations - confirmed, with a reason. */
 export const usesEin = (text: string) => /\{ORG[._]EIN\}/.test(text || "");
@@ -118,9 +120,9 @@ export default function DonationSetup() {
           </div>
         }>
           {stmtPreview ? <LivePreview key="st" imageUrl="/api/donations/setup/statement-preview-image" pdfUrl="/api/donations/setup/statement-preview" body={{ config: cfg }}
-                                      title="Year-end statement preview" aspect={8.5 / 11} deps={[JSON.stringify(cfg)]} />
+                                      title="Year-end statement preview" aspect={8.5 / 11} deps={[JSON.stringify(cfg), JSON.stringify(s.logos)]} />
             : <LivePreview key="rc" imageUrl="/api/donations/setup/preview-image" pdfUrl="/api/donations/setup/preview" body={{ config: cfg }}
-                           title="Donation receipt preview" aspect={8.5 / 11} deps={[JSON.stringify(cfg)]} />}
+                           title="Donation receipt preview" aspect={8.5 / 11} deps={[JSON.stringify(cfg), JSON.stringify(s.logos)]} />}
         </Section>
       }>
           <Section id="org" scope="pw-donations" title="Organization">
@@ -138,6 +140,15 @@ export default function DonationSetup() {
               the date received, the receipt number and the goods or services statement – these can't be removed.</p>
           </Section>
           <Section id="tpl" scope="pw-donations" title="Receipt letter">
+            {/* 2.4.0 polish (#503): the organization logo, the receipt letter's own, or none */}
+            <LogoChoice id="receipt" source={cfg.logo_source || "NONE"} onSource={(v) => set("logo_source", v)}
+              own={s.logos?.receipt} ownSrc={s.logos?.receipt ? `/api/donations/setup/logo/receipt?v=${s.logos.receipt.version}` : undefined}
+              onUpload={async (f) => setS(await api.upload("/api/donations/setup/logo/receipt", f))}
+              onRemove={async () => setS(await api.post("/api/donations/setup/logo/receipt/remove"))}
+              sizeHint="PNG or JPEG, at most 1 MB. It prints above the organization's name (with a window envelope: at the top right, clear of the windows). Adding or removing the receipt's own logo takes effect at once.">
+              <Field label="Logo position"><select value={cfg.logo_position} onChange={(e) => set("logo_position", e.target.value)}>
+                <option value="LEFT">Top left</option><option value="CENTER">Top center</option><option value="RIGHT_ABOVE">Top right, above the organization's name (the letter text moves down)</option><option value="RIGHT_BESIDE">Top right, beside the organization's name (the letter text stays where it is)</option></select></Field>
+            </LogoChoice>
             <div className="row form-row">
               <Field label="Font"><select value={cfg.font} onChange={(e) => set("font", e.target.value)}>{FONTS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></Field>
               <Field label="Size"><input type="number" min={8} max={14} step={0.5} value={cfg.size} onChange={(e) => set("size", Number(e.target.value))} /></Field>
@@ -192,6 +203,11 @@ export default function DonationSetup() {
             <p className="hint">The letter printed with each donor's year-end giving statement (Donations page → <i>Year-end statements</i>). Put
               <code>{" {DONATION_TABLE} "}</code> in a paragraph of its own where the table of the year's donations goes (without it the table prints after
               the text). The organization, EIN, donor, year, total and the goods or services statement are always printed.</p>
+            <LogoChoice id="statement" source={cfg.statement_logo_source || "FOLLOW"} onSource={(v) => set("statement_logo_source", v)} followLabel="Same as the receipt letter"
+              own={s.logos?.statement} ownSrc={s.logos?.statement ? `/api/donations/setup/logo/statement?v=${s.logos.statement.version}` : undefined}
+              onUpload={async (f) => setS(await api.upload("/api/donations/setup/logo/statement", f))}
+              onRemove={async () => setS(await api.post("/api/donations/setup/logo/statement/remove"))}
+              sizeHint="Printed where the receipt letter's logo position says. PNG or JPEG, at most 1 MB." />
             <PatternInput id="st-title" label="Title" value={cfg.statement_title} variables={s.statement_variables} hint={false} maxLength={120} onChange={(v) => set("statement_title", v)} />
             <PatternInput id="st-salutation" label="Salutation" value={cfg.statement_salutation} variables={s.statement_variables} hint={false} onChange={(v) => set("statement_salutation", v)} />
             <PatternInput id="st-body" label="Statement text" value={cfg.statement_body} variables={s.statement_variables} multiline maxLength={2000} onChange={(v) => set("statement_body", v)} />
@@ -218,6 +234,20 @@ export default function DonationSetup() {
             <p className="hint">The preview beside these settings (or at the top, on a narrow screen) can show the statement: choose <i>Year-end statement</i> there.</p>
           </Section>
           {/* 2.2.0 (#325): the cover letter's window-envelope options (#177) and fold marks (#247) */}
+          {/* 2.4.0 (#539): receipts and statements by email, through the mail server set up for Invoices */}
+          <Section id="email" scope="pw-donations" title="Email">
+            <p className="hint">Receipts and year-end statements can be emailed to the donor when the mail server is set up (System/About → Email); the
+              Email buttons don't show until then. Emailing issues the receipt or statement just as printing does. The subject and message below are where
+              each email starts; they can be changed before sending. Variables: {"{DONOR_NAME}"}, {"{ORG.NAME}"}, {"{AMOUNT}"} (receipts), {"{YEAR}"} and {"{TOTAL}"} (statements).</p>
+            <div className="row form-row">
+              <Field label="Reply-To (optional)" hint="Where donors' replies go; empty = the Email setup's."><input type="email" maxLength={254} value={cfg.email_reply_to || ""} onChange={(e) => set("email_reply_to", e.target.value)} placeholder="donations@example.org" /></Field>
+              <Field label="From name (optional)" hint="The sender name donors see; empty = the Email setup's. The From address is always the mail server's."><input maxLength={120} value={cfg.email_from_name || ""} onChange={(e) => set("email_from_name", e.target.value)} /></Field>
+            </div>
+            <Field label="Receipt email subject"><input maxLength={200} value={cfg.email_subject} onChange={(e) => set("email_subject", e.target.value)} /></Field>
+            <Field label="Receipt email message"><textarea rows={5} maxLength={4000} value={cfg.email_message} onChange={(e) => set("email_message", e.target.value)} /></Field>
+            <Field label="Statement email subject"><input maxLength={200} value={cfg.statement_email_subject} onChange={(e) => set("statement_email_subject", e.target.value)} /></Field>
+            <Field label="Statement email message"><textarea rows={5} maxLength={4000} value={cfg.statement_email_message} onChange={(e) => set("statement_email_message", e.target.value)} /></Field>
+          </Section>
           <Section id="win" scope="pw-donations" title="Window envelope and fold marks">
             <div className="row form-row">
               <Field label="Address for a window envelope">
@@ -243,7 +273,7 @@ export default function DonationSetup() {
           <div className="actions left">
             <button className="primary" onClick={save} disabled={!dirty}>Save</button>
             <button onClick={testPrint}>Test print (sample data)</button>
-            <button onClick={() => { setCfg({ ...s.defaults, signer_id: cfg.signer_id, signature_mode: cfg.signature_mode, statement_signer_id: cfg.statement_signer_id, statement_signature_mode: cfg.statement_signature_mode, signer_choice: cfg.signer_choice, statement_signer_choice: cfg.statement_signer_choice }); setSaved(false); }}>Default wording</button>
+            <button onClick={() => { setCfg({ ...s.defaults, signer_id: cfg.signer_id, signature_mode: cfg.signature_mode, statement_signer_id: cfg.statement_signer_id, statement_signature_mode: cfg.statement_signature_mode, signer_choice: cfg.signer_choice, statement_signer_choice: cfg.statement_signer_choice, logo_source: cfg.logo_source, logo_position: cfg.logo_position, statement_logo_source: cfg.statement_logo_source }); setSaved(false); }}>Default wording</button>
             {saved && !dirty ? <span className="hint" role="status">Saved.</span> : dirty ? <span className="hint">Unsaved changes</span> : null}
           </div>
       </SetupLayout>
@@ -258,7 +288,11 @@ export default function DonationSetup() {
 }
 
 // ------------------------------------------------------------------ a deposit's donations (register)
-type Line = { allocation_id: number; donor: string; donor_entity_id: number | null; donor_is_organization: boolean; description: string; amount: string; donation: boolean; purpose: string; goods: string; goods_description: string; date: string; amount_cents: number; linked_donation_id?: number | null; suggested?: boolean; fundraiser?: string | null };
+type Line = { allocation_id: number; donor: string; donor_entity_id: number | null; donor_is_organization: boolean; description: string; amount: string; donation: boolean; purpose: string; goods: string; goods_description: string; date: string; amount_cents: number; linked_donation_id?: number | null; suggested?: boolean; fundraiser?: string | null;
+  // 2.4.0 (#562): the donor's Donations page donations awaiting a deposit, and the one chosen (null: a new donation)
+  awaiting: Awaiting[]; link: number | null };
+type Awaiting = { id: number; donation_id: number; amount: string; amount_cents: number; receipt: string | null; date_received: string | null };
+const awaitingLabel = (a: Awaiting) => `Donation #${a.donation_id} (awaiting deposit, ${a.amount}${a.receipt ? `, receipt ${a.receipt}` : ""})`;
 
 const cents = (s: string): number | null => {
   const t = s.replace(/[$,\s]/g, "");
@@ -268,7 +302,8 @@ const cents = (s: string): number | null => {
 };
 
 export function DonationReceiptDialog({ txn, onClose, onChanged }: { txn: any; onClose: () => void; onChanged: () => void }) {
-  const { can } = useMe();
+  const { me, can } = useMe();
+  const [emailed, setEmailed] = useState<string | null>(null);   // 2.4.0 (#539)
   const canPrint = can("donation.print");
   const [d, setD] = useState<any>(null);
   const [lines, setLines] = useState<Line[]>([]);
@@ -295,7 +330,8 @@ export function DonationReceiptDialog({ txn, onClose, onChanged }: { txn: any; o
     setLines(x.lines.map((l: any) => ({ allocation_id: l.allocation_id, donor: l.donor, donor_entity_id: l.donor_entity_id, donor_is_organization: !!l.donor_is_organization, description: l.description, amount: l.amount, amount_cents: l.amount_cents,
       // 2.2.0 (#256): a line in a fundraiser's donation bucket starts ticked as a suggestion; Save confirms it
       donation: l.donation || (!!l.suggested && canPrint && x.printable), suggested: !!l.suggested, fundraiser: l.fundraiser || null, purpose: l.purpose || "", goods: l.goods_cents ? (l.goods_cents / 100).toFixed(2) : "", goods_description: l.goods_description || "",
-      date: l.date_received || x.date, linked_donation_id: l.linked_donation_id })));
+      date: l.date_received || x.date, linked_donation_id: l.linked_donation_id, awaiting: l.awaiting || [],
+      link: !l.donation && l.suggested && canPrint && x.printable ? l.suggested_link ?? null : null })));
     setDetails(Object.fromEntries(x.donors.map((o: any) => [o.entity_id, o.details || ""])));
   };
   // each load and save is numbered; a reply is shown only if nothing newer was started since, so a reload that comes
@@ -312,16 +348,16 @@ export function DonationReceiptDialog({ txn, onClose, onChanged }: { txn: any; o
   };
   useEffect(() => { load(); }, [txn.id]); // eslint-disable-line react-hooks/exhaustive-deps
   const editable = !!d && canPrint && d.printable;
-  const original = d ? JSON.stringify([d.lines.map((l: any) => [l.donation, l.purpose || "", l.goods_cents ? (l.goods_cents / 100).toFixed(2) : "", l.goods_description || "", l.date_received || d.date]),
+  const original = d ? JSON.stringify([d.lines.map((l: any) => [l.donation, l.purpose || "", l.goods_cents ? (l.goods_cents / 100).toFixed(2) : "", l.goods_description || "", l.date_received || d.date, null]),
     d.donors.map((o: any) => o.details || "")]) : "";
-  const dirty = d && JSON.stringify([lines.map((l) => [l.donation, l.purpose, l.goods, l.goods_description, l.date]),
+  const dirty = d && JSON.stringify([lines.map((l) => [l.donation, l.purpose, l.goods, l.goods_description, l.date, l.donation ? l.link : null]),
     d.donors.map((o: any) => details[o.entity_id] || "")]) !== original;
   const setDetail = (id: number, v: string) => { edits.current++; setSaved(false); setDetails({ ...details, [id]: v }); };
   // the donors as on screen: ticking a line shows its donor straight away (no Save needed first)
   const savedDonors = new Map<number, any>((d?.donors || []).map((o: any) => [o.entity_id, o]));
   const groups: { entity_id: number; name: string; cents: number; goods: number; dates: string[]; saved: any }[] = [];
   for (const l of lines) {
-    if (!l.donation || !l.donor_entity_id || l.linked_donation_id) continue;   // 2.2.0: Donations page ones print there
+    if (!l.donation || !l.donor_entity_id || l.linked_donation_id || l.link) continue;   // 2.2.0: Donations page ones print there
     let g = groups.find((x) => x.entity_id === l.donor_entity_id);
     if (!g) { g = { entity_id: l.donor_entity_id, name: l.donor, cents: 0, goods: 0, dates: [], saved: savedDonors.get(l.donor_entity_id) }; groups.push(g); }
     g.cents += l.amount_cents || 0;
@@ -334,11 +370,18 @@ export function DonationReceiptDialog({ txn, onClose, onChanged }: { txn: any; o
   const printLabel = (g: any) => (!g.saved ? "Print receipt" : dirty ? (g.saved.current_receipt ? "Print" : "Print receipt")
     : g.saved.next_kind === "ORIGINAL" ? "Print receipt" : g.saved.next_kind === "DUPLICATE" ? "Print duplicate" : "Print corrected receipt");
   const canPrintNow = !!(canPrint && d?.printable && !d?.setup_missing.length);
+  /** 2.4.0 (#562): ticking a line starts on the donor's only awaiting donation of the same amount (not already chosen) */
+  const suggestedLink = (i: number): number | null => {
+    const l = lines[i];
+    const same = l.awaiting.filter((a) => a.amount_cents === l.amount_cents && !lines.some((o, j) => j !== i && o.donation && o.link === a.id));
+    return same.length === 1 ? same[0].id : null;
+  };
   const setLine = (i: number, patch: Partial<Line>) => { edits.current++; setSaved(false); setLines(lines.map((l, j) => (j === i ? { ...l, ...patch } : l))); };
   /** the lines and details on screen, as the API takes them (null: a goods value that isn't an amount) */
   const payload = () => {
     const body = lines.map((l) => {
       const g = l.donation ? cents(l.goods) : null;
+      if (l.donation && l.link) return { allocation_id: l.allocation_id, donation: true, link_line_id: l.link };   // 2.4.0 (#562)
       return { allocation_id: l.allocation_id, donation: l.donation, purpose: l.donation ? l.purpose || null : null,
         goods_cents: g && !Number.isNaN(g) ? g : g === null ? null : -1, goods_description: l.donation ? l.goods_description || null : null,
         date_received: l.donation && l.date && l.date !== d.date ? l.date : null };
@@ -354,8 +397,9 @@ export function DonationReceiptDialog({ txn, onClose, onChanged }: { txn: any; o
     const apply = latest(take);
     try {
       // 2.3.0 (#393): details with the EIN while it's off ask for a confirmation and a reason, then save again
-      const r = await ein.run((o) => api.put(`/api/donations/transactions/${txn.id}/lines`,
-        { ...p, donors: p.donors.map((x: any) => (usesEin(x.details) && o.confirm_ein_override ? { ...x, ...o } : x)) }));
+      // 2.4.0 (#562): linking a donation awaiting a deposit can ask for confirmations (amount, a line already marked)
+      const r = await ein.run((o) => run((c) => api.put(`/api/donations/transactions/${txn.id}/lines`,
+        { ...p, confirmations: c, donors: p.donors.map((x: any) => (usesEin(x.details) && o.confirm_ein_override ? { ...x, ...o } : x)) })));
       if (r === undefined) return false;
       apply(r); setSaved(true); onChanged(); return true;
     } catch (x) { setErr(x); return false; }
@@ -370,6 +414,13 @@ export function DonationReceiptDialog({ txn, onClose, onChanged }: { txn: any; o
       setPdf(blob, "receipt-preview.pdf"); setViewing(`Preview – ${donor.name}`);
     } catch (x) { setErr(x); }
   };
+  // 2.4.0 (#539): Email… issues the receipt like Print does and sends it (only when the mail server is set up)
+  const emailButton = (g: any, primary = false) => (
+    <EmailDocumentButton ready={!!me?.email_ready && !dirty} className={primary ? "" : undefined} attachment="the donation receipt (PDF)"
+      defaultsUrl={`/api/donations/email/defaults?kind=RECEIPT&transaction_id=${txn.id}&donor_entity_id=${g.entity_id}`}
+      url={`/api/donations/transactions/${txn.id}/receipts/email`} extra={{ donor_entity_id: g.entity_id, ...signerBody(g) }} run={run}
+      onSent={(r) => { setEmailed(`Receipt ${r.number} emailed to ${g.name}.`); onChanged(); load(); }} />
+  );
   /** Print saves first, so one click saves and prints */
   const print = async (donor: any) => {
     setErr(null);
@@ -426,14 +477,24 @@ export function DonationReceiptDialog({ txn, onClose, onChanged }: { txn: any; o
                 <tr key={l.allocation_id}>
                   <td><input type="checkbox" aria-label={`Donation: ${l.donor || "no donor"} ${l.amount}`} checked={l.donation} disabled={!editable || ((!l.donor_entity_id || l.donor_is_organization) && !l.donation)}
                              title={l.donor_is_organization ? "Your own organization can't be the donor: record the donor as the line's entity" : undefined}
-                             onChange={(e) => setLine(i, { donation: e.target.checked })} /></td>
-                  <td>{l.donor || <span className="muted">No entity</span>}</td>
+                             onChange={(e) => setLine(i, { donation: e.target.checked, link: e.target.checked && !l.donation ? suggestedLink(i) : l.link })} /></td>
+                  <td>{l.donor || <span className="muted">No entity</span>}
+                    {/* 2.4.0 (#562): the donor's donations awaiting a deposit (recorded on the Donations page first) */}
+                    {l.donation && l.awaiting.length > 0 ? (
+                      <select className="block" aria-label={`Which donation: ${l.donor} ${l.amount}`} data-testid="donation-link" value={l.link ?? ""} disabled={!editable}
+                              onChange={(e) => setLine(i, { link: e.target.value ? Number(e.target.value) : null })}>
+                        <option value="">New donation</option>
+                        {l.awaiting.filter((a) => a.id === l.link || !lines.some((o, j) => j !== i && o.donation && o.link === a.id))
+                          .map((a) => <option key={a.id} value={a.id}>{awaitingLabel(a)}</option>)}
+                      </select>) : null}
+                    {l.donation && l.awaiting.length > 0 && !l.link ? <div className="hint" data-testid="donation-awaiting-note">{l.donor} has {l.awaiting.length === 1 ? "a donation" : `${l.awaiting.length} donations`} awaiting a deposit. Choose it if this is that money, so the donor doesn't get two receipts.</div> : null}
+                  </td>
                   <td>{l.description}{l.suggested ? <span className="badge grey" data-testid="donation-suggested" title={`In a donation bucket of the fundraiser ${l.fundraiser}: ticked as a suggestion, saved only when you Save`}> Suggested ({l.fundraiser})</span> : null}</td>
                   <td className="num">{l.amount}</td>
-                  <td>{l.donation ? <input type="date" aria-label={`Date received: ${l.donor} ${l.amount}`} value={l.date} max={d.date} disabled={!editable}
-                                           title="When the donation was received, if before the deposit" onChange={(e) => setLine(i, { date: e.target.value || d.date })} /> : null}</td>
-                  <td>{l.donation ? <input aria-label="Purpose" maxLength={200} value={l.purpose} disabled={!editable} placeholder="Optional" onChange={(e) => setLine(i, { purpose: e.target.value })} /> : null}</td>
-                  <td>{l.donation ? (
+                  <td>{l.donation && !l.link ? <input type="date" aria-label={`Date received: ${l.donor} ${l.amount}`} value={l.date} max={d.date} disabled={!editable}
+                                           title="When the donation was received, if before the deposit" onChange={(e) => setLine(i, { date: e.target.value || d.date })} /> : l.donation && l.link ? <span className="hint" data-testid="donation-link-note">Linked to donation #{l.awaiting.find((a) => a.id === l.link)?.donation_id} when saved: its date, purpose and receipts come from the Donations page{l.awaiting.find((a) => a.id === l.link)?.amount_cents !== l.amount_cents ? ` (its amount becomes ${l.amount})` : ""}.</span> : null}</td>
+                  <td>{l.donation && !l.link ? <input aria-label="Purpose" maxLength={200} value={l.purpose} disabled={!editable} placeholder="Optional" onChange={(e) => setLine(i, { purpose: e.target.value })} /> : null}</td>
+                  <td>{l.donation && !l.link ? (
                     <span className="row">
                       <input aria-label="Goods or services value" className="num narrow" inputMode="decimal" value={l.goods} disabled={!editable} placeholder="None" onChange={(e) => setLine(i, { goods: e.target.value })} />
                       {l.goods ? <input aria-label="Goods or services description" maxLength={200} value={l.goods_description} disabled={!editable} placeholder="e.g. Dinner for two" onChange={(e) => setLine(i, { goods_description: e.target.value })} /> : null}
@@ -469,6 +530,7 @@ export function DonationReceiptDialog({ txn, onClose, onChanged }: { txn: any; o
                       <div className="actions left">
                         <button onClick={() => preview(g)}>Preview</button>
                         <button onClick={() => print(g)}>{printLabel(g)}</button>
+                        {emailButton(g)}
                       </div>
                     ) : null}
                     {envFor === g.entity_id && g.saved?.donation_id ? <ReceiptEnvelopePanel donationId={g.saved.donation_id} onChanged={onChanged} /> : null}
@@ -484,7 +546,9 @@ export function DonationReceiptDialog({ txn, onClose, onChanged }: { txn: any; o
             {groups.length === 1 && canPrintNow ? <>
               <button onClick={() => preview(groups[0])}>Preview</button>
               <button className="primary" onClick={() => print(groups[0])}>{printLabel(groups[0])}</button>
+              {emailButton(groups[0], true)}
             </> : null}
+            {emailed ? <span className="hint" role="status" data-testid="receipt-emailed">{emailed}</span> : null}
             {saved && !dirty ? <span className="hint" role="status">Saved.</span> : dirty && editable ? <span className="hint">Unsaved changes{canPrintNow && groups.length ? " (Print saves them first)" : ""}</span> : null}
             <span className="spacer" />
             <button onClick={onClose}>Close</button>

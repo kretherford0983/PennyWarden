@@ -30,25 +30,28 @@ ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,19}$")
 
 DEFAULTS: dict[str, list[dict]] = {
     "PURPOSE": [
-        {"id": "share", "name": "Share with the board and members", "short": "Share", "reports": ["quarterly", "fundraising-fy"]},
+        {"id": "share", "name": "Share with the board and members", "short": "Share", "reports": ["quarterly", "fundraising-fy", "inv-sales-formal", "inv-overview"]},
         {"id": "audit", "name": "Audit and year-end close", "short": "Audit and close", "reports": ["audit", "close", "fundraiser-detail"]},
         {"id": "analyze", "name": "Analyze activity", "short": "Analyze", "reports": ["entity", "flow"]},
         {"id": "plan", "name": "Plan budgets", "short": "Plan", "reports": ["budget-review", "planning-sheet"]},
-        {"id": "fundraisers", "name": "Fundraisers", "short": "Fundraisers", "reports": ["count-sheet"]},
+        {"id": "fundraisers", "name": "Events & Fundraisers", "short": "Events & Fundraisers", "reports": ["count-sheet"]},   # 2.4.0 polish (#511): the module's name since #429
+        {"id": "invoices", "name": "Invoices", "short": "Invoices", "reports": ["inv-open", "inv-aging", "inv-statement", "inv-sales-tax", "inv-register", "inv-sales", "inv-activity"]},   # 2.4.0 (#255)
     ],
     "SUBJECT": [
         {"id": "fiscal-year", "name": "Fiscal Year", "reports": ["quarterly", "audit", "close"]},
         {"id": "budgets", "name": "Budgets", "reports": ["budget-review", "planning-sheet"]},
         {"id": "accounts", "name": "Accounts / Register", "reports": ["flow"]},
         {"id": "entities", "name": "Entities", "reports": ["entity"]},
-        {"id": "fundraisers", "name": "Fundraisers", "reports": ["fundraising-fy", "fundraiser-detail", "count-sheet"]},
+        {"id": "invoices", "name": "Invoices", "reports": ["inv-open", "inv-aging", "inv-statement", "inv-sales-tax", "inv-register", "inv-sales", "inv-activity", "inv-sales-formal", "inv-overview"]},   # 2.4.0 (#513)
+        {"id": "fundraisers", "name": "Events & Fundraisers", "reports": ["fundraising-fy", "fundraiser-detail", "count-sheet"]},
         {"id": "system", "name": "System", "reports": []},
     ],
     "AUDIENCE": [
-        {"id": "board", "name": "Board & members", "reports": ["quarterly", "fundraising-fy"]},
+        {"id": "board", "name": "Board & members", "reports": ["quarterly", "fundraising-fy", "inv-sales-formal", "inv-overview"]},
         {"id": "treasurer", "name": "Treasurer / Budget Managers",
          "reports": ["entity", "flow", "budget-review", "planning-sheet", "count-sheet"]},
         {"id": "auditors", "name": "Auditors", "reports": ["audit", "close", "fundraiser-detail"]},
+        {"id": "invoices", "name": "Invoices", "reports": ["inv-open", "inv-aging", "inv-statement", "inv-sales-tax", "inv-register", "inv-sales", "inv-activity"]},
     ],
 }
 
@@ -69,6 +72,15 @@ def _complete(cats: list[dict]) -> list[dict]:
     cats = [{**c, "reports": [x for x in c.get("reports", []) if x in REPORT_IDS]} for c in cats]
     seen = {x for c in cats for x in c["reports"]}
     missing = [x for x in REPORT_IDS if x not in seen]
+    inv_missing = [x for x in missing if x.startswith("inv-")]      # 2.4.0 (#255): a saved scheme gets an Invoices group
+    if inv_missing:
+        grp = next((c for c in cats if c["name"].lower() == "invoices"), None)
+        if grp is None:
+            grp = {"id": "invoices" if all(c["id"] != "invoices" for c in cats) else "invoices-2", "name": "Invoices",
+                   "reports": []}
+            cats.append(grp)
+        grp["reports"] += inv_missing
+        missing = [x for x in missing if x not in inv_missing]
     if missing:
         other = next((c for c in cats if c["name"].lower() == "other"), None)
         if other is None:

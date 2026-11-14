@@ -28,10 +28,11 @@ from dataclasses import dataclass, field
 from typing import Literal
 from xml.sax.saxutils import escape
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 from reportlab.lib.styles import ParagraphStyle
 from reportlab.lib.units import inch
-from reportlab.platypus import KeepTogether, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+from reportlab.lib.utils import ImageReader
+from reportlab.platypus import Image, KeepTogether, PageBreak, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -121,6 +122,31 @@ class ReceiptConfig(BaseModel):
     addressee: list[str] = Field(default_factory=lambda: list(DEFAULT_ADDRESSEE), max_length=6)
     # 2.2.0 (#256): the year-end giving statement's letter (the receipt variables plus {YEAR}, {TOTAL},
     # {STATEMENT_NO} and {DONATION_TABLE}); the layout, window and signer are the receipt's
+    # 2.4.0 polish (#503): the letters' logo - the organization logo, the receipt letter's own, or none (the default);
+    # where it goes; the statement follows the receipt (FOLLOW) or has its own choice (its own logo is stored apart)
+    logo_source: Literal["NONE", "ORG", "OWN"] = "NONE"
+    # #520: top right above the organization's name (the text moves down) or beside it (the text stays), as on the
+    # cover letters; a setup saved as RIGHT (before #520) was above and stays so
+    logo_position: Literal["LEFT", "CENTER", "RIGHT_ABOVE", "RIGHT_BESIDE"] = "LEFT"
+    statement_logo_source: Literal["FOLLOW", "NONE", "ORG", "OWN"] = "FOLLOW"
+    # 2.4.0 (#539): the email that carries a receipt / a year-end statement (the mail server is the one set up for
+    # Invoices); {DONOR_NAME}, {ORG.NAME}, {AMOUNT} (receipts), {YEAR} and {TOTAL} (statements); editable on each send
+    email_reply_to: str = Field(default="", max_length=254)        # empty: the Email setup's (#539)
+    email_from_name: str = Field(default="", max_length=120)
+    email_subject: str = Field(default="Your donation receipt from {ORG.NAME}", max_length=200)
+    email_message: str = Field(default="Dear {DONOR_NAME},\n\nThank you for your gift of {AMOUNT} to {ORG.NAME}. Your "
+                                       "receipt is attached; please keep it for your records.\n\nWith gratitude,\n"
+                                       "{ORG.NAME}", max_length=4000)
+    statement_email_subject: str = Field(default="Your {YEAR} giving statement from {ORG.NAME}", max_length=200)
+    statement_email_message: str = Field(default="Dear {DONOR_NAME},\n\nThank you for your support of {ORG.NAME} during "
+                                                 "{YEAR}. Your year-end giving statement is attached.\n\nWith "
+                                                 "gratitude,\n{ORG.NAME}", max_length=4000)
+
+    @field_validator("logo_position", mode="before")
+    @classmethod
+    def _logo_position(cls, v):                    # #520: the earlier RIGHT was above the organization's name
+        return "RIGHT_ABOVE" if v == "RIGHT" else v
+
     statement_title: str = Field(default="Year-End Giving Statement {YEAR}", max_length=120)
     statement_salutation: str = Field(default="Dear {DONOR_NAME},", max_length=200)
     statement_body: str = Field(default="Thank you for your generous support of {ORG.NAME} during {YEAR}. These are the "
@@ -251,6 +277,8 @@ def setup_out(db: Session, ctx) -> dict:
             "signers": [signers.out(db, ctx, s) for s in signers.tagged(db, ctx, signers.DONATIONS)],
             "signature_modes": [{"id": m, "label": signers.MODE_LABELS[m]} for m in signers.MODES],
             "missing": missing_setup(db, ctx.workspace_id), "organization": organization_out(db, ctx.workspace_id),
+            # 2.4.0 polish (#503): the letters' own logos and the organization logo (for the Logo choice)
+            "logos": logos_info(row), "org_logo": _org_logo_info(db, ctx.workspace_id),
             "variables": patterns.variable_options(patterns.RECEIPT),
             "statement_variables": patterns.variable_options(patterns.STATEMENT),     # 2.2.0 (#256)
             "date_formats": list(cfgmod.DATE_FORMATS), "no_goods_statement": NO_GOODS,
@@ -264,6 +292,9 @@ def save_config(db: Session, ctx, data: dict) -> ReceiptConfig:
     signers.require_tagged(db, ctx, cfg.statement_signer_id, signers.DONATIONS, "statement_signer_id")
     if cfg.signature_mode != "NONE" and cfg.signer_id is None:
         raise validation("Choose the signer, or set the signature to None.", "signer_id")
+    if cfg.email_reply_to:                             # 2.4.0 (#539): a real address, or empty
+        from .email import _addr
+        _addr(cfg.email_reply_to, "email_reply_to")
     row = _settings_row(db, ctx.workspace_id)
     before = json.loads(row.config_json) if row else None
     if row is None:
@@ -349,6 +380,60 @@ class ReceiptData:
     donor_values: dict[str, str] = field(default_factory=dict)        # 2.2.0 (#317): {DONOR.*}
     ein_override: bool = False            # 2.3.0 (#393): EIN off, but these details include it (confirmed, with a reason)
     signature: signers.SignatureBlock = field(default_factory=signers.SignatureBlock)   # 2.3.0 (#395)
+    logo: bytes | None = None             # 2.4.0 polish (#503): the letter's logo, already resolved
+
+
+def letter_logo(db: Session, ws_id: int, cfg: ReceiptConfig, which: str = "receipt") -> bytes | None:
+    """2.4.0 polish (#503): the logo the receipt or the year-end statement prints - the organization logo, the letter's
+    own upload (the statement following the receipt uses the receipt's), or none."""
+    from . import org_logos
+    row = db.scalar(select(DonationSettings).where(DonationSettings.workspace_id == ws_id))
+    if which == "receipt":
+        return org_logos.resolve(db, ws_id, cfg.logo_source, row.receipt_logo_png if row else None)
+    own = (row.receipt_logo_png if cfg.statement_logo_source == "FOLLOW" else row.statement_logo_png) if row else None
+    return org_logos.resolve(db, ws_id, org_logos.statement_source(cfg), own)
+
+
+def set_letter_logo(db: Session, ctx, which: str, data: bytes | None) -> dict:
+    """The receipt letter's or the statement's own logo (Administrator, Donations Setup). Uploading makes that letter
+    use it; removing it while in use switches to No logo. Audited with the fingerprint, never the image."""
+    if which not in ("receipt", "statement"):
+        raise validation("Choose the receipt letter or the year-end statement.", "which")
+    from .checkprint.service import normalize_logo
+    cfg = get_config(db, ctx.workspace_id)
+    row = _settings_row(db, ctx.workspace_id)
+    if row is None:
+        row = DonationSettings(workspace_id=ctx.workspace_id, config_json=json.dumps(cfg.model_dump(), sort_keys=True))
+        db.add(row)
+        db.flush()
+    before = {"which": which, "sha256": getattr(row, f"{which}_logo_sha256")}
+    field_ = "logo_source" if which == "receipt" else "statement_logo_source"
+    if data is None:
+        setattr(row, f"{which}_logo_png", None)
+        setattr(row, f"{which}_logo_sha256", None)
+        if getattr(cfg, field_) == "OWN":
+            setattr(cfg, field_, "NONE")
+    else:
+        png, _w, _h = normalize_logo(data)
+        setattr(row, f"{which}_logo_png", png)
+        setattr(row, f"{which}_logo_sha256", hashlib.sha256(png).hexdigest())
+        setattr(cfg, field_, "OWN")
+    row.config_json = json.dumps(cfg.model_dump(), sort_keys=True)
+    row.updated_at, row.updated_by_user_id = utcnow(), ctx.user.id
+    db.flush()
+    audit.record(db, ctx, "DONATION_LETTER_LOGO_REMOVED" if data is None else "DONATION_LETTER_LOGO_SET",
+                 "donation_settings", row.id, before, {"which": which, "sha256": getattr(row, f"{which}_logo_sha256")})
+    return logos_info(row)
+
+
+def _org_logo_info(db: Session, ws_id: int) -> dict | None:
+    from . import org_logos
+    return org_logos.info(org_logos.get(db, ws_id))
+
+
+def logos_info(row: DonationSettings | None) -> dict:
+    return {w: ({"version": getattr(row, f"{w}_logo_sha256")[:12]} if row is not None and getattr(row, f"{w}_logo_png")
+                else None) for w in ("receipt", "statement")}
 
 
 def money(cents: int) -> str:
@@ -444,7 +529,8 @@ def ack_table(rows: list[tuple[str, str]], st: dict) -> Table:
 
 def donor_letter_pdf(cfg: ReceiptConfig, *, org: dict, donor_lines: list[str], today: dt.date,
                      kind: str, sample: bool, watermark: str | None, doc_title: str, middle,
-                     closing: str, signature: "signers.SignatureBlock | None" = None) -> bytes:
+                     closing: str, signature: "signers.SignatureBlock | None" = None,
+                     logo: bytes | None = None) -> bytes:
     """A letter to a donor (receipt or year-end statement, 2.2.0 #256): the organization and donor heading - or the
     window-envelope layout and fold marks (#325) - then `middle`, the closing and the signer. A kind other than
     ORIGINAL is printed in the top corner; `watermark` across the page. `middle`: the flowables, or a function of
@@ -456,19 +542,21 @@ def donor_letter_pdf(cfg: ReceiptConfig, *, org: dict, donor_lines: list[str], t
         c = cfg if size == cfg.size else cfg.model_copy(update={"size": size})
         return _donor_letter_once(c, org=org, donor_lines=donor_lines, today=today, kind=kind, sample=sample,
                                   watermark=watermark, doc_title=doc_title, middle=make(c), closing=closing,
-                                  signature=signature, spacing=spacing, total=total, skip=skip)
+                                  signature=signature, spacing=spacing, total=total, skip=skip, logo=logo)
     return letter_fit.fit(build, cfg.size, skip)
 
 
 def _donor_letter_once(cfg: ReceiptConfig, *, org: dict, donor_lines: list[str], today: dt.date, kind: str,
                        sample: bool, watermark: str | None, doc_title: str, middle: list, closing: str,
                        signature: "signers.SignatureBlock | None", spacing: float, total: int,
-                       skip: int) -> tuple[bytes, int]:
+                       skip: int, logo: bytes | None = None) -> tuple[bytes, int]:
     st = _styles(cfg)
     reg_f, bold, size, base = st["reg"], st["bold"], st["size"], st["base"]
     lcfg = documents.LetterConfig(font=cfg.font, size=cfg.size, window=cfg.window, window_return=cfg.window_return,
                                   fold_marks=cfg.fold_marks)
     windowed = cfg.window != "NONE"
+    beside = cfg.logo_position == "RIGHT_BESIDE" and logo is not None and not windowed      # #520
+    beside_wh = documents._logo_size(logo) if beside else (0.0, 0.0)
     blocks = documents.window_blocks(lcfg, {"letterhead": [org["ORG.NAME"]] + [x for x in org["ORG.ADDRESS"].split("\n")
                                                                                 if x]}, donor_lines) if windowed else []
     label = f"{org['ORG.NAME']} · {doc_title}"
@@ -476,6 +564,12 @@ def _donor_letter_once(cfg: ReceiptConfig, *, org: dict, donor_lines: list[str],
     def first_page(c, doc):
         if cfg.fold_marks == "FRONT":
             documents.fold_ticks(c, lcfg)
+        if beside:                                      # #520: level with the name, at the right margin (as a cover letter)
+            w, h = beside_wh
+            c.drawImage(ImageReader(io.BytesIO(logo)), 7.5 * PT - w, 10 * PT - 6 - h, w, h, mask="auto")
+        if logo is not None and cfg.window == "LETTER":   # #503: top right, clear of the windows (as a cover letter)
+            w, h = documents._logo_size(logo)
+            c.drawImage(ImageReader(io.BytesIO(logo)), (8.5 - 0.5) * PT - w, (11 - 0.5) * PT - h, w, h, mask="auto")
         if blocks:
             c.saveState()
             for which, x, y, lines in blocks:
@@ -518,10 +612,20 @@ def _donor_letter_once(cfg: ReceiptConfig, *, org: dict, donor_lines: list[str],
         story += [FixedSpacer(1, (documents.FOLD_LINES[0] + 0.15 - 1) * inch),
                   Paragraph(escape(format_date(today, cfg.date_format)), base)]
     else:
-        story += [Paragraph(escape(org["ORG.NAME"]), st["strong"])]
-        story += [Paragraph(escape(x), base) for x in org["ORG.ADDRESS"].split("\n") if x]
-        story += [Spacer(1, size * 1.2), Paragraph(escape(format_date(today, cfg.date_format)), base),
-                  Spacer(1, size * 1.2)]
+        head, head_b = base, st["strong"]
+        if beside:                                              # #520: the name, address and date wrap short of it
+            head = ParagraphStyle("head", parent=base, rightIndent=beside_wh[0] + 0.25 * inch)
+            head_b = ParagraphStyle("head_b", parent=st["strong"], rightIndent=beside_wh[0] + 0.25 * inch)
+        elif logo is not None:                                  # #503: above the letterhead, where the setup says
+            w, h = documents._logo_size(logo)
+            align = "RIGHT" if cfg.logo_position.startswith("RIGHT") else cfg.logo_position   # beside: not with windows
+            story += [Image(io.BytesIO(logo), width=w, height=h, hAlign=align), Spacer(1, size * 0.6)]
+        story += [Paragraph(escape(org["ORG.NAME"]), head_b)]
+        story += [Paragraph(escape(x), head) for x in org["ORG.ADDRESS"].split("\n") if x]
+        story += [Spacer(1, size * 1.2), Paragraph(escape(format_date(today, cfg.date_format)), head)]
+        if beside:
+            story.append(documents._ClearBelow(beside_wh[1]))    # what follows starts clear of a tall logo
+        story += [Spacer(1, size * 1.2)]
         story += [Paragraph(escape(x), base) for x in donor_lines]
     story.append(Spacer(1, size * 1.4))
     story += middle
@@ -563,7 +667,7 @@ def receipt_pdf(cfg: ReceiptConfig, data: ReceiptData, sample: bool = False, wat
                             today=data.today, kind=data.kind, sample=sample, watermark=watermark,
                             doc_title=f"Donation receipt {data.number}",
                             middle=lambda c: _receipt_middle(c, data, texts, values), closing=texts["closing"],
-                            signature=data.signature)
+                            signature=data.signature, logo=data.logo)
 
 
 def _receipt_middle(cfg: ReceiptConfig, data: ReceiptData, texts: dict, values: dict) -> list:
@@ -623,6 +727,7 @@ def sample_pdf(db: Session, ctx, data: dict | None, km=None) -> bytes:
     """Setup preview and test print (Administrators): sample data; 2.3.0 (#395) the real signature for IMAGE."""
     cfg = parse_config(data) if data is not None else get_config(db, ctx.workspace_id)
     sd = sample_data(db, ctx, cfg)
+    sd.logo = letter_logo(db, ctx.workspace_id, cfg)       # #503: the (unsaved) Logo choice of the editor
     sd.signature = signature_for(db, ctx.workspace_id, km, cfg, "receipt", with_image=True)
     return receipt_pdf(cfg, sd, sample=True)
 
@@ -857,7 +962,8 @@ def _compose(db: Session, ctx, d: Donation, signer_id: int | None = None) -> dic
                        amount_cents=c["amount"], dates=c["dates"], purposes=c["purposes"],
                        goods=c["goods"], details=c["details"], items=c["items"],
                        donor_values=entity_vars.values("DONOR", e),
-                       signature=signature_for(db, ctx.workspace_id, None, cfg, signer_id=sid))   # #395: no image yet
+                       signature=signature_for(db, ctx.workspace_id, None, cfg, signer_id=sid),   # #395: no image yet
+                       logo=letter_logo(db, ctx.workspace_id, cfg))                                # #503
     warnings = []
     if not cfg.include_ein and uses_ein(data.details):        # 2.3.0 (#393): a one-off EIN through {DETAILS}
         if not ein_entered(db, ctx.workspace_id):
@@ -911,19 +1017,16 @@ def _store_donation_copy(db: Session, ctx, settings, d: Donation, kind_type: str
     if db.scalar(select(Attachment).where(Attachment.donation_id == d.id, Attachment.document_type == kind_type,
                                           Attachment.sha256 == sha)) is not None:
         return False, None
-    key, path = att_svc._write_file(settings, pdf)
-    att = Attachment(workspace_id=ctx.workspace_id, original_filename=att_svc.sanitize_filename(filename),
-                     storage_key=key, mime_type="application/pdf", size_bytes=len(pdf), sha256=sha,
-                     uploaded_by_user_id=ctx.user.id, active=True, donation_id=d.id, document_type=kind_type,
-                     system_generated=True)
-    db.add(att)
-    db.flush()
-    audit.record(db, ctx, "ATTACHMENT_ADDED", "attachment", att.id, None, att_svc.snapshot(att))
+    _att, path = att_svc.new_record(db, ctx, settings, pdf, original_filename=att_svc.sanitize_filename(filename),
+                                    mime_type="application/pdf", donation_id=d.id, document_type=kind_type,
+                                    system_generated=True)
     return True, path
 
 
 def print_donation(db: Session, ctx, settings, d: Donation, confirmations: list[str],
-                   km=None, signer_id: int | None = None) -> tuple[bytes, DonationReceipt]:
+                   km=None, signer_id: int | None = None, before_commit=None) -> tuple[bytes, DonationReceipt]:
+    """`before_commit(printed pdf, receipt)` (2.4.0 #539: emailing) runs before the receipt is committed; if it raises,
+    the receipt isn't issued."""
     c = _compose(db, ctx, d, signer_id)
     cfg, data, kind, number, year, seq, cur, sha, content, e = (c[k] for k in ("cfg", "data", "kind", "number",
                                                                                 "year", "seq", "cur", "sha", "c", "e"))
@@ -970,6 +1073,8 @@ def print_donation(db: Session, ctx, settings, d: Donation, confirmations: list[
                   "signature": data.signature.mode if data.signature.name else "NONE",           # 2.3.0 (#395)
                   "signer_id": r.signer_id})                                                    # 2.3.0 polish
     try:
+        if before_commit is not None:
+            before_commit(printed, r)
         db.commit()
     except Exception:
         db.rollback()
@@ -985,9 +1090,16 @@ def print_donation(db: Session, ctx, settings, d: Donation, confirmations: list[
 
 # ------------------------------------------------------------------ deposits: marking (part 1 flow) and receipts
 def _deposit_donations(db: Session, t: RegisterTransaction) -> dict[int, Donation]:
-    """The donations marked on this deposit (origin DEPOSIT), by donor."""
+    """The donations marked on this deposit (origin DEPOSIT), by donor. 2.4.0 (#562): a deposit donation replaced by
+    a Donations page donation is Cancelled and left out (ticking that donor again starts a new one)."""
     return {d.donor_entity_id: d for d in db.scalars(select(Donation).where(
-        Donation.transaction_id == t.id, Donation.origin == DEPOSIT).order_by(Donation.id))}
+        Donation.transaction_id == t.id, Donation.origin == DEPOSIT, Donation.status == ACTIVE).order_by(Donation.id))}
+
+
+def _replaced_deposit_donations(db: Session, t: RegisterTransaction) -> list[Donation]:
+    """2.4.0 (#562): this deposit's donations replaced by a Donations page donation (their receipts show void)."""
+    return list(db.scalars(select(Donation).where(Donation.transaction_id == t.id, Donation.origin == DEPOSIT,
+                                                  Donation.status == CANCELLED).order_by(Donation.id)))
 
 
 def _lines_by_alloc(db: Session, t: RegisterTransaction) -> dict[int, DonationLine]:
@@ -1020,7 +1132,13 @@ def transaction_out(db: Session, ctx, t: RegisterTransaction) -> dict:
                        "dates": [x.isoformat() for x in c["dates"]], "details": c["details"],
                        "current_receipt": cur.number if cur else None, "next_kind": next_kind,
                        "signing": signing_out(db, ctx, cfg, "receipt", cur.signer_id if cur else None)})
+    for d in _replaced_deposit_donations(db, t):        # 2.4.0 (#562): void, replaced by a Donations page donation
+        receipts += _receipts_out(db, d)
     receipts.sort(key=lambda r: r["id"])
+    awaiting_by_donor: dict[int, list[dict]] = {}
+    if printable:
+        for x in awaiting_lines(db, ctx):
+            awaiting_by_donor.setdefault(x["donor_entity_id"], []).append(x)
     page_linked = []
     for d in donations.values():
         if d is not None and d.origin == PAGE and all(p["id"] != d.id for p in page_linked):
@@ -1041,7 +1159,11 @@ def transaction_out(db: Session, ctx, t: RegisterTransaction) -> dict:
                 "goods_description": x.goods_description if x else None,
                 "date_received": x.date_received.isoformat() if x is not None and x.date_received else None,
                 # 2.2.0 (#256): in a fundraiser's donation bucket - the Donation box starts ticked as a suggestion
-                "suggested": x is None and a.id in suggested, "fundraiser": suggested.get(a.id)}
+                "suggested": x is None and a.id in suggested, "fundraiser": suggested.get(a.id),
+                # 2.4.0 (#562): the donor's Donations page donations awaiting a deposit, which this line can be
+                "awaiting": [] if d is not None and d.origin == PAGE else awaiting_by_donor.get(e.id if e else -1, []),
+                "suggested_link": _suggested_link(awaiting_by_donor.get(e.id if e else -1, []), a.amount_cents)
+                if x is None else None}
 
     return {
         "transaction_id": t.id, "status": t.status, "date": t.transaction_date.isoformat(),
@@ -1062,6 +1184,7 @@ class LineIn(BaseModel):
     goods_cents: int | None = Field(default=None, ge=0)
     goods_description: str | None = Field(default=None, max_length=200)
     date_received: dt.date | None = None          # empty = the deposit's date
+    link_line_id: int | None = None               # 2.4.0 (#562): an awaiting Donations page donation line to link
 
 
 class DonorIn(BaseModel):
@@ -1113,9 +1236,11 @@ def _deposit_donation_for(db: Session, ctx, t: RegisterTransaction, donor: Entit
     return d
 
 
-def set_lines(db: Session, ctx, t: RegisterTransaction, items: list[LineIn]) -> None:
+def set_lines(db: Session, ctx, t: RegisterTransaction, items: list[LineIn], settings=None,
+              confirmations: list[str] | None = None) -> None:
     """Part 1: mark deposit lines as donations - one donation per donor on the deposit (origin DEPOSIT). Lines linked
-    to a donation from the Donations page are changed there."""
+    to a donation from the Donations page are changed there. 2.4.0 (#562): a line with `link_line_id` is linked to
+    that awaiting Donations page donation line instead (`link_line`)."""
     if t.status != "ACTIVE":
         raise conflict("TRANSACTION_NOT_ACTIVE", "Donations can only be marked on an active deposit.")
     if reg.is_closed_protected(db, t):
@@ -1123,6 +1248,9 @@ def set_lines(db: Session, ctx, t: RegisterTransaction, items: list[LineIn]) -> 
     allocs = {a.id: a for a in t.live_allocations}
     current = _lines_by_alloc(db, t)
     seen = set()
+    links = [it.link_line_id for it in items if it.donation and it.link_line_id]
+    if len(links) != len(set(links)):
+        raise validation("An awaiting donation can be linked to one deposit line only.", "lines")
     for i, it in enumerate(items):
         a = allocs.get(it.allocation_id)
         if a is None or it.allocation_id in seen:
@@ -1143,6 +1271,13 @@ def set_lines(db: Session, ctx, t: RegisterTransaction, items: list[LineIn]) -> 
                 db.flush()
                 audit.record(db, ctx, "DONATION_MARKED", "register_transaction", t.id, before,
                              {"allocation_id": a.id, "donation": False})
+            continue
+        if it.link_line_id:                     # 2.4.0 (#562): the donation recorded before the money came
+            y = db.get(DonationLine, it.link_line_id)
+            if y is None or y.workspace_id != ctx.workspace_id:
+                raise validation("Unknown donation.", f"lines.{i}.link_line_id")
+            link_line(db, ctx, y, t, a, confirmations or [], settings=settings, field=f"lines.{i}.link_line_id")
+            current[a.id] = y
             continue
         donor = _donor(t, a)
         if donor is None:
@@ -1236,14 +1371,15 @@ def preview_receipt(db: Session, ctx, t: RegisterTransaction, donor_entity_id: i
 
 
 def print_receipt(db: Session, ctx, settings, t: RegisterTransaction, donor_entity_id: int,
-                  confirmations: list[str], km=None, signer_id: int | None = None) -> tuple[bytes, DonationReceipt]:
+                  confirmations: list[str], km=None, signer_id: int | None = None,
+                  before_commit=None) -> tuple[bytes, DonationReceipt]:
     if t.status != "ACTIVE":
         raise conflict("NOT_PRINTABLE", "This deposit is void - its receipts are void and no receipt can be printed.")
     if reg.is_closed_protected(db, t):
         raise conflict("FISCAL_YEAR_CLOSED", "The deposit belongs to a Closed Fiscal Year and cannot be printed. Its "
                                              "receipts are attached to it.")
     return print_donation(db, ctx, settings, _deposit_donation(db, t, donor_entity_id), confirmations, km=km,
-                          signer_id=signer_id)
+                          signer_id=signer_id, before_commit=before_commit)
 
 
 # ------------------------------------------------------------------ 2.2.0 (#256): fundraiser donation buckets
@@ -1256,7 +1392,8 @@ def donation_bucket_allocations(db: Session, allocation_ids: list[int]) -> dict[
                       .join(FundraiserBucket, FundraiserBucket.id == FundraiserBucketLine.bucket_id)
                       .join(Fundraiser, Fundraiser.id == FundraiserBucket.fundraiser_id)
                       .where(FundraiserBucketLine.allocation_id.in_(allocation_ids),
-                             FundraiserBucket.is_donation.is_(True)))
+                             FundraiserBucket.is_donation.is_(True),
+                             Fundraiser.event_type != "EVENT"))      # 2.4.0 (#429): receipts are a Fundraiser part
     return {aid: name for aid, name in rows}
 
 
@@ -1265,6 +1402,8 @@ def fundraiser_unreceipted(db: Session, ctx, fundraiser_id: int) -> dict:
     donations, or marked but never printed. Voided deposits are left out."""
     from ..models import Fundraiser, FundraiserBucket, FundraiserBucketLine
     f = get_scoped(db, Fundraiser, fundraiser_id, ctx, "Fundraiser")
+    if f.event_type == "EVENT":     # 2.4.0 (#429): an Event has no donation receipts (bucket flags are kept)
+        return {"fundraiser_id": f.id, "items": [], "has_donation_buckets": False}
     q = (select(FundraiserBucketLine.allocation_id)
          .join(FundraiserBucket, FundraiserBucket.id == FundraiserBucketLine.bucket_id)
          .where(FundraiserBucket.fundraiser_id == f.id, FundraiserBucket.is_donation.is_(True)))
@@ -1614,7 +1753,8 @@ def awaiting_lines(db: Session, ctx) -> list[dict]:
         if d is None or d.status != ACTIVE:
             continue
         e = db.get(Entity, d.donor_entity_id)
-        out.append({"id": x.id, "donation_id": d.id, "donor_entity_id": e.id, "donor": e.display_name,
+        cur = _current(_receipts_of(db, d))
+        out.append({"id": x.id, "donation_id": d.id, "receipt": cur.number if cur else None, "donor_entity_id": e.id, "donor": e.display_name,
                     "amount_cents": x.amount_cents or 0, "amount": money(x.amount_cents or 0),
                     "description": x.description or x.purpose or "", "purpose": x.purpose,
                     "date_received": x.date_received.isoformat() if x.date_received else None})
@@ -1627,7 +1767,6 @@ def create_transaction(db: Session, ctx, settings, data, links: list[int | None]
     A line spread over several allocations (split further) becomes one line per allocation, adding up to its amount.
     Lines with no date received get `date_received` (empty = the deposit's date). The donations' printed receipts (and
     printed envelopes) are attached to the deposit."""
-    from . import attachments as att_svc
     if data.transaction_type != "DEPOSIT":
         raise validation("Create transaction makes a deposit.", "transaction_type")
     if len(links) != len(data.allocations):
@@ -1688,15 +1827,146 @@ def create_transaction(db: Session, ctx, settings, data, links: list[int | None]
         audit.record(db, ctx, "DONATION_LINKED", "donation", d.id, before,
                      {"transaction_id": t.id, "line_ids": made, "allocation_ids": [allocs[i].id for i in idx]})
     for d in donations.values():                       # the printed receipts go with the deposit
-        for att in db.scalars(select(Attachment).where(Attachment.donation_id == d.id, Attachment.active.is_(True),
-                                                       Attachment.document_type.in_((RECEIPT_COPY, ENVELOPE_COPY)))
-                              .order_by(Attachment.id)):
-            try:
-                pdf = att_svc.path_for(settings, att).read_bytes()
-            except OSError:
-                continue
-            _store_doc_copy(db, ctx, settings, t, att.document_type, att.original_filename, pdf)
+        _copy_docs_to_deposit(db, ctx, settings, d, t)
     return t
+
+
+def _copy_docs_to_deposit(db: Session, ctx, settings, d: Donation, t: RegisterTransaction) -> None:
+    """The donation's printed receipts and envelopes, copied onto the deposit it was linked to."""
+    from . import attachments as att_svc
+    if settings is None:
+        return
+    for att in db.scalars(select(Attachment).where(Attachment.donation_id == d.id, Attachment.active.is_(True),
+                                                   Attachment.document_type.in_((RECEIPT_COPY, ENVELOPE_COPY)))
+                          .order_by(Attachment.id)):
+        try:
+            pdf = att_svc.path_for(settings, att).read_bytes()
+        except OSError:
+            continue
+        _store_doc_copy(db, ctx, settings, t, att.document_type, att.original_filename, pdf)
+
+
+# ------------------------------------------------------------------ 2.4.0 (#562): link a deposit already in the register
+def _suggested_link(options: list[dict], amount_cents: int) -> int | None:
+    """The awaiting line the register dialog starts on: the donor's only one with the same amount (decision 5)."""
+    same = [o for o in options if o["amount_cents"] == amount_cents]
+    return same[0]["id"] if len(same) == 1 else None
+
+
+def _deposit_line_ok(db: Session, t: RegisterTransaction) -> None:
+    if t.transaction_type != "DEPOSIT" or t.transfer_group:
+        raise conflict("NOT_A_DEPOSIT", "A donation can only be linked to a deposit.")
+    if t.status != "ACTIVE":
+        raise conflict("TRANSACTION_NOT_ACTIVE", "A donation can only be linked to an active deposit.")
+    if reg.is_closed_protected(db, t):
+        raise conflict("FISCAL_YEAR_CLOSED", "The deposit belongs to a Closed Fiscal Year.")
+
+
+def link_candidates(db: Session, ctx, d: Donation, x: DonationLine) -> list[dict]:
+    """The deposit lines an awaiting money line can be linked to (decision 4): active deposits not in a Closed Fiscal
+    Year, lines whose entity is the donor and that aren't linked to another Donations page donation; newest first."""
+    if d.status != ACTIVE or d.origin != PAGE or x.donation_id != d.id or x.kind != MONEY or x.allocation_id:
+        raise conflict("LINE_NOT_AWAITING", f"Donation #{d.id}'s line is not awaiting a deposit.")
+    rows = db.execute(select(TransactionAllocation, RegisterTransaction).join(
+        RegisterTransaction, TransactionAllocation.transaction_id == RegisterTransaction.id).where(
+        RegisterTransaction.workspace_id == ctx.workspace_id, RegisterTransaction.transaction_type == "DEPOSIT",
+        RegisterTransaction.status == "ACTIVE", RegisterTransaction.transfer_group.is_(None),
+        TransactionAllocation.removed_at.is_(None)).order_by(RegisterTransaction.transaction_date.desc(),
+                                                             RegisterTransaction.id.desc(),
+                                                             TransactionAllocation.id)).all()
+    out, closed = [], {}
+    for a, t in rows:
+        e = _donor(t, a)
+        if e is None or e.id != d.donor_entity_id:
+            continue
+        y = db.scalar(select(DonationLine).where(DonationLine.allocation_id == a.id))
+        owner = db.get(Donation, y.donation_id) if y is not None and y.donation_id else None
+        if owner is not None and owner.origin == PAGE:
+            continue
+        if t.id not in closed:
+            closed[t.id] = reg.is_closed_protected(db, t)
+        if closed[t.id]:
+            continue
+        cur = _current(_receipts_of(db, owner)) if owner is not None else None
+        out.append({"allocation_id": a.id, "transaction_id": t.id, "date": t.transaction_date.isoformat(),
+                    "description": a.description or "", "amount": money(a.amount_cents),
+                    "amount_cents": a.amount_cents, "same_amount": a.amount_cents == (x.amount_cents or 0),
+                    "marked": owner is not None, "marked_donation_id": owner.id if owner else None,
+                    "marked_receipt": cur.number if cur else None})
+        if len(out) >= 100:
+            break
+    return out
+
+
+def link_line(db: Session, ctx, x: DonationLine, t: RegisterTransaction, a: TransactionAllocation,
+              confirmations: list[str], settings=None, field: str = "allocation_id") -> Donation:
+    """Links an awaiting money line of a Donations page donation to a deposit line already in the register
+    (BR-DON-LINK-001..003). The amount follows the deposit line (confirmed when it differs). A line already marked
+    as a donation on the deposit moves to this donation (confirmed); a deposit donation left with no lines is
+    Cancelled, so its receipts are void (replaced by this donation). Returns the linked donation."""
+    d = db.get(Donation, x.donation_id) if x.donation_id else None
+    if d is None or d.status != ACTIVE or d.origin != PAGE or x.kind != MONEY or x.allocation_id is not None:
+        raise conflict("LINE_NOT_AWAITING", f"Donation #{d.id if d else '?'}'s line is not awaiting a deposit any more.")
+    _deposit_line_ok(db, t)
+    if a.transaction_id != t.id or a.removed_at is not None:
+        raise validation("Unknown deposit line.", field)
+    e = _donor(t, a)
+    if e is None or e.id != d.donor_entity_id:
+        raise validation(f"The deposit line's entity isn't donation #{d.id}'s donor. Correct the line's entity in the "
+                         "register first.", field)
+    y = db.scalar(select(DonationLine).where(DonationLine.allocation_id == a.id))
+    owner = db.get(Donation, y.donation_id) if y is not None and y.donation_id else None
+    if owner is not None and owner.origin == PAGE:
+        raise conflict("LINKED_TO_DONATION", f"This deposit line is already linked to donation #{owner.id}.")
+    warnings = []
+    if a.amount_cents != (x.amount_cents or 0):
+        warnings.append(Warning_("AMOUNT_DIFFERS", f"Donation #{d.id} was recorded as {money(x.amount_cents or 0)}; "
+                                 f"the deposit line is {money(a.amount_cents)}. The donation will be "
+                                 f"{money(a.amount_cents)}" + (", and its next receipt a corrected one."
+                                                               if _receipts_of(db, d) else ".")))
+    if owner is not None:
+        cur = _current(_receipts_of(db, owner))
+        others = [z for z in lines_of(db, owner) if z.id != y.id]
+        warnings.append(Warning_("REPLACES_MARKED", f"This deposit line is already marked as a donation on deposit "
+                                 f"#{t.id}" + (f" (receipt {cur.number})" if cur else "") + f". It will move to "
+                                 f"donation #{d.id}" + ("" if others or not cur else
+                                                        f", and receipt {cur.number} will be void.")
+                                 + (" The deposit's other donation lines for this donor stay as they are." if others
+                                    else "")))
+    require_confirmations(warnings, confirmations)
+    before = _line_snap(db, x)
+    replaced = None
+    if owner is not None:
+        if x.purpose is None and y.purpose:
+            x.purpose = y.purpose
+        if not x.goods_cents and y.goods_cents:
+            x.goods_cents, x.goods_description = y.goods_cents, y.goods_description
+        if x.date_received is None and y.date_received is not None:
+            x.date_received = y.date_received
+        ysnap = _line_snap(db, y)
+        db.delete(y)
+        db.flush()
+        audit.record(db, ctx, "DONATION_MARKED", "register_transaction", t.id, ysnap,
+                     {"allocation_id": a.id, "donation": False, "replaced_by_donation_id": d.id})
+        if not lines_of(db, owner):
+            replaced = owner.id
+            if _receipts_of(db, owner):
+                owner.status, owner.cancel_reason = CANCELLED, f"Replaced by donation #{d.id}"
+                owner.cancelled_at, owner.cancelled_by_user_id = utcnow(), ctx.user.id
+                owner.updated_by_user_id, owner.updated_at = ctx.user.id, utcnow()
+                db.flush()
+                audit.record(db, ctx, "DONATION_CANCELLED", "donation", owner.id, {"status": ACTIVE},
+                             {"status": CANCELLED, "reason": owner.cancel_reason})
+    if x.date_received is not None and x.date_received > t.transaction_date:
+        x.date_received = None                         # an estimate after the deposit: the deposit's date
+    x.allocation_id, x.amount_cents = a.id, a.amount_cents
+    x.updated_by_user_id, x.updated_at = ctx.user.id, utcnow()
+    db.flush()
+    audit.record(db, ctx, "DONATION_LINKED", "donation", d.id, before,
+                 {**_line_snap(db, x), "transaction_id": t.id, "allocation_ids": [a.id],
+                  "replaced_donation_id": replaced})
+    _copy_docs_to_deposit(db, ctx, settings, d, t)
+    return d
 
 
 # ------------------------------------------------------------------ receipt envelopes (Kyle, 2026-10-23)
@@ -1769,15 +2039,16 @@ def print_envelope(db: Session, ctx, settings, d: Donation, doc_id: int, *, retu
                                      ", ".join("{" + v + "}" for v in empty) + ". Print anyway?", variables=empty))
         require_confirmations(warnings, confirmations)
     opt = cp.envelope_options(db, ctx, doc, {"page": page, "guide": guide})
+    logo = cp.doc_logo(db, doc, cfg)                       # 2.4.0 polish (#503)
     pdf = documents.envelope_pdf(cfg, ret, to, page=opt["page"], guide=opt["guide"], dx=opt["dx"], dy=opt["dy"],
-                                 test=test)
+                                 test=test, logo=logo)
     if test:
         audit.record(db, ctx, "DONATION_ENVELOPE_TEST", "donation", d.id, None,
                      {"donation_id": d.id, "document_id": doc.id, "page": opt["page"], "guide": opt["guide"]})
         db.commit()
         return pdf
     # the kept copy is drawn without the feed offsets, so the same envelope is kept only once
-    copy_pdf = documents.envelope_pdf(cfg, ret, to, page="ENVELOPE")
+    copy_pdf = documents.envelope_pdf(cfg, ret, to, page="ENVELOPE", logo=logo)
     fname = f"envelope-donation-{d.id}.pdf"
     deposits = [t for t in deposits_of(db, d) if t.status == "ACTIVE"]
     added, paths = False, []

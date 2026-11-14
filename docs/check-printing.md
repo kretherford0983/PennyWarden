@@ -277,7 +277,9 @@ A **cover letter** has:
   role** set here are used.
 - Whether **Include cover letter** starts ticked on the print screen.
 - An optional **logo** (PNG or JPEG, at most 1 MB) above the letterhead lines, **top left** or **top center** (the
-  letterhead lines are then centered too). It is scaled to fit 2.5 × 1 inch. It can be added once the letter has been
+  letterhead lines are then centered too), or **top right, beside the letterhead** (2.4.0, #466: level with the first
+  letterhead line at the right margin; the letter text is not pushed down, the letterhead and date lines wrap short of
+  the logo, and the address starts below the logo only if the logo is taller than those lines). It is scaled to fit 2.5 × 1 inch. It can be added once the letter has been
   saved; adding, replacing or removing it takes effect at once (it is not part of *Save*) and is recorded in the audit
   log.
 - **Pre-printed letterhead paper** — prints no letterhead or logo and keeps the top of the page blank (2 inches by

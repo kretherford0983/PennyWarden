@@ -34,6 +34,7 @@ ACTION_LABELS = {
     "AUDIT_LOG_EXPORTED": "Audit log exported",
     "CONFIG_APPLIED": "Server settings applied (pennywarden apply-config)",
     "ATTACHMENTS_REORDERED": "Attachments reordered",
+    "ATTACHMENT_FILES_MERGED": "Identical attachment files merged (stored once)",   # 2.4.0 (#425)
     # 2.1.0 (#312, #314)
     "ORGANIZATION_UPDATED": "Organization profile changed", "DONATION_SETUP_UPDATED": "Donations setup changed",
     "DONATION_MARKED": "Donation lines changed",
@@ -43,6 +44,8 @@ ACTION_LABELS = {
     # 2.2.0 (#325)
     "DONATION_ENVELOPE_PRINTED": "Donation envelope printed", "DONATION_ENVELOPE_TEST": "Donation envelope test print",
     "ENVELOPE_TAGS_UPDATED": "Envelope template features changed",
+    "DONATION_LINKED": "Donation linked to a deposit", "DONATION_UNLINKED": "Donation unlinked from a deposit",
+    "DONATION_CANCELLED": "Donation cancelled",
     # 2.2.0 (#256)
     "DONATION_STATEMENT_PRINTED": "Year-end giving statement printed",
     "DONATION_STATEMENT_PREVIEW": "Year-end giving statement previewed",
@@ -59,6 +62,7 @@ OBJECT_LABELS = {
     "donation_settings": "Donations setup", "donation_statement": "Year-end giving statement",
 }
 FIELD_LABELS = {
+    "shares_file_with_attachment_id": "Stored as a link to the file of attachment",   # 2.4.0 (#425)
     "id": "ID", "username": "Username", "display_name": "Display name", "first_name": "First name",
     "last_name": "Last name", "email": "Email", "active": "Active", "roles": "Roles", "security_domain": "Security domain",
     "account_name": "Account name", "account_type": "Account type", "manual_current_balance": "Current balance",

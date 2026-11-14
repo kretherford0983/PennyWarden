@@ -128,6 +128,748 @@ could not otherwise be corrected. Scope and safeguards:
   with a link; the variable picker completes dotted names.
 - Tests: `backend/tests/test_v210_organization.py` (6, including the data migration) and the E2E #126 and #312 steps.
 
+**2.4.0 — payment stub (#522, decided with Kyle 2026-11-04).** `TemplateConfig` (the invoice PDF template, JSON - no
+migration): `stub`, `statement_stub` (both off), `stub_payable` (`{ORG}`), `stub_address` (`{ORG}`, `{ORG.ADDRESS}`),
+`stub_window`, `stub_dx` / `stub_dy`. `invoice_template.draw_stub` draws in page coordinates: the cut line 3.5 in above
+the paper's bottom edge (the detached stub fits a #9 envelope, 3 7/8 in), drawn scissors, the instruction, *PAYMENT
+STUB*, Make checks payable to, the mailing address (or, with `stub_window`, inside a #9 window: 7/8 in from the left,
+1/2 in from the bottom, 4 1/2 × 1 1/8 in, as the stub settles at the envelope's bottom), and on the right the
+customer, customer number (`{CUSTOMER.ENTITY_NUMBER}`), dates, the invoice number (15 pt), Amount due (the balance on
+the PDF: the total, or what is left once paid or credited) and Amount enclosed. On an invoice `_StubAtBottom` takes the
+rest of the last page (a new page when less than the stub is left). The customer statement (a landscape report) gets a
+portrait last page with the stub listing its open invoices (`invoice_reports._with_statement_stub`), only when
+something is open. Proposed: **BR-INV-STUB-001** off by default, statements separately; **-002** at the bottom of the
+last page, never squeezed; **-003** the pay-to lines come from the organization profile and can be changed. ACs
+**AC-INV-STUB-001..004**. Tests: `backend/tests/test_v240_payment_stub.py` (5); E2E in the #482 test.
+
+**2.4.0 — email donation receipts and statements (#539, decided with Kyle 2026-11-06).** Reuses the invoice email
+code (`email._send_logged`: mail server, email log, audit). `services/donation_email.py`: `GET
+/api/donations/email/defaults` (Donations Setup's `email_subject` / `email_message` or `statement_email_*`, variables
+filled), `POST /api/donations/{id}/receipts/email`, `/transactions/{id}/receipts/email`,
+`/statements/{year}/donors/{id}/email` (print permission). Sending **issues** the document: `print_donation` /
+`print_receipt` / `statement.print_one` take `before_commit`, which sends; a refused send raises, so nothing is issued,
+and the failed attempt is logged afterwards (`EMAIL_SEND_FAILED`, 502 `EMAIL_NOT_SENT`). Email log kinds `RECEIPT` /
+`DONOR_STMT`; audit `DONATION_RECEIPT_EMAILED` / `DONATION_STATEMENT_EMAILED`. `me.email_ready` (read only) hides the
+Email buttons when the mail server isn't set up and on. Sender overrides: `ReceiptConfig.email_reply_to` /
+`email_from_name`, `invoice_settings.email_reply_to` / `email_from_name` (migration `0088`); `email._message(sender=)`
+uses them over the Email setup's; the From address is always the server account's.
+- **BR-DON-EM-001** receipts and statements are emailed by whoever can print them, only with the mail server set up;
+  **-002** emailing issues the document as printing does, and a refused email issues nothing; **-003** Invoices and
+  Donations each may set their own Reply-To and From name (empty: the Email setup's). ACs **AC-DON-EM-001..004**.
+  Tests: `backend/tests/test_v240_donation_email.py` (5).
+
+
+**2.4.0 — link an awaiting donation to a deposit already in the register (#562, decided with Kyle 2026-11-10).**
+Gap in #325: only *Create transaction* linked an awaiting money line, and the register dialog's tick always made a new
+DEPOSIT donation (a second receipt for one gift). `services/donations.link_line(x, t, a, confirmations)` is shared by
+`GET /api/donations/{id}/lines/{line_id}/link-candidates` + `POST .../link` (Donations page) and
+`PUT /transactions/{id}/lines` (`LineIn.link_line_id`, `LinesIn.confirmations`). Candidates (`link_candidates`):
+live allocations of ACTIVE deposits (no transfers), entity (or parent entity) = donor, not linked to a PAGE donation,
+not Closed-protected, newest first, at most 100. Warnings `AMOUNT_DIFFERS` (the line takes the allocation's amount)
+and `REPLACES_MARKED` (the allocation's DEPOSIT donation line is deleted; purpose, goods and date carry over when the
+awaiting line has none; a DEPOSIT donation left with no lines and with receipts is CANCELLED, reason *Replaced by
+donation #N*, so its receipts are void). `_deposit_donations` returns ACTIVE ones only (ticking the donor again starts
+a new one); `transaction_out` lists the replaced ones' receipts, and per line `awaiting` (the donor's awaiting lines,
+with `receipt`) and `suggested_link` (the only same-amount one, for unmarked lines). Date: the estimate is kept unless
+after the deposit. Receipts and envelopes are copied onto the deposit (`_copy_docs_to_deposit`, shared with Create
+transaction). Audit `DONATION_LINKED` (with `replaced_donation_id`), `DONATION_MARKED` (donation false,
+`replaced_by_donation_id`), `DONATION_CANCELLED`. No migration.
+- Proposed **BR-DON-LINK-001** an awaiting money line can be linked to an existing deposit line of the same donor,
+  from the Donations page or the register dialog; **-002** the amount follows the deposit line, confirmed when it
+  differs; **-003** linking a line already marked on the deposit is confirmed and voids that deposit donation's
+  receipts when it is left empty (replaced by the linked donation); **-004** the register dialog starts on the donor's
+  only same-amount awaiting donation and notes any others. ACs **AC-DON-LINK-001..005** (link from the page; from the
+  dialog; amount confirmation; replacing a marked line voids its receipt; wrong donor / void deposit refused).
+  Tests: `backend/tests/test_v240_donation_link.py` (5).
+
+**2.4.0 — customer account credit (#534, decided with Kyle 2026-11-06).** A customer's credit is every
+`OVERPAYMENT` link not refunded (`figures().refundable`) on their invoices - existing ones included (migration `0087`
+adds only `invoice_payment.credit_from_invoice_id`). `invoice_payments.credit_sources` / `credit_out`
+(`GET /api/invoices/credit?customer_entity_id=`, `payments.customer_credit`, `/payments/open`'s `credit`).
+`apply_credit` runs in `invoice_docs.send` (status set first, then credit, then the PDF): oldest first, up to the open
+balance; each overpayment line is re-allocated on its own deposit through `register._update` (a savepoint; the
+system accepts the edit's warnings) - the applied part becomes the new invoice's splits (`_invoice_allocations`),
+linked with `credit_from_invoice_id`, the rest stays the overpayment; the deposit's total doesn't change; a deposit in
+a Closed Fiscal Year (or not active) is skipped. `remove_credit` (`POST /{iid}/credit/remove`, `transaction.manage`,
+reason) puts it back as an overpayment on the source invoice. Moving credit = Unlink of the overpayment line, refused
+(`PARTLY_REFUNDED`) when part of it was refunded. PDF: *New charges, Account credit applied, [Paid], Total due*.
+Statement: an *Account credit (today)* section. Audit `INVOICE_CREDIT_APPLIED` / `INVOICE_CREDIT_REMOVED`.
+- **BR-INV-CR-001** credit = overpayments not refunded, the customer's; **-002** applied automatically on send, oldest
+  first, up to what is owed, never from a Closed Fiscal Year; **-003** a Register User takes it back off, refunds it,
+  or moves it (reason); **-004** the invoice, its PDF and the statement show it. ACs **AC-INV-CR-001..005**. Tests:
+  `backend/tests/test_v240_customer_credit.py` (6); E2E in `#533`.
+
+**2.4.0 polish — selective restore sections (#535, Kyle 2026-11-06).** `partial_restore.SETTINGS_SECTIONS` gains
+`settings.invoices` (`invoice_settings`, `invoice_custom_field`), `settings.email` (`email_settings`),
+`settings.logos` (`organization_logo`) and `settings.signers` (`check_signer`), out of `settings.general` and
+`settings.payments`; the Data label names Invoices and the catalog (which stay in Data: they point at budgets and
+entities). A kept mail server password is re-encrypted when the keys differ (it wasn't before: `email_settings` was
+never in the kept set). `_clean_references` also clears signer ids in `check_style` / `check_document` /
+`donation_settings` configs that the result's signer list doesn't have, takes custom field ids off products that
+the result's Invoices Setup doesn't have, and moves `invoice_settings.next_seq` past the highest invoice `seq` (BR-001:
+a number is never reused); each is a line in the restore report. Proposed: **BR-RST-010** these four sections restore
+on their own; **-011** cross-section references are cleared and reported, invoice numbering never goes back.
+Tests: `backend/tests/test_v240_restore_sections.py` (4).
+
+**2.4.0 — One current user guide, archived release notes, in-app Help and the guide on pennywarden.org (#473,
+decided with Kyle 2026-11-02).** The `docs/user-guide-v*.md` files were "what's new" notes, not full guides; a new
+feature-organized `docs/user-guide.md` replaces them and they moved to `docs/archive/` (only their relative links were
+repointed). Decisions: the guide is bundled with the app *and* hosted on the site; per-page help plus a Help menu
+item; the site's version list starts at 1.10 (the first public release); part of 2.4.0.
+- New rules (the spec documents are not modified): **BR-DOC-001** the app bundles the user guide of its own version and
+  Help opens it without network access; **BR-DOC-002** every primary page has a help link to its guide section and the
+  navigation has Help for all roles; **BR-DOC-003** one current guide is maintained in `docs/`, earlier releases' notes
+  are archived, not rewritten. **AC-DOC-001** each page's help opens the bundled guide at that page's section;
+  **AC-DOC-002** Help in the menu opens the start of the guide for Administrator, Financial and Auditor users;
+  **AC-DOC-003** Help needs no outside request; **AC-DOC-004** no help link points at a module hidden from the user's
+  roles (such a page's **?** opens the start of the guide); **AC-DOC-005** pennywarden.org/guide shows the current guide
+  and switches to archived versions 1.10 and later; **AC-DOC-006** nothing links to a moved `docs/user-guide-v*.md`.
+- Existing rules respected: BR-091/AC-SEC-005 (help is never an authorization path - `/help` shows only documents, and
+  `helpFor` gives a hidden module's page the guide's start), BR-083 (bundled, offline), BR-105/AC-SEC-021 (same
+  origin, no new CSP sources; the site keeps its strict CSP), BR-096/AC-SEC-011 (Markdown is turned into React elements
+  / DOM nodes with escaped text; the only HTML understood is the guide's own `<a id="…"></a>` section-marker line;
+  only http(s), in-page and repository links become links), BR-106 (no new dependency - a small renderer instead of a
+  Markdown library).
+- App: `frontend/src/help.ts` (`HELP_SECTIONS` page -> anchor, `helpFor`), `helpDocs.ts` (the `?raw` imports of
+  `user-guide.md`, `check-printing.md`, `backup-restore.md`), `pages/Help.tsx` (renderer; routes `/help` and
+  `/help/<doc>`), loaded lazily so the main bundle doesn't carry the documents; the **?** link in the top bar and Help
+  as the last menu item in `App.tsx`. Links to other repository files open on GitHub (`main`). `vite.config.ts` lets the
+  dev server read `../docs`; the Docker UI stage copies the three documents.
+- Site: `site/guide/index.html` + `guide.js` (the same renderer in plain DOM), `scripts/build_site.sh` copies the
+  current documents and the archived notes from 1.10 and writes `guide/versions.json` (newest first); `pages.yml` also
+  publishes when those documents change on main. The page is built from `main`, so the site's current guide is the
+  latest production release's.
+- Section anchors are fixed `<a id="…"></a>` lines in the guide, so headings can be reworded without breaking help
+  links. **Release practice:** each release updates `docs/user-guide.md`; the per-release summary goes in the CHANGELOG.
+- Tests: `backend/tests/test_v240_user_guide.py` (archive layout, every `HELP_SECTIONS` anchor exists, in-guide links,
+  bundling incl. the Dockerfile, no links to moved files, no other raw HTML, the site build and `versions.json`); E2E
+  "#473 AC-DOC-001..004"; `test_v170_rename.py`'s allow-list no longer names the moved notes.
+
+**2.4.0 — the user guide as a book (#488, decided with Kyle 2026-11-02; replaces #473's single page).** Kyle's
+decisions: Contents -> chapters -> task pages (help-center style); the site's **Applies to** list = the versions that
+have the page (books from 2.4), then the earlier releases, whose single archived document stays as it was; the app
+shows only its installed version; screenshots generated by a docs script from synthetic data and re-run each release;
+a simple built-in search; in 2.4.0.
+- Source: `docs/guide/guide.json` (version, chapters -> pages with id/title/summary; a page with `source` shows a
+  reference document whole - `../check-printing.md`, `../backup-restore.md`), `docs/guide/<chapter>/<page>.md`,
+  `docs/guide/img/*.png`; `docs/guide/README.md` (contents for GitHub) is generated by `scripts/guide_contents.py`.
+  `docs/user-guide.md` is gone (its content is in the book, extended with the 2.4.0 features; 22 chapters, 78 pages).
+- Pictures: `scripts/docs_data.py` adds Invoices to the demo organization (`scripts/demo_data.py`; Invoice Manager
+  `demo-invoices`, tax rates/groups, categories with a pattern, a product field, a tax-exempt customer, invoices) and
+  `scripts/docs_screenshots.mjs` captures 35 screens into `docs/guide/img/`. **Release practice:** each release updates
+  the book's pages, re-runs both scripts, and before the next version's changes copies `docs/guide` to
+  `docs/archive/guide-v<version>/` so the site keeps that version's book.
+- App: `helpDocs.ts` bundles the manifest (`?raw`), pages and pictures (`import.meta.glob`, eager); `Help.tsx` routes
+  `/help` (contents), `/help/<chapter>`, `/help/<chapter>/<page>`, `/help/search?q=`; breadcrumbs, *Applies to
+  PennyWarden <version>*, the page summary, prev/next; images only from `docs/guide/img` (other image links show their
+  text); the #473 addresses `/help/check-printing`, `/help/backup-restore`, `/help/user-guide` still work. `HELP_SECTIONS`
+  maps screens to `<chapter>/<page>`.
+- Site: `guide.js` hash routes (`#/2.4`, `#/2.4/<chapter>[/<page>]`, `#/2.4/search/<words>`, `#/doc/2.3`); the picker
+  lists the books having the page, then the archived documents; `?doc=` / `?v=` addresses are redirected.
+  `build_site.sh` copies each book to `guide/<version>/` with `ref/` (reference documents) and `search.json`;
+  `versions.json` schema 2 (`current`, `books`, `docs`). Dockerfile copies `docs/guide`; pages.yml watches it.
+- Rules (Kyle to confirm): **BR-DOC-004** the guide is a book of chapters and task pages, each with a title and summary,
+  versioned as a whole; **BR-DOC-005** guide pictures show synthetic data only and are made by the docs scripts.
+  **AC-DOC-007** every picture exists, is used and is made by the script; **AC-DOC-008** the site offers each book
+  version and the 1.10-2.3 documents. Tests `test_v240_user_guide.py` (10) and the E2E "#473 / #488 AC-DOC".
+
+**2.4.0 polish — organization logos (#503, decided with Kyle 2026-11-03).** Kyle's decisions: in 2.4.0; each place
+chooses Organization / Own / None (the organization logo is read at print time, so a change reaches every such place);
+the organization section holds the same four slots as Branding; donation receipt and statement letters get a logo (the
+statement follows the receipt or has its own choice); envelopes get one too; the upgrade seeds the organization logos
+from Branding and switches identical letter / invoice logos to them; default No logo; removing one in use warns,
+lists the places, and those places print none (their choice stays).
+- New rules (spec documents unchanged): **BR-ORG-LOGO-001** one set of organization logos per organization (logo, small
+  mark, dark versions), managed by Administrators; **BR-ORG-LOGO-002** each printing place has a Logo choice ORG / OWN /
+  NONE, default NONE; uploading a place's own logo selects OWN, removing it while OWN selects NONE; **BR-ORG-LOGO-003**
+  removing an organization logo that places use needs the confirmation `ORG_LOGO_IN_USE` (409 `CONFIRMATION_REQUIRED`
+  listing them); they then print none. **AC-ORG-LOGO-001** a place set to ORG prints the current organization logo;
+  **AC-ORG-LOGO-002** replacing it changes every such place at the next print; **AC-ORG-LOGO-003** receipt and statement
+  letters and envelopes print the chosen logo; **AC-ORG-LOGO-004** after the upgrade nothing prints differently;
+  **AC-ORG-LOGO-005** removal warns and lists the places.
+- Respected: BR-003 (organization settings; `system.manage` for the organization logos, each setup screen's own
+  permission for its logo), BR-096/BR-100/BR-101 (`normalize_logo`: content-checked PNG/JPEG, re-encoded, no metadata;
+  2 MB for the organization slots like Branding, 1 MB for a place's own), audit (`ORGANIZATION_LOGO_SET/REMOVED`,
+  `BRANDING_LOGO_SOURCE_SET`, `DONATION_LETTER_LOGO_SET/REMOVED`, fingerprints only).
+- Data: migration `0086_organization_logos` - table `organization_logo` (workspace, slot, png, sha256, size; unique per
+  slot); `branding_settings.logo_sources` (JSON per slot; a slot not listed is OWN, as before); `donation_settings`
+  `receipt_logo_*` / `statement_logo_*`; `logo_source` in the cover letter and envelope config JSON, the invoice
+  template JSON and the donation ReceiptConfig (`logo_source`, `logo_position`, `statement_logo_source` FOLLOW). The
+  migration copies Branding's logos into `organization_logo`, sets Branding's slots to ORG and drops its copies; a
+  letter or invoice logo with the same SHA-256 as Branding's full logo becomes ORG (copy dropped), another OWN, none NONE.
+  `organization_logo` is in the selective-restore *Settings → General* part; Reinitialize keeps it.
+- Code: `services/org_logos.py` (`resolve`, `usage`, `set_logo`, `branding_sources`, `statement_source`);
+  `checkprint.service.doc_logo` for letters and envelopes (`envelope_pdf(logo=)`, 1.25 × 0.6 in at the return corner,
+  return lines shifted right); `invoice_docs` resolves from the (possibly unsaved) template; `donations.letter_logo` +
+  `donor_letter_pdf(logo=)` (flowable above the organization name at LEFT/CENTER/RIGHT; with a window letter, top right
+  on the canvas); `branding.slot_logo` in `load()` and the editor's logo image. UI: `LogoChoice.tsx` (shared choice,
+  own upload, organization thumbnail or a note when there is none) in the cover letter, envelope, invoice PDF, Donations
+  Setup and Branding editors; `OrganizationLogosPanel` on System/About → General with "Used by:" per slot.
+- Tests: `test_v240_org_logos.py` (8: permissions and audit, letter follows/replaced/own/none, envelope, invoice PDF,
+  receipt + statement FOLLOW/own, Branding slot, removal warning, the upgrade on 2.4.0-test-build data);
+  `test_v200_build6.py` updated (envelopes take a logo; previews send `logo_source`); E2E "2.4.0 polish (#503)" and the
+  cover letter / Branding steps use the Logo choice. User guide: new page *System/About → Organization logos*, updated
+  cover letters, invoice PDF, Donations Setup, envelopes, Branding and System/About tabs.
+
+**2.4.0 polish — tax-exempt customers (#485, decided with Kyle 2026-11-02).** Migration `0085_entity_tax_exempt`:
+`entity.tax_exempt` (bool, default false) and `tax_exempt_certificate` (60). Part of the entity FIELDS, so creating
+and editing (whoever may edit entities) and the `ENTITY_*` audit snapshots include them; the certificate is cleared
+when the flag is off. **BR-INV-TAX-005:** `refresh_taxes` gives a tax-exempt customer's lines no rates - drafts and
+revisions when saved or sent; sent versions keep theirs; no per-invoice override (Kyle). The PDF prints "Tax exempt -
+certificate #..." (or "Tax exempt") under the totals when the customer is exempt and the invoice has no tax; the
+invoice detail shows a *Tax exempt* badge. The entity form shows the fields when the Invoices module is on (or the
+flag is set). **AC-INV-TAX-005.** Test `test_v240_invoices.py::test_tax_exempt_customer_is_charged_no_tax`.
+
+**2.4.0 polish — tax groups, several rates per item (#487, decided with Kyle 2026-11-02).** Replaces #253's one rate
+per invoice. Migration `0084_tax_groups`: table `invoice_tax_group` (name, `rate_ids` JSON, active; in Reinitialize
+WIPE and selective-restore DATA_TABLES), `invoice_product.tax_group_id`, `invoice_line.taxes` (JSON
+`[{rate_id, name, milli, budget_id}]`); existing invoices' one rate is copied onto their taxable lines; the
+`invoice.tax_*` columns stay but are no longer used (always NULL from now on).
+- **BR-INV-TAX-001 (rewritten):** a product picks one tax group (none = not taxed; `taxable` kept = has a group).
+  When an invoice is saved (draft or revision being prepared) and when it is sent, each line takes the *active* rates
+  of its product's group, each with its Invoiced Income budget for the invoice's Fiscal Year (none -> 422
+  `NEEDS_BUDGET`) - `invoice_docs.refresh_taxes`. A sent version keeps its lines' rates.
+- **BR-INV-TAX-002:** per rate (key: rate id, milli, name) base = the final nets (after line and invoice discounts) of
+  the lines carrying it; tax = round half up (base x rate) once per rate per invoice; total = nets + the taxes; no
+  compound tax. `compute()` returns `taxes` (+ `tax` = their sum, `taxable_base` = finals of lines with any rate).
+- **BR-INV-TAX-003:** a payment's tax part is the same proportion as before, filled into the rates in the order they
+  appear (each up to its tax), so parts never go down between payments and add up exactly when paid in full;
+  each rate's part is its own allocation on the rate's budget (`apportion_rates`). The Sales tax collected report
+  is per rate.
+- **BR-INV-TAX-004:** tax groups are maintained by Invoice Managers (`/api/invoices/catalog/tax-groups`, at least
+  one active rate, names unique), audited `INVOICE_TAX_GROUP_CREATED/UPDATED/INACTIVATED/RESTORED`, never deleted.
+- API: invoice bodies no longer take `tax_rate_id` (batches too); invoice out has `taxes` [{name, rate, label, base,
+  tax}] instead of `tax`, lines have `taxes` (names); PDF totals one line per rate (`data["taxes"]`).
+- UI: Catalog tab **Tax groups** (rates as checkboxes); product form **Tax group** select replaces *Taxable*;
+  invoice form has no Sales tax picker; invoice detail lists each tax.
+- Tests: `test_v240_invoices.py::test_tax_groups_charge_each_rate_on_its_own_lines` (Kyle's hotel example, rate
+  change reaching a draft not a sent copy, payment per rate); existing invoice/payment/report tests moved to groups.
+  ACs **AC-INV-TAX-001..004**.
+
+**2.4.0 polish — custom fields applied to products (#484, decided with Kyle 2026-11-02).** Migration
+`0083_product_custom_fields`: `invoice_product.custom_field_ids` (JSON list). `invoice_custom_field.level` adds
+`PRODUCT` (Administrator-defined as before). The Invoice Manager attaches active PRODUCT fields on the product
+(`custom_field_ids` in the product body; 422 for another level or an unknown/retired one not already attached).
+`custom_values(..., "LINE", ..., product_ids)` takes the LINE fields plus the PRODUCT fields attached to the line's
+product: their own Required flag applies; a value for a product field not attached to that line's product is refused
+("Unknown field"); a value of a field detached later is kept (like a retired field's). `values_out("LINE")` lists
+PRODUCT values too, so the PDF prints them after the description (show on PDF) and revisions keep them. Batches go
+through the same path. **BR-INV-FLD-004**, **AC-INV-FLD-005**. Test
+`test_v240_invoice_fields.py::test_product_fields_are_asked_only_on_lines_of_their_products`.
+
+**2.4.0 polish — category budget and product code pattern (#483, #486, decided with Kyle 2026-11-02).** Migration
+`0082_category_defaults`: `invoice_product_category.budget_id` (FK budget), `code_pattern` (40), `code_counters`
+(JSON `{"<year>|0": next}`) - on the category row, so Reinitialize/selective restore need no new table.
+- **BR-INV-CAT-005 (#483):** a product with no budget of its own uses its category's current budget
+  (`invoice_catalog.product_budget_id`, used by `needs_budget`, `product_out` and invoice line creation); saving a
+  product needs its own budget or a category that has one (422 `budget_id`); a category whose budget is followed by
+  products can't drop it (409 `CATEGORY_BUDGET_IN_USE`); changing the category's budget moves the followers (they
+  read it live). Category budgets pass the same Invoiced Income leaf check (`_leaf_ok`). `product_out` adds
+  `own_budget`, `category_budget`; `budget` = the effective one.
+- **BR-INV-CAT-006 (#486):** `code_pattern` uses the invoice-number tokens (`check_pattern`, exactly one `{SEQ}`; the
+  codes it makes must fit 30 characters). `{SEQ}` counts per category, per year when the pattern has `{YY}`/`{YYYY}`
+  (else one counter, key "0"). The suggestion is the counter's number, skipping numbers whose code exists
+  (case-insensitive, any product). A product saved with exactly the suggested code advances the counter
+  (`_use_code`); an edited or blank code leaves it. Changing an existing product's category never changes its code.
+  `GET /api/invoices/catalog/code-example?category_id=&pattern=` (view) previews; categories list `next_code`,
+  `budget`, `products_following`. Category create/update audited with `budget_id`/`code_pattern`.
+- UI: product form starts with Category (fills the code until it's typed by hand, and offers "Use the category's
+  budget" / "Its own budget"); the category form has the optional budget and the pattern with a live Next code.
+- Tests: `test_v240_invoice_catalog.py::test_category_budget_is_followed_unless_the_product_sets_its_own`,
+  `::test_category_code_pattern_suggests_codes_and_counts_only_used_ones`. ACs **AC-INV-CAT-007/008** (as tested).
+
+**2.4.0 polish — quick fixes #481, #482, #489, #490 (Kyle 2026-11-02).**
+- #481: `GET /api/invoices/setup/number-example?pattern=` (`invoice.setup`) runs `check_pattern` + `format_number`
+  with today's year and `_next_seq` (nothing stored; 422 with the reason). InvoiceSetup fetches it 250 ms after typing
+  and shows the example or the error. Test `test_v240_invoices.py::test_number_example_for_an_unsaved_pattern`.
+- #482: About → Optional modules calls the Me context's `refresh()` (`/api/auth/me`, which carries `modules`) after a
+  successful `PUT /api/system/modules`.
+- #489: the Stakeholder report card's own Report… button removed (the page header's stays).
+- #490 (Kyle: both): `fundraiser_deck.py` - non-doughnut charts set the category axis `tickLblPos=low`; `_labels`
+  adds a `c:spPr` solid fill in the slide color (`_label_backing`, doughnut percentages excluded); `C.SERIES` and
+  `_lighter` pass through `visible()` (WCAG contrast >= 3:1 against the slide, stepping toward black or white).
+  Test `test_v210_fundraiser_deck.py::test_chart_text_off_chart_elements_and_colors_visible`. The stakeholder report
+  PDF charts are unchanged (not reported).
+- E2E "2.4.0 polish (#482, #481, #477, #480)" (end of poc.spec.ts): module on → Invoices Setup in the menu without a
+  reload, live Next invoice and its error, letterhead rows + suggestions, column boxes aligned; the module is left as
+  it was.
+
+**2.4.0 — a Register deposit reaches its invoice (#533, decided with Kyle 2026-11-06; a gap in #254:
+`INVOICE_PAYMENT_REQUIRED` and `NOT_INVOICED_INCOME` together made a deposit entered first impossible to link).**
+- `AllocationIn.apply_to` `[{invoice_id, amount}]`, `apply_extra` `BUDGET|CREDIT|REFUND`, `apply_extra_invoice_id`.
+  `register.create` / `update` call `invoice_payments.expand_applications` first: an applied allocation is replaced by
+  each invoice's splits (`_invoice_allocations`, shared with Record payment), generated allocations pass the Invoiced
+  Income guards; the extra stays on the allocation's budget (`BUDGET`, not an Invoiced Income one), or is an
+  `OVERPAYMENT` on the chosen invoice (`CREDIT` - becomes customer credit with #534 - and `REFUND`, which then writes
+  the refund withdrawal on the same account and date, no check number). `finish_applications` links, audits
+  (`INVOICE_PAYMENT_RECORDED` with `from_register`) and refreshes the invoices. Warnings `OVERPAYMENT` and
+  `THIRD_PARTY_PAYER` join the register's confirmations. Register output: each allocation's `invoice` (id, number,
+  kind).
+- **Link a deposit…**: candidates are unlinked active deposit lines on any Income budget (not Budget 0) in an open
+  year, the customer's first; a line not on Invoiced Income is moved (`_link_moving`: a `register.update` applying
+  the line, `transaction.manage`), up to the open balance, the rest per `extra` (default `BUDGET`).
+- **BR-INV-PAY-010** a deposit allocation may be applied to open invoices of any customer (confirmed if not the
+  payer's); the applied part becomes the invoices' splits, linked; **-011** the extra above the invoices stays on a
+  non-Invoiced-Income budget, or is an overpayment kept as credit or refunded at once (confirmed); **-012** Link moves a
+  deposit line on an ordinary Income budget onto the invoice's budgets (Register User).
+- ACs **AC-INV-PAY-012** apply part of a deposit in the register; **-013** the extra (budget / credit / refund);
+  **-014** link moves a line; **-015** apply on edit, another payer, module off. Tests:
+  `backend/tests/test_v240_apply_to_invoice.py` (6); E2E `#533`.
+
+**2.4.0 polish — reports open with their defaults (#528, Kyle 2026-11-05).** Amends #375 (2.3.0): a report
+opened from the catalog (or by its address without options) starts with its defaults; only a *Recently run* link or a
+shortcut from another page fills in options (they travel in the address). Each report's last options are still
+recorded on the server (`report_prefs.last`) but no longer read by the Reports page. Invoice reports and the custom
+range of the formal sales reports record a run "to today" / "as of today" / "from the first of the month" without
+those dates, so its Recently run link reopens to the current day. Dates the screens fill in use the user's calendar
+date (`todayIso()`, new `monthStartIso()`), not the UTC date (tomorrow in US evenings).
+
+**2.4.0 — One payment for several invoices (#523, decided with Kyle 2026-11-04; finishes #254's "one deposit split
+across several invoices").** `GET /api/invoices/payments/open?customer_entity_id=|number=` (the open invoices -
+sent or partly paid, no write-off waiting, open > 0 - oldest due first; a typed invoice number finds its customer's)
+and `POST /api/invoices/payments` (`InvoiceMultiPaymentIn`: items `[{invoice_id, amount}]` 1-50, `payer_entity_id`,
+`overpayment` + `overpayment_invoice_id`, date, account, notes, confirmations), both `invoice.record_payment`
+(Register User). `invoice_payments._invoice_allocations` is shared with Record payment: each invoice gets the lines
+Record payment would give it (difference of two cumulative apportionments), so later payments continue exactly. One
+`register.create` (every register rule and warning), at most 100 lines; one `InvoicePayment` per line;
+`INVOICE_PAYMENT_RECORDED` per invoice (with `deposit_total`, `invoices_in_deposit`). Frontend
+`pages/InvoicePayments.tsx` (`MultiPaymentForm`; `useAccounts` moved there): **Record a payment…** (customer or
+invoice number) and **Record payment for N invoices…** (ticked open rows in the list).
+- **BR-INV-PAY-007:** one payment may cover up to 50 issued invoices, each listed once, each part > 0 and not more
+  than its open balance (`OVER_OPEN_BALANCE`); the deposit is one register transaction linked line by line.
+- **BR-INV-PAY-008:** an amount above the parts is an overpayment on one of the invoices, chosen by the user and
+  confirmed (`OVERPAYMENT`), refundable as before (BR-INV-PAY-004).
+- **BR-INV-PAY-009:** the deposit's entity (and its lines') is the payer; the default is the invoices' customer when
+  they share one, otherwise it must be chosen; a payer other than an invoice's customer is `THIRD_PARTY_PAYER`,
+  confirmed. Void re-opens every invoice; unlink stays per invoice (BR-INV-PAY-005 unchanged).
+- ACs **AC-INV-PAY-008** open invoices oldest due first, found by number; **-009** one deposit linked to each
+  invoice, later payments continue exactly; **-010** limits, overpayment, another payer; **-011** void / unlink per
+  invoice. Tests: `backend/tests/test_v240_multi_invoice_payment.py` (5); E2E `#523`.
+
+**2.4.0 — Invoice reports for formal publication (#513, decided with Kyle 2026-11-03).** Two new reports in the
+catalog's *Share with the board and members* group (Subject: Invoices; Audience: Board & members), each a PDF
+(ReportLab, the Fiscal Year fundraising report's band, highlight tiles and tables) and a presentation (python-pptx,
+the fundraiser deck's helpers and Branding for presentations): **Sales by product & category** (`inv-sales-formal`:
+categories, products within each category, Income budgets) and **Sales overview** (`inv-overview`: sales, tax,
+collected and refunded by month, open and overdue at the end, aging, discounts and write-offs, top customers and
+products, sales tax by rate). `services/invoice_formal.py` (figures), `invoice_formal_output.py` (PDF / deck),
+`GET /api/invoices/formal/options` and `GET /api/invoices/formal/{rid}` (`format=json|pdf|pptx`). A saved catalog
+grouping from before gets the two in its Invoices category (`report_grouping._complete`). Frontend:
+`pages/reports/InvoiceFormal.tsx`.
+- **BR-INV-PUB-001 (period):** a Fiscal Year quarter (Q1–Q4) or the year, compared with the same period of the
+  previous Fiscal Year when there is one (a period still in progress is compared with the same stretch last year); or a
+  custom From/Through range, with no comparison. A period that hasn't ended is reported as of today, marked
+  Preliminary (the BR-110 cutoff, as the Quarterly / Annual report).
+- **BR-INV-PUB-002 (figures):** sales are *invoiced* — the invoice lines after discounts, before tax, of issued invoices (sent,
+  partly paid, paid or written off; not draft, not void) dated in the period, the same figures as the basic *Sales by product /
+  category* report — with *collected* beside them: each invoice's payments up to the end of the period, split over its
+  lines and tax rates exactly as Record payment does (`apportion_rates`). The overview's money collected is payments
+  dated in the period less refunds; open and overdue are as of the end.
+- **BR-INV-PUB-003 (who and what is shown):** run by invoice viewers (`invoice.view`: Invoice Managers, Budget
+  Managers, Budget Users, Register Users, Auditors), never the Administrator (BR-003); refused when the Invoices module
+  is off; every run audited (`REPORT_GENERATED`, `INV_SALES_FORMAL` / `INV_OVERVIEW`, `_PRESENTATION` for the deck).
+  **Show customer names** is on by default; off prints *Customer 1, 2, …* in sales order. An optional commentary (up to
+  2,000 characters) is printed as plain text on the first page and on its own slide; like the other reports' free
+  text, it is not remembered with the options.
+- ACs **AC-INV-PUB-001** totals match the basic sales report and collected is exact; **-002** overview figures (months
+  sum to the totals; names hidden); **-003** periods, custom range, invalid range (422), same period last year;
+  **-004** PDF and presentation, audited, also for a period with no invoices; **-005** who can run them; **-006**
+  commentary limit, printed as text. Tests: `backend/tests/test_v240_invoice_formal.py` (8); E2E `#513`.
+
+**2.4.0 polish — Invoice PDF setup (#477–#480, Kyle 2026-11-02).** `InvoiceTemplate.tsx` uses `PatternInput` for the
+title, Bill to heading and footer, and the shared `Lines` (moved from CheckDocuments.tsx to checkShared.tsx) for the
+letterhead and Bill to (one row each, max 6); `ROLE_GROUPS` gains CUSTOMER/INVOICE. `TemplateConfig.logo_position`
+adds CENTER (a 3-column header, the logo cell centered, max 1.7 in wide); the header's logo cells are aligned with
+`ALIGN` (an Image's own hAlign is ignored in a table cell - the RIGHT bug). New `fold_marks/fold_length/fold_edge/
+fold_weight/fold_shade` and `window` (NONE|LETTER) + `window_return`, `return_dx/dy`, `payee_dx/dy` reuse the cover
+letter's `WINDOW_PRESET`, `FOLD_LINES`, `fold_ticks` and `_with_back_pages`: the letterhead (return) and the resolved
+Bill to lines are drawn in the window positions on page 1, the header keeps only the logo/title block, the body
+starts at the first fold + 0.15 in, the Bill to block is not repeated. Window outlines and labeled folds only on the
+SAMPLE preview/test print. Columns: a CSS grid (`ol.column-order`) and HTML5 drag-and-drop by a handle, ↑/↓ kept.
+Tests `test_v240_invoice_template.py::test_logo_right_sits_at_the_margin_and_center_between`, `::test_fold_marks_and_window_layout`.
+
+**2.4.0 polish — Cleared sort places never-cleared voids by date (#471, decided with Kyle 2026-11-02).** In
+`register.list` the `clear_date` sort key groups only uncleared **ACTIVE** transactions (last ascending, first
+descending); a VOID or DELETED one without a clear date sorts at its `transaction_date` (Kyle chose the transaction
+date over `voided_at`, which is when Void was clicked). A void that had cleared keeps its clear date. The running
+(cleared) balance is unchanged - voids are never in it. Test `test_v210_register_sort.py::
+test_cleared_sort_places_an_uncleared_void_by_its_date`.
+
+**2.4.0 polish — Register printout (#468, decided with Kyle 2026-11-02).** System Print only (no Print button).
+Print-only `RegisterPrintHead` (title + printed date; applied filters: the Fiscal Year always, the others when set, a
+non-default sort; balances on one line, Ending only when the screen shows that tile). In print the `.register-sticky`
+block (page head, filters, tiles), the sort note, the reviews panel and the screen table are hidden; a print-only
+`RegisterPrintTable` shows two lines per transaction (Kyle: Date, Cleared, Check #, Invoice #, Deposit, Withdrawal,
+balance / Entity, Description, Status; one `<tbody>` per transaction, never split across pages). Entity and
+description are cut to 30 / 45 characters (`clip`: at the last word break when it keeps ≥ 60 %, trailing punctuation
+dropped, "…"; the whole text in the cell's title). Named `@page register` (letter portrait, 0.5 in margins) so other prints keep their own
+setup. (The screen table's Date/Cleared headings are sort buttons, which the global print rule hides - one reason
+for a separate print table.) E2E: the "#56 / #57" register test checks the print layout (`emulateMedia print`).
+
+**2.4.0 polish — logo top right, above or beside (#520, Kyle 2026-11-04).** `LetterConfig.logo_position` and
+`ReceiptConfig.logo_position` are both `LEFT | CENTER | RIGHT_ABOVE | RIGHT_BESIDE`. A stored `RIGHT` (before #520)
+is read as it printed: `RIGHT_BESIDE` on cover letters (#466), `RIGHT_ABOVE` on donation letters (#503). Beside on the
+donation letter works as on the cover letter: drawn on page 1 level with the organization's name at the right margin;
+the name, address and date wrap short of it; `_ClearBelow` keeps the donor's address clear of a tall logo. With a
+window layout the logo goes where it did before (donation `LETTER`: top right clear of the windows; on an address
+page layout either Top right prints right-aligned above). The invoice PDF keeps its own choices (text at both top
+corners). Proposed for Kyle: **BR-LOGO-POS-001** both letters offer the same four positions; **-002** a saved RIGHT
+keeps its look. Tests: `backend/tests/test_v240_logo_right.py` (2).
+
+**2.4.0 polish — cover letter logo top right (#466, Kyle 2026-11-02).** `LetterConfig.logo_position` adds `RIGHT`
+(LEFT|CENTER|RIGHT). Drawn on the first page's canvas (not in the story), top level with the text frame's top (1 in
++ 6 pt frame padding), right edge at the 7.5 in margin, so the letterhead is not pushed down. The letterhead and date
+paragraphs get `rightIndent` = logo width + 0.25 in (wrap, never under the logo); a `_ClearBelow` flowable after the
+date adds space only when the logo reaches lower than those lines. Window (LETTER/ADDRESS_PAGE) and pre-printed
+letters unchanged (the window letter already prints its logo top right). Test
+`test_v200_build6.py::test_logo_top_right_beside_the_letterhead`. No BR/AC change.
+
+**2.4.0 build 11 — Invoice PDF template (#253 part 3).** Completes #253 ("PDF template built on the 2.0.0
+cover-letter editor: logo and letterhead, {VARIABLES}, live preview, line-table column picker").
+- `invoice_settings.template_json`, `logo_png`, `logo_sha256` (migration `0081`; empty = the built-in default
+  layout). Settings, so kept by Reinitialize and restored with *settings.general*.
+- `services/invoice_template.py`: `TemplateConfig` (font from the cover-letter fonts, size 8-12, accent color,
+  logo LEFT/RIGHT/NONE, letterhead and Bill to lines (up to 6, several-line variables split), title, Bill to heading,
+  columns picked and ordered from DESCRIPTION, CODE, UNIT, QUANTITY, UNIT_PRICE, AMOUNT, DISCOUNT, NET with
+  headings (Description and Amount or Net required), invoice fields/terms/notes on or off, footer). Texts are
+  `checkprint.patterns` with the new INVOICE context: `{ORG.*}`, `{CUSTOMER.*}` (the entity variables),
+  `{INVOICE.NUMBER|DATE|DUE_DATE|TOTAL|BALANCE|TERMS}`, `{TODAY}`; unknown names are refused with a suggestion.
+- Administrator (`invoice.setup`): `GET/PUT /api/invoices/setup/template`, `POST .../preview` (PDF) and
+  `.../preview-image` (PNG; 501 where pictures can't be drawn - the editor falls back to the PDF) of unsaved settings
+  with sample data only (BR-003), logo upload/remove (PNG/JPEG, 1 MB, checked and re-encoded by the cover-letter
+  `normalize_logo`). Audited `INVOICE_TEMPLATE_UPDATED`, `INVOICE_LOGO_SET/REMOVED` (fingerprint only).
+- Every invoice PDF (preview, mark as sent, batch PDF, email) is drawn by the template; a partly paid or paid
+  invoice's PDF adds *Paid* and *Balance due*. PDFs already kept for sent versions are not redrawn.
+- New rules: **BR-INV-TPL-001** one template per organization, set by the Administrator, previews and test prints
+  with sample data only; **-002** template texts use only listed variables (a table lookup, BR-102); **-003** a
+  template change never alters PDFs already kept for sent versions. ACs **AC-INV-TPL-001..004**. Tests:
+  `backend/tests/test_v240_invoice_template.py` (4).
+
+**2.4.0 build 10 — Email invoices and statements (#249, decided 2026-10-30; remaining details proposed).**
+- `email_settings` (one row: on/off, host, port, STARTTLS/SSL/none, user name, `password_enc`, sender address and
+  name, reply-to) and `email_log` (migration `0080`). The mail server is in the database (Kyle): System/About →
+  Settings → **Email**, Administrator only (`email.setup`). The password is encrypted with the application key (AAD
+  `fmpoc:smtp_password:v1`), replace-only - an empty field keeps it, *Remove the saved password* clears it - and is
+  never returned, logged, audited (`password_changed` true/false only) or put in an error (BR-103/104). Kept by
+  Reinitialize; restored with *settings.general*; re-encrypted when a partial restore brings another installation's
+  key.
+- **Test email** (proposed): to an address the Administrator types; subject and text fixed; logged and audited
+  `EMAIL_TEST_SENT`.
+- **Sender** (proposed): the configured sender address and name; optional Reply-To. No per-user sender.
+- Sending (Invoice Managers, `invoice.email`; never automatic): `POST /api/invoices/{id}/email` - only a sent
+  invoice (Sent / Partly paid / Paid), carrying the PDF kept when its current version was marked as sent;
+  `POST /api/invoice-statements/email` - the customer statement PDF for a period. To (pre-filled with the customer
+  entity's email), Cc (each up to 10, validated; no line breaks - no header injection), subject (line breaks removed)
+  and message are editable; one click sends one email. `GET /api/invoices/{id}/email` returns the form's starting
+  values (Invoice Managers) and the invoice's email log (every invoice viewer).
+- **Logged per send** (proposed): kind, invoice/customer, To, Cc, subject, message, attachment name and SHA-256,
+  who, when, SENT/FAILED and a plain-words reason (never the server's password). Audited `INVOICE_EMAILED`,
+  `STATEMENT_EMAILED` or `EMAIL_SEND_FAILED` (without the message text). A failure is kept in the log and returned
+  as 502 `EMAIL_FAILED`. `email_log` is Data (wiped by Reinitialize before invoices; carried by a data restore).
+- Mail goes out through Python's `smtplib` with certificate verification (`ssl.create_default_context()`), 20 s
+  timeout. Not verifiable here (no mail server): tests replace the one send function.
+- New rules: **BR-INV-EML-001** the mail server is set by the Administrator; its password is encrypted, replace
+  only, never shown or logged; **-002** customer emails are sent only by an Invoice Manager's click - nothing
+  automatic; **-003** an invoice email carries the PDF kept for the sent version, never a draft; **-004** every send
+  and failed attempt is logged and audited; **-005** recipients and subject are validated (no header injection).
+  ACs **AC-INV-EML-001..006**. Tests: `backend/tests/test_v240_email.py` (6).
+
+**2.4.0 build 9 — Batch invoicing (#248).** The issue left its rules open ("to be identified when planned"); the
+build follows these proposals (posted on the issue for Kyle to confirm):
+- `invoice_batch` (id, name, created) and `invoice.batch_id` (migration `0079`; Reinitialize wipes batches after
+  invoices; selective restore carries them before invoices).
+- `POST /api/invoices/batches` (Invoice Manager): the customers, lines, dates, tax, discount, notes and invoice fields
+  of one invoice; one **draft** per customer through the normal invoice create path (every invoice rule applies),
+  numbered in customer-name order, all in one transaction - an error on any customer creates nothing and names the
+  customer. Up to 500 customers; no duplicates. Audited `INVOICE_BATCH_CREATED` (plus each `INVOICE_CREATED`).
+- The batch is a label: each invoice stays ordinary (edit while a draft, void, send, payments). `GET
+  /api/invoices/batches[/{id}]` for invoice viewers; the invoice shows its batch.
+- `POST .../batches/{id}/send` marks the batch's remaining drafts as sent one by one (each keeps its PDF, exactly as
+  when sent alone); an invoice that can't be sent is reported and the others go ahead. Audited `INVOICE_BATCH_SENT`.
+- `GET .../batches/{id}/pdf`: the combined PDF of every invoice of the batch that isn't void, in number order (drafts
+  marked DRAFT).
+- Not done: recurring invoices (the issue's "could later grow into").
+- New rules: **BR-INV-BAT-001** a batch creates one draft per customer, all or none; **-002** a batch never changes
+  invoice rules - each invoice is numbered, edited, sent, voided and paid on its own; **-003** sending a batch sends
+  only its drafts and keeps each invoice's PDF; **-004** the combined PDF leaves out void invoices. ACs
+  **AC-INV-BAT-001..005**. Tests: `backend/tests/test_v240_invoice_batches.py` (4).
+
+**2.4.0 build 8 — Invoice reports (#255).**
+- `services/invoice_reports.py`: the seven reports as sections (columns, rows, totals) rendered by one JSON, one CSV
+  (formula-safe, negative amounts left as numbers) and one PDF writer (landscape letter, page footer). Route
+  `GET /api/invoices/reports/{id}?format=json|csv|pdf` (`invoice.view`: IM, RU, BM, BU, Auditor; Administrator 403;
+  404 with the module off). Ids `inv-open`, `inv-aging`, `inv-statement` (PDF only), `inv-sales-tax`,
+  `inv-register`, `inv-sales` (by product, category or Income budget), `inv-activity`; they are in
+  `report_prefs.REPORT_IDS` (Recently run, last options) and an **Invoices** category in every grouping scheme; a
+  scheme customized before 2.4.0 gets an Invoices category added (not Other). Frontend: registry entries +
+  `pages/InvoiceReports.tsx`; the Invoice Manager's navigation now includes Reports (it shows only what they can run).
+- Figures: only ACTIVE register lines linked to the invoice count, on their transaction date; open = total - paid as
+  of the date (drafts, voids and written-off invoices are never open; void/write-off status is the current one).
+  Aging buckets by days past due (current, 1-30, 31-60, 61-90, over 90). Tax collected per payment = the difference
+  of two cumulative apportionments (exactly what Record payment allocated). Sales amounts are after line and invoice
+  discounts, before tax, from issued invoices (not drafts or voids). Payments are one row per register transaction.
+- Overdue: `GET /api/invoices/overdue` - the dashboard section **Overdue invoices** (`dashboard_layout` key
+  `invoices`, shown when the module is on and the user can view invoices) and, for Invoice Managers, the reminders
+  shown on the Invoices page: every open invoice from due date + N days (N = `invoice_settings.overdue_reminder_days`,
+  migration `0078`, default 0, 0-365, set in Invoices Setup, audited with the setup). Computed when viewed: nothing is
+  sent or stored.
+- Close report (not the End of Year Audit): *Open invoices at the year's end* for information; closing is not
+  blocked (BR-013/014 unchanged). Restore re-entry report: invoices created after the backup are listed under "Other
+  records created after the backup".
+- Not done (optional in the issue): the "invoiced, not yet received" figure in budget reports.
+- New rules: **BR-INV-RPT-001** invoice reports are run by invoice viewers only, never the Administrator;
+  **-002** report figures come only from invoices and their linked active register lines; **-003** open invoices
+  never block a Fiscal Year close; **-004** overdue reminders go to Invoice Managers only, from due date + N days.
+  ACs **AC-INV-RPT-001..009**. Tests: `backend/tests/test_v240_invoice_reports.py` (10).
+
+**2.4.0 build 7 — Invoice payments (#254).**
+- `invoice_payment` (migration `0077`): one row per register allocation that pays, overpays or refunds an invoice
+  (`kind` PAYMENT / OVERPAYMENT / REFUND), unlinked rows kept with who/when/why. Reinitialize wipes it first (it
+  references allocations and invoices); selective restore carries it with the register data.
+- **Record payment** (`POST /api/invoices/{id}/payments`, Register User - `invoice.record_payment`): creates the
+  deposit through the normal register path (`register.create(..., invoice_flow=...)`, so every register rule and
+  warning applies, e.g. the possible-duplicate confirmation) with one allocation per invoice line on the line's
+  Invoiced Income budget (continued into the deposit's Fiscal Year when it differs) plus one for the tax. A partial
+  payment is spread as the difference of two cumulative apportionments (tax in proportion, the rest over the lines in
+  order), so successive payments always add up to the invoice exactly. More than the open balance needs
+  `confirm_overpayment`; the excess is an OVERPAYMENT allocation on the first line's budget.
+- **Link** an existing deposit line (`GET .../link-candidates`, `POST .../links`; Invoice Manager or Register User):
+  only an active deposit line on an Invoiced Income budget (else `NOT_INVOICED_INCOME`: a Register User re-allocates
+  or splits it first), not in a Closed Fiscal Year, not already linked, and not more than the open balance
+  (`OVER_OPEN_BALANCE`). A payer other than the customer is the warning `THIRD_PARTY_PAYER`.
+- **Unlink** (`POST .../links/{id}/unlink`, Register User only): the line moves to a non-Invoiced-Income budget of
+  the same Fiscal Year in the same step, with a reason; audited.
+- **Refund an overpayment** (`POST .../refunds`, Register User): a withdrawal on the Invoiced Income budget, capped
+  at the refundable overpayment (`OVER_REFUNDABLE`). This is the only exception to BR-050 (a withdrawal on an Income
+  budget): `budgets.resolve_for_allocation(..., income_refund=True)` is reachable only from this endpoint. Budget
+  actuals (`common.active_allocation_totals`, the charts) count a withdrawal on an Income budget as negative, so the
+  refund reduces the income.
+- Register guards with the module on: a hand-entered deposit allocation on an Invoiced Income budget is refused
+  (`INVOICE_PAYMENT_REQUIRED`); a linked allocation keeps its budget, amount and type until it is unlinked
+  (`LINKED_TO_INVOICE`; notes, dates and attachments stay editable). Void or delete of a linked transaction refreshes
+  the invoice's status in the same commit (a voided payment re-opens the invoice). With the module off the
+  register behaves as before.
+- Status: Sent → Partly paid → Paid from the linked active payments (`INVOICE_STATUS_CHANGED`). A revision's total
+  can't go below what has been paid; an invoice with payments can't be voided (unlink first); sending a revision
+  re-derives the status.
+- New rules: **BR-INV-PAY-001** payments are recorded by a Register User only, from the invoice; **-002** an
+  Invoiced Income deposit is always linked to an invoice while the module is on; **-003** links are capped at the open
+  balance, overpayment only on explicit confirmation; **-004** refunds only of an overpayment, on Invoiced Income (the
+  BR-050 exception); **-005** void/unlink re-open the invoice atomically; **-006** revision total >= paid, no void
+  with payments. ACs **AC-INV-PAY-001..007**. Tests: `backend/tests/test_v240_invoice_payments.py` (7).
+
+**2.4.0 build 6b — Invoice custom fields (#253 part 2).**
+- `invoice_custom_field` (level INVOICE/LINE, type TEXT/NUMBER/DATE/PICKLIST with options, required, show on PDF,
+  position, active) and `custom_values` JSON on `invoice` and `invoice_line` (migration `0076`). Fields are setup:
+  kept by Reinitialize, restored with *settings.general* in a selective restore.
+- Administrator (`invoice.setup`): `POST/PUT /api/invoices/setup/fields[/{id}]`, `.../{id}/retire|restore`; level and
+  type are fixed once created (entered values keep their meaning); names unique per level; audited
+  `INVOICE_FIELD_CREATED/UPDATED/RETIRED/RESTORED`. Viewers read the active fields at `GET /api/invoices/fields`.
+- Values are checked server-side on every save: unknown field ids refused; active required fields must have a value;
+  TEXT <= 200, NUMBER `-?\d{1,12}(\.\d{1,4})?`, DATE ISO, PICKLIST one of the choices. A retired field is no longer
+  asked for or required, and its stored values are kept unchanged. Values are part of the audit snapshot, the sent
+  revision snapshot, and (when *show on PDF*) the PDF (invoice fields under Bill to, line fields after the
+  description). The sample test print shows a sample field.
+- The PDF **template editor** came with build 11 (below).
+- New rules: **BR-INV-FLD-001** custom fields are defined by the Administrator only and retired, never deleted;
+  **-002** values validated server-side by type, required and choices; **-003** show-on-PDF controls printing. ACs
+  **AC-INV-FLD-001..004**. Tests: `backend/tests/test_v240_invoice_fields.py` (3).
+
+**2.4.0 build 6 — Invoices (#253, decided 2026-10-16; part 1 of 2).** Kyle's plan allows splitting a build; #253 is
+split: this build has drafts, lines, discounts, tax, numbering, sending (PDF), revisions, void and write-off; the
+**custom fields** and the **PDF template editor** (on the cover-letter editor) follow as build 6b.
+- Tables (migration `0075`): `invoice_settings` (pattern, `next_seq`, terms days/text, default notes - in the
+  selective-restore *settings.general* section), `invoice`, `invoice_line`, `invoice_revision`, and
+  `attachment.invoice_id` (each sent version's PDF). Invoices, lines and revisions are in Reinitialize `WIPE` and
+  `DATA_TABLES`; the settings are kept by Reinitialize so the sequence never restarts.
+- Calculation (`invoice_docs.compute`, cents / thousandths, half up): line gross = qty x price; line discount fixed
+  or %, never above the line; whole-invoice discount fixed or % of the nets, never above them, spread in proportion
+  to the nets (floor, leftover cents to the largest lines) so every line stays >= 0 on its budget; tax = one rate per
+  invoice on the taxable lines' final nets, rounded once per invoice; total = nets + tax.
+- Lines copy the product's name/description, price, unit, taxable flag and its Invoiced Income budget **for the
+  invoice date's Fiscal Year** (via the #89 continuation; none -> 422 `NEEDS_BUDGET`). The tax rate's name, rate and
+  budget are copied too. The Discount item isn't a line: discounts are fields on a line / the invoice, printed as
+  "Discount — <reason>" lines on the PDF.
+- Numbering: pattern with `{YYYY}`/`{YY}` (invoice date) and one `{SEQ}`/`{SEQ:n}`; validated (only safe characters,
+  <= 40). The number is taken when the draft is created; the next number is `max(next_seq, highest used + 1)`, so a
+  restore can never cause a reuse.
+- Lifecycle: DRAFT -> SENT (Mark as sent: PDF made and attached via `attachments.new_record`, `invoice_revision`
+  row with the snapshot) -> PARTLY_PAID / PAID (#254). Revise (SENT/PARTLY_PAID, reason) -> DRAFT with
+  `revision+1`, shown `-R<n>` (the issue's proposed format); earlier versions and PDFs stay. Void: DRAFT or SENT with
+  no payments (proposed rule; payments arrive with #254). Write-off: IM requests (reason; SENT/PARTLY_PAID) ->
+  *Write-off pending* -> BM approves (WRITTEN_OFF; `self_approved` when the approver requested it) or rejects (with
+  a reason). No budget or balance effect. Audited: `INVOICE_CREATED/UPDATED/SENT/REVISION_STARTED/VOIDED`,
+  `INVOICE_WRITE_OFF_REQUESTED/APPROVED/REJECTED`, `INVOICE_SETUP_UPDATED`.
+- Permissions: `invoice.manage` (IM: create, edit drafts, send, revise, void, request write-off),
+  `invoice.write_off_decide` (BM), `invoice.view` (IM, RU, BM, BU, Auditor); Administrator: setup and the sample
+  test print only (`GET /api/invoices/setup/test-print`, sample data, BR-003). A sent PDF is read through
+  `/api/attachments/{id}/content` with `invoice.view` and the module on.
+- PDF: a plain reportlab layout (organization, number, dates, bill-to with the mailing address, lines, discount
+  lines, subtotal, tax, total, terms, notes); drafts are watermarked DRAFT.
+- Not yet (later builds): custom fields and the template editor (6b), payments and the open balance (#254), the
+  "revision can't go below the amount paid" rule (#254), reports (#255), batch (#248), email (#249). The proposed
+  register label change (*Vendor invoice #* / *Customer invoice*) is left for Kyle to confirm.
+- New rules (spec docs unchanged): **BR-INV-DOC-001** catalog-only lines with copied prices; **-002** discount and
+  tax calculation as above; **-003** numbers from the pattern, never reused; **-004** revisions keep the number with
+  -R<n> and every sent PDF; **-005** void with a reason, no payments; **-006** write-off requested by IM, decided by
+  BM, self-approval marked; **-007** Administrator setup with a sample-data test print only. ACs
+  **AC-INV-DOC-001..009** (totals; copied prices and discount limits; numbering; send/revise/PDFs; test print;
+  void/write-off; roles; needs budget; list filters).
+- Tests: `backend/tests/test_v240_invoices.py` (9).
+
+**2.4.0 build 5 — Product catalog (#252, decided 2026-10-16).**
+- Tables (migration `0074`): `invoice_unit_type`, `invoice_product_category`, `invoice_product` (name, code, description,
+  unit price, unit type, category, taxable, `budget_id`, `is_system`, active), `invoice_tax_rate` (name,
+  `rate_milli_pct` = thousandths of a percent, `budget_id`, active). All four are in Reinitialize `WIPE` (before
+  `Budget`) and selective-restore `DATA_TABLES`; after a Reinitialize with the module on the seed comes back.
+- Seed when the module is turned on (once): unit types Each, Hour, Day, Week, Month, Year and the built-in
+  **Discount** product (`is_system`, no price or budget, can't be edited or inactivated).
+- Permissions: `invoice.catalog_manage` (IM), `invoice.catalog_view` (IM, BM, BU, Auditor) - per the issue's matrix
+  the Register User has no catalog access; Administrator none (BR-003). Module off -> 404 `MODULE_DISABLED`.
+- Budget picker `GET /api/invoices/catalog/budget-options`: per open Fiscal Year, the Register's selectable deposit
+  leaves on Invoiced Income families, `{id, label}` only (no amounts/actuals). Saving checks the budget server-side
+  (Income, Invoiced Income, not Budget 0, not rejected/inactive/deleted, open year, a selectable leaf).
+- Retire, never delete: `POST .../{id}/inactivate|restore`; no DELETE routes. Every change audited
+  (`INVOICE_PRODUCT_*`, `INVOICE_TAX_RATE_*`, `INVOICE_UNIT_TYPE_*`, `INVOICE_CATEGORY_*`) with before/after. Names
+  are unique per kind (case-insensitive, inactive included); product codes unique when given.
+- Continuation (#89): `budget_for_year(budget, fy)` follows `continues_budget_id` (a simple budget is chosen by its
+  Other leaf, so its parent's chain is followed and that year's simple leaf used); `needs_budget` = no Invoiced Income
+  continuation in the **current** Fiscal Year (the open year covering today, else the latest open one). The issue
+  marks the payment-time behaviour (Register User picks a budget with a warning) as proposed; it lands with Payments.
+- UI: *Product catalog* card on the Invoices page (tabs Products / Tax rates / Unit types / Categories, Show inactive,
+  New/Edit/Inactivate/Restore for IM).
+- New rules (spec docs unchanged): **BR-INV-CAT-001** catalog maintained by IM, viewed by BM/BU/Auditor, never the
+  Administrator; **-002** retired, never deleted, audited; **-003** product and tax-rate budgets are Invoiced Income
+  only, picked without amounts; **-004** a product's budget follows the continuation link, else *needs budget*. ACs
+  **AC-INV-CAT-001..006** (seed; maintain + audit; picker/validation/mass assignment; roles; continuation; object
+  scope).
+- Tests: `backend/tests/test_v240_invoice_catalog.py` (6).
+
+**2.4.0 build 4 — Invoices module switch and the Invoice Manager role (#251, decided 2026-10-16).**
+- `workspace.invoices_enabled` and the role `INVOICE_MANAGER` (Financial; migration `0073`; seeded for new installs
+  from `ROLE_DEFS`; a new local install's first user gets it too). `services/invoices.py`: switch (audited
+  `MODULE_ENABLED`/`MODULE_DISABLED`, SECURITY), `require_module` (404 `MODULE_DISABLED`), overview and setup
+  placeholders; `routers/invoices.py`: `GET /api/invoices/overview` (`invoice.view`), `GET /api/invoices/setup`
+  (`invoice.setup`, Administrator; no real invoices or products, BR-003). Module status lists it.
+- Permissions: `invoice.manage` (IM), `invoice.view` (IM, RU, BM, BU, Auditor), `invoice.setup` (Administrator);
+  `entity.manage` adds IM (not `entity.create_financial_institution` / `_manage_financial_institution`);
+  `system.about` adds IM.
+- **`register.view`** (new) = the financial viewers + IM: used by the Register list, a transaction, the bank-account
+  list/detail (selector), the entity list/detail, the Fiscal Year list and `natural` (the Register's year filter) and
+  the budget filter options. Everything else stays `financial.view` (Fiscal Year detail, budgets, balance history,
+  reports, dashboard - the dashboard now refuses a Financial user without `financial.view`). Attachments: list/get/
+  content use `register.view`, but a register-only role sees transaction and line documents only (403 otherwise).
+- UI: Users role checkbox; Invoices nav after Donations/Payments/Register; Invoices Setup in the Administrator's menu
+  when the module is on; an IM-only user's menu is Register, Entities, Invoices (+ System/About) and `/` opens
+  Invoices. Security overview item *Whole invoice cycle in one account* (info, never attention).
+- New rules (spec docs unchanged; docs/04 changes are listed in the issue): **BR-INV-MOD-001** optional module,
+  hidden and refused when off; **-002** Invoice Manager is a Financial role combinable only with Financial roles;
+  **-003** separation of duties (BM budgets / IM billing / RU receiving / Auditor review), the whole cycle in one
+  account is shown, not blocked; **-004** IM sees the Register read-only and maintains normal entities only. ACs
+  **AC-INV-MOD-001..006** (switch + refusal; role combinations; IM access matrix incl. negative API tests;
+  attachment scope; security overview; setup page).
+- Tests: `backend/tests/test_v240_invoices_module.py` (5).
+
+**2.4.0 build 3 — Invoiced Income budgets (#250, decided 2026-10-16).**
+- `budget.invoiced_income` (migration `0072`, off). Set on an Income **parent** with
+  `PUT /api/budgets/{id}/invoiced-income` (`budget.manage`); stored on the whole family like `locked` (sub-budgets and
+  Other), and a sub-budget or Other created later takes the parent's value (BR-016). Expense budgets, sub-budgets,
+  Other, Budget 0, rejected/inactive/deleted budgets and a closed Fiscal Year are refused. Not writable through budget
+  create/edit (`extra="forbid"`).
+- Locked (Approved) budget: refused with `BUDGET_LOCKED` until the existing audited unlock with a reason
+  (BR-023/024) - that is how "set or cleared only through unlock with a reason" is met.
+- Audit: `BUDGET_INVOICED_INCOME_SET` / `_CLEARED` with before/after and the family's budget ids.
+- Shown: budget lists (Budgets page and Fiscal Year detail, 🧾 + text, BR-079), budget API rows/snapshot, and the
+  Audit / Close report budget table ("(Invoiced income)"). Copy forward (BR-027) carries it.
+- Not built yet (they need invoices): every rule that applies "when the Invoices module is on" (invoice-only deposits,
+  refund exception, product/tax pickers) - with the Payments/Invoices builds. The issue's *proposed* items (refuse
+  setting while non-invoice deposits exist / clearing while invoice-linked allocations exist; continuation offers the
+  flag) are left for Kyle to confirm; they can only be enforced once invoices exist.
+- New rules (spec docs unchanged): **BR-INV-INC-001** Invoiced Income is a flag on an Income parent budget, carried
+  by its family, Budget Manager only; **-002** changes on an Approved budget need an unlock with a reason and are
+  audited; **-003** copy carries it; without the Invoices module it has no effect (BR-050 unchanged). ACs
+  **AC-INV-INC-001..005** (set/clear + inheritance + audit; refused for expense/child/Other/roles/mass assignment;
+  unlock first; copy; no register effect).
+- Tests: `backend/tests/test_v240_invoiced_income.py` (5).
+
+**2.4.0 build 2 — Events & Fundraisers (#429, decided with Kyle 2026-10-30).**
+- UI-only rename: nav **Events**; *Events & Fundraisers* on the module setting (with examples), the list page heading
+  and back links; "Series" for the series link. Internal names unchanged: tables `fundraiser*`, `/api/fundraisers*`,
+  audit object type `fundraiser`, code identifiers.
+- `fundraiser.event_type` (`FUNDRAISER` | `EVENT`, migration `0071`, server default Fundraiser for every existing row).
+  Writable only through `FundraiserIn` (create/edit, `fundraiser.manage`); omitted on edit = unchanged; other bodies
+  refuse it (`extra="forbid"`).
+- Required budgets (`REQUIRED_KINDS`): Fundraiser = Income + Expense, Event = Expense, per Fiscal Year used; a shell
+  (no budgets) is always allowed. **Checked when the record is created and whenever its budgets or type change**
+  (422 `REQUIRED_BUDGETS` with the gaps) — Claude's reading of "existing records are kept as-is with a warning": an
+  upgraded record missing one can still be renamed/edited otherwise, shows `REQUIRED_BUDGET_MISSING`, and *Mark
+  results final* is refused (409) until fixed or retyped.
+- Type change: audited in `FUNDRAISER_UPDATED` (before/after `event_type`); goal and bucket `is_donation` kept. An
+  Event's detail returns no goal (`totals.goal = null`), the Quarterly/Annual report shows no goal for it, its donation
+  buckets don't suggest receipts (`donation_bucket_allocations`, `fundraiser_unreceipted`), and the UI hides the goal
+  field, the bucket donation flag and the *Donations without a receipt* panel.
+- A series holds one type (`series_type()` = its events' type): *Continues from* (`set_link`, options filtered by
+  `event_type`), *Add to a series* and *Merge* refuse a mismatch (409 `SERIES_TYPE`); changing the type of an event in
+  a series with other events is refused until it is unlinked. *Create next year's* copies the type.
+- Combined budgets: `detail.combined_budgets` gives one budgeted Income and Expense figure (sum over Fiscal Years) and
+  the labels; actual figures were already combined.
+- Reports: stakeholder report/deck say "event" for an Event (no goal there before either); FY fundraising report/deck:
+  `fy_report()` keeps the fundraising figures, history, shares and series history for Fundraisers only and returns
+  `events` (+ `events_net`), shown as *Events (not fundraisers)* in the PDF and an *events* slide.
+- Demo/test data: *Fall Mattress Sale* (demo) and *Summer Car Wash* (test data) gained an Expense budget.
+- Tests: `backend/tests/test_v240_events.py` (9). Earlier fundraiser test modules that use one-budget setups to test
+  other rules run with the rule relaxed (conftest `_BEFORE_REQUIRED_BUDGETS`); every other module runs with it on.
+  E2E: Harvest Dinner is created as an Event (type, no goal field, *Create event*); the goal is tested on the Spring
+  Fair shell.
+- New rules (spec docs unchanged): **BR-EVT-001** each event is a Fundraiser or an Event (default Fundraiser);
+  **-002** required budgets by type per Fiscal Year once budgets are chosen, shells allowed, final blocked while
+  missing; **-003** a type change is audited and keeps goal/receipt data; **-004** a series holds one type; **-005**
+  Events are reported apart from fundraising totals. ACs **AC-EVT-001..010** as in the issue's checklist (rename and
+  internal names; series type; type change audit; Event hides goal/receipts; shells; Event/Fundraiser required budgets;
+  final blocked; upgraded record warning; combined figures; FY report separate section; mass assignment and roles).
+
+**2.4.0 build 1 — Attachment deduplication (#425, decided with Kyle 2026-10-30).**
+- Kyle: identical content is stored once and linked; existing duplicates are merged at the upgrade (after the
+  pre-upgrade backup, each file's hash verified first); the rule covers every attachment, PennyWarden's generated PDFs
+  included; the *Attachment added* audit event notes the link; the same file twice on one record warns with
+  **Cancel / Attach anyway**, a match on another record links silently.
+- Storage (Claude's call, one of the two shapes in the issue): `attachment.storage_key` is no longer unique (migration
+  `0070`, plus an index on `workspace_id, sha256`); every attachment record keeps its own row and owner, and records
+  with identical content point at one stored file. Chosen over a separate `attachment_file` table because backup,
+  selective restore, Reinitialize, reports and downloads already work per stored file / per row and need no change;
+  shared files are countable with `GROUP BY storage_key` (Diagnostics does). No new table, so nothing to add to
+  Reinitialize `WIPE` / selective-restore `DATA_TABLES`.
+- `services/attachments.new_record()` is the one place an attachment is created (uploads, Close report, check record
+  copies, receipt/statement/envelope copies): after the caller's validation it looks for a stored file of the
+  workspace with the same SHA-256 and size, compares the bytes, and links it; otherwise it writes a new file. It
+  returns the path only of a newly written file, so a failed save removes only that file - a linked file is never
+  removed. Removed attachments' files count as matches (they are kept for history).
+- Same-record check (server-side, after validation): an **active** attachment of the same owner with the same SHA-256
+  -> 409 `DUPLICATE_ON_RECORD`; `POST /api/attachments?...&attach_anyway=true` adds it. The client
+  (`useAttachmentUpload` in components.tsx: attachment lists and the transaction form's files) shows *Same file
+  already attached* with Cancel / Attach anyway. A removed copy does not count.
+- Upload responses are unchanged: the other record is never shown (BR-099); the link is only in the audit event
+  (`shares_file_with_attachment_id`).
+- Merge of existing duplicates: `merge_duplicate_files()` runs at start-up after the migrations and after a web
+  restore (a backup from an earlier version). With nothing to merge it is one query. Per group (workspace + SHA-256)
+  the oldest verified file is kept; a file that is missing, fails its recorded hash or differs byte-wise is left as it
+  is, logged and counted; the extra copies are deleted only after the commit. One `ATTACHMENT_FILES_MERGED` audit
+  event per workspace (counts only).
+- Reports: unchanged - each attachment row verifies its file, so a damaged shared file is reported on every record
+  linked to it. Diagnostics/health check: `attachment_records`, `attachment_shared_files`, `attachment_bytes_saved`
+  (counts only), shown under *Shared files* on System/About when any file is shared.
+- New rules (spec docs unchanged): **BR-ATT-DEDUP-001** identical attachment content is stored once per workspace and
+  linked; **-002** the same file twice on one record needs the user's confirmation (server-side); **-003** a stored
+  file is never deleted or overwritten while any attachment record (active, removed or on a VOID transaction)
+  references it; **-004** the upgrade merges existing duplicates after verifying each file's hash. ACs:
+  **AC-ATT-DEDUP-001** cross-record link (no warning, other record not revealed); **-002/-003** same-record warning,
+  Cancel and Attach anyway, UI and direct API; **-004** removing one link leaves the others; **-005** upgrade/start-up
+  merge (damaged file left and reported, idempotent); **-006** generated copies follow the rule; **-007** audit link
+  note and atomic rollback that keeps a shared file; **-008** diagnostics counts. Unchanged and re-tested: BR-073/074,
+  BR-100/101, AC-ATT-001..004, AC-SEC-014..017, AC-AUD-001/003.
+- Tests: `backend/tests/test_v240_attachment_dedup.py` (15) and the E2E step "#425" (in the #259 reorder step). The
+  test helper `env.fy_doc` now uploads a PDF with content of its own.
+
 **2.3.0 polish — The signer chosen when printing (#395 follow-up, decided with Kyle 2026-10-31).**
 A letter's signer can be left to the Register User when printing, for donation receipts, year-end statements and
 payment cover letters.
@@ -1855,3 +2597,136 @@ implementation (plan: project doc `claude/freedger-plan-1.3.md`).
 | Standard Dockerfile | Not built here (Docker Hub blocked by network policy); the bundle-based image was built and run in server mode. |
 | Accessibility | Text + icon status, labelled controls, keyboard-closable dialogs; no formal WCAG audit. |
 | Scale | SQLite single node; PostgreSQL is a documented Day-2 option (SQLAlchemy keeps the path open). |
+
+**2.4.0 — what happens to an overpayment (#544, decided with Kyle 2026-11-07).** `invoice_payments.owed_elsewhere` /
+`no_credit_while_owed` (422 `CREDIT_WHILE_OWED`): what the customer still owes on their open invoices (sent or partly
+paid, no write-off waiting) once this payment's parts are counted. They are checked by Record payment (one invoice: its
+overpayment is credit), by `record_multi` for `overpayment_kind` `CREDIT` (the default), and by `expand_applications`
+for `apply_extra` `CREDIT` once every line of the deposit is counted (so *Link a deposit* that moves a line follows the
+same rule). `record_multi` also takes `overpayment_kind` `BUDGET` with `overpayment_budget_id` (an Income budget that
+is not Invoiced Income; an unlinked deposit line) and `REFUND` (an overpayment on the chosen invoice).
+`GET /api/invoices/payments/extra-budgets?date=` lists those budgets for the deposit date's Fiscal Year. `REFUND` no
+longer writes the withdrawal: `finish_applications` only links. The app opens `RefundForm` (InvoicePayments.tsx; also
+*Refund credit…*) after a multi payment, a Register save or a Link with the rest refunded, pre-filled with the
+invoice, the amount, the bank account and the date. *Not now* leaves the overpayment as the customer's credit.
+`ExtraChoices` is the one set of choices in `MultiPaymentForm` and `ApplyToInvoiceModal`. *Apply it to the other open
+invoices* ticks every open invoice and fills them oldest due date first. *Record payment…* on an invoice opens
+`MultiPaymentForm` with that invoice ticked and the customer's other open invoices unticked (`MoneyForm` is gone).
+Proposed:
+- **BR-INV-OVER-001** the same choices wherever a payment is recorded;
+- **-002** no account credit while the customer owes on another open invoice;
+- **-003** a refund is recorded on the Refund form, linked to the invoice; the system writes no withdrawal itself.
+
+ACs **AC-INV-OVER-001..004**. Tests: `backend/tests/test_v240_overpayment_choices.py` (4); the #533 and #534 tests are
+updated for the rule. E2E: the #533 test (no credit while owed, apply to the other invoice, refund on the form) and
+the #504 test (Record payment opens the one form).
+
+**2.4.0 — reminder tasks (#551, decided with Kyle 2026-11-09; rules confirmed the same day).** Table `reminder_task`
+(migration `0089`): `reminder_id` (cascade), `seq`, `title`, `done_at`/`done_by_user_id`, `contact_kind` (ENTITY |
+POSITION) with `contact_entity_id` (no FK, like `reminder.link_id`) or `contact_position`, `function_id` and
+`is_objective`. **Every reminder has one objective task** - the reminder itself, always last (pinned), its `title`
+kept equal to the reminder's; `0089` creates it for every existing reminder (ticked, by the resolver, when resolved).
+Resolving ticks it, reopening unticks it, so `reminder.resolved_*` and the objective's tick always agree.
+`services/reminder_tasks.py` holds the rules (`objective`, `steps`, `set_tasks`); `reminders.py` adds `update_tasks`,
+`tick` (the objective = `resolve`), `untick` (the objective = `reopen`), the open-step check in `resolve` and the
+unticked copy (objective included) in `_create_next`. API: `tasks` (the steps) and `objective` (its contact and
+function) on `POST`/`PUT /api/reminders` (omitted = unchanged), `PUT /{id}/tasks {tasks, objective}` (also while
+shown), `POST /{id}/tasks/{tid}/tick {note}`, `POST /{id}/tasks/{tid}/untick`. Each reminder in the API carries
+`tasks` (steps, then the objective with `objective: true`; contacts resolved: `people` with email, phone and mailing
+address for `register.view`, `missing`, `inactive`, `several`), `steps`, `steps_done`, `can_tick`, `can_untick`,
+`can_edit_tasks`. Audit: `REMINDER_TASK_TICKED`, `REMINDER_TASK_UNTICKED` (steps); the objective's tick is
+`REMINDER_RESOLVED`/`REOPENED`; task edits are in `REMINDER_UPDATED` (the snapshot lists the tasks). App functions are
+`report:<id>` (report registry) or `page:<name>` (`frontend/src/functions.ts`, whose page names `navFor` also uses);
+the UI always shows the name users see (e.g. *End of Year Audit*, never `audit`); a report opens at its plain address,
+so with its defaults (#528). The server's list (`FUNCTION_IDS`) is checked against the frontend by a test. Restore: tasks
+travel with *Reminders*; a fixed contact whose entity isn't there is cleared and reported; reinitialize clears personal
+reminders' fixed contacts (organization reminders and their tasks are deleted).
+UI wording (Kyle, 2026-11-10): users read *mark completed* / *Marked completed by … on …* / *clear its completion*,
+never *tick*; the code keeps `tick`/`untick`.
+Confirmed by Kyle (2026-11-09):
+- **BR-REM-TASK-001** a reminder's steps (one level, up to 25 tasks with the objective; personal reminders too) are
+  ticked in any order once it is shown, by whoever may resolve it; each tick records who and when; the first open
+  step (then the objective) is *Next*;
+- **-002** ticking the objective - the last task, named by the reminder's title - completes (resolves) the reminder;
+  with steps open a note is required and they show as skipped; a repeating reminder's next occurrence has every task
+  unticked; unticking a step or the objective of a resolved reminder reopens it (refused as Reopen is);
+- **-003** a task's (the objective's too) contact is a fixed entity or a position; a position resolves when shown to
+  the active individuals holding it (case and outer spaces ignored), all listed with a warning when several; nobody,
+  or an inactive fixed entity, shows the name or position without contact details;
+- **-004** a task's app function is a report or a main page, labelled with its user-facing name, opening with default
+  options, disabled with the reason (a module that is off, or no access) for a user who can't open it;
+- **-005** while shown, the steps (and every task's contact and function) stay editable by whoever may edit the
+  reminder - an exception to CR-036's edit lock, which still holds for the reminder's own fields; the objective is
+  pinned last and never removed; a ticked step can't be removed; removing steps never completes the reminder.
+
+ACs **AC-REM-TASK-001..006** (as in the issue). Tests: `backend/tests/test_v240_reminder_tasks.py` (11, with the 0089
+conversion). E2E: *#551: reminder tasks* (after the 1.6.7 recurring reminder test). The disabled function button names
+a module that is off (it works out which optional module would make the function usable) and otherwise says the user
+has no access. A person picked by their position in a task's entity picker (`EntityPicker` reports `byPosition` when
+only the position matched) becomes *Whoever is <position>*, with *This person* offered back. Demo data
+(`scripts/demo_data.py`) has two reminders with steps and a City Clerk; the guide's `notifications.png` shows them.
+The Entities list has a **Position** column and `GET /api/entities?search=` also matches `entity.position` (Kyle,
+2026-11-09).
+Proposed:
+- **BR-REM-TASK-001** a reminder may have an ordered checklist of up to 25 tasks (one level), ticked in any order once
+  the reminder is shown, by whoever may resolve it; each tick records who and when; the first open task is *Next*;
+- **-002** ticking the last open task resolves the reminder (optional note; a repeating one gets its next occurrence,
+  every task unticked); resolving with open tasks needs a note and shows them as skipped; unticking a task of a
+  resolved reminder reopens it (refused as Reopen is);
+- **-003** a task's contact is a fixed entity or a position; a position resolves when shown to the active individuals
+  holding it (case and outer spaces ignored), all listed with a warning when several; nobody, or an inactive fixed
+  entity, shows the name or position without contact details;
+- **-004** a task's app function is a report or a main page, labelled with its user-facing name, opening with default
+  options, disabled for a user who can't open it (permission or module);
+- **-005** while shown, the tasks (contacts, functions, order) stay editable by whoever may edit the reminder - an
+  exception to CR-036's edit lock, which still holds for the reminder's own fields; a ticked task can't be removed;
+  nothing changes once resolved.
+
+ACs **AC-REM-TASK-001..006** (as in the issue). Tests: `backend/tests/test_v240_reminder_tasks.py` (9). E2E: *#551:
+reminder tasks* (after the 1.6.7 recurring reminder test).
+
+**2.4.0 polish — reminder tasks from testing (Kyle, 2026-11-10).** UI only, no rule change:
+- The editor's **Contact** is labelled *(optional)*, like **Opens**.
+- Steps can be dragged by a handle (⠿, HTML5 drag and drop, as the invoice column order) to any place; ↑/↓ stay for the
+  keyboard. New steps get a stable client key (`TaskDraft.key`) so a moved row keeps its inputs.
+- `DashboardNotifications` passes `collapsible` to `ReminderItem`: a reminder with steps starts collapsed to its title,
+  due line and progress (details and the checklist hidden), with a ▸/▾ toggle (`aria-expanded`; 20px, sub-text colour, not link-styled — Kyle 2026-11-10); one without steps has
+  no toggle and is shown in full. Not remembered between visits. The Notifications page is unchanged.
+- The Position field is `SuggestInput` (components.tsx; the app's own listbox instead of a `<datalist>`, whose matching
+  and look vary by browser): positions of active individuals, case variants listed once, each with its holders'
+  names; a suggestion matches the typed text anywhere in the position or the names. Free text is still allowed (a
+  position nobody holds yet shows *No one has this position yet*). The organization or person field (`EntityPicker`)
+  already matched any part of the name, number or position.
+- A contact's name opens `EntityViewDialog`, a read-only view of the entity (`GET /api/entities/{id}`) that lists every
+  field of the entity form in its order and with its labels, blank ones as "—" (Kyle, 2026-11-10; EIN only for
+  organizations, Position only for individuals, Tax-exempt when the Invoices module is on or it is set, the mailing
+  fields or *Same as Address*), for users with
+  `register.view` (the same permission that sees contact details); others see the name as plain text.
+E2E: the *#551: reminder tasks* test drags a step there and back, checks the collapsed dashboard card, and opens the
+entity view.
+
+**2.4.0 — Dashboard FY Progress (#553, decided with Kyle 2026-11-09).** `services/fy_progress.py`, used by
+`dashboard.financial` (`budget_summary.progress`).
+- **Result so far:** the budget summary's income actual minus its expense actual, with *surplus* (≥ 0) or *deficit*.
+- **Budgeted:** the income amount minus the expense amount (the active budgets).
+- **Projection,** worked out per type:
+  - YTD + the median of the rest-of-year amounts of up to 3 previous Fiscal Years (`previous_fys`: those ending before
+    this one starts, the most recent first). Each previous FY's amount is its total minus its amount at the same
+    number of days into its year, through `actuals(..., date_to)`, which uses the same budgets as the boxes.
+  - With two previous years the median is their average, to the cent.
+  - With no previous FY: the straight-line pace (YTD × FY months ÷ elapsed months).
+  - `TOO_EARLY` before 3 elapsed months; `YEAR_ENDED` after the end date (the final result).
+
+UI: `FyProgressTile` in Dashboard.tsx (the third tile of the *budget* block), with a link to the guide page
+`dashboard/dashboard-figures`. That page explains every budget-box figure in plain language (Kyle: the app's
+calculations must be documented for users, not kept in a silo).
+
+Proposed:
+- **BR-DASH-FYP-001** the result so far is income actual − expense actual, shown as a surplus or a deficit;
+- **-002** the projected year end per type is YTD + the median rest-of-year of up to 3 previous FYs (their average with
+  2, the one with 1, this year's pace with none). It isn't shown in the first 3 months and is the final result after
+  the year ends;
+- **-003** budgeted is the income budget − the expense budget.
+
+ACs **AC-DASH-FYP-001..004**. Tests: `backend/tests/test_v240_fy_progress.py` (6). E2E: *#553* (after the CR-036
+reminders test).

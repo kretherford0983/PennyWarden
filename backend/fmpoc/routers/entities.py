@@ -23,7 +23,7 @@ def list_entities(
     sort: Literal["name", "entity_number", "created_at"] = "name",
     direction: Literal["asc", "desc"] = "asc",
     limit: int = Query(500, ge=1, le=2000),
-    db: Session = Depends(get_db), ctx: Ctx = Depends(require("financial.view")),
+    db: Session = Depends(get_db), ctx: Ctx = Depends(require("register.view")),   # 2.4.0 (#251): + Invoice Manager
 ):
     q = select(Entity).where(Entity.workspace_id == ctx.workspace_id, Entity.is_system.is_(False))
     if status != "all":
@@ -37,7 +37,8 @@ def list_entities(
         q = q.where(or_(Entity.organization_name.ilike(like, escape="\\"), Entity.first_name.ilike(like, escape="\\"),
                         Entity.last_name.ilike(like, escape="\\"), full.ilike(like, escape="\\"),
                         Entity.display_name_custom.ilike(like, escape="\\"),
-                        Entity.entity_number.ilike(like, escape="\\"), Entity.email.ilike(like, escape="\\")))
+                        Entity.entity_number.ilike(like, escape="\\"), Entity.email.ilike(like, escape="\\"),
+                        Entity.position.ilike(like, escape="\\")))     # 2.4.0 (#551): and the position
     col = SORTS[sort]
     q = q.order_by(col.desc() if direction == "desc" else col.asc(), Entity.id).limit(limit)
     return [svc.out(e) for e in db.scalars(q)]
@@ -64,7 +65,7 @@ def confirm_name(entity_id: int, db: Session = Depends(get_db),
 
 
 @router.get("/{entity_id}")
-def get_entity(entity_id: int, db: Session = Depends(get_db), ctx: Ctx = Depends(require("financial.view"))):
+def get_entity(entity_id: int, db: Session = Depends(get_db), ctx: Ctx = Depends(require("register.view"))):
     return svc.out(svc.get_visible(db, ctx, entity_id))
 
 

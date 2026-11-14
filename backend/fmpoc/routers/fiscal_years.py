@@ -18,12 +18,12 @@ router = APIRouter(prefix="/api/fiscal-years", tags=["fiscal-years"])
 
 
 @router.get("")
-def list_fiscal_years(db: Session = Depends(get_db), ctx: Ctx = Depends(require("financial.view"))):
+def list_fiscal_years(db: Session = Depends(get_db), ctx: Ctx = Depends(require("register.view"))):
     return [svc.out(f) for f in svc.list_all(db, ctx.workspace_id)]
 
 
 @router.get("/natural")
-def natural(date: dt.date = Query(...), db: Session = Depends(get_db), ctx: Ctx = Depends(require("financial.view"))):
+def natural(date: dt.date = Query(...), db: Session = Depends(get_db), ctx: Ctx = Depends(require("register.view"))):
     """Fiscal Year(s) naturally covering a Transaction Date (default/ambiguity/closest)."""
     return rsvc.natural_fy_info(db, ctx.workspace_id, date)
 

@@ -35,9 +35,10 @@ from ..models import (Donation, Attachment, AuditEvent, BankAccount, BankAccount
                       DonationReceipt, DonationSettings, DonationStatement, Entity,
                       FiscalYear, FiscalYearReview, Fundraiser, FundraiserBucket, FundraiserBucketCategory, FundraiserBucketLine, FundraiserBudget,
                       FundraiserFyReportNote, FundraiserSeries, FundraiserSeriesResult,
-                      FundraiserClassification, FundraiserExclusion, FundraiserLineContributor, RegisterTransaction, Reminder,
+                      FundraiserClassification, FundraiserExclusion, FundraiserLineContributor, RegisterTransaction, Reminder, ReminderTask,
                       RequestKey,
-                      TransactionAllocation, User, Workspace, utcnow)
+                      TransactionAllocation, User, Workspace, utcnow, InvoiceProduct, InvoiceProductCategory, InvoiceTaxGroup, InvoiceTaxRate, InvoiceUnitType,
+                      Invoice, InvoiceBatch, InvoiceLine, InvoicePayment, InvoiceRevision, EmailLog)
 from . import backup as bk
 from . import server_recovery
 
@@ -46,10 +47,15 @@ CONFIRM_WORD = "reinitialize"
 COOLDOWN = dt.timedelta(hours=24)
 
 # children first
-WIPE = (DonationStatement, DonationReceipt, DonationDetail, DonationLine, Donation, FundraiserBucketLine, FundraiserLineContributor, FundraiserClassification, FundraiserExclusion, FiscalYearReview, Attachment,
+WIPE = (InvoicePayment,   # 2.4.0 (#254): before the allocations it references
+        DonationStatement, DonationReceipt, DonationDetail, DonationLine, Donation, FundraiserBucketLine, FundraiserLineContributor, FundraiserClassification, FundraiserExclusion, FiscalYearReview, Attachment,
         TransactionAllocation, RegisterTransaction, CheckNumberAcknowledgement, CheckAccount, CheckPrinterSetting,
         FiscalYearBalanceChange, BankAccountBalance, BankAccount, FundraiserBucket, FundraiserBucketCategory, FundraiserBudget, Fundraiser, FundraiserSeriesResult,
-        FundraiserSeries, FundraiserFyReportNote, BudgetProjectionChoice, BudgetInclusion, BudgetHistoryEntry, FormerBudget, Budget, FiscalYear,
+        FundraiserSeries, FundraiserFyReportNote, BudgetProjectionChoice, BudgetInclusion, BudgetHistoryEntry, FormerBudget,
+        EmailLog,                                                                    # 2.4.0 (#249): before invoices
+        InvoiceRevision, InvoiceLine, Invoice, InvoiceBatch,                         # 2.4.0 (#253, #248): invoices
+        InvoiceProduct, InvoiceTaxGroup, InvoiceTaxRate, InvoiceProductCategory, InvoiceUnitType,   # 2.4.0 (#252, #487)
+        Budget, FiscalYear,
         CheckDocument, CheckSigner, CheckStyle, DonationSettings, RequestKey)   # 2.1.0 (#312): donations
 
 
@@ -140,7 +146,10 @@ def wipe(db: Session, ws_id: int, ctx, by: str, backup_name: str, via: str, befo
     fr_ids = select(Fundraiser.id).where(Fundraiser.workspace_id == ws_id)
     bucket_ids = select(FundraiserBucket.id).where(FundraiserBucket.fundraiser_id.in_(fr_ids))
     style_ids = select(CheckStyle.id).where(CheckStyle.workspace_id == ws_id)
+    inv_ids = select(Invoice.id).where(Invoice.workspace_id == ws_id)          # 2.4.0 (#253)
     scoped = {
+        InvoiceLine: InvoiceLine.invoice_id.in_(inv_ids),
+        InvoiceRevision: InvoiceRevision.invoice_id.in_(inv_ids),
         FundraiserBucketLine: FundraiserBucketLine.bucket_id.in_(bucket_ids),
         FundraiserClassification: FundraiserClassification.fundraiser_id.in_(fr_ids),
         FundraiserLineContributor: FundraiserLineContributor.fundraiser_id.in_(fr_ids),
@@ -166,6 +175,10 @@ def wipe(db: Session, ws_id: int, ctx, by: str, backup_name: str, via: str, befo
                .execution_options(synchronize_session=False))
     db.execute(update(Reminder).where(Reminder.workspace_id == ws_id)
                .values(link_type=None, link_id=None).execution_options(synchronize_session=False))
+    # 2.4.0 (#551): personal reminders' tasks lose their fixed contacts (the entities are gone); positions stay
+    db.execute(update(ReminderTask).where(ReminderTask.contact_kind == "ENTITY", ReminderTask.reminder_id.in_(
+        select(Reminder.id).where(Reminder.workspace_id == ws_id)))
+               .values(contact_kind=None, contact_entity_id=None).execution_options(synchronize_session=False))
     db.execute(update(User).where(User.workspace_id == ws_id).values(last_payment_account_id=None)
                .execution_options(synchronize_session=False))
     ws = db.get(Workspace, ws_id)
@@ -177,6 +190,12 @@ def wipe(db: Session, ws_id: int, ctx, by: str, backup_name: str, via: str, befo
         from .bootstrap import MULTIPLE_ENTITY_NUMBER
         db.add(Entity(workspace_id=ws_id, entity_number=MULTIPLE_ENTITY_NUMBER, entity_type="SYSTEM",
                       organization_name="Multiple", is_system=True, active=True, name_key="multiple"))
+    if ws.invoices_enabled:            # 2.4.0 (#252): the catalog's unit types and Discount item come back
+        from types import SimpleNamespace
+        from .invoice_catalog import ensure_seeded
+        ensure_seeded(db, SimpleNamespace(workspace_id=ws_id, user=getattr(ctx, "user", None),
+                                          correlation_id=getattr(ctx, "correlation_id", None),
+                                          ip=getattr(ctx, "ip", None)))
     audit.record(db, ctx, "REINITIALIZE", "workspace", ws_id, {"counts": before},
                  {"by": by, "via": via, "safety_backup": backup_name, "kept": "users, roles, two-step, organization, "
                   "key, modules, preferences, branding, audit log"}, category="SECURITY")

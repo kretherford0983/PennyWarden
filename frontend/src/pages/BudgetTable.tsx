@@ -10,6 +10,7 @@ export interface BudgetActions {
   onInactivate?: (row: any) => void;
   onUnlock?: (row: any) => void;
   onLock?: (row: any) => void;
+  onInvoicedIncome?: (row: any, on: boolean) => void;   // 2.4.0 (#250)
 }
 
 /** Holistic budget table: Q1-Q4 + yearly actuals, amount, remaining, state icon + text (BR-079/080). */
@@ -72,6 +73,8 @@ function Row({ r, level, editable, actions, parent, showOutside, registerLinks, 
           </Link>
         ) : <><span className="code">{r.display_code}</span> {r.name}</>}
         {r.is_other ? <span className="muted"> (system-managed, calculated)</span> : null}
+        {/* 2.4.0 (#250): icon plus text, never color only (BR-079) */}
+        {r.invoiced_income && !r.is_other ? <span className="badge blue invoiced-badge" title="Invoiced Income: for payments of invoices"><span aria-hidden="true">🧾</span> Invoiced income</span> : null}
         {onHistory && (r.has_history || (historyForAll && (!r.system_managed || r.is_other))) ? <button type="button" className="link small history-link" aria-label={`History of ${r.display_code}`} title="This budget across Fiscal Years" onClick={() => onHistory(r)}>History</button> : null}
         {r.status === "REJECTED" && r.requested_amount ? <span className="muted"> · requested {money(r.requested_amount)}</span> : null}
       </td>
@@ -87,6 +90,7 @@ function Row({ r, level, editable, actions, parent, showOutside, registerLinks, 
             canEdit && level === 0 && actions?.onAddChild && { label: "+ Sub-budget", onClick: () => actions.onAddChild!(r) },
             level === 0 && !r.system_managed && r.status === "APPROVED" && r.locked && actions?.onUnlock && { label: "Unlock", onClick: () => actions.onUnlock!(r) },
             level === 0 && !r.system_managed && r.status === "APPROVED" && !r.locked && actions?.onLock && { label: "Lock", onClick: () => actions.onLock!(r) },
+            level === 0 && canEdit && r.budget_type === "INCOME" && actions?.onInvoicedIncome && { label: r.invoiced_income ? "Clear Invoiced Income" : "Mark as Invoiced Income", onClick: () => actions.onInvoicedIncome!(r, !r.invoiced_income) },
             canEdit && actions?.onReject && { label: "Reject", onClick: () => actions.onReject!(r), danger: true },
             canEdit && actions?.onInactivate && { label: "Inactivate", onClick: () => actions.onInactivate!(r), danger: true },
           ]} />

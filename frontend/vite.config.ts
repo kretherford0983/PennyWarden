@@ -5,5 +5,6 @@ import react from "@vitejs/plugin-react";
 export default defineConfig({
   plugins: [react()],
   build: { outDir: "../backend/fmpoc/static", emptyOutDir: true, sourcemap: false },
-  server: { proxy: { "/api": "http://127.0.0.1:8765" } },
+  // 2.4.0 (#473): the dev server may read ../docs (the user guide is bundled with "?raw" imports)
+  server: { proxy: { "/api": "http://127.0.0.1:8765" }, fs: { allow: [".."] } },
 });

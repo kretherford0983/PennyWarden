@@ -4,12 +4,13 @@
  *   PDF; the other financial roles and Auditors see them. Numbered per year, kept; Duplicate / Corrected like receipts.
  * - Donor report: totals per donor by year (up to 5), gifts, last gift, items and their internal estimated value; each
  *   donor expands to their donations. PDF and CSV. */
-import { Fragment, useEffect, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import { api, ApiError, withPreviewToken } from "../api";
 import { useMe } from "../App";
 import { EntityPicker, ErrorBox, Field, Loading, Modal, useConfirmable, SignerPicker, useSignerChoice } from "../components";
 import { PdfViewer, usePdf } from "./checkShared";
 import { ReceiptEnvelopePanel } from "./Envelopes";
+import { EmailDocumentButton } from "./Email";
 
 const KIND_LABEL: Record<string, string> = { ORIGINAL: "Original", DUPLICATE: "Duplicate", CORRECTED: "Corrected" };
 const thisYear = new Date().getFullYear();
@@ -40,7 +41,14 @@ export function StatementsTab() {
   const [viewing, setViewing] = useState<string | null>(null);
   const { run, dialog } = useConfirmable();
   const signer = useSignerChoice(data?.signing);   // 2.3.0 polish: one signer for the whole batch
-  const load = () => api.get(`/api/donations/statements?year=${year}&min_cents=${toCents(min)}`).then(setData, setErr);
+  // 2.4.0: only the latest request's answer is shown - switching years quickly (last year, the default, then this year)
+  // could otherwise let the older year's answer arrive last and fill this year's table
+  const latest = useRef(0);
+  const load = () => {
+    const n = ++latest.current;
+    api.get(`/api/donations/statements?year=${year}&min_cents=${toCents(min)}`)
+      .then((x) => { if (n === latest.current) setData(x); }, (x) => { if (n === latest.current) setErr(x); });
+  };
   useEffect(() => { setData(null); load(); }, [year]); // eslint-disable-line react-hooks/exhaustive-deps
   const printAll = async () => {
     setErr(null);
@@ -87,6 +95,8 @@ export function StatementsTab() {
 }
 
 function StatementDialog({ year, donorId, printer, onClose, onChanged }: { year: number; donorId: number; printer: boolean; onClose: () => void; onChanged: () => void }) {
+  const { me } = useMe();
+  const [emailed, setEmailed] = useState<string | null>(null);   // 2.4.0 (#539)
   const [d, setD] = useState<any>(null);
   const [err, setErr] = useState<unknown>(null);
   const [pdf, setPdf] = usePdf();
@@ -136,8 +146,12 @@ function StatementDialog({ year, donorId, printer, onClose, onChanged }: { year:
             <div className="actions left">
               <button onClick={preview}>Preview</button>
               <button className="primary" onClick={print}>{d.next_kind === "ORIGINAL" ? "Print statement" : d.next_kind === "DUPLICATE" ? "Print duplicate" : "Print corrected statement"}</button>
+              <EmailDocumentButton ready={!!me?.email_ready} label="Email statement…" attachment="the year-end statement (PDF)"
+                defaultsUrl={`/api/donations/email/defaults?kind=STATEMENT&year=${year}&donor_entity_id=${donorId}`} url={`${url}/email`}
+                extra={signer.body} run={run} onSent={(r) => { setEmailed(`Statement ${r.number} emailed.`); load(); onChanged(); }} />
             </div>
           ) : null}
+          {emailed ? <p className="hint" role="status" data-testid="statement-emailed">{emailed}</p> : null}
           {printedId != null ? <ReceiptEnvelopePanel basePath={`/api/donations/statements/printed/${printedId}`} /> : null}
           {d.statements.length ? (
             <section aria-label="Printed statements">

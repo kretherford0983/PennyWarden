@@ -5,7 +5,7 @@ from __future__ import annotations
 import datetime as dt
 from typing import Any
 
-from fastapi import APIRouter, Depends, Request, Response
+from fastapi import APIRouter, Depends, File, Request, Response, UploadFile
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
@@ -13,6 +13,7 @@ from ..deps import Ctx, get_db, require
 from ..services import admin_settings as adm
 from ..services import diagnostics as diag
 from ..services import maintenance as maint
+from ..services import org_logos
 from ..services import organization as org
 from ..services import sessions as sess_svc
 from .backup import _check_password
@@ -65,6 +66,49 @@ def organization(body: org.ProfileIn, db: Session = Depends(get_db), ctx: Ctx = 
     out = org.update(db, ctx, body)
     db.commit()
     return out
+
+
+# 2.4.0 polish (#503): the organization logos (System/About -> General -> Organization logos)
+class OrgLogoRemoveIn(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    confirmations: list[str] = Field(default_factory=list, max_length=3)
+
+
+@router.get("/organization/logos")
+def org_logos_view(db: Session = Depends(get_db), ctx: Ctx = Depends(require("system.manage"))):
+    return org_logos.view(db, ctx)
+
+
+@router.post("/organization/logos/{slot}")
+async def org_logo_set(slot: str, file: UploadFile = File(...), db: Session = Depends(get_db),
+                       ctx: Ctx = Depends(require("system.manage"))):
+    """PNG or JPEG, at most 2 MB; re-encoded as PNG without metadata."""
+    from ..errors import AppError
+    data = await file.read(org_logos.MAX_BYTES + 1)
+    if len(data) > org_logos.MAX_BYTES:
+        raise AppError(413, "FILE_TOO_LARGE", "A logo may not exceed 2 MB.")
+    out = org_logos.set_logo(db, ctx, slot, data)
+    db.commit()
+    return out
+
+
+@router.post("/organization/logos/{slot}/remove")
+def org_logo_remove(slot: str, body: OrgLogoRemoveIn | None = None, db: Session = Depends(get_db),
+                    ctx: Ctx = Depends(require("system.manage"))):
+    out = org_logos.set_logo(db, ctx, slot, None, body.confirmations if body else [])
+    db.commit()
+    return out
+
+
+@router.get("/organization/logos/{slot}")
+def org_logo_image(slot: str, db: Session = Depends(get_db), ctx: Ctx = Depends(require("system.manage"))):
+    from ..errors import not_found
+    png = org_logos.png(db, ctx.workspace_id, slot)
+    if not png:
+        raise not_found("Logo")
+    return Response(png, media_type="image/png",
+                    headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+                             "Content-Disposition": 'inline; filename="logo.png"'})
 
 
 @router.get("/backup-age")

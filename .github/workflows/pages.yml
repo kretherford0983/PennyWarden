@@ -9,6 +9,7 @@ on:
   push:
     branches: [main]
     paths: ["site/**", "docs/screenshots/readme/**", "scripts/release_data.py", "scripts/build_site.sh",
+            "docs/guide/**", "docs/check-printing.md", "docs/backup-restore.md", "docs/archive/**",
             ".github/workflows/pages.yml"]
   workflow_dispatch:
 

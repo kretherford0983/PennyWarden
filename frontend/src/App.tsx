@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { Suspense, createContext, lazy, useContext, useEffect, useState } from "react";
 import { api, setCsrf } from "./api";
 import { Link, match, useRouter } from "./router";
 import { Loading } from "./components";
@@ -36,11 +36,17 @@ import { TestingBanner } from "./pages/Testing";
 import { DemoBanner } from "./pages/Demo";
 import { ReinitializedBanner } from "./pages/Reinitialize";
 import NamesGate from "./pages/NamesGate";
+import Invoices, { InvoiceBatch, InvoiceDetail, InvoiceSetup } from "./pages/Invoices";
+import { helpFor } from "./help";
+import { PAGE_NAMES } from "./functions";
+// 2.4.0 (#473): the guide is loaded only when Help opens
+const Help = lazy(() => import("./pages/Help"));
 
 export const ROLE_NAMES: Record<string, string> = {
   ADMINISTRATOR: "Administrator", BUDGET_MANAGER: "Budget Manager", BUDGET_USER: "Budget User",
   REGISTER_USER: "Register User", AUDITOR: "Auditor",
   BUDGET_ADMIN: "Budget Admin", REGISTER_ADMIN: "Register Admin", // 1.7.3 (#52, #53)
+  INVOICE_MANAGER: "Invoice Manager", // 2.4.0 (#251)
 };
 
 export interface Me {
@@ -57,7 +63,8 @@ export interface Me {
   dashboard_layout?: { key: string; visible: boolean }[]; // v1.5.0 CR-031
   dashboard_layout_customized?: boolean;
   register_sort?: string; // 2.1.0 (#262): "transaction_date:asc" | "transaction_date:desc" | "clear_date:asc" | "clear_date:desc"
-  modules?: { fundraisers?: boolean; checks?: boolean; donations?: boolean };
+  modules?: { fundraisers?: boolean; checks?: boolean; donations?: boolean; invoices?: boolean };   // 2.4.0 (#251): invoices
+  email_ready?: boolean;   // 2.4.0 (#539): the mail server is set up and on
   fundraiser_series_sort?: "asc" | "desc"; // 2.2.0 (#351): Fundraiser series years (default newest first)
   name_order?: string;   // 2.2.0 (#316) // v1.6.0 CR-033; 2.0.0 (#156) Check Printing; 2.1.0 (#312) Donations
   mfa_pending?: "VERIFY" | "ENROLL" | "PASSWORD" | "QUESTIONS" | null; // v1.4.1 CR-018; 1.8.0 (#113) setup steps
@@ -170,29 +177,38 @@ export default function App() {
   );
 }
 
-function navFor(me: Me) {
+// 2.4.0 (#551): exported - reminder tasks check which pages a user can open; the page names live in functions.ts
+export function navFor(me: Me) {
+  const N = PAGE_NAMES;
   const fin = [
     ["/", "Dashboard"],
-    ["/fiscal-years", "Fiscal Years"],
-    ["/budgets", "Budgets"],
-    ["/bank-accounts", "Bank Accounts"],
-    ["/register", "Register"],
-    ["/entities", "Entities"],
-    ["/reports", "Reports"],
+    ["/fiscal-years", N["/fiscal-years"]],
+    ["/budgets", N["/budgets"]],
+    ["/bank-accounts", N["/bank-accounts"]],
+    ["/register", N["/register"]],
+    ["/entities", N["/entities"]],
+    ["/reports", N["/reports"]],
   ];
-  if (me.modules?.fundraisers) fin.splice(6, 0, ["/fundraisers", "Fundraisers"]); // v1.6.0 CR-033 (optional module)
+  if (me.modules?.fundraisers) fin.splice(6, 0, ["/fundraisers", N["/fundraisers"]]); // v1.6.0 CR-033 (optional module); 2.4.0 (#429) "Events"
   // 2.0.0 (#164): Payments (Payments module) for Register Users, after Register
-  if (me.modules?.checks && me.permissions.includes("checks.print")) fin.splice(fin.findIndex((n) => n[0] === "/register") + 1, 0, ["/payments", "Payments"]);
+  if (me.modules?.checks && me.permissions.includes("checks.print")) fin.splice(fin.findIndex((n) => n[0] === "/register") + 1, 0, ["/payments", N["/payments"]]);
   // 2.2.0 (#325): Donations for the financial roles and Auditors when the Donations module is on, after Register/Payments
   if (me.modules?.donations && me.permissions.includes("donation.view")) {
     const after = Math.max(fin.findIndex((n) => n[0] === "/payments"), fin.findIndex((n) => n[0] === "/register"));
-    fin.splice(after + 1, 0, ["/donations", "Donations"]);
+    fin.splice(after + 1, 0, ["/donations", N["/donations"]]);
+  }
+  // 2.4.0 (#251): Invoices for the roles that use it when the module is on, after Donations/Payments/Register
+  if (me.modules?.invoices && me.permissions.includes("invoice.view")) {
+    const after = Math.max(fin.findIndex((n) => n[0] === "/donations"), fin.findIndex((n) => n[0] === "/payments"), fin.findIndex((n) => n[0] === "/register"));
+    fin.splice(after + 1, 0, ["/invoices", N["/invoices"]]);
   }
   // 2.0.0 (#156): Payments Setup (check printing) for Administrators when the Payments module is on
   const checkSetup = me.modules?.checks && me.permissions.includes("checks.setup") ? [["/check-setup", "Payments Setup"]] : [];
   // 2.1.0 (#312): Donations Setup (receipt letters) for Administrators when the Donations module is on
   if (me.modules?.donations && me.permissions.includes("donation.setup")) checkSetup.push(["/donation-setup", "Donations Setup"]);
   // 2.2.0 (#325): the shared envelope library, when a feature that uses envelopes is on
+  // 2.4.0 (#251): Invoices Setup for Administrators when the Invoices module is on
+  if (me.modules?.invoices && me.permissions.includes("invoice.setup")) checkSetup.push(["/invoice-setup", "Invoices Setup"]);
   if (checkSetup.length) checkSetup.push(["/envelopes", "Envelopes"]);
   // 2.3.0 (#395): the shared signer list (checks, cover letters, donation letters), beside Envelopes
   if (checkSetup.length) checkSetup.push(["/signers", "Signers"]);
@@ -204,8 +220,12 @@ function navFor(me: Me) {
     return [...(has("financial.view") ? fin : [["/", "Dashboard"]]), ...(has("users.view") ? [["/users", "Users"]] : []),
       ...(has("audit.view") ? [["/audit-log", "Audit Log"]] : []), ...checkSetup, ...(has("users.manage") || has("system.view") || has("system.about") ? [["/about", "System/About"]] : [])];
   }
+  // 2.4.0 (#251): an Invoice Manager without the other financial roles sees the Register (read-only), Entities and
+  // Invoices - no Dashboard, budget, Fiscal Year or account screens; Reports shows them the invoice reports only
+  const shown = me.permissions.includes("financial.view") ? fin
+    : fin.filter((n) => ["/register", "/entities", "/invoices", "/reports"].includes(n[0]));   // 2.4.0 (#255): invoice reports
   // 2.2.0 (#349): financial users see System/About read-only (About and General)
-  return me.permissions.includes("system.about") ? [...fin, ["/about", "System/About"]] : fin;
+  return me.permissions.includes("system.about") ? [...shown, ["/about", "System/About"]] : shown;
 }
 
 function Shell({ workspace, warning, mode, testing, demo, onLogout }: { workspace: string; warning: boolean; mode: string; testing?: boolean; demo?: boolean; onLogout: () => void }) {
@@ -219,7 +239,8 @@ function Shell({ workspace, warning, mode, testing, demo, onLogout }: { workspac
     api.put("/api/me/preferences", { nav_collapsed: next }).catch(() => undefined);
   };
   const { path } = useRouter();
-  const nav = navFor(me);
+  // 2.4.0 (#473): Help (the bundled user guide) is the last item for every role
+  const nav = [...navFor(me), ["/help", "Help"]];
   const allowed = new Set(nav.map((n) => n[0]));
   const logout = async () => {
     try {
@@ -237,7 +258,11 @@ function Shell({ workspace, warning, mode, testing, demo, onLogout }: { workspac
   let page: JSX.Element;
   let m: Record<string, string> | null;
   const guard = (base: string, el: JSX.Element) => (allowed.has(base) ? el : <NotAuthorized />);
-  if (path === "/") page = <Dashboard />;
+  // 2.4.0 (#251): a user without the Dashboard (an Invoice Manager only) starts on Invoices or the Register
+  if (path === "/") page = allowed.has("/") ? <Dashboard /> : allowed.has("/invoices") ? <Invoices /> : allowed.has("/register") ? <Register /> : <Dashboard />;
+  else if (path === "/help") page = <Suspense fallback={<Loading />}><Help /></Suspense>;   // 2.4.0 (#473): every role
+  else if ((m = match("/help/:chapter", path))) page = <Suspense fallback={<Loading />}><Help chapter={m.chapter} /></Suspense>;
+  else if ((m = match("/help/:chapter/:page", path))) page = <Suspense fallback={<Loading />}><Help chapter={m.chapter} page={m.page} /></Suspense>;   // 2.4.0 (#488): the book
   else if (path === "/account") page = <Account updates={mode === "local" ? updates : null} />;
   else if (path === "/users") page = guard("/users", <Users />);
   else if (path === "/audit-log") page = guard("/audit-log", <AuditLog />);
@@ -259,6 +284,10 @@ function Shell({ workspace, warning, mode, testing, demo, onLogout }: { workspac
   else if (path === "/signers") page = guard("/signers", <SignersPage />);
   else if (path === "/payments") page = guard("/payments", <Payments />);
   else if (path === "/donations") page = guard("/donations", <DonationsPage />);
+  else if (path === "/invoices") page = guard("/invoices", <Invoices />);           // 2.4.0 (#251)
+  else if ((m = match("/invoices/batches/:id", path))) page = guard("/invoices", <InvoiceBatch id={Number(m.id)} />);   // 2.4.0 (#248)
+  else if ((m = match("/invoices/:id", path))) page = guard("/invoices", <InvoiceDetail id={Number(m.id)} />);   // 2.4.0 (#253)
+  else if (path === "/invoice-setup") page = guard("/invoice-setup", <InvoiceSetup />);
   else if ((m = match("/fundraisers/:id", path))) page = guard("/fundraisers", <FundraiserDetail id={Number(m.id)} />);
   else page = <p>Page not found.</p>;
 
@@ -276,6 +305,8 @@ function Shell({ workspace, warning, mode, testing, demo, onLogout }: { workspac
             {me.theme === "dark" ? "☀ Light" : "☾ Dark"}
           </button>
           {can("reminder.view") ? <Bell path={path} /> : null}
+          {/* 2.4.0 (#473): help for the page you are on (the guide's start for a page your roles do not open) */}
+          <Link to={helpFor(path, (b) => allowed.has(b))} className="small-link help-link" aria-label="Help for this page" title="Help for this page">?</Link>
           <Link to="/account" className="small-link">My account</Link>
           <button className="small" onClick={logout}>Sign out</button>
         </div>

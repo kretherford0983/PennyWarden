@@ -15,6 +15,10 @@
 - Reopening a resolved occurrence removes the next one it created (it comes back when resolved again); that is
   refused once the next one has itself been resolved.
 - Personal reminders do not repeat.
+
+2.4.0 (#551) - tasks: every reminder has an objective task (last, named by its title) and optional steps in front
+of it (services/reminder_tasks.py has the rules). Resolving ticks the objective, reopening unticks it; with steps still
+open a note is required. Steps stay editable while the reminder is shown.
 """
 from __future__ import annotations
 
@@ -28,6 +32,7 @@ from .. import audit
 from ..errors import AppError, forbidden, not_found, validation
 from ..models import BankAccount, Budget, FiscalYear, Reminder, User, utcnow
 from . import bank_accounts as bank
+from . import reminder_tasks as tasks_svc
 from .common import budget_label
 
 LINKS = {"FISCAL_YEAR": FiscalYear, "BUDGET": Budget, "BANK_ACCOUNT": BankAccount}
@@ -104,7 +109,8 @@ def snapshot(r: Reminder) -> dict:
             "due_date": r.due_date.isoformat(), "notify_days_before": r.notify_days_before, "link_type": r.link_type,
             "link_id": r.link_id, "resolved": r.resolved_at is not None, "resolution_note": r.resolution_note,
             "repeat_every": r.repeat_every, "repeat_unit": r.repeat_unit,
-            "repeat_until": r.repeat_until.isoformat() if r.repeat_until else None}
+            "repeat_until": r.repeat_until.isoformat() if r.repeat_until else None,
+            "tasks": [tasks_svc.task_snapshot(t) for t in r.tasks]}
 
 
 def _can_resolve(ctx, r: Reminder) -> bool:
@@ -143,7 +149,14 @@ def out(db: Session, ctx, r: Reminder, users: dict[int, str] | None = None) -> d
             "resolved_by": name(r.resolved_by_user_id) if r.resolved_by_user_id else None,
             "can_resolve": state == "DUE" and _can_resolve(ctx, r),
             "can_reopen": state == "RESOLVED" and _can_resolve(ctx, r),
-            "can_edit": state == "UPCOMING" and _can_edit(ctx, r)}
+            "can_edit": state == "UPCOMING" and _can_edit(ctx, r),
+            # 2.4.0 (#551): the checklist; ticking while shown, task edits until resolved
+            "tasks": tasks_svc.tasks_out(db, ctx, r, name),
+            "steps": len(tasks_svc.steps(r)),
+            "steps_done": sum(1 for t in tasks_svc.steps(r) if t.done_at is not None),
+            "can_tick": state == "DUE" and _can_resolve(ctx, r),
+            "can_untick": state in ("DUE", "RESOLVED") and _can_resolve(ctx, r),
+            "can_edit_tasks": state != "RESOLVED" and _can_edit(ctx, r)}
 
 
 def _visible(db: Session, ctx) -> list[Reminder]:
@@ -198,6 +211,10 @@ def _apply(db: Session, ctx, r: Reminder, body) -> None:
     elif not same_schedule:
         r.repeat_anchor, r.repeat_index = body.due_date, 0
     r.link_type, r.link_id = body.link_type, body.link_id
+    # 2.4.0 (#551): the objective follows the title; steps / objective omitted = left as they are
+    if body.tasks is not None or body.objective is not None:
+        tasks_svc.set_tasks(db, r, ctx, body.tasks if body.tasks is not None else _steps_in(r), body.objective)
+    tasks_svc.objective(r)
     r.updated_by_user_id = ctx.user.id
 
 
@@ -249,7 +266,8 @@ def _create_next(db: Session, ctx, r: Reminder) -> Reminder | None:
                  details=r.details, due_date=due, notify_days_before=r.notify_days_before, link_type=r.link_type,
                  link_id=r.link_id, repeat_every=r.repeat_every, repeat_unit=r.repeat_unit,
                  repeat_until=r.repeat_until, repeat_anchor=r.repeat_anchor or r.due_date,
-                 repeat_index=(r.repeat_index or 0) + 1, repeat_source_id=r.id, updated_by_user_id=ctx.user.id)
+                 repeat_index=(r.repeat_index or 0) + 1, repeat_source_id=r.id, updated_by_user_id=ctx.user.id,
+                 tasks=tasks_svc.copy_unticked(r))       # 2.4.0 (#551): the same checklist, nothing ticked
     db.add(n)
     db.flush()
     audit.record(db, ctx, "REMINDER_CREATED", "reminder", n.id, None, {**snapshot(n), "repeat_of": r.id})
@@ -263,8 +281,11 @@ def resolve(db: Session, ctx, r: Reminder, note: str | None, stop_repeating: boo
         raise AppError(409, "INVALID_STATE", "This reminder is already resolved.")
     if not is_due(r):
         raise AppError(409, "REMINDER_NOT_DUE", "This reminder is not due yet; edit or delete it instead.")
+    if tasks_svc.open_steps(r) and not (note or "").strip():   # 2.4.0 (#551): open steps are kept as skipped
+        raise validation("Some steps aren't completed: add a note saying why the reminder is complete anyway.", "note")
     before = snapshot(r)
     r.resolved_at, r.resolved_by_user_id, r.resolution_note = utcnow(), ctx.user.id, (note or "").strip() or None
+    tasks_svc.mark(tasks_svc.objective(r), ctx.user.id)    # 2.4.0 (#551): resolving = ticking the objective
     db.flush()
     audit.record(db, ctx, "REMINDER_RESOLVED", "reminder", r.id, before, snapshot(r))
     if not stop_repeating:
@@ -286,6 +307,76 @@ def reopen(db: Session, ctx, r: Reminder) -> Reminder:
         db.delete(nxt)
     before = snapshot(r)
     r.resolved_at = r.resolved_by_user_id = r.resolution_note = None
+    tasks_svc.mark(tasks_svc.objective(r), None)
     db.flush()
     audit.record(db, ctx, "REMINDER_REOPENED", "reminder", r.id, before, snapshot(r))
+    return r
+
+
+# ------------------------------------------------------------------ 2.4.0 (#551) tasks
+class _Kept:
+    """An existing step as an incoming item (keeps it unchanged)."""
+    def __init__(self, t):
+        self.id, self.title, self.contact_kind = t.id, t.title, t.contact_kind
+        self.contact_entity_id, self.contact_position, self.function_id = (t.contact_entity_id, t.contact_position,
+                                                                           t.function_id)
+
+
+def _steps_in(r: Reminder) -> list:
+    return [_Kept(t) for t in tasks_svc.steps(r)]
+
+
+def update_tasks(db: Session, ctx, r: Reminder, items, objective=None) -> Reminder:
+    """BR-REM-TASK-005: the steps (and every task's contact and app function) stay editable while the reminder is
+    shown, by whoever may edit the reminder; the reminder's own fields stay locked. Not once it is resolved."""
+    if not _can_edit(ctx, r):
+        raise forbidden()
+    if r.resolved_at is not None:
+        raise AppError(409, "INVALID_STATE", "This reminder is resolved; reopen it to change its tasks.")
+    before = snapshot(r)
+    tasks_svc.set_tasks(db, r, ctx, items, objective)
+    r.updated_by_user_id = ctx.user.id
+    db.flush()
+    if snapshot(r) != before:
+        audit.record(db, ctx, "REMINDER_UPDATED", "reminder", r.id, before, snapshot(r))
+    return r
+
+
+def tick(db: Session, ctx, r: Reminder, tid: int, note: str | None = None) -> Reminder:
+    """BR-REM-TASK-001/002: tick a step; ticking the objective resolves the reminder (a note when steps are open)."""
+    t = tasks_svc.get_task(r, tid)
+    if t.is_objective:
+        return resolve(db, ctx, r, note)
+    if not _can_resolve(ctx, r):
+        raise forbidden()
+    if r.resolved_at is not None:
+        raise AppError(409, "INVALID_STATE", "This reminder is already resolved.")
+    if not is_due(r):
+        raise AppError(409, "REMINDER_NOT_DUE", "This reminder isn't shown yet, so its tasks can't be marked completed.")
+    if t.done_at is not None:
+        raise AppError(409, "INVALID_STATE", "This task is already marked completed.")
+    tasks_svc.mark(t, ctx.user.id)
+    db.flush()
+    audit.record(db, ctx, "REMINDER_TASK_TICKED", "reminder", r.id, None,
+                 {"reminder_id": r.id, "task": tasks_svc.task_snapshot(t)})
+    return r
+
+
+def untick(db: Session, ctx, r: Reminder, tid: int) -> Reminder:
+    """BR-REM-TASK-002: unticking the objective reopens the reminder; unticking a step of a resolved reminder reopens
+    it too (refused as Reopen is)."""
+    t = tasks_svc.get_task(r, tid)
+    if t.is_objective:
+        return reopen(db, ctx, r)
+    if not _can_resolve(ctx, r):
+        raise forbidden()
+    if t.done_at is None:
+        raise AppError(409, "INVALID_STATE", "This task isn't marked completed.")
+    if r.resolved_at is not None:
+        reopen(db, ctx, r)
+    before = tasks_svc.task_snapshot(t)
+    tasks_svc.mark(t, None)
+    db.flush()
+    audit.record(db, ctx, "REMINDER_TASK_UNTICKED", "reminder", r.id, {"reminder_id": r.id, "task": before},
+                 {"reminder_id": r.id, "task": tasks_svc.task_snapshot(t)})
     return r

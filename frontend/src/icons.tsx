@@ -16,6 +16,7 @@ const paths: Record<string, ReactNode> = {
   "/users": <><circle cx="12" cy="8" r="4" /><path d="M4 21c1-4.2 4.2-6.5 8-6.5s7 2.3 8 6.5" /></>,
   "/audit-log": <><path d="M12 3l8 3v6c0 4.6-3.3 7.9-8 9-4.7-1.1-8-4.4-8-9V6z" /><path d="M9 12l2 2 4-4" /></>,
   "/about": <><circle cx="12" cy="12" r="9" /><path d="M12 11v6M12 7.5v.5" /></>,
+  "/help": <><circle cx="12" cy="12" r="9" /><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.3-1 .8-1 1.5v.7M12 16.8v.2" /></>, // 2.4.0 (#473)
 };
 
 export function NavIcon({ to }: { to: string }) {

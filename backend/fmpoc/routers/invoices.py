@@ -1,0 +1,624 @@
+"""2.4.0 (#251): the Invoices module API (empty module; the invoice features arrive with later 2.4.0 builds)."""
+from __future__ import annotations
+
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+
+from ..deps import Ctx, get_db, require
+from ..services import invoices as svc
+
+router = APIRouter(prefix="/api/invoices", tags=["invoices"])
+
+
+@router.get("/overview")
+def overview(db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.view"))):
+    """The Invoices landing page: what this user may do. Refused while the module is off (BR-091)."""
+    svc.require_module(db, ctx)
+    return svc.overview(ctx)
+
+
+@router.get("/setup")
+def setup(db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.setup"))):
+    """The Administrator's module setup (filled in by the Invoices build). No real invoices or products (BR-003)."""
+    svc.require_module(db, ctx)
+    return svc.setup(db, ctx)
+
+
+# ------------------------------------------------------------------ 2.4.0 (#252): the product catalog
+from typing import Literal  # noqa: E402
+
+from ..schemas import CatalogNameIn, InvoiceProductIn, InvoiceTaxGroupIn, InvoiceTaxRateIn  # noqa: E402
+from ..services import invoice_catalog as cat  # noqa: E402
+
+Simple = Literal["unit-types", "categories"]
+
+
+@router.get("/catalog/budget-options")
+def catalog_budget_options(db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.catalog_manage"))):
+    """Invoiced Income budgets by code and name only - no amounts, no budget screens."""
+    svc.require_module(db, ctx)
+    return cat.budget_options(db, ctx)
+
+
+@router.get("/catalog/products")
+def products(include_inactive: bool = False, db: Session = Depends(get_db),
+             ctx: Ctx = Depends(require("invoice.catalog_view"))):
+    return cat.list_products(db, ctx, include_inactive)
+
+
+@router.post("/catalog/products", status_code=201)
+def create_product(body: InvoiceProductIn, db: Session = Depends(get_db),
+                   ctx: Ctx = Depends(require("invoice.catalog_manage"))):
+    out = cat.save_product(db, ctx, None, body)
+    db.commit()
+    return out
+
+
+@router.put("/catalog/products/{pid}")
+def update_product(pid: int, body: InvoiceProductIn, db: Session = Depends(get_db),
+                   ctx: Ctx = Depends(require("invoice.catalog_manage"))):
+    out = cat.save_product(db, ctx, pid, body)
+    db.commit()
+    return out
+
+
+@router.post("/catalog/products/{pid}/{action}")
+def product_active(pid: int, action: Literal["inactivate", "restore"], db: Session = Depends(get_db),
+                   ctx: Ctx = Depends(require("invoice.catalog_manage"))):
+    out = cat.set_product_active(db, ctx, pid, action == "restore")
+    db.commit()
+    return out
+
+
+@router.get("/catalog/tax-groups")
+def tax_groups(include_inactive: bool = False, db: Session = Depends(get_db),
+               ctx: Ctx = Depends(require("invoice.catalog_view"))):
+    return cat.list_tax_groups(db, ctx, include_inactive)
+
+
+@router.post("/catalog/tax-groups", status_code=201)
+def create_tax_group(body: InvoiceTaxGroupIn, db: Session = Depends(get_db),
+                     ctx: Ctx = Depends(require("invoice.catalog_manage"))):
+    out = cat.save_tax_group(db, ctx, None, body)
+    db.commit()
+    return out
+
+
+@router.put("/catalog/tax-groups/{gid}")
+def update_tax_group(gid: int, body: InvoiceTaxGroupIn, db: Session = Depends(get_db),
+                     ctx: Ctx = Depends(require("invoice.catalog_manage"))):
+    out = cat.save_tax_group(db, ctx, gid, body)
+    db.commit()
+    return out
+
+
+@router.post("/catalog/tax-groups/{gid}/{action}")
+def tax_group_active(gid: int, action: Literal["inactivate", "restore"], db: Session = Depends(get_db),
+                     ctx: Ctx = Depends(require("invoice.catalog_manage"))):
+    out = cat.set_tax_group_active(db, ctx, gid, action == "restore")
+    db.commit()
+    return out
+
+
+@router.get("/catalog/tax-rates")
+def tax_rates(include_inactive: bool = False, db: Session = Depends(get_db),
+              ctx: Ctx = Depends(require("invoice.catalog_view"))):
+    return cat.list_tax_rates(db, ctx, include_inactive)
+
+
+@router.post("/catalog/tax-rates", status_code=201)
+def create_tax_rate(body: InvoiceTaxRateIn, db: Session = Depends(get_db),
+                    ctx: Ctx = Depends(require("invoice.catalog_manage"))):
+    out = cat.save_tax_rate(db, ctx, None, body)
+    db.commit()
+    return out
+
+
+@router.put("/catalog/tax-rates/{tid}")
+def update_tax_rate(tid: int, body: InvoiceTaxRateIn, db: Session = Depends(get_db),
+                    ctx: Ctx = Depends(require("invoice.catalog_manage"))):
+    out = cat.save_tax_rate(db, ctx, tid, body)
+    db.commit()
+    return out
+
+
+@router.post("/catalog/tax-rates/{tid}/{action}")
+def tax_active(tid: int, action: Literal["inactivate", "restore"], db: Session = Depends(get_db),
+               ctx: Ctx = Depends(require("invoice.catalog_manage"))):
+    out = cat.set_tax_active(db, ctx, tid, action == "restore")
+    db.commit()
+    return out
+
+
+@router.get("/catalog/code-example")
+def catalog_code_example(category_id: int | None = None, pattern: str | None = None, db: Session = Depends(get_db),
+                         ctx: Ctx = Depends(require("invoice.catalog_view"))):
+    """2.4.0 polish (#486): the next product code of a category, or of a pattern being typed (nothing is used up)."""
+    return cat.code_example(db, ctx, category_id, pattern)
+
+
+@router.get("/catalog/{kind}")
+def simple_list(kind: Simple, include_inactive: bool = False, db: Session = Depends(get_db),
+                ctx: Ctx = Depends(require("invoice.catalog_view"))):
+    return cat.list_simple(db, ctx, kind, include_inactive)
+
+
+@router.post("/catalog/{kind}", status_code=201)
+def simple_create(kind: Simple, body: CatalogNameIn, db: Session = Depends(get_db),
+                  ctx: Ctx = Depends(require("invoice.catalog_manage"))):
+    out = cat.save_simple(db, ctx, kind, None, body.name, body)
+    db.commit()
+    return out
+
+
+@router.put("/catalog/{kind}/{oid}")
+def simple_update(kind: Simple, oid: int, body: CatalogNameIn, db: Session = Depends(get_db),
+                  ctx: Ctx = Depends(require("invoice.catalog_manage"))):
+    out = cat.save_simple(db, ctx, kind, oid, body.name, body)
+    db.commit()
+    return out
+
+
+@router.post("/catalog/{kind}/{oid}/{action}")
+def simple_active(kind: Simple, oid: int, action: Literal["inactivate", "restore"], db: Session = Depends(get_db),
+                  ctx: Ctx = Depends(require("invoice.catalog_manage"))):
+    out = cat.set_simple_active(db, ctx, kind, oid, action == "restore")
+    db.commit()
+    return out
+
+
+# ------------------------------------------------------------------ 2.4.0 (#253): invoices
+from fastapi import Query, Request  # noqa: E402
+from fastapi.responses import Response  # noqa: E402
+
+from ..schemas import InvoiceFieldIn, InvoiceIn, InvoiceSetupIn, InvoiceWriteOffDecisionIn, ReasonIn  # noqa: E402
+from ..services import invoice_docs as docs  # noqa: E402
+
+
+@router.put("/setup")
+def save_setup(body: InvoiceSetupIn, db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.setup"))):
+    out = docs.save_setup(db, ctx, body)
+    db.commit()
+    return out
+
+
+@router.get("/setup/number-example")
+def number_example(pattern: str = "", db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.setup"))):
+    """2.4.0 polish (#481): Next invoice for the pattern being typed (422 with the reason when it is not valid)."""
+    return docs.number_example(db, ctx, pattern)
+
+
+@router.get("/setup/test-print")
+def setup_test_print(db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.setup"))):
+    """The Administrator's test print: sample data only (BR-003) - no invoice, customer or product is read."""
+    svc.require_module(db, ctx)
+    pdf = docs.invoice_pdf(db, ctx.workspace_id, None, sample=True, watermark="SAMPLE")
+    return Response(pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": 'inline; filename="invoice-sample.pdf"', "Cache-Control": "no-store"})
+
+
+# ------------------------------------------------------------------ 2.4.0 (#253 part 3): the PDF template
+from fastapi import Body, File, UploadFile  # noqa: E402
+
+from ..services import invoice_template as tpl  # noqa: E402
+
+
+@router.get("/setup/template")
+def get_template(db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.setup"))):
+    svc.require_module(db, ctx)
+    r = tpl.out(docs.settings_of(db, ctx.workspace_id))
+    db.commit()
+    return r
+
+
+@router.put("/setup/template")
+def save_template(config: dict = Body(...), db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.setup"))):
+    svc.require_module(db, ctx)
+    r = tpl.save(db, ctx, docs.settings_of(db, ctx.workspace_id), config)
+    db.commit()
+    return r
+
+
+@router.post("/setup/template/preview")
+def preview_template(config: dict = Body(...), db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.setup"))):
+    """The unsaved template with sample data (BR-003)."""
+    svc.require_module(db, ctx)
+    pdf = docs.invoice_pdf(db, ctx.workspace_id, None, sample=True, watermark="SAMPLE", template=config)
+    return Response(pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": 'inline; filename="invoice-template-preview.pdf"', "Cache-Control": "no-store"})
+
+
+@router.post("/setup/template/preview-image")
+def preview_template_image(config: dict = Body(...), db: Session = Depends(get_db),
+                           ctx: Ctx = Depends(require("invoice.setup"))):
+    from ..errors import AppError
+    from ..services.checkprint import raster
+    svc.require_module(db, ctx)
+    if not raster.available():
+        raise AppError(501, "PREVIEW_UNAVAILABLE", "The picture preview is not available on this server.")
+    pdf = docs.invoice_pdf(db, ctx.workspace_id, None, sample=True, watermark="SAMPLE", template=config)
+    png, pages = raster.pdf_to_png(pdf)
+    return Response(png, media_type="image/png", headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff",
+                                                          "X-Page-Count": str(pages)})
+
+
+@router.post("/setup/template/logo")
+async def template_logo(file: UploadFile = File(...), db: Session = Depends(get_db),
+                        ctx: Ctx = Depends(require("invoice.setup"))):
+    from ..services.checkprint.service import MAX_LOGO_BYTES
+    svc.require_module(db, ctx)
+    data = await file.read(MAX_LOGO_BYTES + 1)
+    if len(data) > MAX_LOGO_BYTES:
+        raise tpl.logo_error()
+    r = tpl.set_logo(db, ctx, docs.settings_of(db, ctx.workspace_id), data)
+    db.commit()
+    return r
+
+
+@router.post("/setup/template/logo/remove")
+def template_logo_remove(db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.setup"))):
+    svc.require_module(db, ctx)
+    r = tpl.set_logo(db, ctx, docs.settings_of(db, ctx.workspace_id), None)
+    db.commit()
+    return r
+
+
+@router.get("/setup/template/logo")
+def template_logo_image(db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.setup"))):
+    from ..errors import not_found
+    svc.require_module(db, ctx)
+    s = docs.settings_of(db, ctx.workspace_id)
+    if not s.logo_png:
+        raise not_found("Logo")
+    return Response(s.logo_png, media_type="image/png", headers={"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"})
+
+
+@router.get("/fields")
+def invoice_fields(db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.view"))):
+    """2.4.0 (#253 part 2): the active custom fields, for the invoice form."""
+    svc.require_module(db, ctx)
+    return [docs.field_out(f) for f in docs.fields_of(db, ctx.workspace_id)]
+
+
+@router.post("/setup/fields", status_code=201)
+def create_field(body: InvoiceFieldIn, db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.setup"))):
+    out = docs.save_field(db, ctx, None, body)
+    db.commit()
+    return out
+
+
+@router.put("/setup/fields/{fid}")
+def update_field(fid: int, body: InvoiceFieldIn, db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.setup"))):
+    out = docs.save_field(db, ctx, fid, body)
+    db.commit()
+    return out
+
+
+@router.post("/setup/fields/{fid}/{action}")
+def field_active(fid: int, action: Literal["retire", "restore"], db: Session = Depends(get_db),
+                 ctx: Ctx = Depends(require("invoice.setup"))):
+    out = docs.set_field_active(db, ctx, fid, action == "restore")
+    db.commit()
+    return out
+
+
+@router.get("")
+def list_invoices(status: Literal["DRAFT", "SENT", "PARTLY_PAID", "PAID", "VOID", "WRITTEN_OFF", "OPEN"] | None = None,
+                  customer_entity_id: int | None = None, search: str | None = Query(None, max_length=100),
+                  db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.view"))):
+    return docs.list_out(db, ctx, status, customer_entity_id, search)
+
+
+@router.post("", status_code=201)
+def create_invoice(body: InvoiceIn, db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.manage"))):
+    i = docs.create(db, ctx, body)
+    db.commit()
+    return docs.out(db, ctx, i)
+
+
+# ------------------------------------------------------------------ 2.4.0 (#255): reports and overdue
+import datetime as _dt  # noqa: E402
+from urllib.parse import quote as _quote  # noqa: E402
+
+from .. import audit  # noqa: E402
+from ..services import invoice_reports as rep_svc  # noqa: E402
+
+
+@router.get("/overdue")
+def overdue(db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.view"))):
+    """The dashboard card for invoice viewers; `reminders` for Invoice Managers (due date + N days)."""
+    return rep_svc.overdue(db, ctx)
+
+
+@router.get("/reports/{rid}")
+def invoice_report(rid: Literal["inv-open", "inv-aging", "inv-statement", "inv-sales-tax", "inv-register", "inv-sales",
+                                "inv-activity"],
+                   format: Literal["json", "pdf", "csv"] = "json", download: bool = False,
+                   as_of: _dt.date | None = None, date_from: _dt.date | None = None, date_to: _dt.date | None = None,
+                   customer_entity_id: int | None = None,
+                   status: Literal["DRAFT", "SENT", "PARTLY_PAID", "PAID", "VOID", "WRITTEN_OFF"] | None = None,
+                   by: Literal["product", "category", "budget"] = "product",
+                   db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.view"))):
+    r = rep_svc.run(db, ctx, rid, {"as_of": as_of, "date_from": date_from, "date_to": date_to,
+                                   "customer_entity_id": customer_entity_id, "status": status, "by": by})
+    if format == "json":
+        return rep_svc.as_json(r)
+    if format == "csv":
+        if rid == "inv-statement":
+            from ..errors import validation
+            raise validation("The customer statement is a PDF.", "format")
+        name = rep_svc.filename(r, "csv")
+        return Response(rep_svc.as_csv(r), media_type="text/csv; charset=utf-8",
+                        headers={"Content-Disposition": f"attachment; filename=\"{name}\"; filename*=UTF-8''{_quote(name)}",
+                                 "Cache-Control": "private, no-store"})
+    name = rep_svc.filename(r, "pdf")
+    kind = "attachment" if download else "inline"
+    return Response(rep_svc.as_pdf(db, ctx, r), media_type="application/pdf",
+                    headers={"Content-Disposition": f"{kind}; filename=\"{name}\"; filename*=UTF-8''{_quote(name)}",
+                             "Cache-Control": "private, no-store", "X-Frame-Options": "SAMEORIGIN",
+                             "Content-Security-Policy": "default-src 'none'; frame-ancestors 'self'"})
+
+
+# ------------------------------------------------------------------ 2.4.0 (#513): the formal invoice reports
+@router.get("/formal/options")
+def formal_options(fiscal_year_id: int | None = None, db: Session = Depends(get_db),
+                   ctx: Ctx = Depends(require("invoice.view"))):
+    """The Fiscal Years (newest first) and, for the chosen one (default: the one covering today), its periods - for
+    the invoice viewers, who may not hold the financial permission the Quarterly / Annual options need."""
+    from sqlalchemy import select as _select
+
+    from ..models import FiscalYear
+    from ..services import invoice_formal as formal
+    from ..services import period_report as prep
+    from ..services.common import fy_label
+    svc.require_module(db, ctx)
+    today = _dt.date.today()
+    fys = list(db.scalars(_select(FiscalYear).where(FiscalYear.workspace_id == ctx.workspace_id)
+                          .order_by(FiscalYear.start_date.desc())))
+    fy = next((f for f in fys if f.id == fiscal_year_id), None) or \
+        next((f for f in fys if f.start_date <= today <= f.end_date), None) or (fys[0] if fys else None)
+    prior = prep.previous_fy(db, fy) if fy else None
+    return {"fiscal_years": [{"id": f.id, "label": fy_label(f), "start_date": f.start_date.isoformat(),
+                              "end_date": f.end_date.isoformat()} for f in fys],
+            "fiscal_year_id": fy.id if fy else None, "periods": prep.options(fy, today) if fy else [],
+            "prior_fiscal_year": prior.display_name if prior else None, "max_commentary": formal.MAX_COMMENTARY,
+            "today": today.isoformat()}
+
+
+@router.get("/formal/{rid}")
+def formal_report(rid: Literal["inv-sales-formal", "inv-overview"],
+                  fiscal_year_id: int | None = None, period: Literal["Q1", "Q2", "Q3", "Q4", "ANNUAL"] | None = None,
+                  date_from: _dt.date | None = None, date_to: _dt.date | None = None,
+                  commentary: str | None = Query(None, max_length=2000), show_names: bool = True,
+                  format: Literal["json", "pdf", "pptx"] = "pdf", download: bool = False,
+                  db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.view"))):
+    """2.4.0 (#513): Sales by product & category, or the Sales overview - for a Fiscal Year quarter / Annual (with
+    the same period last year) or a custom range - as JSON, a PDF or a presentation. Generation is audited."""
+    from ..models import Workspace
+    from ..services import branding
+    from ..services import invoice_formal as formal
+    from ..services import invoice_formal_output as out
+    rep = formal.build(db, ctx, rid, {"fiscal_year_id": fiscal_year_id, "period": period, "date_from": date_from,
+                                      "date_to": date_to, "commentary": commentary, "show_names": show_names},
+                       _dt.date.today())
+    if format == "json":
+        db.rollback()
+        return rep
+    org = db.get(Workspace, ctx.workspace_id).name
+    summary = {"report": rid.upper().replace("-", "_") + ("_PRESENTATION" if format == "pptx" else ""),
+               "fiscal_year_id": fiscal_year_id, "period": rep["period"], "start": rep["start_date"],
+               "end": rep["end_date"], "cutoff": rep["cutoff"], "preliminary": rep["preliminary"],
+               "commentary": bool(rep["commentary"]), "show_names": show_names, "format": format.upper()}
+    if format == "pptx":
+        with branding.use(db, output="presentations"):
+            data = out.build_pptx(org, rep)
+        audit.record(db, ctx, "REPORT_GENERATED", "workspace", ctx.workspace_id, None, summary)
+        db.commit()
+        name = out.file_stem(org, rep) + "-presentation.pptx"
+        return Response(data, media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                        headers={"Content-Disposition": f"attachment; filename=\"{name}\"; filename*=UTF-8''{_quote(name)}",
+                                 "Cache-Control": "private, no-store"})
+    with branding.use(db):
+        path, fname, pages = out.pdf_file(org, rep)
+    audit.record(db, ctx, "REPORT_GENERATED", "workspace", ctx.workspace_id, None, {**summary, "pages": pages})
+    db.commit()
+    from fastapi.responses import FileResponse
+    from starlette.background import BackgroundTask
+    import os as _os
+    kind = "attachment" if download else "inline"
+    return FileResponse(path, media_type="application/pdf",
+                        headers={"Content-Disposition": f"{kind}; filename=\"{fname}\"; filename*=UTF-8''{_quote(fname)}",
+                                 "Cache-Control": "private, no-store", "X-Frame-Options": "SAMEORIGIN",
+                                 "Content-Security-Policy": "default-src 'none'; frame-ancestors 'self'"},
+                        background=BackgroundTask(lambda: _os.path.exists(path) and _os.unlink(path)))
+
+
+# ------------------------------------------------------------------ 2.4.0 (#248): batches
+from ..schemas import InvoiceBatchIn, InvoiceMultiPaymentIn  # noqa: E402
+from ..services import invoice_batches as batches  # noqa: E402
+
+
+@router.get("/batches")
+def list_batches(db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.view"))):
+    return batches.listing(db, ctx)
+
+
+@router.post("/batches", status_code=201)
+def create_batch(body: InvoiceBatchIn, db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.manage"))):
+    b = batches.create(db, ctx, body)
+    db.commit()
+    return batches.out(db, ctx, b)
+
+
+@router.get("/batches/{bid}")
+def get_batch(bid: int, db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.view"))):
+    return batches.out(db, ctx, batches.get(db, ctx, bid))
+
+
+@router.post("/batches/{bid}/send")
+def send_batch(bid: int, request: Request, db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.manage"))):
+    b = batches.get(db, ctx, bid)
+    result = batches.send_all(db, ctx, request.app.state.settings, b)
+    return {**batches.out(db, ctx, b), "result": result}
+
+
+@router.get("/batches/{bid}/pdf")
+def batch_pdf(bid: int, download: bool = False, db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.view"))):
+    b = batches.get(db, ctx, bid)
+    pdf = batches.combined_pdf(db, ctx, b)
+    name = f"invoices-batch-{b.id}.pdf"
+    return Response(pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": f'{"attachment" if download else "inline"}; filename="{name}"',
+                             "Cache-Control": "no-store"})
+
+
+# ------------------------------------------------------------------ 2.4.0 (#534): customer account credit
+@router.get("/credit")
+def customer_credit(customer_entity_id: int, db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.view"))):
+    """The customer's account credit: overpayments not refunded, by invoice (and what can be applied)."""
+    from ..services import invoice_payments as _pay
+    svc.require_module(db, ctx)
+    return _pay.credit_out(db, ctx.workspace_id, customer_entity_id)
+
+
+# ------------------------------------------------------------------ 2.4.0 (#523): one payment, several invoices
+@router.get("/payments/open")
+def open_for_payment(customer_entity_id: int | None = None, number: str | None = Query(None, max_length=60),
+                     db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.record_payment"))):
+    """A customer's open invoices (oldest due first), or those of the customer of a typed invoice number."""
+    from ..services import invoice_payments as _pay
+    return _pay.open_for_payment(db, ctx, customer_entity_id, number)
+
+
+@router.get("/payments/extra-budgets")
+def payment_extra_budgets(date: _dt.date | None = None, db: Session = Depends(get_db),
+                          ctx: Ctx = Depends(require("invoice.record_payment"))):
+    """2.4.0 (#544): the budgets the rest of a payment above the invoices can stay on (Income, not Invoiced Income)."""
+    from ..services import invoice_payments as _pay
+    return _pay.extra_budgets(db, ctx, date or _dt.date.today())
+
+
+@router.post("/payments", status_code=201)
+def record_multi_payment(body: InvoiceMultiPaymentIn, db: Session = Depends(get_db),
+                         ctx: Ctx = Depends(require("invoice.record_payment"))):
+    """Register User: one deposit paying several invoices, linked to each."""
+    from ..services import invoice_payments as _pay
+    from ..services import register as _reg
+    t, invs = _pay.record_multi(db, ctx, body)
+    db.commit()
+    return {"invoices": [docs.out(db, ctx, i) for i in invs], "transaction": _reg.out(db, t)}
+
+
+@router.get("/{iid}")
+def get_invoice(iid: int, db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.view"))):
+    return docs.out(db, ctx, docs.get(db, ctx, iid))
+
+
+@router.put("/{iid}")
+def update_invoice(iid: int, body: InvoiceIn, db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.manage"))):
+    i = docs.update(db, ctx, docs.get(db, ctx, iid), body)
+    db.commit()
+    return docs.out(db, ctx, i)
+
+
+@router.get("/{iid}/pdf")
+def invoice_pdf(iid: int, db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.view"))):
+    """The current version as a PDF (a draft is marked DRAFT). Sent versions are kept as attachments."""
+    i = docs.get(db, ctx, iid)
+    pdf = docs.invoice_pdf(db, ctx.workspace_id, i, watermark="DRAFT" if i.status == "DRAFT" else None)
+    return Response(pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": f'inline; filename="invoice-{docs.display_number(i)}.pdf"',
+                             "Cache-Control": "no-store"})
+
+
+@router.post("/{iid}/send")
+def send_invoice(iid: int, request: Request, db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.manage"))):
+    i = docs.send(db, ctx, request.app.state.settings, docs.get(db, ctx, iid))
+    return docs.out(db, ctx, i)
+
+
+@router.post("/{iid}/revise")
+def revise_invoice(iid: int, body: ReasonIn, db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.manage"))):
+    i = docs.revise(db, ctx, docs.get(db, ctx, iid), body.reason)
+    db.commit()
+    return docs.out(db, ctx, i)
+
+
+@router.post("/{iid}/void")
+def void_invoice(iid: int, body: ReasonIn, db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.manage"))):
+    i = docs.void(db, ctx, docs.get(db, ctx, iid), body.reason)
+    db.commit()
+    return docs.out(db, ctx, i)
+
+
+@router.post("/{iid}/write-off")
+def request_write_off(iid: int, body: ReasonIn, db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.manage"))):
+    i = docs.request_write_off(db, ctx, docs.get(db, ctx, iid), body.reason)
+    db.commit()
+    return docs.out(db, ctx, i)
+
+
+@router.post("/{iid}/write-off/decision")
+def decide_write_off(iid: int, body: InvoiceWriteOffDecisionIn, db: Session = Depends(get_db),
+                     ctx: Ctx = Depends(require("invoice.write_off_decide"))):
+    i = docs.decide_write_off(db, ctx, docs.get(db, ctx, iid), body.approve, body.note)
+    db.commit()
+    return docs.out(db, ctx, i)
+
+
+# ------------------------------------------------------------------ 2.4.0 (#254): payments
+from ..schemas import InvoiceLinkIn, InvoicePaymentIn, InvoiceRefundIn, InvoiceUnlinkIn  # noqa: E402
+from ..services import invoice_payments as pay  # noqa: E402
+from ..services import register as reg_svc  # noqa: E402
+
+
+@router.post("/{iid}/payments", status_code=201)
+def record_payment(iid: int, body: InvoicePaymentIn, db: Session = Depends(get_db),
+                   ctx: Ctx = Depends(require("invoice.record_payment"))):
+    """Register User: creates the deposit (allocations on the lines' Invoiced Income budgets) and links it."""
+    i = docs.get(db, ctx, iid)
+    t = pay.record_payment(db, ctx, i, body)
+    db.commit()
+    return {"invoice": docs.out(db, ctx, i), "transaction": reg_svc.out(db, t)}
+
+
+@router.get("/{iid}/link-candidates")
+def link_candidates(iid: int, db: Session = Depends(get_db), ctx: Ctx = Depends(require("invoice.link_payment"))):
+    return pay.candidates(db, ctx, docs.get(db, ctx, iid))
+
+
+@router.post("/{iid}/links", status_code=201)
+def link_payment(iid: int, body: InvoiceLinkIn, db: Session = Depends(get_db),
+                 ctx: Ctx = Depends(require("invoice.link_payment"))):
+    i = docs.get(db, ctx, iid)
+    pay.link(db, ctx, i, body.allocation_id, body.confirmations, body.extra, body.amount)
+    db.commit()
+    return docs.out(db, ctx, i)
+
+
+@router.post("/{iid}/credit/remove")
+def remove_credit(iid: int, body: ReasonIn, db: Session = Depends(get_db),
+                  ctx: Ctx = Depends(require("transaction.manage"))):
+    """2.4.0 (#534): Register User - the credit applied to this invoice is the customer's credit again."""
+    i = docs.get(db, ctx, iid)
+    pay.remove_credit(db, ctx, i, body.reason)
+    db.commit()
+    return docs.out(db, ctx, i)
+
+
+@router.post("/{iid}/links/{link_id}/unlink")
+def unlink_payment(iid: int, link_id: int, body: InvoiceUnlinkIn, db: Session = Depends(get_db),
+                   ctx: Ctx = Depends(require("transaction.manage"))):
+    i = docs.get(db, ctx, iid)
+    pay.unlink(db, ctx, i, link_id, body.move_to_budget_id, body.reason)
+    db.commit()
+    return docs.out(db, ctx, i)
+
+
+@router.post("/{iid}/refunds", status_code=201)
+def refund(iid: int, body: InvoiceRefundIn, db: Session = Depends(get_db),
+           ctx: Ctx = Depends(require("invoice.record_payment"))):
+    i = docs.get(db, ctx, iid)
+    t = pay.refund(db, ctx, i, body)
+    db.commit()
+    return {"invoice": docs.out(db, ctx, i), "transaction": reg_svc.out(db, t)}

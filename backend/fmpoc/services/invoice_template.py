@@ -1,0 +1,639 @@
+"""2.4.0 (#253 part 3): the invoice PDF template, built on the cover-letter editor's pieces (fonts, logo handling,
+{VARIABLES}, live preview).
+
+The Administrator (Invoices Setup) chooses the font and size, an accent color, the logo and its place, the
+letterhead lines, the title, the Bill to lines, the line-table columns (picked and ordered, each with its heading),
+whether invoice fields, terms and notes print, and a footer. Texts take {VARIABLES} - the organization ({ORG.*}),
+the customer ({CUSTOMER.*}) and the invoice ({INVOICE.*}); an unknown name is refused when saving, with the closest
+match suggested. Substitution is a fixed table lookup (BR-102). Previews and test prints use sample data only (BR-003).
+One template for the organization; every invoice PDF made afterwards uses it (PDFs already kept for sent versions
+don't change).
+"""
+from __future__ import annotations
+
+import hashlib
+import io
+import json
+import re
+from xml.sax.saxutils import escape
+
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+from sqlalchemy.orm import Session
+
+from .. import audit
+from ..errors import AppError, validation
+from ..models import InvoiceSettings
+from .checkprint import fonts, patterns
+from .checkprint.documents import (FOLD_LINES, FOLD_SHADES, FOLD_WEIGHTS, WINDOW_OFFSET_MAX, WINDOW_PRESET, PT,
+                                   fold_ticks, _with_back_pages)
+
+CTX = patterns.INVOICE_DOC
+COLUMN_KEYS = ("DESCRIPTION", "CODE", "UNIT", "QUANTITY", "UNIT_PRICE", "AMOUNT", "DISCOUNT", "NET")
+COLUMN_LABELS = {"DESCRIPTION": "Description", "CODE": "Product code", "UNIT": "Unit", "QUANTITY": "Quantity",
+                 "UNIT_PRICE": "Unit price", "AMOUNT": "Amount (before discount)", "DISCOUNT": "Line discount",
+                 "NET": "Net (after line discount)"}
+MONEYISH = ("UNIT_PRICE", "AMOUNT", "DISCOUNT", "NET", "QUANTITY")
+HEX = re.compile(r"^#[0-9A-Fa-f]{6}$")
+
+
+class _M(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class Column(_M):
+    key: str
+    heading: str = Field(min_length=1, max_length=30)
+
+    @field_validator("key")
+    @classmethod
+    def _k(cls, v):
+        if v not in COLUMN_KEYS:
+            raise ValueError("Unknown column.")
+        return v
+
+
+def _check(v: str, what: str) -> str:
+    try:
+        patterns.parse(v, CTX)
+    except patterns.PatternError as e:
+        raise ValueError(f"{what}: {e}") from None
+    return v
+
+
+class TemplateConfig(_M):
+    font: str = "CARLITO"
+    size: float = Field(default=10, ge=8, le=12)
+    accent: str = "#1F3A5F"
+    logo_source: str = "NONE"                            # 2.4.0 polish (#503): ORG | OWN | NONE
+    logo_position: str = "LEFT"                          # NONE | LEFT | CENTER (2.4.0 polish, #478) | RIGHT
+    letterhead: list[str] = Field(default_factory=lambda: ["{ORG}", "{ORG.ADDRESS}", "{ORG.PHONE}"], max_length=6)
+    title: str = Field(default="INVOICE", max_length=40)
+    bill_to_heading: str = Field(default="Bill to", max_length=40)
+    bill_to: list[str] = Field(default_factory=lambda: ["{CUSTOMER.NAME}", "{CUSTOMER.MAILING_ADDRESS}"], max_length=6)
+    columns: list[Column] = Field(default_factory=lambda: [
+        Column(key="DESCRIPTION", heading="Description"), Column(key="QUANTITY", heading="Qty"),
+        Column(key="UNIT_PRICE", heading="Unit price"), Column(key="AMOUNT", heading="Amount")], min_length=1, max_length=8)
+    show_fields: bool = True
+    show_terms: bool = True
+    show_notes: bool = True
+    footer: str = Field(default="", max_length=2000)
+    # 2.4.0 polish (#479): fold marks and the #10 double-window layout, as on the check cover letter (#247, #177)
+    fold_marks: str = "NONE"                                       # NONE | FRONT | BACK
+    fold_length: float = Field(default=0.15, ge=0.1, le=0.5)
+    fold_edge: float = Field(default=0.25, ge=0.1, le=0.5)
+    fold_weight: str = "HAIRLINE"
+    fold_shade: str = "LIGHT"
+    window: str = "NONE"                                           # NONE | LETTER
+    window_return: bool = True
+    return_dx: float = Field(default=0, ge=-WINDOW_OFFSET_MAX, le=WINDOW_OFFSET_MAX)
+    return_dy: float = Field(default=0, ge=-WINDOW_OFFSET_MAX, le=WINDOW_OFFSET_MAX)
+    payee_dx: float = Field(default=0, ge=-WINDOW_OFFSET_MAX, le=WINDOW_OFFSET_MAX)
+    payee_dy: float = Field(default=0, ge=-WINDOW_OFFSET_MAX, le=WINDOW_OFFSET_MAX)
+    # 2.4.0 (#522, Kyle 2026-11-04): the payment stub - detach and return with payment (off by default); its own
+    # setting for customer statements; the pay-to lines from the organization profile, editable; optionally the
+    # address placed for a #9 return envelope's window
+    stub: bool = False
+    statement_stub: bool = False
+    stub_payable: str = Field(default="{ORG}", max_length=200)
+    stub_address: list[str] = Field(default_factory=lambda: ["{ORG}", "{ORG.ADDRESS}"], max_length=6)
+    stub_window: bool = False
+    stub_dx: float = Field(default=0, ge=-WINDOW_OFFSET_MAX, le=WINDOW_OFFSET_MAX)
+    stub_dy: float = Field(default=0, ge=-WINDOW_OFFSET_MAX, le=WINDOW_OFFSET_MAX)
+
+    @field_validator("font")
+    @classmethod
+    def _f(cls, v):
+        if v not in fonts.FONTS:
+            raise ValueError("Unknown font.")
+        return v
+
+    @field_validator("accent")
+    @classmethod
+    def _a(cls, v):
+        if not HEX.match(v):
+            raise ValueError("The accent color is #RRGGBB.")
+        return v.upper()
+
+    @field_validator("logo_source")
+    @classmethod
+    def _ls(cls, v):
+        if v not in ("NONE", "ORG", "OWN"):
+            raise ValueError("The logo is the organization logo, this invoice PDF's own logo, or none.")
+        return v
+
+    @field_validator("logo_position")
+    @classmethod
+    def _lp(cls, v):
+        if v not in ("NONE", "LEFT", "CENTER", "RIGHT"):
+            raise ValueError("The logo goes left, center, right or nowhere.")
+        return v
+
+    @field_validator("fold_marks")
+    @classmethod
+    def _fm(cls, v):
+        if v not in ("NONE", "FRONT", "BACK"):
+            raise ValueError("Fold marks: none, front or back.")
+        return v
+
+    @field_validator("fold_weight")
+    @classmethod
+    def _fw(cls, v):
+        if v not in FOLD_WEIGHTS:
+            raise ValueError("Unknown fold mark weight.")
+        return v
+
+    @field_validator("fold_shade")
+    @classmethod
+    def _fs(cls, v):
+        if v not in FOLD_SHADES:
+            raise ValueError("Unknown fold mark shade.")
+        return v
+
+    @field_validator("window")
+    @classmethod
+    def _w(cls, v):
+        if v not in ("NONE", "LETTER"):
+            raise ValueError("Window envelope: none or on the invoice.")
+        return v
+
+    @field_validator("letterhead", "bill_to", "stub_address")
+    @classmethod
+    def _lines(cls, v):
+        for line in v:
+            if len(line) > 200 or "\n" in line:
+                raise ValueError("Each line is one line of at most 200 characters.")
+            _check(line, "A line")
+        return v
+
+    @model_validator(mode="after")
+    def _all(self):
+        for name in ("title", "bill_to_heading", "footer", "stub_payable"):
+            _check(getattr(self, name), name.replace("_", " ").capitalize())
+        keys = [c.key for c in self.columns]
+        if len(set(keys)) != len(keys):
+            raise ValueError("Each column can be used once.")
+        if "DESCRIPTION" not in keys:
+            raise ValueError("The Description column is required.")
+        if not ({"AMOUNT", "NET"} & set(keys)):
+            raise ValueError("Choose the Amount or the Net column.")
+        return self
+
+
+def parse(data: dict | None) -> TemplateConfig:
+    try:
+        return TemplateConfig(**(data or {}))
+    except ValidationError as e:
+        msg = "; ".join(str(x.get("msg", "")).removeprefix("Value error, ") for x in e.errors()[:3])
+        raise validation(msg or "The template is not valid.", "template") from None
+
+
+def stored(s: InvoiceSettings) -> TemplateConfig:
+    try:
+        return TemplateConfig(**json.loads(s.template_json)) if s.template_json else TemplateConfig()
+    except (ValueError, ValidationError):
+        return TemplateConfig()
+
+
+def logo_for(db: Session, s: InvoiceSettings) -> bytes | None:
+    """#503: the logo the invoice PDF prints - the organization logo, its own upload, or none."""
+    from . import org_logos
+    return org_logos.resolve(db, s.workspace_id, stored(s).logo_source, s.logo_png)
+
+
+def out(s: InvoiceSettings) -> dict:
+    return {"config": stored(s).model_dump(), "has_logo": bool(s.logo_png), "logo_sha256": s.logo_sha256,
+            "columns": [{"key": k, "label": COLUMN_LABELS[k]} for k in COLUMN_KEYS],
+            "fonts": [{"key": k, "label": v[0]} for k, v in fonts.FONTS.items()],
+            "variables": patterns.variable_options(CTX)}
+
+
+def save(db: Session, ctx, s: InvoiceSettings, data: dict) -> dict:
+    cfg = parse(data)
+    before = stored(s).model_dump()
+    s.template_json = json.dumps(cfg.model_dump(), sort_keys=True)
+    s.updated_by_user_id = ctx.user.id
+    db.flush()
+    if cfg.model_dump() != before:
+        audit.record(db, ctx, "INVOICE_TEMPLATE_UPDATED", "invoice_settings", s.id, before, cfg.model_dump())
+    return out(s)
+
+
+def set_logo(db: Session, ctx, s: InvoiceSettings, data: bytes | None) -> dict:
+    from .checkprint.service import normalize_logo
+    before = {"logo_sha256": s.logo_sha256}
+    cfg = stored(s)
+    if data is None:
+        s.logo_png = s.logo_sha256 = None
+        action = "INVOICE_LOGO_REMOVED"
+        if cfg.logo_source == "OWN":                     # #503: nothing of its own left to print
+            cfg.logo_source = "NONE"
+    else:
+        png, _w, _h = normalize_logo(data)
+        s.logo_png, s.logo_sha256 = png, hashlib.sha256(png).hexdigest()
+        action = "INVOICE_LOGO_SET"
+        cfg.logo_source = "OWN"                          # #503: uploading here means "use this one"
+    s.template_json = json.dumps(cfg.model_dump(), sort_keys=True)
+    db.flush()
+    audit.record(db, ctx, action, "invoice_settings", s.id, before, {"logo_sha256": s.logo_sha256})
+    return out(s)
+
+
+# ------------------------------------------------------------------ rendering
+def render(cfg: TemplateConfig, data: dict, values: dict[str, str], logo: bytes | None, watermark: str | None,
+           author: str) -> bytes:
+    """2.4.0 polish (#479): fold marks on the front (first page) or on a back page; with the window layout the
+    letterhead (return address) and Bill to print where a #10 double-window envelope shows them and the invoice body
+    starts below the first fold. A sample (watermarked) PDF also draws the windows and labels the folds."""
+    pdf = _render(cfg, data, values, logo, watermark, author)
+    if cfg.fold_marks == "BACK":
+        return _with_back_pages(pdf, cfg, f"Invoice {data['number']}")
+    return pdf
+
+
+def _render(cfg: TemplateConfig, data: dict, values: dict[str, str], logo: bytes | None, watermark: str | None,
+            author: str) -> bytes:
+    """data: number/date/due, lines (description, code, unit, qty, price, amount, discount, net, discount_reason),
+    totals, terms, notes, fields; values: the {VARIABLES}."""
+    from reportlab.lib import colors
+    from reportlab.lib.fonts import addMapping
+    from reportlab.lib.pagesizes import letter
+    from reportlab.lib.styles import ParagraphStyle
+    from reportlab.lib.units import inch
+    from reportlab.platypus import Flowable, Image, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+    reg, bold = fonts.ps_name(cfg.font), fonts.ps_name(cfg.font, True)
+    addMapping(reg, 0, 0, reg)
+    addMapping(reg, 1, 0, bold)
+    addMapping(reg, 0, 1, reg)
+    addMapping(reg, 1, 1, bold)
+    accent = colors.HexColor(cfg.accent)
+    sz = cfg.size
+    body = ParagraphStyle("b", fontName=reg, fontSize=sz, leading=sz * 1.25)
+    bodyb = ParagraphStyle("bb", parent=body, fontName=bold)
+    small = ParagraphStyle("s", parent=body, fontSize=sz - 1.5, leading=(sz - 1.5) * 1.25, textColor=colors.HexColor("#555555"))
+    right = ParagraphStyle("r", parent=body, alignment=2)
+    rightb = ParagraphStyle("rb", parent=right, fontName=bold)
+    head_r = ParagraphStyle("hr", parent=rightb, textColor=colors.white)
+    head_l = ParagraphStyle("hl", parent=bodyb, textColor=colors.white)
+    title = ParagraphStyle("t", fontName=bold, fontSize=sz * 2, leading=sz * 2.3, alignment=2, textColor=accent)
+
+    def lines(patterns_: list[str]) -> list[str]:
+        out: list[str] = []
+        for p in patterns_:
+            out += [x.strip() for x in patterns.resolve(p, values, CTX).text.split("\n") if x.strip()]
+        return out
+
+    def text(p: str) -> str:
+        return patterns.resolve(p, values, CTX).text
+
+    buf = io.BytesIO()
+    windowed = cfg.window == "LETTER"
+    sample = watermark == "SAMPLE"                       # previews / test prints only, never a real (or draft) invoice
+    lh = lines(cfg.letterhead)
+    bill = lines(cfg.bill_to)
+
+    def first(canvas, doc):
+        mark(canvas, doc)
+        if cfg.fold_marks == "FRONT":
+            fold_ticks(canvas, cfg)
+        if windowed:
+            canvas.saveState()
+            blocks = []
+            if cfg.window_return and lh:
+                p = WINDOW_PRESET["return"]
+                blocks.append(("return", p["x"] + cfg.return_dx, p["y"] + cfg.return_dy, lh[:4]))
+            if bill:
+                p = WINDOW_PRESET["payee"]
+                blocks.append(("payee", p["x"] + cfg.payee_dx, p["y"] + cfg.payee_dy, bill[:5]))
+            for which, x, y, ls in blocks:
+                yy = (11 - y) * PT - sz
+                for k, line in enumerate(ls):
+                    canvas.setFont(bold if (which == "return" and k == 0) else reg, sz)
+                    canvas.drawString(x * PT, yy, line)
+                    yy -= sz * 1.2
+            if sample:                                   # the windows and the folds, to check against an envelope
+                canvas.setStrokeGray(0.45)
+                canvas.setLineWidth(0.6)
+                canvas.setDash(3, 2)
+                for key in ("return", "payee"):
+                    if key == "return" and not cfg.window_return:
+                        continue
+                    left, top, w, h = WINDOW_PRESET[key]["window"]
+                    canvas.rect(left * PT, (11 - top - h) * PT, w * PT, h * PT, stroke=1, fill=0)
+                canvas.setDash()
+                canvas.setFont("Helvetica", 6.5)
+                for fl in FOLD_LINES:
+                    y = (11 - fl) * PT
+                    canvas.line(0.25 * PT, y, 0.6 * PT, y)
+                    canvas.line(7.9 * PT, y, 8.25 * PT, y)
+                    canvas.drawString(0.65 * PT, y - 2, "fold")
+            canvas.restoreState()
+
+    def mark(canvas, _doc):
+        if watermark:
+            canvas.saveState()
+            canvas.setFont("Helvetica-Bold", 48)
+            canvas.setFillColor(colors.Color(0.85, 0.85, 0.85, alpha=0.5))
+            canvas.translate(letter[0] / 2, letter[1] / 2)
+            canvas.rotate(35)
+            canvas.drawCentredString(0, 0, watermark)
+            canvas.restoreState()
+
+    width = letter[0] - 1.5 * inch
+    doc = SimpleDocTemplate(buf, pagesize=letter, leftMargin=0.75 * inch, rightMargin=0.75 * inch, topMargin=0.6 * inch,
+                            bottomMargin=0.7 * inch, title=f"Invoice {data['number']}", author=author)
+    left: list = []
+    if logo and cfg.logo_position == "LEFT":
+        left.append(_logo(logo, Image))
+    if not windowed:                                     # with the window layout the letterhead is the return address
+        left += [Paragraph(escape(x), bodyb if k == 0 else body) for k, x in enumerate(lh)]
+    rcol: list = []
+    if logo and cfg.logo_position == "RIGHT":
+        rcol.append(_logo(logo, Image, align="RIGHT"))
+    rcol += [Paragraph(escape(text(cfg.title) or "INVOICE"), title), Paragraph(f"<b>{escape(data['number'])}</b>", right),
+             Paragraph(f"Date: {escape(data['date'])}", right), Paragraph(f"Due: {escape(data['due'])}", right)]
+    # 2.4.0 polish (#478): the logo cell is aligned itself (an image's own hAlign is ignored in a table cell), so
+    # RIGHT sits at the right margin over the title; CENTER puts the logo in a middle column between the letterhead
+    # and the title block
+    if logo and cfg.logo_position == "CENTER":
+        head = Table([[left or "", _logo(logo, Image, align="CENTER", max_w=1.7), rcol]],
+                     colWidths=[width * 0.37, width * 0.26, width * 0.37])
+        aligns = [("ALIGN", (1, 0), (1, 0), "CENTER"), ("ALIGN", (2, 0), (2, 0), "RIGHT")]
+    else:
+        head = Table([[left or "", rcol]], colWidths=[width * 0.55, width * 0.45])
+        aligns = [("ALIGN", (1, 0), (1, 0), "RIGHT")]
+    head.setStyle(TableStyle([("VALIGN", (0, 0), (-1, -1), "TOP"), ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                              ("RIGHTPADDING", (0, 0), (-1, -1), 0)] + aligns))
+    f: list = [head]
+    if windowed:                                         # the body starts below the address panel (the first fold)
+        f.append(_ClearTo((FOLD_LINES[0] + 0.15) * inch - doc.topMargin - 6, Flowable))
+    else:
+        f.append(Spacer(1, 14))
+    if bill and not windowed:
+        f.append(Paragraph(f"<b>{escape(text(cfg.bill_to_heading))}</b>", ParagraphStyle("bh", parent=body, textColor=accent)))
+        f += [Paragraph(escape(x), body) for x in bill]
+    if cfg.show_fields:
+        for name, value in data.get("fields") or []:
+            f.append(Paragraph(f"<b>{escape(name)}:</b> {escape(value)}", body))
+    f.append(Spacer(1, 12))
+    cols = cfg.columns
+    keys = [c.key for c in cols]
+    show_disc_rows = "DISCOUNT" not in keys and "NET" not in keys
+    hdr = [Paragraph(escape(c.heading), head_r if c.key in MONEYISH else head_l) for c in cols]
+    rows = [hdr]
+    for ln in data["lines"]:
+        cells = []
+        for c in cols:
+            v = {"DESCRIPTION": ln["description"], "CODE": ln.get("code") or "", "UNIT": ln.get("unit") or "",
+                 "QUANTITY": ln["qty"], "UNIT_PRICE": ln["price"], "AMOUNT": ln["amount"],
+                 "DISCOUNT": (f"-{ln['discount']}" if ln.get("discount") else ""), "NET": ln.get("net") or ln["amount"]}[c.key]
+            if c.key == "DESCRIPTION" and "UNIT" not in keys and ln.get("unit"):
+                cells.append(Paragraph(escape(v) + f" <font size={sz - 2}>({escape(ln['unit'])})</font>", body))
+            elif c.key == "DESCRIPTION" and ln.get("discount") and not show_disc_rows:
+                cells.append(Paragraph(escape(v) + f"<br/><font size={sz - 2}>Discount: {escape(ln.get('discount_reason') or '')}</font>", body))
+            else:
+                cells.append(Paragraph(escape(v), right if c.key in MONEYISH else body))
+        rows.append(cells)
+        if show_disc_rows and ln.get("discount"):
+            last = keys.index("AMOUNT") if "AMOUNT" in keys else len(keys) - 1
+            r = [""] * len(keys)
+            r[keys.index("DESCRIPTION")] = Paragraph(f"&nbsp;&nbsp;Discount — {escape(ln.get('discount_reason') or '')}", small)
+            r[last] = Paragraph(f"-{escape(ln['discount'])}", right)
+            rows.append(r)
+    widths_fixed = {"CODE": 0.9, "UNIT": 0.6, "QUANTITY": 0.6, "UNIT_PRICE": 0.95, "AMOUNT": 0.95, "DISCOUNT": 0.9, "NET": 0.95}
+    fixed = sum(widths_fixed[k] * inch for k in keys if k != "DESCRIPTION")
+    cw = [max(width - fixed, 1.8 * inch) if k == "DESCRIPTION" else widths_fixed[k] * inch for k in keys]
+    if sum(cw) > width:                                   # many columns: shrink the description
+        cw[keys.index("DESCRIPTION")] = max(width - fixed, 1.2 * inch)
+    t = Table(rows, colWidths=cw, repeatRows=1)
+    t.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, 0), accent), ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                           ("LINEBELOW", (0, 1), (-1, -1), 0.25, colors.HexColor("#DDDDDD")),
+                           ("BOTTOMPADDING", (0, 0), (-1, -1), 3), ("TOPPADDING", (0, 0), (-1, -1), 3)]))
+    f += [t, Spacer(1, 8)]
+    tot = [["Subtotal", data["subtotal"]]]
+    if data.get("invoice_discount"):
+        tot.append([f"Discount — {data['invoice_discount_reason']}", f"-{data['invoice_discount']}"])
+    for label, amount in data.get("taxes") or []:          # 2.4.0 polish (#487): one line per tax rate
+        tot.append([label, amount])
+    if data.get("credit"):                                  # 2.4.0 (#534): New charges, credit applied, Total due
+        tot.append(["New charges", data["total"]])
+        tot.append(["Account credit applied", f"-{data['credit']}"])
+        if data.get("paid"):
+            tot.append(["Paid", f"-{data['paid']}"])
+        tot.append(["Total due", data["balance"]])
+    else:
+        tot.append(["Total due", data["total"]])
+        if data.get("paid"):
+            tot.append(["Paid", f"-{data['paid']}"])
+            tot.append(["Balance due", data["balance"]])
+    strong = ("Total due", "Balance due", "New charges")
+    tt = Table([[Paragraph(escape(a), rightb if a in strong else right),
+                 Paragraph(escape(b), rightb if a in strong else right)] for a, b in tot],
+               colWidths=[width - 1.2 * inch, 1.2 * inch])
+    total_row = [k for k, (a, _b) in enumerate(tot) if a in ("Total due", "New charges")][0]
+    tt.setStyle(TableStyle([("LINEABOVE", (0, total_row), (-1, total_row), 0.8, accent),
+                            ("BOTTOMPADDING", (0, 0), (-1, -1), 2)]))
+    f.append(tt)
+    if data.get("tax_exempt"):                              # 2.4.0 polish (#485): under the totals
+        f.append(Paragraph(escape(data["tax_exempt"]), ParagraphStyle("tx", parent=right, fontSize=sz - 1)))
+    if cfg.show_terms and data.get("terms"):
+        f += [Spacer(1, 12), Paragraph(f"<b>Terms:</b> {escape(data['terms'])}", body)]
+    if cfg.show_notes and data.get("notes"):
+        f += [Spacer(1, 6), Paragraph(escape(data["notes"]).replace("\n", "<br/>"), body)]
+    foot = text(cfg.footer).strip() if cfg.footer else ""
+    if foot:
+        f += [Spacer(1, 16), Paragraph(escape(foot).replace("\n", "<br/>"), small)]
+    if cfg.stub:                                            # 2.4.0 (#522): at the bottom of the last page
+        info = {"customer": values.get("CUSTOMER.NAME", ""), "customer_number": values.get("CUSTOMER.ENTITY_NUMBER", ""),
+                "number": data["number"], "date": data["date"], "due": data["due"],
+                "amount_due": data.get("balance") or data["total"]}
+        f.append(_StubAtBottom(cfg, info, stub_lines(cfg, values), reg, bold, accent, Flowable))
+    doc.build(f, onFirstPage=first, onLaterPages=mark)
+    return buf.getvalue()
+
+
+# ------------------------------------------------------------------ 2.4.0 (#522): the payment stub
+STUB_TOP = 3.5               # in: the cut line, above the paper's bottom edge (the stub fits a #9 envelope: 3 7/8 in)
+NINE_WINDOW = (0.875, 0.5, 4.5, 1.125)   # in: a #9 envelope's window - left, bottom, width, height (the stub settles at
+#                                          the envelope's bottom, so its bottom edge is the envelope's)
+
+
+def stub_lines(cfg: TemplateConfig, values: dict[str, str]) -> dict:
+    """The stub's pay-to name and mailing address, from the organization profile ({VARIABLES}, editable)."""
+    out: list[str] = []
+    for p in cfg.stub_address:
+        out += [x.strip() for x in patterns.resolve(p, values, CTX).text.split("\n") if x.strip()]
+    return {"payable": patterns.resolve(cfg.stub_payable, values, CTX).text.strip(), "address": out[:6]}
+
+
+def draw_stub(c, cfg: TemplateConfig, info: dict, pay: dict, reg: str, bold: str, accent, width: float = 8.5) -> None:
+    """Draws the stub in page coordinates (inches from the bottom-left corner of a portrait letter page): a dashed cut
+    line with scissors, "Please detach and return this portion with your payment.", who pays and how much on the
+    right, the pay-to name and mailing address on the left (or where a #9 return envelope's window shows it)."""
+    from reportlab.lib import colors
+    i = 72.0
+    c.saveState()
+    c.setStrokeColor(colors.HexColor("#777777"))
+    c.setDash(4, 3)
+    c.setLineWidth(0.6)
+    c.line(0.62 * i, STUB_TOP * i, (width - 0.3) * i, STUB_TOP * i)
+    c.setDash()
+    _scissors(c, 0.42 * i, STUB_TOP * i)                    # drawn: a font's scissors glyph isn't in every viewer
+    c.setFillColor(colors.black)
+    c.setFont(reg, 8.5)
+    c.drawCentredString(width / 2 * i, (STUB_TOP - 0.22) * i, "Please detach and return this portion with your payment.")
+    # left: make checks payable to, and where to mail it
+    x = 0.75 * i
+    c.setFillColor(accent)
+    c.setFont(bold, 11)
+    c.drawString(x, (STUB_TOP - 0.55) * i, "PAYMENT STUB")
+    c.setFillColor(colors.black)
+    c.setFont(reg, 8.5)
+    c.drawString(x, (STUB_TOP - 0.8) * i, "Make checks payable to")
+    c.setFont(bold, 10)
+    c.drawString(x, (STUB_TOP - 0.97) * i, (pay["payable"] or "")[:60])
+    if cfg.stub_window:                                      # where a #9 return envelope's window shows it
+        wl, wb, _ww, wh = NINE_WINDOW
+        ax, top = (wl + 0.15 + cfg.stub_dx) * i, (wb + wh - 0.15 - cfg.stub_dy) * i
+    else:
+        c.setFont(reg, 8.5)
+        c.drawString(x, (STUB_TOP - 1.25) * i, "Mail to")
+        ax, top = x, (STUB_TOP - 1.42) * i
+    c.setFont(reg, 10)
+    for k, line in enumerate(pay["address"]):
+        c.setFont(bold if k == 0 else reg, 10)
+        c.drawString(ax, top - k * 12, line[:60])
+    # right: who, which, how much
+    rx, vx = 5.2 * i, (width - 0.75) * i
+    rows = [("Customer", info.get("customer", "")), ("Customer number", info.get("customer_number", ""))]
+    if info.get("rows") is None:
+        rows += [("Invoice date", info.get("date", "")), ("Due date", info.get("due", ""))]
+    else:
+        rows += [("Statement date", info.get("date", ""))]
+    y = (STUB_TOP - 0.55) * i
+    for label, val in rows:
+        c.setFont(reg, 8.5)
+        c.drawString(rx, y, label)
+        c.setFont(bold, 9)
+        c.drawRightString(vx, y, str(val)[:40])
+        y -= 13
+    if info.get("rows") is None:                             # an invoice: its number, large, for the lookup
+        c.setFont(reg, 8.5)
+        c.drawString(rx, y - 4, "Invoice")
+        c.setFont(bold, 15)
+        c.drawRightString(vx, y - 6, info.get("number", ""))
+        y -= 26
+    else:                                                    # a statement: the open invoices it covers
+        shown = info["rows"][:6]
+        for r in shown:
+            c.setFont(reg, 8)
+            c.drawString(rx, y, f"{r['number']}  (due {r['due']})"[:40])
+            c.drawRightString(vx, y, r["open"])
+            y -= 11
+        if len(info["rows"]) > len(shown):
+            c.setFont(reg, 7.5)
+            c.drawString(rx, y, f"and {len(info['rows']) - len(shown)} more")
+            y -= 11
+        y -= 4
+    c.setStrokeColor(colors.HexColor("#999999"))
+    c.line(rx, y + 9, vx, y + 9)
+    c.setFont(bold, 10)
+    c.drawString(rx, y - 4, "Amount due")
+    c.drawRightString(vx, y - 4, info.get("amount_due", ""))
+    c.setFont(reg, 9)
+    c.drawString(rx, y - 26, "Amount enclosed")
+    c.line(vx - 1.2 * i, y - 28, vx, y - 28)
+    c.drawString(vx - 1.32 * i, y - 26, "$")
+    c.restoreState()
+
+
+def _scissors(c, x: float, y: float) -> None:
+    """Small open scissors on the cut line, pointing right (two blades and two finger loops)."""
+    from reportlab.lib import colors
+    c.saveState()
+    c.setStrokeColor(colors.HexColor("#555555"))
+    c.setLineWidth(0.8)
+    c.circle(x - 6, y + 3.2, 2.4, stroke=1, fill=0)
+    c.circle(x - 6, y - 3.2, 2.4, stroke=1, fill=0)
+    c.line(x - 3.8, y + 2.2, x + 7, y - 2.2)
+    c.line(x - 3.8, y - 2.2, x + 7, y + 2.2)
+    c.restoreState()
+
+
+def _StubAtBottom(cfg: TemplateConfig, info: dict, pay: dict, reg: str, bold: str, accent, Flowable):
+    """Takes the rest of the last page and draws the stub at its bottom; when the page doesn't have the room, the
+    stub goes on a page of its own (decision 3)."""
+    frame_bottom = 0.7 * 72 + 6                              # SimpleDocTemplate bottom margin + frame padding
+
+    class StubAtBottom(Flowable):
+        need = (STUB_TOP + 0.15) * 72 - frame_bottom
+
+        def wrap(self, aw, ah):
+            self._h = ah if ah >= self.need else self.need
+            return aw, self._h
+
+        def draw(self):
+            c = self.canv
+            x0, y0 = c.absolutePosition(0, 0)
+            c.saveState()
+            c.translate(-x0, -y0)
+            draw_stub(c, cfg, info, pay, reg, bold, accent)
+            c.restoreState()
+    return StubAtBottom()
+
+
+def statement_stub_page(cfg: TemplateConfig, info: dict, pay: dict, author: str) -> bytes:
+    """2.4.0 (#522): the customer statement's stub - the statement is a landscape report, so the stub prints at the
+    bottom of a portrait page of its own (which fits a #9 return envelope once detached)."""
+    from reportlab.lib import colors
+    from reportlab.lib.fonts import addMapping
+    from reportlab.lib.pagesizes import letter
+    from reportlab.pdfgen import canvas as rl_canvas
+    reg, bold = fonts.ps_name(cfg.font), fonts.ps_name(cfg.font, True)
+    addMapping(reg, 0, 0, reg)
+    addMapping(reg, 1, 0, bold)
+    buf = io.BytesIO()
+    c = rl_canvas.Canvas(buf, pagesize=letter)
+    c.setTitle(f"Payment stub - {info.get('customer', '')}")
+    c.setAuthor(author)
+    accent = colors.HexColor(cfg.accent)
+    c.setFillColor(accent)
+    c.setFont(bold, 14)
+    c.drawString(0.75 * 72, 10.2 * 72, "Payment stub")
+    c.setFillColor(colors.black)
+    c.setFont(reg, 10)
+    c.drawString(0.75 * 72, 9.95 * 72, f"For the statement of {info.get('date', '')} - {info.get('customer', '')}")
+    draw_stub(c, cfg, info, pay, reg, bold, accent)
+    c.showPage()
+    c.save()
+    return buf.getvalue()
+
+
+def _ClearTo(depth: float, Flowable):
+    """Space until `depth` below the top of the first frame's content (none once past it)."""
+    class ClearTo(Flowable):
+        def wrap(self, aw, ah):
+            used = self._frame_h - ah
+            return aw, max(0.0, depth - used)
+
+        def draw(self):
+            pass
+    c = ClearTo()
+    from reportlab.lib.pagesizes import letter
+    c._frame_h = letter[1] - 0.6 * 72 - 0.7 * 72 - 12      # SimpleDocTemplate frame (margins 0.6 / 0.7 in, 6 pt padding)
+    return c
+
+
+def _logo(png: bytes, Image, align: str = "LEFT", max_w: float = 2.2):
+    from PIL import Image as PImage
+    from reportlab.lib.units import inch
+    im = PImage.open(io.BytesIO(png))
+    w, h = im.size
+    scale = min(max_w * inch / w, 0.9 * inch / h)
+    img = Image(io.BytesIO(png), width=w * scale, height=h * scale)
+    img.hAlign = align
+    return img
+
+
+def logo_error() -> AppError:
+    return AppError(413, "FILE_TOO_LARGE", "A logo may not exceed 1 MB.")

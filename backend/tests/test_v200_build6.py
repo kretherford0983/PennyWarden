@@ -65,10 +65,12 @@ def test_logo_upload_validation_and_audit(env, letter):
         assert upload(c, did, img()).status_code == 403
         assert c.get(f"/api/checks/documents/{did}/logo").status_code == 403
     envelope = env.admin.post("/api/checks/documents", {"kind": "ENVELOPE"}).json()
-    assert upload(env.admin, envelope["id"], img()).status_code == 404
+    # 2.4.0 polish (#503): envelopes take their own logo too (it then uses it, "Its own logo")
+    r = upload(env.admin, envelope["id"], img())
+    assert r.status_code == 200 and r.json()["logo"] and r.json()["config"]["logo_source"] == "OWN"
     # audit: the fingerprint, never the image
     ev = env.admin.get("/api/audit-events?action=CHECK_DOCUMENT_LOGO_SET").json()["items"]
-    assert len(ev) == 2 and "logo_png" not in str(ev)
+    assert len(ev) == 3 and "logo_png" not in str(ev)          # two for the letter, one for the envelope (#503)
     r = env.admin.post(f"/api/checks/documents/{did}/logo/remove", {})
     assert r.status_code == 200 and r.json()["logo"] is None
     assert env.admin.get(f"/api/checks/documents/{did}/logo").status_code == 404
@@ -82,12 +84,45 @@ def test_logo_prints_left_or_centred(env, letter):
     assert has_image(pdf)
     t = {txt: (x, y) for txt, x, y in _texts(pdf)}
     assert t["Sample Organization"][0] < 1.2                                     # left: lines at the margin
-    cfg = {**letter["config"], "logo_position": "CENTER"}
+    cfg = {**letter["config"], "logo_position": "CENTER", "logo_source": "OWN"}   # #503: the editor sends its choice
     pdf = env.admin.post(f"/api/checks/documents/{did}/preview", {"config": cfg}).content
     t = {txt: (x, y) for txt, x, y in _texts(pdf)}
     assert t["Sample Organization"][0] > 3.0                                     # centred with the logo
     # the logo is above the letterhead lines
     assert t["Sample Organization"][1] > 1.0 + 0.9
+
+
+def _image_box(pdf: bytes) -> tuple[float, float, float, float]:
+    """(left, top, width, height) in inches from the page's top-left corner of the first image drawn on page 1."""
+    import re
+    from pypdf import PdfReader
+    page = PdfReader(io.BytesIO(pdf)).pages[0]
+    m = re.search(rb"([-\d.]+) [-\d.]+ [-\d.]+ ([-\d.]+) ([-\d.]+) ([-\d.]+) cm\s*/\S+ Do", page.get_contents().get_data())
+    w, h, x, y = (float(v) / 72 for v in m.groups())
+    return x, 11 - y - h, w, h
+
+
+def test_logo_top_right_beside_the_letterhead(env, letter):
+    """2.4.0 polish: RIGHT - the logo level with the first letterhead line at the right margin; the letterhead stays
+    at the left margin and the letter text is not pushed down (only cleared when the logo is taller)."""
+    did = letter["id"]
+    base = {t: (x, y) for t, x, y in _texts(env.admin.post(f"/api/checks/documents/{did}/preview",
+                                                           {"config": letter["config"]}).content)}
+    cfg = {**letter["config"], "logo_position": "RIGHT", "logo_source": "OWN"}
+    upload(env.admin, did, img(size=(600, 120)))                                 # 2.5 x 0.5 in
+    pdf = env.admin.post(f"/api/checks/documents/{did}/preview", {"config": cfg}).content
+    t = {txt: (x, y) for txt, x, y in _texts(pdf)}
+    assert t["Sample Organization"] == pytest.approx(base["Sample Organization"], abs=0.01)
+    assert t["To:"] == pytest.approx(base["To:"], abs=0.01)                      # nothing pushed down
+    left, top, w, h = _image_box(pdf)
+    assert left + w == pytest.approx(7.5, abs=0.01) and w == pytest.approx(2.5, abs=0.01)
+    assert abs(top - (t["Sample Organization"][1] - 0.15)) < 0.15              # level with the first line
+    upload(env.admin, did, img())                                                # 2.5 x 1 in: taller than the lines
+    pdf = env.admin.post(f"/api/checks/documents/{did}/preview", {"config": cfg}).content
+    t = {txt: (x, y) for txt, x, y in _texts(pdf)}
+    left, top, w, h = _image_box(pdf)
+    assert t["Sample Organization"] == pytest.approx(base["Sample Organization"], abs=0.01)
+    assert t["To:"][1] > top + h                                                 # the address starts below it
 
 
 def test_preprinted_letterhead_keeps_the_space(env, letter):

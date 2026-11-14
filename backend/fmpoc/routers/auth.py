@@ -24,6 +24,7 @@ from ..services.dashboard_layout import encode as encode_layout
 from ..services.dashboard_layout import is_customized, layout_for
 from ..services.checkprint.service import module_enabled as checks_enabled
 from ..services.donations import module_enabled as donations_enabled
+from ..services.invoices import module_enabled as invoices_enabled   # 2.4.0 (#251)
 from ..services.fundraisers import module_enabled
 from ..services.register import DEFAULT_REGISTER_SORT
 
@@ -81,7 +82,9 @@ def me_payload(ctx: Ctx) -> dict:
             "fundraiser_series_sort": u.fundraiser_series_sort or "desc",  # 2.2.0 (#351)
             "modules": {"fundraisers": module_enabled(object_session(u), u.workspace_id),  # v1.6.0 CR-033
                         "checks": checks_enabled(object_session(u), u.workspace_id),  # 2.0.0 (#156)
-                        "donations": donations_enabled(object_session(u), u.workspace_id)},  # 2.1.0 (#312)
+                        "donations": donations_enabled(object_session(u), u.workspace_id),  # 2.1.0 (#312)
+                        "invoices": invoices_enabled(object_session(u), u.workspace_id)},  # 2.4.0 (#251)
+            "email_ready": _email_ready(object_session(u), u.workspace_id),   # 2.4.0 (#539): show Email buttons
             "sign_in_notices": recovery.sign_in_notices(u),  # 1.8.0 (#113)
             "first_name": u.first_name, "last_name": u.last_name,   # 2.0.0 (#134)
             # 2.0.0 (#134): an Administrator completes the missing names before continuing
@@ -373,3 +376,13 @@ def dismiss_security_notice(notice_id: int, db: Session = Depends(get_db), ctx: 
     recovery.dismiss_admin_notice(db, ctx, notice_id)
     db.commit()
     return recovery.admin_notices(db, ctx.workspace_id)
+
+
+def _email_ready(db, ws_id: int) -> bool:
+    """2.4.0 (#539): the mail server is set up and on (Email buttons show only then)."""
+    from sqlalchemy import select
+
+    from ..models import EmailSettings
+    from ..services import email as em
+    s = db.scalar(select(EmailSettings).where(EmailSettings.workspace_id == ws_id))   # read only: no row is made
+    return bool(s is not None and em.ready(s))

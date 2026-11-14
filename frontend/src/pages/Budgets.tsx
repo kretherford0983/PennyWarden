@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useState, type FormEvent } from "react";
-import { api, money, qs } from "../api";
+import { api, money, qs, todayIso } from "../api";
 import { ErrorBox, Field, GrossBudgetNote, Loading, Modal, GuardedForm } from "../components";
 import { useMe } from "../App";
 import { useRouter } from "../router";
@@ -18,7 +18,7 @@ export default function Budgets() {
     api.get("/api/fiscal-years").then((l: any[]) => {
       setFys(l);
       const want = Number(new URLSearchParams(search).get("fiscal_year_id"));
-      const today = new Date().toISOString().slice(0, 10);
+      const today = todayIso();
       const cur = l.find((f) => f.id === want) || l.find((f) => f.start_date <= today && f.end_date >= today && f.status !== "CLOSED") || l[l.length - 1];
       setFyId(cur ? cur.id : null);
     }, setErr);
@@ -38,6 +38,11 @@ export default function Budgets() {
     onInactivate: (r: any) => setModal({ kind: "reason", row: r, action: "inactivate", title: `Inactivate ${r.label}` }),
     onUnlock: (r: any) => setModal({ kind: "reason", row: r, action: "unlock", title: `Unlock ${r.label}` }),
     onLock: async (r: any) => { try { await api.post(`/api/budgets/${r.id}/lock`); load(); } catch (e) { setErr(e); } },
+    // 2.4.0 (#250): a locked budget shows no menu item for it (unlock with a reason first)
+    onInvoicedIncome: async (r: any, on: boolean) => {
+      if (!window.confirm(on ? `Mark ${r.label} as Invoiced Income? Its sub-budgets and Other carry it; it still counts as income everywhere.` : `Clear Invoiced Income on ${r.label}?`)) return;
+      try { await api.put(`/api/budgets/${r.id}/invoiced-income`, { invoiced_income: on }); load(); } catch (e) { setErr(e); }
+    },
   } : undefined;
   const done = () => { setModal(null); load(); };
   return (

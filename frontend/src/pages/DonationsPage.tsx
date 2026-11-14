@@ -13,6 +13,7 @@ import { ReceiptEnvelopePanel } from "./Envelopes";
 import { useEinOverride } from "./Donations";
 import { DonorReportTab, StatementsTab } from "./DonationStatements";
 import { TxnForm } from "./Register";
+import { EmailDocumentButton } from "./Email";
 
 const PUB_1771 = "https://www.irs.gov/pub/irs-pdf/p1771.pdf";
 const KIND_LABEL: Record<string, string> = { ORIGINAL: "Original", DUPLICATE: "Duplicate", CORRECTED: "Corrected" };
@@ -59,8 +60,8 @@ export default function DonationsPage() {
       </div>
       {tab === "statements" ? <StatementsTab /> : tab === "report" ? <DonorReportTab /> : <>
       <p className="hint">A donation is what a receipt is printed for: one donor, money and items. Record it here when the receipt is needed before the
-        money arrives, or for items; when the money is deposited, <b>Create transaction</b> records the deposit and links it. Deposits already in the
-        register can still be marked from the register (<b>Donation receipt…</b>).</p>
+        money arrives, or for items; when the money is deposited, <b>Create transaction</b> records the deposit and links it. When the deposit is
+        already in the register, open the donation and use <b>Link a deposit…</b> on its line, or choose the donation in the register's <b>Donation receipt…</b>.</p>
       <ErrorBox error={err} />
       <div className="row filters">
         <div role="radiogroup" aria-label="Show" className="row">
@@ -101,6 +102,8 @@ export default function DonationsPage() {
 
 // ------------------------------------------------------------------ one donation
 function DonationEditor({ id, canPrint, variables, onClose, onChanged, onOpen }: { id: number | null; canPrint: boolean; variables: Variable[]; onClose: () => void; onChanged: () => void; onOpen: (id: number) => void }) {
+  const { me } = useMe();
+  const [emailed, setEmailed] = useState<string | null>(null);   // 2.4.0 (#539)
   const [d, setD] = useState<any>(null);
   const [entities, setEntities] = useState<any[]>([]);
   const [donor, setDonor] = useState("");
@@ -112,6 +115,7 @@ function DonationEditor({ id, canPrint, variables, onClose, onChanged, onOpen }:
   const [pdf, setPdf] = usePdf();
   const [viewing, setViewing] = useState(false);
   const [printed, setPrinted] = useState(false);     // 2.2.0 (#325): after a receipt, its envelope can be printed
+  const [linking, setLinking] = useState<number | null>(null);   // 2.4.0 (#562): the awaiting line being linked
   const { run, dialog } = useConfirmable();
   const ein = useEinOverride();      // 2.3.0 (#393)
   const signer = useSignerChoice(d?.signing);   // 2.3.0 polish: the signer chosen when printing
@@ -213,6 +217,9 @@ function DonationEditor({ id, canPrint, variables, onClose, onChanged, onOpen }:
                 <Field label="Goods or services given in exchange ($, optional)"><input inputMode="decimal" aria-label={`Line ${i + 1} goods value`} value={l.goods} onChange={(e) => set(i, { goods: e.target.value })} /></Field>
                 {toCents(l.goods) ? <Field label="Describe them"><input maxLength={200} value={l.goods_description} onChange={(e) => set(i, { goods_description: e.target.value })} /></Field> : null}
               </div>
+              {/* 2.4.0 (#562): a deposit already in the register */}
+              {editable && l.id && l.kind === "MONEY" && !l.linked && d?.lines.some((x: any) => x.id === l.id && x.kind === "MONEY" && !x.linked)
+                ? <button type="button" className="small" data-testid={`link-deposit-${i}`} onClick={() => setLinking(l.id!)}>Link a deposit…</button> : null}
               {editable && lines.length > 1 && !l.linked ? <button type="button" className="small" onClick={() => setLines(lines.filter((_, j) => j !== i))}>Remove line</button> : null}
             </fieldset>
           ))}
@@ -237,7 +244,12 @@ function DonationEditor({ id, canPrint, variables, onClose, onChanged, onOpen }:
           {d && canPrint && d.printable ? <>
             <button type="button" onClick={preview}>Preview receipt</button>
             <button type="button" onClick={print}>Print receipt{d.next_kind !== "ORIGINAL" ? ` (${KIND_LABEL[d.next_kind].toLowerCase()})` : ""}</button>
+            {/* 2.4.0 (#539): Email… issues the receipt like Print and sends it; only when the mail server is set up */}
+            <EmailDocumentButton ready={!!me?.email_ready && id != null} label="Email receipt…" attachment="the donation receipt (PDF)"
+              defaultsUrl={`/api/donations/email/defaults?kind=RECEIPT&donation_id=${id}`} url={`/api/donations/${id}/receipts/email`}
+              extra={signer.body} run={run} onSent={(r) => { setEmailed(`Receipt ${r.number} emailed.`); api.get(`/api/donations/${id}`).then(take); onChanged(); }} />
           </> : null}
+          {emailed ? <span className="hint" role="status" data-testid="receipt-emailed">{emailed}</span> : null}
           {d && canPrint && d.cancellable ? <button type="button" className="danger" onClick={() => setCancelAsk("")}>Cancel donation…</button> : null}
         </div>
       </GuardedForm>
@@ -251,8 +263,59 @@ function DonationEditor({ id, canPrint, variables, onClose, onChanged, onOpen }:
         </Modal>
       ) : null}
       {viewing && pdf ? <PdfViewer pdf={pdf} title="Donation receipt" onClose={() => setViewing(false)} /> : null}
+      {linking != null && id != null ? <LinkDeposit donationId={id} lineId={linking} run={run} onClose={() => setLinking(null)}
+        onLinked={(x) => { setLinking(null); take(x); onChanged(); }} /> : null}
       {dialog}
       {ein.dialog}
+    </Modal>
+  );
+}
+
+/** 2.4.0 (#562): link an awaiting money line to a deposit line already in the register (the donor's lines only). */
+function LinkDeposit({ donationId, lineId, run, onClose, onLinked }: { donationId: number; lineId: number; run: ReturnType<typeof useConfirmable>["run"]; onClose: () => void; onLinked: (d: any) => void }) {
+  const [c, setC] = useState<any>(null);
+  const [pick, setPick] = useState<number | null>(null);
+  const [err, setErr] = useState<unknown>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    api.get(`/api/donations/${donationId}/lines/${lineId}/link-candidates`).then((r) => {
+      setC(r);
+      const same = r.items.filter((x: any) => x.same_amount && !x.marked);
+      if (same.length === 1) setPick(same[0].allocation_id);
+    }, setErr);
+  }, [donationId, lineId]);
+  const link = async () => {
+    if (pick == null) return;
+    setErr(null); setBusy(true);
+    try {
+      const x = await run((confirmations) => api.post(`/api/donations/${donationId}/lines/${lineId}/link`, { allocation_id: pick, confirmations }));
+      if (x !== undefined) onLinked(x);
+    } catch (x) { setErr(x); } finally { setBusy(false); }
+  };
+  return (
+    <Modal title={`Link a deposit – donation #${donationId}`} onClose={onClose} wide>
+      <ErrorBox error={err} />
+      <p className="hint">Pick the deposit line this donation was deposited in. Only the donor's lines on active deposits outside a Closed Fiscal Year are
+        listed; if the deposit was entered under another entity, correct the line's entity in the register first. The donation takes the deposit line's
+        amount, and its printed receipts are attached to the deposit.</p>
+      {!c ? <Loading /> : !c.items.length ? <p className="muted" data-testid="link-none">No deposit line of this donor can be linked.</p> : (
+        <div className="table-scroll">
+          <table className="table compact" aria-label="Deposit lines">
+            <thead><tr><th></th><th>Deposit</th><th>Date</th><th>Description</th><th className="num">Amount</th><th>Already marked</th></tr></thead>
+            <tbody>
+              {c.items.map((x: any) => (
+                <tr key={x.allocation_id}>
+                  <td><input type="radio" name="link-deposit" aria-label={`Deposit #${x.transaction_id} ${x.amount}`} checked={pick === x.allocation_id} onChange={() => setPick(x.allocation_id)} /></td>
+                  <td>#{x.transaction_id}</td><td>{x.date}</td><td>{x.description}</td>
+                  <td className="num">{x.amount}{!x.same_amount ? <span className="muted" title={`The donation is ${c.amount}`}> (donation {c.amount})</span> : null}</td>
+                  <td>{x.marked ? <>Donation #{x.marked_donation_id}{x.marked_receipt ? `, receipt ${x.marked_receipt}` : ""}</> : ""}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <div className="actions"><button onClick={onClose}>Cancel</button><button className="primary" disabled={pick == null || busy} onClick={link}>Link</button></div>
     </Modal>
   );
 }

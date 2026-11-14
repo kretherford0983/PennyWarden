@@ -17,7 +17,7 @@ import math
 from pptx import Presentation
 from pptx.chart.data import CategoryChartData
 from pptx.dml.color import RGBColor
-from pptx.enum.chart import XL_AXIS_CROSSES, XL_CHART_TYPE, XL_LABEL_POSITION, XL_LEGEND_POSITION
+from pptx.enum.chart import XL_AXIS_CROSSES, XL_CHART_TYPE, XL_LABEL_POSITION, XL_LEGEND_POSITION, XL_TICK_LABEL_POSITION
 from pptx.enum.shapes import MSO_SHAPE
 from pptx.enum.text import PP_ALIGN
 from pptx.util import Emu, Inches, Pt
@@ -46,7 +46,8 @@ class _Colors:
     # 2.3.0 (#386): the slide / table background - white, or the dark surface of a dark theme
     PAGE = property(lambda self: RGBColor.from_string(branding.current().page[1:].upper()))
     DARK = property(lambda self: branding.current().dark)
-    SERIES = property(lambda self: [branding.rgb(f"series:{i}") for i in range(branding.SERIES_COUNT)])
+    # 2.4.0 polish (#490): chart fills always stand out from the slide (branding unchanged; only the deck's copy moves)
+    SERIES = property(lambda self: [visible(branding.rgb(f"series:{i}"), self.PAGE) for i in range(branding.SERIES_COUNT)])
 
 
 C = _Colors()
@@ -60,11 +61,43 @@ def _f(x: str) -> float:
     return float(x)
 
 
+def _lum(rgb) -> float:
+    def ch(v: int) -> float:
+        c = v / 255
+        return c / 12.92 if c <= 0.03928 else ((c + 0.055) / 1.055) ** 2.4
+    r, g, b = (int(str(rgb)[i:i + 2], 16) for i in (0, 2, 4))
+    return 0.2126 * ch(r) + 0.7152 * ch(g) + 0.0722 * ch(b)
+
+
+def contrast(a, b) -> float:
+    """WCAG contrast ratio of two colors (1 = the same, 21 = black on white)."""
+    la, lb = sorted((_lum(a), _lum(b)), reverse=True)
+    return (la + 0.05) / (lb + 0.05)
+
+
+MIN_CONTRAST = 3.0          # graphics (WCAG 1.4.11)
+
+
+def visible(rgb, page) -> RGBColor:
+    """2.4.0 polish (#490): `rgb` moved toward black (light slide) or white (dark slide) in small steps until it has
+    at least MIN_CONTRAST against the slide background, so a bar, line or marker never disappears into it. A color
+    that already stands out is returned unchanged."""
+    r, g, b = (int(str(rgb)[i:i + 2], 16) for i in (0, 2, 4))
+    target = 0 if _lum(page) > 0.18 else 255
+    col = RGBColor(r, g, b)
+    for k in range(1, 21):
+        if contrast(col, page) >= MIN_CONTRAST:
+            break
+        t = k / 20
+        col = RGBColor(*(round(c + (target - c) * t) for c in (r, g, b)))
+    return col
+
+
 def _lighter(rgb, amount: float = 0.55) -> RGBColor:
     """2.3.0 (#390): an estimated year's bar or point - the series color mixed with white (the * label and the
     footnote carry the meaning; never color alone, BR-079)."""
     r, g, b = (int(str(rgb)[i:i + 2], 16) for i in (0, 2, 4))
-    return RGBColor(*(int(c + (255 - c) * amount) for c in (r, g, b)))
+    return visible(RGBColor(*(int(c + (255 - c) * amount) for c in (r, g, b))), C.PAGE)
 
 
 def _text(slide, x, y, w, h, text, size=18, bold=False, color=None, align=None, wrap=True):
@@ -187,6 +220,8 @@ def _style_chart(chart, legend=True, legend_pos=XL_LEGEND_POSITION.BOTTOM):
             va.major_unit = step
             va.maximum_scale = math.ceil(top * 1.1 / step) * step if top > 0 else 0
             va.minimum_scale = math.floor(low / step) * step if low < 0 else 0
+        # 2.4.0 polish (#490): category names outside the plot area (at the low end), so a negative bar can't cover them
+        chart.category_axis.tick_label_position = XL_TICK_LABEL_POSITION.LOW
     if chart.chart_type in (XL_CHART_TYPE.BAR_CLUSTERED,):
         chart.category_axis.reverse_order = True   # first category at the top, as in the tables
         chart.category_axis.crosses = XL_AXIS_CROSSES.MAXIMUM   # ... and the value axis stays at the bottom
@@ -197,7 +232,7 @@ def _style_chart(chart, legend=True, legend_pos=XL_LEGEND_POSITION.BOTTOM):
         chart.legend.font.size = Pt(12)
 
 
-def _labels(plot, fmt='"$"#,##0.00', pos=None, size=11):
+def _labels(plot, fmt='"$"#,##0.00', pos=None, size=11, backing=True):
     plot.has_data_labels = True
     dl = plot.data_labels
     dl.number_format = fmt
@@ -208,6 +243,29 @@ def _labels(plot, fmt='"$"#,##0.00', pos=None, size=11):
         dl.font.color.rgb = C.TEXT
     if pos is not None:
         dl.position = pos
+    if backing:
+        _label_backing(dl)
+
+
+def _label_backing(dl):
+    """2.4.0 polish (#490): each value label sits on a small box in the slide's own color, so a line, marker or bar
+    passing behind it never touches the text (the text color already contrasts with the slide)."""
+    from lxml import etree
+    from pptx.oxml.ns import qn
+    d = dl._element
+    for old in d.findall(qn("c:spPr")):
+        d.remove(old)
+    sp = etree.SubElement(d, qn("c:spPr"))
+    fill = etree.SubElement(sp, qn("a:solidFill"))
+    etree.SubElement(fill, qn("a:srgbClr"), val=str(C.PAGE))
+    ln = etree.SubElement(sp, qn("a:ln"))
+    etree.SubElement(ln, qn("a:noFill"))
+    # c:spPr must come before c:txPr and the show* flags (schema order)
+    tx = d.find(qn("c:txPr"))
+    anchor = tx if tx is not None else next((c for c in d if c.tag not in (qn("c:numFmt"), qn("c:dLbl"), qn("c:delete"))), None)
+    if anchor is not None and anchor is not sp:
+        d.remove(sp)
+        anchor.addprevious(sp)
 
 
 def _table(slide, x, y, w, rows: list[list[str]], widths: list[float], right: set[int], bold_rows=(), size=12):
@@ -253,7 +311,7 @@ def build(s: dict) -> bytes:
     _text(sl, Inches(2.4), Inches(3.5), Inches(10), Inches(0.6), "Financial & Proceeds results", size=22, color=C.GREY)
     _text(sl, Inches(2.4), Inches(4.1), Inches(10), Inches(0.6), f"{event_dates(s)}  ·  {st['text']}", size=18, color=C.GREY)
     notes = [f"{s['fundraiser']} — {s['organization']}", f"Event: {event_dates(s)}. Status: {st['text']}.",
-             f"Generated {generated} by PennyWarden; the figures match the fundraiser's stakeholder report."]
+             f"Generated {generated} by PennyWarden; the figures match the {s.get('noun', 'fundraiser')}'s stakeholder report."]
     if st["code"] == "CANCELLED":
         warn = sl.shapes.add_shape(MSO_SHAPE.RECTANGLE, Inches(2.4), Inches(5.0), Inches(10), Inches(0.8))
         warn.fill.solid()
@@ -265,14 +323,14 @@ def build(s: dict) -> bytes:
         r.text = f"Cancelled: {st['cancel_reason'] or 'no reason given'}. The figures are what was received and spent."
         r.font.name, r.font.size, r.font.bold = FONT, Pt(16), True
         r.font.color.rgb = RED
-        notes.append(f"This fundraiser was cancelled: {st['cancel_reason'] or 'no reason given'}.")
+        notes.append(f"This {s.get('noun', 'fundraiser')} was cancelled: {st['cancel_reason'] or 'no reason given'}.")
     _notes(sl, notes)
 
     # 2. executive highlights
     sl = prs.slides.add_slide(blank)
     _title(sl, "Executive highlights")
-    for i, (k, v, cap) in enumerate((("Net revenue", t["net_revenue"], "All income counted for the fundraiser"),
-                                     ("Expenses", t["expenses"], "Fundraiser expenses"),
+    for i, (k, v, cap) in enumerate((("Net revenue", t["net_revenue"], f"All income counted for the {s.get('noun', 'fundraiser')}"),
+                                     ("Expenses", t["expenses"], f"{s.get('noun', 'fundraiser').capitalize()} expenses"),
                                      ("Net proceeds", t["net_proceeds"], f"Net margin {_p(t['net_margin'])}"))):
         x = Inches(0.6 + i * 4.1)
         card = sl.shapes.add_shape(MSO_SHAPE.ROUNDED_RECTANGLE, x, Inches(2.0), Inches(3.8), Inches(2.6))
@@ -317,7 +375,7 @@ def build(s: dict) -> bytes:
         from .fundraiser_summary import YOY_HEAD, estimate_lines, yoy_rows, yoy_change
         yy = s["year_over_year"]
         sl = prs.slides.add_slide(blank)
-        _title(sl, "Year over year", "Each year this fundraiser was held")
+        _title(sl, "Year over year", f"Each year this {s.get('noun', 'fundraiser')} was held")
         cd = CategoryChartData(number_format='"$"#,##0.00')
         cd.categories = [str(r["year"]) + ("*" if r.get("estimated") else "") for r in yy]   # 2.3.0 (#390)
         cd.add_series("Net revenue", [float(r["net_revenue"]) if r["net_revenue"] is not None else None for r in yy])
@@ -359,7 +417,7 @@ def build(s: dict) -> bytes:
             cd.add_series("Revenue", [_f(v) for _n, v, _p_ in rev])
             ch = sl.shapes.add_chart(XL_CHART_TYPE.DOUGHNUT, Inches(0.8), Inches(1.6), Inches(11.7), Inches(5.6), cd).chart
             _style_chart(ch, legend_pos=XL_LEGEND_POSITION.RIGHT)
-            _labels(ch.plots[0], fmt="0.0%", size=12)
+            _labels(ch.plots[0], fmt="0.0%", size=12, backing=False)   # percentages sit on their slice, own contrast
             ch.plots[0].data_labels.show_percentage = True
             ch.plots[0].data_labels.show_value = False
             if C.DARK:      # 2.3.0 (#386): the labels sit on the (light) slices of a dark theme: dark text

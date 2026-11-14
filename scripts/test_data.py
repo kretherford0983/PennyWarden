@@ -37,6 +37,7 @@ USERS = (  # username, first, last, security domain, roles
     ("bookkeeper", "Casey", "Nguyen", "FINANCIAL", ["REGISTER_USER"]),
     ("auditor", "Avery", "Brooks", "AUDITOR", ["AUDITOR"]),
     ("treasurer", "Jamie", "Ellison", "FINANCIAL", ["BUDGET_MANAGER", "REGISTER_USER", "REGISTER_ADMIN"]),
+    ("invoices", "Dana", "Whitaker", "FINANCIAL", ["INVOICE_MANAGER"]),       # 2.4.0: the Invoices module
 )
 QUESTIONS = ("FIRST_TEACHER", "FIRST_PET", "FIRST_CAR")
 
@@ -105,6 +106,7 @@ BUDGETS = (
     ("4220", "Pancake Breakfasts", None, "4200", 5200),
     ("4230", "Holiday Raffle", None, "4200", 4800),
     ("4300", "Hall rentals", "INCOME", None, 6000),
+    ("4400", "Sponsorships and program fees", "INCOME", None, 9000),      # 2.4.0: Invoiced Income (invoices)
     ("5000", "Programs and events", "EXPENSE", None, 8000),
     ("5100", "Facility", "EXPENSE", None, 0),
     ("5110", "Rent and utilities", None, "5100", 9600),
@@ -152,10 +154,11 @@ def main(base: str, start_month: int = 7, backup: str | None = None, summary: st
         admin.post("/api/users", {"username": name, "email": f"{name}@example.org", "password": Api.password,
                                   "display_name": f"{first} {last}", "first_name": first, "last_name": last,
                                   "security_domain": domain, "roles": roles})
-    admin.put("/api/system/modules", {"fundraisers": True, "checks": True, "donations": True})
+    admin.put("/api/system/modules", {"fundraisers": True, "checks": True, "donations": True, "invoices": True})
     tr = Api(base).login("treasurer")              # Budget Manager + Register User (+ Register Admin)
     for u in ("budgetmgr", "bookkeeper", "auditor"):
         Api(base).login(u)                         # their first sign-in: security questions set
+    im = Api(base).login("invoices")               # 2.4.0: the Invoice Manager
 
     # ---- entities and bank accounts
     def org(name, bank=False):
@@ -201,7 +204,7 @@ def main(base: str, start_month: int = 7, backup: str | None = None, summary: st
                                               "confirmations": ["DUPLICATE_ENTITY"]})
 
     counts = {"transactions": 0, "printed_checks": 0, "electronic_payments": 0, "fundraisers": 0, "entered_years": 0,
-              "donation_receipts": 0}
+              "donation_receipts": 0, "invoices": 0, "invoice_payments": 0}
     check_no = iter(range(2101, 9999))
     budget_ids: dict[str, dict[str, int]] = {}
 
@@ -307,6 +310,80 @@ def main(base: str, start_month: int = 7, backup: str | None = None, summary: st
                 continue
             tr.put(f"{url}/lines/{x['allocation_id']}", {"buckets": b})
 
+    # ---- 2.4.0: the Invoices module - a catalog (sponsorships, program fees, vendor booths and newsletter ads with
+    # sales tax), invoices to the sponsors and members in last year and this year (for the reports' comparison),
+    # paid in full, in part, by one check for several invoices, or still open (some overdue)
+    catalog: dict[str, int] = {}
+
+    def make_catalog(leaf: dict[str, int]) -> None:
+        units = {u["name"]: u["id"] for u in im.get("/api/invoices/catalog/unit-types")}
+        cats = {n: im.post("/api/invoices/catalog/categories", {"name": n})["id"]
+                for n in ("Sponsorships", "Programs", "Advertising")}
+        rate = im.post("/api/invoices/catalog/tax-rates", {"name": "Cedar Valley sales tax", "rate": "7",
+                                                           "budget_id": leaf["4400"]})["id"]
+        taxed = im.post("/api/invoices/catalog/tax-groups", {"name": "Sales tax", "rate_ids": [rate]})["id"]
+        unit = lambda *names: next((units[n] for n in names if n in units), next(iter(units.values())))  # noqa: E731
+        for key, name, price, cat, u, tax in (
+                ("gold", "Annual sponsorship - Gold", "1000.00", "Sponsorships", unit("Year", "Each"), None),
+                ("silver", "Annual sponsorship - Silver", "500.00", "Sponsorships", unit("Year", "Each"), None),
+                ("youth", "Youth program fee", "120.00", "Programs", unit("Each"), None),
+                ("booth", "Vendor booth - fall festival", "150.00", "Advertising", unit("Each"), taxed),
+                ("ad", "Newsletter ad - quarter page", "75.00", "Advertising", unit("Each"), taxed)):
+            catalog[key] = im.post("/api/invoices/catalog/products", {
+                "name": name, "unit_price": price, "unit_type_id": u, "category_id": cats[cat],
+                "budget_id": leaf["4400"], "tax_group_id": tax})["id"]
+
+    def invoice(customer: str, when: dt.date, lines: list[tuple[str, str]], **kw) -> dict | None:
+        if when > today:
+            return None
+        i = im.post("/api/invoices", {"customer_entity_id": ent[customer]["id"], "invoice_date": when.isoformat(),
+                                      "lines": [{"product_id": catalog[p], "quantity": q} for p, q in lines], **kw})
+        i = im.post(f"/api/invoices/{i['id']}/send")
+        counts["invoices"] += 1
+        return i
+
+    def pay(i: dict | None, when: dt.date, amount: str | None = None) -> None:
+        if i is None or when > today:
+            return
+        tr.post(f"/api/invoices/{i['id']}/payments", {"bank_account_id": acct["chk"]["id"],
+                                                      "amount": amount or i["payments"]["open"],
+                                                      "transaction_date": when.isoformat(),
+                                                      "clear_date": min(when + dt.timedelta(days=3), today).isoformat(),
+                                                      "confirmations": ["POSSIBLE_DUPLICATE"]})
+        counts["invoice_payments"] += 1
+
+    def invoices_for(fy: FY, row: dict, leaf: dict[str, int], k: int) -> None:
+        if not catalog:
+            make_catalog(leaf)
+        days = dt.timedelta
+        gold = [invoice(n, fy.date(1, 5), [("gold", "1")]) for n in SPONSORS[:2]]
+        silver = [invoice(n, fy.date(1, 5), [("silver", "1")]) for n in SPONSORS[2:5]]
+        for i in gold + silver[:2]:
+            pay(i, (fy.date(1, 5) + days(18)))
+        pay(silver[2], fy.date(2, 10), "250.00")                         # half now (the rest stays open)
+        booths = [invoice(n, fy.date(3, 12), [("booth", "1")]) for n in (SPONSORS[0], SPONSORS[5], "Riverbend Party Rentals")]
+        for i in booths[:2]:
+            pay(i, fy.date(4, 2))
+        youth = [invoice(n, fy.date(2, 1), [("youth", "2" if n == PEOPLE[2][0] else "1")])
+                 for n, _pos in PEOPLE]
+        for i in youth[:3]:
+            pay(i, fy.date(2, 20))
+        # one check for two invoices of the same sponsor (one deposit, linked to each)
+        ads = invoice(SPONSORS[3], fy.date(6, 3), [("ad", "4")])
+        booth2 = invoice(SPONSORS[3], fy.date(6, 3), [("booth", "1")])
+        when = fy.date(6, 25)
+        if ads and booth2 and when <= today:
+            tr.post("/api/invoices/payments", {
+                "bank_account_id": acct["chk"]["id"], "transaction_date": when.isoformat(),
+                "clear_date": min(when + days(3), today).isoformat(),
+                "items": [{"invoice_id": ads["id"], "amount": ads["payments"]["open"]},
+                          {"invoice_id": booth2["id"], "amount": booth2["payments"]["open"]}],
+                "confirmations": ["POSSIBLE_DUPLICATE"]})
+            counts["invoice_payments"] += 1
+        # recent ones: due soon or overdue, still open
+        invoice(SPONSORS[1], min(today - days(45), fy.end), [("ad", "2")]) if fy is cur and today - days(45) >= fy.start else None
+        invoice(SPONSORS[4], min(today - days(5), fy.end), [("booth", "1")]) if fy is cur and today - days(5) >= fy.start else None
+
     # ---- each Fiscal Year: budgets, approval, register, fundraisers; the past ones are closed
     prev_ids = None
     rows = []
@@ -315,6 +392,7 @@ def main(base: str, start_month: int = 7, backup: str | None = None, summary: st
                                             "end_date": fy.end.isoformat(), "confirmations": []})
         rows.append(row)
         prev_ids = budget_ids[fy.label] = make_budgets(row, fy, k, prev_ids)
+        tr.put(f"/api/budgets/{prev_ids['4400']}/invoiced-income", {"invoiced_income": True})      # 2.4.0
         if fy is nxt:
             break                                  # the next year stays a Draft, its budgets continue this year's
         tr.upload("fiscal_year", row["id"], "board-approval.pdf",
@@ -324,6 +402,8 @@ def main(base: str, start_month: int = 7, backup: str | None = None, summary: st
         leaf = leaves(row)
         W, D = "WITHDRAWAL", "DEPOSIT"
         recent = fy is cur
+        if fy in (prev1, cur):
+            invoices_for(fy, row, leaf, k)                                   # 2.4.0: the Invoices module
         # dues and donations
         for m in (0, 3, 6, 9):
             txn(leaf, "chk", D, fy.date(m, 8), "Members (dues)", [("4000", amt(2150, k, m * 7), f"Member dues - quarter {m // 3 + 1}")],
@@ -395,7 +475,9 @@ def main(base: str, start_month: int = 7, backup: str | None = None, summary: st
         if fy is prev1:   # a fundraiser that did not happen
             wash = tr.post("/api/fundraisers", {"name": f"Summer Car Wash {fy.date(11, 1).year}",
                                                 "start_date": fy.date(11, 20).isoformat(),
-                                                "budget_ids": [budget_ids[fy.label]["4220"]], "filter_text": "car wash"})
+                                                # 2.4.0 (#429): a Fundraiser needs Income and Expense
+                                                "budget_ids": [budget_ids[fy.label]["4220"], budget_ids[fy.label]["5420"]],
+                                                "filter_text": "car wash"})
             tr.post(f"/api/fundraisers/{wash['id']}/cancel", {"reason": "Rained out twice; not rescheduled"})
             counts["fundraisers"] += 1
 
