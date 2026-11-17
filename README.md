@@ -13,15 +13,16 @@ Windows PC, Mac or Linux server; your data stays in one folder you control. No s
 
 <sub>All screenshots show a made-up organization (`scripts/demo_data.py`).</sub>
 
-> **New in 2.1 — fundraiser reporting.**
-> - A fundraiser's results as a stakeholder report (PDF or Word) and a slide deck with charts.
-> - Fundraisers linked across years, with years before PennyWarden entered by hand.
-> - A Fiscal Year fundraising report with year-over-year comparisons.
+> **New in 2.4: [Invoices](#invoices-optional-invoices-module-240).**
+> - Bill members and customers from your own product catalog, with sales tax, discounts and your own numbering.
+> - Print or email the invoice PDF; batch invoicing for dues; customer statements and a payment stub.
+> - Payments recorded once, into the right Invoiced Income budget, with overpayments, refunds and customer credit.
+> - Open invoices, aging, sales tax collected, and sales reports to share with your board.
 >
-> Also new: a Budget Review report and Fiscal Year Planning Sheet, electronic payments in the register, fold marks on
-> cover letters, more voucher check layouts, an organization profile, and an optional Donations module for donation
-> receipt letters. 2.0 added
-> the optional
+> Also new: **Events & Fundraisers**, reminders with steps, one organization logo for everything you print,
+> emailed donation receipts, an FY Progress box with a projected year end, and the user guide built into the app
+> (**?** on every screen). 2.2 and 2.3 brought a Reports catalog with quarterly and annual reports, year-end giving
+> statements, selective restore and the ready-made demo; 2.0 added the optional
 > [Payments module](#payments-and-check-printing-optional-payments-module-200).
 > [User guide](docs/guide/README.md) · [Try the demo](docs/demo.md) · [Changelog](CHANGELOG.md)
 
@@ -77,9 +78,9 @@ documents. A closed year can no longer be changed.
 
 <p align="center"><img src="docs/screenshots/readme/fiscal-year.png" alt="A Fiscal Year with its budgets, closure readiness and documentation review" width="820"></p>
 
-### Fundraisers <sub>(optional module)</sub>
+### Events & Fundraisers <sub>(optional module)</sub>
 
-Follow an event from the first poster to the last deposit: which budgets it uses, income and expenses, the net
+Follow an event or a fundraiser from the first poster to the last deposit: which budgets it uses, income and expenses, the net
 result, a breakdown by offering (tickets, auction, food…), the cash float, a printable **cash count sheet** for the
 people counting the cash box — and, since 2.1, a **stakeholder report** (PDF or Word) and a **slide deck** for the
 committee, the same event **across years** with year-over-year comparisons, and a **Fiscal Year fundraising report**.
@@ -87,6 +88,24 @@ committee, the same event **across years** with year-over-year comparisons, and 
 <p align="center">
   <img src="docs/screenshots/readme/fundraiser.png" alt="A fundraiser with income, expenses, net result, buckets and charts" width="600">
   <img src="docs/screenshots/readme/count-sheet-page.png" alt="The printable cash count sheet" width="270">
+</p>
+
+### Invoices <sub>(optional Invoices module, 2.4.0)</sub>
+
+Bill members, families and customers for dues, rentals, merchandise or sponsorships. **Invoice Managers** keep a
+**product catalog** (price, unit, category, sales tax group and the Invoiced Income budget the money goes to) and
+build invoices from it, with discounts that print their reason and numbers that follow your own pattern and are never
+reused. The **invoice PDF** is laid out once with a live preview (font, colors, logo, columns, an optional payment
+stub); invoices are printed or **emailed** through your own mail server, one at a time or as a **batch**. A
+**Register User** records the payment once, spread over the right budgets and the sales tax; one check can pay
+several invoices, and an overpayment is refunded or kept as the customer's credit. **Reports → Invoices** has open
+invoices, aging, customer statements, sales tax collected and the invoice register, and two sales reports with
+presentations are made for the board and members. Separation of duties: the Budget Manager sets the budgets, the
+Invoice Manager decides what is billed, the Register User receives the money.
+
+<p align="center">
+  <img src="docs/screenshots/readme/invoices.png" alt="The Invoices page: who does what, and a list of invoices with their customer, due date, status and total" width="420">
+  <img src="docs/screenshots/readme/invoice.png" alt="An invoice: a membership and a taxable t-shirt, each with its budget, the sales tax and the total" width="420">
 </p>
 
 ### Payments and check printing <sub>(optional Payments module, 2.0.0)</sub>
@@ -118,7 +137,9 @@ EIN are kept once, in its **organization profile**, and used by receipts, letter
 
 Personal reminders and reminders for the whole organization, shown on the dashboard and behind the bell until
 someone resolves them. Organization reminders can **repeat** — reconcile the statements every month, file the
-return every quarter, renew the insurance every year — so duties survive a change of treasurer.
+return every quarter, renew the insurance every year — so duties survive a change of treasurer. Since 2.4 a reminder
+can carry **steps** to tick off before its objective, each with a contact (or whoever holds a position) and a link
+to the report or page it needs.
 
 <p align="center"><img src="docs/screenshots/readme/reminders.png" alt="Due reminders, two of them repeating" width="820"></p>
 
@@ -131,12 +152,13 @@ return every quarter, renew the insurance every year — so duties survive a cha
 | **Documentation** | Attachments on transactions and on single allocations; typed Fiscal Year documents (approval, audit signoff); documentation review; "no attachment" with a stated reason |
 | **Reports** | End of Year Audit PDF with signature page and account start/end pages; Fiscal Year Close report; Entity activity report with CSV export; Budget Review and Fiscal Year Planning Sheet; fundraiser stakeholder report (PDF, Word) and presentation; Fiscal Year fundraising report and presentation; cash count sheet |
 | **Dashboard** | Bank balances, budget progress, items needing attention, charts; each user chooses and arranges their own sections; light and dark mode |
-| **Fundraisers** | Budgets, offerings ("buckets") in categories, charge less a credit, contributor shown on reports, cash float, exclusions, documents, cancelled events, events spanning two Fiscal Years, series across years with earlier years entered by hand |
+| **Events & Fundraisers** | Events or fundraisers (a Fundraiser needs an Income and an Expense budget), budgets, offerings ("buckets") in categories, charge less a credit, contributor shown on reports, cash float, exclusions, documents, cancelled events, events spanning two Fiscal Years, series across years with earlier years entered by hand |
 | **Payments module** | Check styles from presets, field layout with a scale preview, built-in fonts, amounts in words with protective fill, memo patterns, encrypted signatures with an amount limit, two signature lines, voucher checks with the check on top, in the middle or at the bottom, sheet and single-check feed, reprint and spoiled checks, record copies, per-user printer adjustment; payments, cover letters with optional fold marks, #10 envelopes, handwritten checks |
+| **Invoices module** | Product catalog with units, categories, tax rates and tax groups, tax-exempt customers, custom fields; invoice numbering patterns; discounts with a printed reason; revisions and voids; invoice PDF template with live preview and payment stub; email through your own mail server; batch invoicing with a combined PDF; payments, one payment for several invoices, overpayment refunds and customer credit; overdue reminders; invoice reports and board-ready sales reports |
 | **Donations module** | Donation lines marked on deposits, a receipt per donor with the required acknowledgment, date received per line, an optional `{DETAILS}` write-up, preview before printing, receipt numbers, Duplicate / Corrected reprints, void deposits, record copies |
-| **Reminders** | Personal and organization reminders, show-before days, links to a Fiscal Year, budget or account, repeating organization reminders |
+| **Reminders** | Personal and organization reminders, show-before days, links to a Fiscal Year, budget or account, repeating organization reminders, steps with contacts and links to a report or page |
 | **People and vendors** | Entities for organizations and individuals, a person's position (offered as the title when they sign); your own organization as an entity, chosen like any other (e.g. for cash collected at an event) |
-| **Roles** | Administrator, Budget Manager, Budget User, Register User and read-only Auditor; administration is kept strictly apart from financial work |
+| **Roles** | Administrator, Budget Manager, Budget User, Register User, Invoice Manager and read-only Auditor; administration is kept strictly apart from financial work |
 | **Administration** | System/About in tabs: settings with their sources (editable on a server), the organization profile (name, address, phone, email, EIN, used as `{ORG.*}` in templates), optional modules, signed-in sessions, security overview, system health and diagnostics, maintenance mode, reinitialize with a safety backup |
 | **Security** | Argon2id passwords, two-step verification (TOTP) with recovery codes, server-side sessions, CSRF protection, AES-256-GCM encrypted bank account numbers, an append-only audit log of every change that reads in plain words and exports to CSV and PDF |
 | **Your data** | One folder on your machine; encrypted backups by hand or on a schedule, restore from inside the application or the server's command line; moves between Windows, Mac and Linux; upgrades never touch data or configuration |
