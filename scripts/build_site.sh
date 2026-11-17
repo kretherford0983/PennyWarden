@@ -60,7 +60,7 @@ found.sort(reverse=True)
                                                "books": [{"version": v} for _, v in books],
                                                "docs": [x for _, x in found]}, indent=1) + "\n")
 PY
-for s in dashboard budgets register audit-report-transaction fundraiser payment check-print; do
+for s in dashboard budgets register audit-report-transaction fundraiser payment check-print invoices invoice; do
   cp "$ROOT/docs/screenshots/readme/$s.png" "$OUT/screenshots/"
 done
 if [ -z "$API" ]; then
