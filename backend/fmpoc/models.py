@@ -990,6 +990,9 @@ class Reminder(Base):
     resolved_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     resolved_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     resolution_note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # 2.5.0 (#594): what resolved it - TRANSACTION | EVENT (no FK, like link_id); set when resolving or later
+    resolution_link_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    resolution_link_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
     updated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)

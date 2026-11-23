@@ -950,6 +950,14 @@ class ReminderIn(In):
 class ReminderResolveIn(In):
     note: OptStr(500) = None
     stop_repeating: bool = False
+    # 2.5.0 (#594): optional - the transaction or event that resolved it
+    resolution_link_type: Literal["TRANSACTION", "EVENT"] | None = None
+    resolution_link_id: int | None = None
+
+
+class ReminderResolutionLinkIn(In):            # 2.5.0 (#594): set, change or remove (both null) after resolving
+    resolution_link_type: Literal["TRANSACTION", "EVENT"] | None = None
+    resolution_link_id: int | None = None
 
 
 # ------------------------------------------------------------------ 1.8.0 (#106) Financial Flow Report

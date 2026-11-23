@@ -6,7 +6,7 @@ Versions are `Breaking.Major.Minor` from 1.6.0 (docs/branching.md).
 Events whose proceeds are paid later, shorter Audit / Close reports and a budget proposal presentation. The monthly
 dependency update planned as 2.4.2 is part of this release.
 
-**Upgrading:** one database migration (`0090_late_proceeds`), applied automatically.
+**Upgrading:** two database migrations (`0090_late_proceeds`, `0091_reminder_resolution_link`), applied automatically.
 
 ### Events & Fundraisers
 - **Proceeds paid later (#588).** An event run with an outside organization that pays months later — a county fair
@@ -19,6 +19,11 @@ dependency update planned as 2.4.2 is part of this release.
   this year for earlier events*. Waiting never holds up closing a year.
 - **Events in closed years (#588).** A Budget Manager can now set up an event dated in a Closed Fiscal Year and choose
   that year's budgets, to load past events — reporting only; nothing financial changes.
+
+### Reminders
+- **What resolved a reminder (#594).** Resolving a reminder can link the register transaction or the event that
+  resolved it; the resolved reminder shows it as a link that opens it. The link can be added, changed or removed later
+  by whoever can resolve the reminder, and every change is audited.
 
 ### Reports
 - **Shorter event sections in the FY Audit and Close reports (#589).** Each event still lists every one of its
@@ -356,7 +361,7 @@ logo for everything that prints, and the user guide built into the app.
 ## 2.3.0 — 2026-11-01
 PennyWarden 2.3.0 (in progress).
 
-**Upgrading:** one database migration (`0090_late_proceeds`), applied automatically.
+**Upgrading:** two database migrations (`0090_late_proceeds`, `0091_reminder_resolution_link`), applied automatically.
 
 ### Events & Fundraisers
 - **Proceeds paid later (#588).** An event run with an outside organization that pays months later — a county fair
@@ -369,6 +374,11 @@ PennyWarden 2.3.0 (in progress).
   this year for earlier events*. Waiting never holds up closing a year.
 - **Events in closed years (#588).** A Budget Manager can now set up an event dated in a Closed Fiscal Year and choose
   that year's budgets, to load past events — reporting only; nothing financial changes.
+
+### Reminders
+- **What resolved a reminder (#594).** Resolving a reminder can link the register transaction or the event that
+  resolved it; the resolved reminder shows it as a link that opens it. The link can be added, changed or removed later
+  by whoever can resolve the reminder, and every change is audited.
 
 ### Reports
 - **A new Reports screen (#375).** Reports opens on a **catalog**: every report and presentation you can run, grouped
