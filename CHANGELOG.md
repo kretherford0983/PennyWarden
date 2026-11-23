@@ -2,9 +2,11 @@
 
 Versions are `Breaking.Major.Minor` from 1.6.0 (docs/branching.md).
 
-## 2.4.2 — unreleased
-Monthly dependency update. No database migration and no change to how the application works; going back to 2.4.1 is
-just reinstalling it.
+## 2.5.0 — unreleased
+Events whose proceeds are paid later, shorter Audit / Close reports and a budget proposal presentation. The monthly
+dependency update planned as 2.4.2 is part of this release.
+
+### Dependencies
 - **Python packages:** FastAPI 0.162.0 → 0.162.7 (fixes for cleaning up a request's dependencies when the request is
   cancelled) and pypdfium2 5.15.0 → 5.15.2 (closes cleanly when the application stops). `THIRD-PARTY-NOTICES.txt`
   is regenerated for them.
