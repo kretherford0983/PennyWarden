@@ -1110,6 +1110,7 @@ test("2.1.0 (#257, #261, #283): Budget Review with projection choices; the Plann
   await page.goto("/reports");
   await expect(page.getByRole("link", { name: "Financial Flow", exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Budget Review", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "Budget proposal", exact: true })).toHaveCount(0);   // 2.5.0 (#590)
   await logout(page);
   await login(page, "bm1");
   await page.goto("/reports");
@@ -1157,6 +1158,16 @@ test("2.1.0 (#257, #261, #283): Budget Review with projection choices; the Plann
   const both = await page.request.get(withReview!);
   expect(both.status()).toBe(200);
   expect((await both.body()).length).toBeGreaterThan((await sheet.body()).length);
+  // 2.5.0 (#590): the Budget proposal (Budget Managers): a summary on screen, the PDF and the presentation
+  await page.goto("/reports/budget-proposal");
+  const bp = page.locator(".report-body");
+  await expect(bp.getByTestId("proposal-summary")).toContainText(/(proposed|approved): income \$/);
+  const bpPdf = await page.request.get((await bp.getByRole("link", { name: "Open", exact: true }).getAttribute("href"))!);
+  expect(bpPdf.status()).toBe(200);
+  expect(bpPdf.headers()["content-type"]).toBe("application/pdf");
+  const bpDeck = await page.request.get((await bp.getByRole("link", { name: "Download PPTX" }).getAttribute("href"))!);
+  expect(bpDeck.status()).toBe(200);
+  await page.screenshot({ path: "e2e-screenshots/light-budget-proposal.png", fullPage: true });
   await logout(page);
 });
 

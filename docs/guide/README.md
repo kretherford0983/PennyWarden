@@ -39,6 +39,7 @@ Creating, approving and closing the years your budgets cover.
 - [Approving a Fiscal Year](fiscal-years/approve-fiscal-year.md) — Budget Managers: locking the year's budgets.
 - [Closing a Fiscal Year](fiscal-years/close-fiscal-year.md) — Budget Managers: what must be done first and what closing does.
 - [Planning the next year](fiscal-years/planning-sheet.md) — The planning sheet for the budget meeting.
+- [Presenting the budget](fiscal-years/budget-proposal.md) — Budget Managers: the budget proposal report and presentation for approval.
 
 ## Budgets
 
@@ -98,6 +99,7 @@ Gathering everything spent and received for an event.
 - [About Events & Fundraisers](events/about-events.md) — What the module does and the two types.
 - [Setting up an event](events/set-up-event.md) — Budget Managers: a new fundraiser or event.
 - [Managing an event](events/manage-event.md) — Buckets, cash floats, exclusions and documents.
+- [Proceeds paid later](events/proceeds-paid-later.md) — Events paid months later by an outside organization: awaiting, linking the check, how it counts.
 - [Event reports](events/event-reports.md) — The stakeholder report, the presentation and the yearly report.
 
 ## Payments and check printing

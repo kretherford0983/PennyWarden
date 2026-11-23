@@ -118,6 +118,11 @@
           "id": "planning-sheet",
           "title": "Planning the next year",
           "summary": "The planning sheet for the budget meeting."
+        },
+        {
+          "id": "budget-proposal",
+          "title": "Presenting the budget",
+          "summary": "Budget Managers: the budget proposal report and presentation for approval."
         }
       ]
     },
@@ -287,6 +292,11 @@
           "id": "manage-event",
           "title": "Managing an event",
           "summary": "Buckets, cash floats, exclusions and documents."
+        },
+        {
+          "id": "proceeds-paid-later",
+          "title": "Proceeds paid later",
+          "summary": "Events paid months later by an outside organization: awaiting, linking the check, how it counts."
         },
         {
           "id": "event-reports",

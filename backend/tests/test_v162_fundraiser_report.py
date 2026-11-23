@@ -85,5 +85,5 @@ def test_two_year_fundraiser_is_shown_complete_in_each_year(env, base):
     for fy_id, name in ((base["fy"]["id"], "FY2027"), (fy28["id"], "FY2028")):
         text = _text(env.auditor.get(f"/api/reports/audit?fiscal_year_id={fy_id}&include_fundraisers=true").content)[1]
         assert "Fundraiser — Summer Fair" in text and "Fair prep" in text and "Fair takings" in text
-        assert f"{name} (this report)" in text and "spans two Fiscal Years" in text
+        assert f"{name} (this report)" in text and "spans more than one Fiscal Year" in text
         assert "$900.00" in text and "$120.00" in text and "$780.00" in text

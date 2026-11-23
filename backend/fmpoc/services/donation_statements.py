@@ -698,14 +698,14 @@ def report_pdf(db: Session, ctx, rep: dict, detail_lines: bool) -> bytes:
             rp._brand_page(c, theme, pw, ph, first=doc.page == 1)
             c.setFont(rp._FONT, 7)
             c.setFillColor(colors.HexColor("#444444"))
-            c.drawString(rp.MARGIN, 14, title)
-            c.drawRightString(pw - rp.MARGIN, 14, f"Page {doc.page}")
+            c.drawString(rp.MARGIN, rp.FOOTER_Y, title)          # 2.5.0: inside the printable area
+            c.drawRightString(pw - rp.MARGIN, rp.FOOTER_Y, f"Page {doc.page}")
             if theme.footer_text:
-                c.drawString(rp.MARGIN, 23, theme.footer_text[:branding.FOOTER_MAX])
+                c.drawString(rp.MARGIN, rp.FOOTER_Y2, theme.footer_text[:branding.FOOTER_MAX])
             c.restoreState()
 
         buf = io.BytesIO()
         SimpleDocTemplate(buf, pagesize=(pw, ph), leftMargin=rp.MARGIN, rightMargin=rp.MARGIN,
-                          topMargin=rp.MARGIN, bottomMargin=rp.MARGIN, title=title, creator="PennyWarden",
+                          topMargin=rp.MARGIN, bottomMargin=rp.MARGIN + 0.25 * 72, title=title, creator="PennyWarden",
                           invariant=1).build(story, onFirstPage=on_page, onLaterPages=on_page)
         return buf.getvalue()

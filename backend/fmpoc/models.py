@@ -655,6 +655,15 @@ class Fundraiser(Base):
     # 2.4.0 (#429): FUNDRAISER | EVENT (an Event hides the goal and donation receipts; required budgets differ)
     event_type: Mapped[str] = mapped_column(String(20), default="FUNDRAISER", server_default="FUNDRAISER",
                                             nullable=False)
+    # 2.5.0 (#588): proceeds paid later by an outside organization (e.g. a county fair board, months after the fair).
+    # Awaiting proceeds = proceeds_later and no outcome yet. Outcome RECEIVED | NONE (NONE needs a reason).
+    proceeds_later: Mapped[bool] = mapped_column(Boolean, default=False, server_default=sa_false(), nullable=False)
+    proceeds_payer_entity_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    proceeds_expected_month: Mapped[str | None] = mapped_column(String(7), nullable=True)     # YYYY-MM
+    proceeds_outcome: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    proceeds_outcome_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    proceeds_outcome_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    proceeds_outcome_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
     created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
@@ -692,6 +701,20 @@ class FundraiserSeries(Base):
     merged_into_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
     created_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+class FundraiserProceedsLine(Base):
+    """2.5.0 (#588): a deposit line that is an event's proceeds, received later (any Income budget, any later Fiscal
+    Year). A line is the proceeds of one event at a time; it then counts only for that event. Retired, never deleted."""
+    __tablename__ = "fundraiser_proceeds_line"
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    fundraiser_id: Mapped[int] = mapped_column(ForeignKey("fundraiser.id"), index=True)
+    allocation_id: Mapped[int] = mapped_column(ForeignKey("transaction_allocation.id"), index=True)
+    linked_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
+    linked_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    retired_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
+    retired_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    retire_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
 
 class FundraiserSeriesResult(Base):
@@ -967,6 +990,9 @@ class Reminder(Base):
     resolved_at: Mapped[dt.datetime | None] = mapped_column(DateTime, nullable=True)
     resolved_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     resolution_note: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    # 2.5.0 (#594): what resolved it - TRANSACTION | EVENT (no FK, like link_id); set when resolving or later
+    resolution_link_type: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    resolution_link_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
     created_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow)
     updated_at: Mapped[dt.datetime] = mapped_column(DateTime, default=utcnow, onupdate=utcnow)
     updated_by_user_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
