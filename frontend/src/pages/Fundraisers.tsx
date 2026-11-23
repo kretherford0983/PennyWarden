@@ -13,6 +13,8 @@ const FundraiserCharts = lazy(() => import("./FundraiserCharts")); // chart libr
 
 const STATUS: Record<string, string> = { PLANNED: "Planned", IN_PROGRESS: "In progress", ENDED: "Ended", ARCHIVED: "Archived", CANCELLED: "Cancelled" };
 const UPCOMING = "upcoming";
+const EARLIER = "earlier";       // 2.5.0 polish: events before the first Fiscal Year (e.g. a pre-PennyWarden fair)
+const NO_FY = (v: string) => v === UPCOMING || v === EARLIER;
 
 export function FundraiserStatus({ status }: { status: string }) {
   return <span className={`pill pill-fr-${status.toLowerCase()}`}>{STATUS[status] || status}</span>;
@@ -42,9 +44,9 @@ export default function Fundraisers() {
   useEffect(() => {
     if (!fy) return;
     setRows(null);
-    const q = fy === UPCOMING ? "upcoming=true" : `fiscal_year_id=${fy}`;
+    const q = fy === UPCOMING ? "upcoming=true" : fy === EARLIER ? "earlier=true" : `fiscal_year_id=${fy}`;
     api.get(`/api/fundraisers?${q}${archived ? "&include_archived=true" : ""}`).then(setRows, setErr);
-    if (fy !== UPCOMING) api.get(`/api/fundraisers/fy-report/selection?fiscal_year_id=${fy}`).then((x) => setPicked(new Set(x.default_ids)), () => setPicked(new Set()));
+    if (!NO_FY(fy)) api.get(`/api/fundraisers/fy-report/selection?fiscal_year_id=${fy}`).then((x) => setPicked(new Set(x.default_ids)), () => setPicked(new Set()));
   }, [fy, archived]);
   const toggle = (id: number) => { const n = new Set(picked); if (n.has(id)) n.delete(id); else n.add(id); setPicked(n); };
   const shown = (rows || []).filter((r) => picked.has(r.id));
@@ -58,25 +60,28 @@ export default function Fundraisers() {
           <select aria-label="Fundraisers Fiscal Year" value={fy} onChange={(e) => setFy(e.target.value)}>
             {fys.map((y) => <option key={y.id} value={y.id}>{y.label}</option>)}
             <option value={UPCOMING}>Upcoming — no Fiscal Year yet</option>
+            <option value={EARLIER}>Earlier — before the first Fiscal Year</option>
           </select>
         </Field>
         <label className="check"><input type="checkbox" checked={archived} onChange={(e) => setArchived(e.target.checked)} /> Show archived</label>
         {/* 2.3.0 (#375): a shortcut to the report in Reports, with this year and the ticked fundraisers filled in */}
-        {fy !== UPCOMING && rows?.length ? <button onClick={() => navigate(`${reportPath("fundraising-fy")}${qs({ fiscal_year_id: fy, ids: shown.map((r) => r.id).join(",") })}`)} disabled={!shown.length}>Fiscal Year report…</button> : null}
+        {!NO_FY(fy) && rows?.length ? <button onClick={() => navigate(`${reportPath("fundraising-fy")}${qs({ fiscal_year_id: fy, ids: shown.map((r) => r.id).join(",") })}`)} disabled={!shown.length}>Fiscal Year report…</button> : null}
         {can("fundraiser.manage") ? <Link className="button" to="/fundraiser-series">Series</Link> : null}
         {can("fundraiser.manage") ? <button className="primary" onClick={() => setCreating(true)}>New event or fundraiser</button> : null}
       </div>
       <ErrorBox error={err} />
       {!rows ? <Loading /> : !rows.length ? (
-        <p className="muted">{fy === UPCOMING ? "No events or fundraisers beyond the Fiscal Years set up so far." : "No events or fundraisers in this Fiscal Year."}</p>
+        <p className="muted">{fy === UPCOMING ? "No events or fundraisers beyond the Fiscal Years set up so far."
+          : fy === EARLIER ? "No events or fundraisers from before the Fiscal Years set up. An event held before PennyWarden (for example last year's fair, paid later) appears here until a deposit is linked to it."
+          : "No events or fundraisers in this Fiscal Year."}</p>
       ) : (
         <table className="table" data-testid="fundraiser-list">
-          <thead><tr>{fy !== UPCOMING ? <th><span className="sr-only">In the report</span>
+          <thead><tr>{!NO_FY(fy) ? <th><span className="sr-only">In the report</span>
             <button className="small" onClick={() => setPicked(new Set(rows.map((r) => r.id)))}>All</button> <button className="small" onClick={() => setPicked(new Set())}>None</button></th> : null}<th>Name</th><th>Type</th><th>Dates</th><th>Status</th><th>Fiscal Years</th><th className="num">Income</th><th className="num">Expenses</th><th className="num">Net</th></tr></thead>
           <tbody>
             {rows.map((f) => (
               <tr key={f.id}>
-                {fy !== UPCOMING ? <td><input type="checkbox" aria-label={`Include ${f.name} in the Fiscal Year report`} checked={picked.has(f.id)} onChange={() => toggle(f.id)} /></td> : null}
+                {!NO_FY(fy) ? <td><input type="checkbox" aria-label={`Include ${f.name} in the Fiscal Year report`} checked={picked.has(f.id)} onChange={() => toggle(f.id)} /></td> : null}
                 <td><Link to={`/fundraisers/${f.id}`}>{f.name}</Link></td>
                 <td>{typeLabel(f.event_type)}</td>
                 <td>{eventDates(f)}</td>
@@ -512,7 +517,7 @@ function FundraiserForm({ current, prefill, onClose, onSaved }: { current?: any;
         {/* 2.4.0 (#429) */}
         <Field label="Type" hint={v.event_type === "EVENT"
           ? "An event that is not a fundraiser (e.g. a Summer Cookout): income, expenses and net, without a goal or donation receipts. Once budgets are chosen, it needs an Expense budget in each Fiscal Year it uses; Income is optional."
-          : "Raises money: goal and donation receipts available. Once budgets are chosen, it needs an Income and an Expense budget in each Fiscal Year it uses."}>
+          : "Raises money: goal and donation receipts available. Once budgets are chosen, it needs an Income budget in each Fiscal Year it uses (Expense is optional)."}>
           <select value={v.event_type} onChange={set("event_type")}>
             <option value="FUNDRAISER">Fundraiser</option>
             <option value="EVENT">Event</option>

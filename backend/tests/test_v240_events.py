@@ -32,7 +32,8 @@ def test_default_type_is_fundraiser_and_shells_save_for_both(env, base):
 
 
 def test_required_budgets_by_type_are_enforced_server_side(env, base):
-    """AC-EVT-005/006: an Event needs Expense (Income optional); a Fundraiser needs both, per Fiscal Year used."""
+    """AC-EVT-005/006: an Event needs Expense (Income optional); a Fundraiser needs Income (Expense optional since
+    2.5.0 - Kyle 2026-11-23: e.g. working a fair run by another organization has no expenses), per Fiscal Year used."""
     enable(env)
     inc, exp = base["inc"]["id"], base["exp"]["id"]
     r = _create(env, "Cookout", "2026-09-12", [inc], "EVENT")
@@ -40,9 +41,10 @@ def test_required_budgets_by_type_are_enforced_server_side(env, base):
     assert "Expense" in r.json()["error"]["message"]
     assert _create(env, "Cookout", "2026-09-12", [exp], "EVENT").status_code == 201
     assert _create(env, "Cookout 2", "2026-09-12", [inc, exp], "EVENT").status_code == 201
-    for ids in ([inc], [exp]):
-        r = _create(env, "Gala", "2026-09-12", ids, "FUNDRAISER")
-        assert r.status_code == 422 and r.json()["error"]["code"] == "REQUIRED_BUDGETS", ids
+    r = _create(env, "Gala", "2026-09-12", [exp], "FUNDRAISER")
+    assert r.status_code == 422 and r.json()["error"]["code"] == "REQUIRED_BUDGETS"
+    assert "Income budget (Expense is optional)" in r.json()["error"]["message"]
+    assert _create(env, "Fair work", "2026-09-12", [inc], "FUNDRAISER").status_code == 201    # no expenses
     assert _create(env, "Gala", "2026-09-12", [inc, exp]).status_code == 201
     # each Fiscal Year used needs its own: a second year with only Income fails for an Event too
     fy28 = env.fy("2028", "2027-07-01", "2028-06-30")
@@ -66,7 +68,7 @@ def test_two_year_event_shows_one_combined_figure_per_kind(env, base):
 
 
 def test_type_change_is_audited_keeps_goal_and_reapplies_the_rule(env, base):
-    """AC-EVT-003: before/after audit, goal kept (hidden for an Event); Event -> Fundraiser needs Income too."""
+    """AC-EVT-003: before/after audit, goal kept (hidden for an Event); Event -> Fundraiser needs Income."""
     enable(env)
     exp = base["exp"]["id"]
     f = _create(env, "Dinner", "2026-09-12", [base["inc"]["id"], exp], goal_amount="500").json()
@@ -104,10 +106,10 @@ def test_results_final_needs_required_budgets_and_upgraded_record_warns(env, bas
     final until fixed or retyped; other edits still save."""
     enable(env)
     f = _create(env, "Old Fair", "2026-09-12", [base["inc"]["id"], base["exp"]["id"]]).json()
-    with app.state.session_factory() as db:           # as if it came from 2.3 with Income only
+    with app.state.session_factory() as db:           # as if it came from 2.3 with Expense only
         x = db.get(Fundraiser, f["id"])
         for fb in list(x.budgets):
-            if fb.kind == "EXPENSE":
+            if fb.kind == "INCOME":
                 db.delete(fb)
         db.commit()
     d = env.bm.get(f"/api/fundraisers/{f['id']}").json()
@@ -116,7 +118,7 @@ def test_results_final_needs_required_budgets_and_upgraded_record_warns(env, bas
     assert r.status_code == 409 and r.json()["error"]["code"] == "REQUIRED_BUDGETS"
     # a rename that leaves budgets and type alone still saves
     ok = env.bm.put(f"/api/fundraisers/{f['id']}", {"name": "Old Fair (2026)", "start_date": "2026-09-12",
-                                                     "budget_ids": [base["inc"]["id"]]})
+                                                     "budget_ids": [base["exp"]["id"]]})
     assert ok.status_code == 200, ok.text
     # fixed by adding the Expense budget -> final allowed
     fixed = env.bm.put(f"/api/fundraisers/{f['id']}", {"name": "Old Fair (2026)", "start_date": "2026-09-12",
@@ -182,3 +184,18 @@ def test_no_internal_names_change(env, base, app):
     ev = env.auditor.get(f"/api/audit-events?action=FUNDRAISER_CREATED&object_id={f['id']}").json()["items"][0]
     assert ev["object_type"] == "fundraiser" and ev["after"]["event_type"] == "EVENT"
     assert Fundraiser.__tablename__ == "fundraiser" and FundraiserBudget.__tablename__ == "fundraiser_budget"
+
+
+def test_events_before_the_first_fiscal_year_are_listed_as_earlier(env, base):
+    """2.5.0 polish: an event touching no Fiscal Year is Earlier (dated before the first Fiscal Year, e.g. a
+    pre-PennyWarden fair whose check isn't linked yet) or Upcoming (the rest - also a gap before a later year)."""
+    enable(env)
+    early = _create(env, "2026 Fair", "2026-03-10", [], "EVENT").json()        # base FY2027 starts 2026-07-01
+    late = _create(env, "2028 Gala", "2027-09-10", []).json()                    # after FY2027
+    names = lambda q: {r["name"] for r in env.bu.get(f"/api/fundraisers?{q}").json()}
+    assert names("earlier=true") == {"2026 Fair"}
+    assert names("upcoming=true") == {"2028 Gala"}
+    env.fy("2029", "2028-07-01", "2029-06-30", confirmations=["FY_GAP"])   # a later year leaves a gap: the Gala stays Upcoming
+    assert names("upcoming=true") == {"2028 Gala"} and names("earlier=true") == {"2026 Fair"}
+    assert "2026 Fair" not in names(f"fiscal_year_id={base['fy']['id']}")
+    assert early["id"] and late["id"]

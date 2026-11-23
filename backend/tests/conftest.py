@@ -280,7 +280,8 @@ def today() -> str:
     return dt.date.today().isoformat()
 
 
-# 2.4.0 (#429): a Fundraiser needs an Income and an Expense budget (an Event an Expense budget) in each Fiscal Year it
+# 2.4.0 (#429): a Fundraiser needs an Income budget (2.5.0: Expense optional; 2.4.0 required both) and an Event an
+# Expense budget in each Fiscal Year it
 # uses once any budget is chosen. These earlier test modules exercise other fundraiser rules (budget windows, adjacent
 # years, closed years, report pages) with one-budget setups, so the new rule is relaxed for them only; it is tested in
 # test_v240_events.py and stays in force for every other module.
