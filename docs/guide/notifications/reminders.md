@@ -12,6 +12,13 @@ reminders also appear on the Dashboard.
 **Resolve** (with an optional note) clears it; a repeating one then creates the next. A resolved reminder can be
 **reopened**.
 
+**What resolved it** (optional): when resolving, choose the register **transaction** (search by number, entity,
+description or amount) or the **event** that resolved the reminder — the insurance payment, the grant deposit. The
+resolved reminder then shows *Resolved by:* with a link that opens it, so a reviewer gets there in one click. Whoever
+can resolve the reminder can add, change or remove the link later (**Link what resolved it…** / **Change link…**, for
+example when the check is entered a day later); each change is in the audit log. Someone who can't open the
+transaction or event sees its name without a link. The next occurrence of a repeating reminder starts without one.
+
 ## Steps
 
 Every reminder is also a task: its **objective**, always the last one. A reminder can carry **steps** in front of it

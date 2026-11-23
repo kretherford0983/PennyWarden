@@ -113,6 +113,16 @@ BR for the issue):
   budget stays frozen, line adjustments in Closed years stay read-only, and delete is still refused. Notice
   REPORTING_ONLY. Tests `test_v250_late_proceeds.py`; `test_v160_fundraisers.py` updated (was 409).
 
+**2.5.0 — what resolved a reminder (#594, decided with Kyle 2026-11-23).** Migration `0091_reminder_resolution_link`:
+`reminder.resolution_link_type` (TRANSACTION | EVENT) + `resolution_link_id` (no FK, like `link_id`, which stays the
+reminder's *subject*). Set on `POST /api/reminders/{id}/resolve` (both or neither, same workspace - else 422);
+changed or removed afterwards with `PUT /api/reminders/{id}/resolution-link` by whoever can resolve it (409 before
+resolving), audited REMINDER_RESOLUTION_LINK_CHANGED with before/after. `reminders.resolution_link()` gives the label
+and the address - `/register?account=&txn=` with `register.view`, `/fundraisers/{id}` with the module on and
+`fundraiser.view` - else the label only. Reopening keeps the link; `_create_next` doesn't copy it. Picker:
+`GET /api/reminders/resolution-link-options?kind=&q=`. Reinitialize and restore need no change (columns on
+`reminder`). Tests `test_v250_reminder_resolution_link.py`.
+
 **2.5.0 — Vite 8 (Kyle 2026-11-23).** Of the major upgrades Dependabot leaves out (dependabot.yml `ignore`
 semver-major), only Vite was taken in 2.5.0: Vite 6.4 is on its last support tier (security fixes only). Vite 6.4.6 →
 8.3.8 and `@vitejs/plugin-react` 4.7.0 → 6.3.0 (Oxc instead of Babel). `vite.config.ts` is unchanged; the build is
