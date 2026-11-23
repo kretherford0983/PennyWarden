@@ -48,6 +48,14 @@ could not otherwise be corrected. Scope and safeguards:
 - Audited as `TRANSACTION_VOID_DATE_CORRECTED` with before/after snapshots and the reason.
 - Tests: `backend/tests/test_cr001_void_date.py` (5 tests) and E2E "CR-001".
 
+**2.5.0 polish — Fundraiser rule and the Earlier list (Kyle 2026-11-23, testing the county fair).**
+- **BR-EVT-002 changed:** `fundraisers.REQUIRED_KINDS` = Fundraiser → INCOME, Event → EXPENSE (2.4.0 #429 had
+  Fundraiser → INCOME + EXPENSE). The type follows the main direction of the money. Tests `test_v240_events.py`
+  updated (Income-only Fundraiser accepted, Expense-only refused; the upgraded-record warning now drops Income).
+- **Earlier:** `GET /api/fundraisers?earlier=true` lists events touching no Fiscal Year dated on/before the last
+  Fiscal Year's end; `upcoming=true` now lists only those after it (all of them when no year exists). Once a proceeds
+  line is linked the event lists under that line's year (`touched_fy_ids`).
+
 **2.5.0 — event sections reference transaction pages (#589, decided with Kyle 2026-11-23).** In
 `build_audit_report` (audit and close layouts) each transaction page starts with `_TxAnchor`, which records its page
 in `_AuditDoc.tx_pages` while the PDF is laid out. `_fundraiser_section(..., in_report=)` (the ids of the transactions

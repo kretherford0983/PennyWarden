@@ -95,8 +95,8 @@ def manager(db: Session = Depends(get_db), ctx: Ctx = Depends(require("fundraise
 
 @router.get("/fundraisers")
 def list_fundraisers(fiscal_year_id: int | None = None, upcoming: bool = False, include_archived: bool = False,
-                     db: Session = Depends(get_db), ctx: Ctx = Depends(viewer)):
-    return svc.list_out(db, ctx, fiscal_year_id, upcoming, include_archived)
+                     earlier: bool = False, db: Session = Depends(get_db), ctx: Ctx = Depends(viewer)):
+    return svc.list_out(db, ctx, fiscal_year_id, upcoming, include_archived, earlier)
 
 
 @router.get("/fundraisers/budget-options")
