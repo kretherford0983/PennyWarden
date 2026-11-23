@@ -123,6 +123,13 @@ and the address - `/register?account=&txn=` with `register.view`, `/fundraisers/
 `GET /api/reminders/resolution-link-options?kind=&q=`. Reinitialize and restore need no change (columns on
 `reminder`). Tests `test_v250_reminder_resolution_link.py`.
 
+**2.5.0 — report footers inside the printable area (Kyle 2026-11-23, a printout from Windows Chrome lost its
+footer).** `reports.FOOTER_Y` (0.4 in, baseline), `FOOTER_Y2` (+9 pt, second line) and `FOOTER_X` (0.4 in side inset)
+place the footer of every report stamped by `_stamp_and_write` (and the footer mark in `_brand_page`); before, the
+baselines were 10/19 pt and the inset 18 pt. Own footers moved too: donation statements (and their bottom margin to
+0.85 in), the invoice reports and the audit log export (0.3/0.35 in → 0.4 in, bottom margins 0.65 in). Letters,
+invoices and checks keep their layouts (their bottom text is already ≥ 0.6 in, and checks are positioned for the stock).
+
 **2.5.0 — Vite 8 (Kyle 2026-11-23).** Of the major upgrades Dependabot leaves out (dependabot.yml `ignore`
 semver-major), only Vite was taken in 2.5.0: Vite 6.4 is on its last support tier (security fixes only). Vite 6.4.6 →
 8.3.8 and `@vitejs/plugin-react` 4.7.0 → 6.3.0 (Oxc instead of Babel). `vite.config.ts` is unchanged; the build is

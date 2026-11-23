@@ -495,12 +495,12 @@ def as_pdf(db: Session, ctx, rep: dict) -> bytes:
     def footer(canvas, doc):
         canvas.saveState()
         canvas.setFont("Helvetica", 7.5)
-        canvas.drawString(0.5 * inch, 0.35 * inch, f"{org_name} · {rep['title']} · printed {printed}")
-        canvas.drawRightString(landscape(letter)[0] - 0.5 * inch, 0.35 * inch, f"Page {doc.page}")
+        canvas.drawString(0.5 * inch, 0.4 * inch, f"{org_name} · {rep['title']} · printed {printed}")
+        canvas.drawRightString(landscape(letter)[0] - 0.5 * inch, 0.4 * inch, f"Page {doc.page}")   # 2.5.0: printable area
         canvas.restoreState()
 
     doc = SimpleDocTemplate(buf, pagesize=landscape(letter), leftMargin=0.5 * inch, rightMargin=0.5 * inch,
-                            topMargin=0.5 * inch, bottomMargin=0.6 * inch, title=rep["title"], author=org_name)
+                            topMargin=0.5 * inch, bottomMargin=0.65 * inch, title=rep["title"], author=org_name)
     width = landscape(letter)[0] - inch
     story = [Paragraph(escape(org_name), ss["Heading3"]), Paragraph(escape(rep["title"]), ss["Title"]),
              Paragraph(escape(rep["subtitle"]), ss["Normal"])]
