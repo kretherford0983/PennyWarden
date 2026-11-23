@@ -38,6 +38,14 @@ dependency update planned as 2.4.2 is part of this release.
   titled *Proposed*, an Approved year *Approved*. In the **Annual** report, Budget Managers can add next year's
   proposal after the year's review, so one PDF and one presentation cover the year-end meeting.
 
+### Printing
+- **Report footers are no longer cut off when printed.** The footer (report name, page number, footer text and the
+  small logo) was drawn about 0.14 in from the bottom edge, inside the strip most printers can't print, so printing
+  from Chrome on Windows cut it off. Every PDF report's footer now sits 0.4 in from the bottom and the sides, with the
+  page content ending above it. This covers the audit and close reports, the event and fundraising reports, the
+  Quarterly / Annual report, the budget reports, the donation statements, the invoice reports and the audit log
+  export.
+
 ### Dependencies
 - **Python packages:** FastAPI 0.162.0 → 0.162.7 (fixes for cleaning up a request's dependencies when the request is
   cancelled) and pypdfium2 5.15.0 → 5.15.2 (closes cleanly when the application stops). `THIRD-PARTY-NOTICES.txt`

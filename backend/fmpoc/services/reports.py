@@ -309,6 +309,12 @@ class _AuditDoc(SimpleDocTemplate):
 
 
 _MARK_H = 14          # the small mark in the footer (points)
+# 2.5.0 (Kyle 2026-11-23): printers can't print the outer ~0.25 in of a page (Windows Chrome cut the footer drawn at
+# 0.14 in). Every report footer sits at least 0.4 in from the bottom and the sides - inside every common printer's
+# printable area - and the page body ends above it (bottomMargin = MARGIN + 0.25 in = 0.85 in).
+FOOTER_Y = 0.4 * inch          # baseline of the footer's main line
+FOOTER_Y2 = FOOTER_Y + 9       # its second line (footer text, section page k of n)
+FOOTER_X = 0.4 * inch          # left / right inset
 _LOGO_H, _LOGO_W = 0.42 * inch, 2.2 * inch     # the full logo in the first page's top margin
 
 
@@ -321,7 +327,7 @@ def _brand_page(c, theme, w: float, h: float, first: bool) -> None:
     in the margin (nothing is drawn without a logo)."""
     if theme.logo_mark:
         mw = _MARK_H * _aspect(theme.logo_mark_size)
-        c.drawImage(ImageReader(io.BytesIO(theme.logo_mark)), 18, 6, mw, _MARK_H, mask="auto",
+        c.drawImage(ImageReader(io.BytesIO(theme.logo_mark)), FOOTER_X, FOOTER_Y - 4, mw, _MARK_H, mask="auto",
                     preserveAspectRatio=True)
     if first and theme.logo_full:
         a = _aspect(theme.logo_full_size)
@@ -380,15 +386,15 @@ def _stamp_and_write(reader_bytes: bytes, doc: _AuditDoc, path: str, title: str)
         buf = io.BytesIO()
         c = rl_canvas.Canvas(buf, pagesize=(w, h))
         _brand_page(c, theme, w, h, first=i == 0)
-        left = 18 + (_MARK_H * 1.1 * _aspect(theme.logo_mark_size) + 6 if theme.logo_mark else 0)
+        left = FOOTER_X + (_MARK_H * 1.1 * _aspect(theme.logo_mark_size) + 6 if theme.logo_mark else 0)
         c.setFont(_FONT, 7)
         c.setFillColor(branding.pick("#444444", "on_surface_variant"))
-        c.drawString(left, 10, f"{title}  ·  {doc.page_labels.get(i + 1, '')}"[:160])
-        c.drawRightString(w - 18, 10, f"Page {i + 1} of {total}")
+        c.drawString(left, FOOTER_Y, f"{title}  ·  {doc.page_labels.get(i + 1, '')}"[:160])
+        c.drawRightString(w - FOOTER_X, FOOTER_Y, f"Page {i + 1} of {total}")
         if theme.footer_text:
-            c.drawString(left, 19, theme.footer_text[:branding.FOOTER_MAX])
+            c.drawString(left, FOOTER_Y2, theme.footer_text[:branding.FOOTER_MAX])
         if i + 1 in in_section:
-            c.drawRightString(w - 18, 20, in_section[i + 1][:120])
+            c.drawRightString(w - FOOTER_X, FOOTER_Y2, in_section[i + 1][:120])
         for x, y, lines in notes.get(i + 1, []):
             c.setFont(_FONT, 10)
             c.setFillColor(branding.pick("#000000", "on_surface"))
