@@ -48,6 +48,12 @@ could not otherwise be corrected. Scope and safeguards:
 - Audited as `TRANSACTION_VOID_DATE_CORRECTED` with before/after snapshots and the reason.
 - Tests: `backend/tests/test_cr001_void_date.py` (5 tests) and E2E "CR-001".
 
+**2.5.0 — Vite 8 (Kyle 2026-11-23).** Of the major upgrades Dependabot leaves out (dependabot.yml `ignore`
+semver-major), only Vite was taken in 2.5.0: Vite 6.4 is on its last support tier (security fixes only). Vite 6.4.6 →
+8.3.8 and `@vitejs/plugin-react` 4.7.0 → 6.3.0 (Oxc instead of Babel). `vite.config.ts` is unchanged; the build is
+the same files under `backend/fmpoc/static`. React 19, TypeScript 6 → 7 and pypdf 7 follow in a later release (own
+issue). THIRD-PARTY-NOTICES.txt is unchanged (build tools are not shipped).
+
 **2.1.0 — Budget Review (#283, Kyle 2026-10-20; built 2026-10-21 with layout A, the issue's recommendation).**
 - Renamed from Budget Prep. `budget_review()`, `budget_review_csv()` and `budget_review_pdf()` are the new names;
   `budget_prep*` stay as aliases. The routes are `/api/reports/budget-review` and `/budget-review/projection-choices`,
