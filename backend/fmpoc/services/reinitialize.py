@@ -33,7 +33,7 @@ from .. import audit
 from ..models import (Donation, Attachment, AuditEvent, BankAccount, BankAccountBalance, FiscalYearBalanceChange, Budget, BudgetHistoryEntry, BudgetInclusion, BudgetProjectionChoice, CheckAccount, FormerBudget,
                       CheckDocument, CheckNumberAcknowledgement, CheckPrinterSetting, CheckSigner, CheckStyle, DonationDetail, DonationLine,
                       DonationReceipt, DonationSettings, DonationStatement, Entity,
-                      FiscalYear, FiscalYearReview, Fundraiser, FundraiserBucket, FundraiserBucketCategory, FundraiserBucketLine, FundraiserBudget,
+                      FiscalYear, FiscalYearReview, Fundraiser, FundraiserBucket, FundraiserBucketCategory, FundraiserBucketLine, FundraiserBudget, FundraiserProceedsLine,
                       FundraiserFyReportNote, FundraiserSeries, FundraiserSeriesResult,
                       FundraiserClassification, FundraiserExclusion, FundraiserLineContributor, RegisterTransaction, Reminder, ReminderTask,
                       RequestKey,
@@ -48,7 +48,7 @@ COOLDOWN = dt.timedelta(hours=24)
 
 # children first
 WIPE = (InvoicePayment,   # 2.4.0 (#254): before the allocations it references
-        DonationStatement, DonationReceipt, DonationDetail, DonationLine, Donation, FundraiserBucketLine, FundraiserLineContributor, FundraiserClassification, FundraiserExclusion, FiscalYearReview, Attachment,
+        DonationStatement, DonationReceipt, DonationDetail, DonationLine, Donation, FundraiserProceedsLine, FundraiserBucketLine, FundraiserLineContributor, FundraiserClassification, FundraiserExclusion, FiscalYearReview, Attachment,
         TransactionAllocation, RegisterTransaction, CheckNumberAcknowledgement, CheckAccount, CheckPrinterSetting,
         FiscalYearBalanceChange, BankAccountBalance, BankAccount, FundraiserBucket, FundraiserBucketCategory, FundraiserBudget, Fundraiser, FundraiserSeriesResult,
         FundraiserSeries, FundraiserFyReportNote, BudgetProjectionChoice, BudgetInclusion, BudgetHistoryEntry, FormerBudget,
@@ -160,6 +160,7 @@ def wipe(db: Session, ws_id: int, ctx, by: str, backup_name: str, via: str, befo
         FundraiserSeriesResult: FundraiserSeriesResult.series_id.in_(
             select(FundraiserSeries.id).where(FundraiserSeries.workspace_id == ws_id)),
         FundraiserBudget: FundraiserBudget.fundraiser_id.in_(fr_ids),
+        FundraiserProceedsLine: FundraiserProceedsLine.fundraiser_id.in_(fr_ids),     # 2.5.0 (#588)
         CheckAccount: CheckAccount.check_style_id.in_(style_ids),
     }
     for model in WIPE:

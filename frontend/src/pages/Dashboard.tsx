@@ -106,6 +106,7 @@ export default function Dashboard() {
           <li>Uncleared transactions: <b>{d.attention.uncleared_transactions}</b></li>
           {fy ? <li>Documentation review warnings ({fy.display_name}): <b>{d.attention.documentation_warnings}</b> {d.attention.documentation_warnings ? <Link to={`/fiscal-years/${fy.id}`}>Review</Link> : null}</li> : null}
         </ul>
+        <AwaitingProceeds />
       </section>
     ),
     charts: (
@@ -270,3 +271,18 @@ function FyProgressTile({ p }: { p: any }) {
   );
 }
 
+
+/** 2.5.0 (#588): events awaiting proceeds from an outside organization (nothing when there are none or the module is off). */
+function AwaitingProceeds() {
+  const { me, can } = useMe();
+  const [rows, setRows] = useState<any[]>([]);
+  const on = !!me.modules?.fundraisers && can("fundraiser.view");
+  useEffect(() => { if (on) api.get("/api/fundraisers/awaiting-proceeds").then(setRows, () => setRows([])); }, [on]);
+  if (!on || !rows.length) return null;
+  return (
+    <div data-testid="dash-awaiting-proceeds">
+      <p><b>Events awaiting proceeds</b></p>
+      <ul>{rows.map((r) => <li key={r.id}><Link to={`/fundraisers/${r.id}`}>{r.name}</Link> — {r.text}{r.linked_lines ? ` (${r.linked_lines} deposit line${r.linked_lines === 1 ? "" : "s"} linked so far)` : ""}</li>)}</ul>
+    </div>
+  );
+}

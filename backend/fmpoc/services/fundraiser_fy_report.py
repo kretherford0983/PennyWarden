@@ -122,6 +122,16 @@ def build_pdf(org: str, rep: dict) -> tuple[bytes, _AuditDoc]:
         f.append(_table(data, [W - 4.6 * inch, 1.1 * inch, 0.9 * inch, 0.85 * inch, 0.85 * inch, 0.9 * inch],
                         bold_rows=[len(data) - 1]))
         f.append(P("Events are not counted in the fundraising totals, shares or history above.", "small"))
+    if rep.get("late_proceeds"):    # 2.5.0 (#588)
+        f += [Spacer(1, 8), *heading("Proceeds received this year for earlier events")]
+        data = [_h(["Event", "Event year", "Received", "From", "Amount"])]
+        for r in rep["late_proceeds"]:
+            data.append([P(r["event"], "cell"), P(str(r["event_year"]), "cell"), P(_us(r["date"]), "cell"),
+                         P(r["entity"] or "—", "cell"), P(money(r["amount"]), "cellr")])
+        data.append([_b("Total"), "", "", "", P(money(rep["late_proceeds_total"]), "fs_rb")])
+        f.append(_table(data, [W - 4.3 * inch, 0.9 * inch, 1.0 * inch, 1.5 * inch, 0.9 * inch], bold_rows=[len(data) - 1]))
+        f.append(P("Paid by outside organizations after the event. Received (and in the bank) this Fiscal Year; counted "
+                   "with each event in its own year, so they are not in this year's totals above.", "small"))
     # annual trend (table; the deck has the chart)
     f += [Spacer(1, 8), *heading("Annual trend")]
     if rep["linked_history"]:
@@ -262,6 +272,19 @@ def build_pptx(org: str, rep: dict) -> bytes:
                         [6.1, 2.0, 2.0, 2.0], {1, 2, 3}, bold_rows=[i + 1 for i, r in enumerate(part) if r[0] == "Total"])
             deck._notes(sl, ["Events (not fundraisers): income, expenses and net for each; they are listed separately "
                              "and do not count in the year's fundraising total."])
+    # 3c. 2.5.0 (#588): proceeds received this year for earlier events
+    if rep.get("late_proceeds"):
+        rows = [[r["event"], str(r["event_year"]), _us(r["date"]), r["entity"] or "—", money(r["amount"])]
+                for r in rep["late_proceeds"]]
+        rows.append(["Total", "", "", "", money(rep["late_proceeds_total"])])
+        for k, part in enumerate(deck._chunks(rows, deck.TABLE_ROWS)):
+            sl = prs.slides.add_slide(blank)
+            deck._title(sl, "Proceeds received for earlier events" + (" (continued)" if k else ""),
+                        f"Paid after the event; received in {fyn}")
+            deck._table(sl, Inches(0.6), Inches(1.7), Inches(12.1), [["Event", "Event year", "Received", "From", "Amount"]]
+                        + part, [4.6, 1.5, 1.8, 2.4, 1.8], {4}, bold_rows=[i + 1 for i, r in enumerate(part) if r[0] == "Total"])
+            deck._notes(sl, ["Cash basis: these amounts arrived this Fiscal Year. Each counts with its event, in the year "
+                             "the event was held, so it is not in this year's fundraising total."])
     # 4. annual trend
     sl = prs.slides.add_slide(blank)
     deck._title(sl, "Annual trend", "Net raised per year")

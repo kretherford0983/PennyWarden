@@ -6,6 +6,20 @@ Versions are `Breaking.Major.Minor` from 1.6.0 (docs/branching.md).
 Events whose proceeds are paid later, shorter Audit / Close reports and a budget proposal presentation. The monthly
 dependency update planned as 2.4.2 is part of this release.
 
+**Upgrading:** one database migration (`0090_late_proceeds`), applied automatically.
+
+### Events & Fundraisers
+- **Proceeds paid later (#588).** An event run with an outside organization that pays months later — a county fair
+  in August whose fair board sends the check the next April — can be marked **Proceeds paid later**, with the expected
+  payer and month. Until someone marks **All proceeds received** it is **Awaiting proceeds**: listed on the Dashboard,
+  shown as *Proceeds pending* in its reports, and never *Final*, even after its Fiscal Years close. The check is entered
+  as a normal deposit in the year it arrives (any Income budget); saving it from the expected payer asks whether it is
+  the event's proceeds, or **Add received proceeds…** links it from the event. A linked deposit counts with that event
+  only, in the event's own year, and the fundraising report of the year it arrived lists it under *Proceeds received
+  this year for earlier events*. Waiting never holds up closing a year.
+- **Events in closed years (#588).** A Budget Manager can now set up an event dated in a Closed Fiscal Year and choose
+  that year's budgets, to load past events — reporting only; nothing financial changes.
+
 ### Reports
 - **Shorter event sections in the FY Audit and Close reports (#589).** Each event still lists every one of its
   transactions, now with the **page** of the report where that transaction's details and receipts are printed. The
@@ -341,6 +355,20 @@ logo for everything that prints, and the user guide built into the app.
 
 ## 2.3.0 — 2026-11-01
 PennyWarden 2.3.0 (in progress).
+
+**Upgrading:** one database migration (`0090_late_proceeds`), applied automatically.
+
+### Events & Fundraisers
+- **Proceeds paid later (#588).** An event run with an outside organization that pays months later — a county fair
+  in August whose fair board sends the check the next April — can be marked **Proceeds paid later**, with the expected
+  payer and month. Until someone marks **All proceeds received** it is **Awaiting proceeds**: listed on the Dashboard,
+  shown as *Proceeds pending* in its reports, and never *Final*, even after its Fiscal Years close. The check is entered
+  as a normal deposit in the year it arrives (any Income budget); saving it from the expected payer asks whether it is
+  the event's proceeds, or **Add received proceeds…** links it from the event. A linked deposit counts with that event
+  only, in the event's own year, and the fundraising report of the year it arrived lists it under *Proceeds received
+  this year for earlier events*. Waiting never holds up closing a year.
+- **Events in closed years (#588).** A Budget Manager can now set up an event dated in a Closed Fiscal Year and choose
+  that year's budgets, to load past events — reporting only; nothing financial changes.
 
 ### Reports
 - **A new Reports screen (#375).** Reports opens on a **catalog**: every report and presentation you can run, grouped

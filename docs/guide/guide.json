@@ -294,6 +294,11 @@
           "summary": "Buckets, cash floats, exclusions and documents."
         },
         {
+          "id": "proceeds-paid-later",
+          "title": "Proceeds paid later",
+          "summary": "Events paid months later by an outside organization: awaiting, linking the check, how it counts."
+        },
+        {
           "id": "event-reports",
           "title": "Event reports",
           "summary": "The stakeholder report, the presentation and the yearly report."
