@@ -188,6 +188,40 @@ class _SectionNote(Flowable):
         self._s[self._kind] = (self.canv.getPageNumber(), x, y)
 
 
+class _TxAnchor(Flowable):
+    """2.5.0 (#589): zero-size; remembers the page a transaction's detail page starts on."""
+
+    def __init__(self, doc: "_AuditDoc", tx_id: int):
+        super().__init__()
+        self._d, self._id = doc, tx_id
+
+    def wrap(self, aw, ah):
+        return 0, 0
+
+    def draw(self):
+        self._d.tx_pages.setdefault(self._id, self.canv.getPageNumber())
+
+
+class _PageRef(Flowable):
+    """2.5.0 (#589): a table cell showing the page of a transaction's detail page in the same report. The transactions
+    are laid out before the events, so the page is known when the cell is drawn - no second build pass is needed."""
+
+    def __init__(self, doc: "_AuditDoc", tx_id: int):
+        super().__init__()
+        self._d, self._id = doc, tx_id
+
+    def wrap(self, aw, ah):
+        self.width = aw
+        return aw, S["cell"].leading
+
+    def draw(self):
+        st = S["cell"]
+        page = self._d.tx_pages.get(self._id)
+        self.canv.setFont(st.fontName, st.fontSize)
+        self.canv.setFillColor(st.textColor)
+        self.canv.drawString(0, st.leading - st.fontSize, str(page) if page else "—")
+
+
 BODY_H = PAGE_H - MARGIN - (MARGIN + 0.25 * inch) - 12 - 4  # usable frame height (frame padding + safety)
 
 
@@ -268,6 +302,7 @@ class _AuditDoc(SimpleDocTemplate):
         self.page_labels: dict[int, str] = {}
         self.slots: list[tuple[int, float, float, float, float, object]] = []  # page, x, y, w, h, pypdf page
         self.sections: list[dict] = []  # 1.6.7: one per bank account when the report covers several
+        self.tx_pages: dict[int, int] = {}  # 2.5.0 (#589): transaction id -> first page of its detail page
 
     def afterPage(self):
         self.page_labels.setdefault(self.page, self.current_label)
@@ -633,7 +668,8 @@ def build_audit_report(db: Session, ctx, settings, fy: FiscalYear, account_id: i
                "page and finishes with an \"End of transactions\" page, both stating the account's page range."
                if len({t.bank_account_id for t in txns}) > 1 else "")
             + (" The fundraisers follow the transactions, between a \"Start of fundraisers\" page and an \"End of "
-               "fundraisers\" page that state their page range." if frs else ""), "body"),
+               "fundraisers\" page that state their page range. Each lists its transactions with the page where "
+               "they are printed above; their attachments are not reproduced a second time." if frs else ""), "body"),
           Spacer(1, 8), PM("Activity summary", "h2"),
           _kv([("Transactions", f"{len(txns)} in this report — {len(active)} active, {len(txns) - len(active)} VOID"),
                ("Deposits (active)", money(dep)), ("Withdrawals (active)", money(wd)), ("Net", money(dep - wd)),
@@ -789,7 +825,7 @@ def build_audit_report(db: Session, ctx, settings, fy: FiscalYear, account_id: i
         parent_atts, by_alloc, removed = att_cache[t.id]
         live = t.live_allocations
         void = t.status == "VOID"
-        f += [_Mark(doc, f"Transaction #{t.id}"),
+        f += [_Mark(doc, f"Transaction #{t.id}"), _TxAnchor(doc, t.id),
               PM(f"Transaction #{t.id}" + (" — <font color='#b3261e'>VOID</font>" if void else ""), "h1"),
               P(f"{a.account_name} - {bank.masked(a)}", "small"), Spacer(1, 4)]
         ent = t.parent_entity
@@ -892,7 +928,7 @@ def build_audit_report(db: Session, ctx, settings, fy: FiscalYear, account_id: i
     for fr in frs:  # v1.6.2 CR-035
         if f and not isinstance(f[-1], PageBreak):
             f.append(PageBreak())
-        f += _fundraiser_section(db, ctx, settings, doc, fr, users, this_fy=fy)
+        f += _fundraiser_section(db, ctx, settings, doc, fr, users, this_fy=fy, in_report=in_report)
         f.append(PageBreak())
     if frs:
         f += fundraisers_page("end")
@@ -927,10 +963,16 @@ _FR_STATUS = {"CANCELLED": "Cancelled", "PLANNED": "Planned", "IN_PROGRESS": "In
 
 
 def _fundraiser_section(db: Session, ctx, settings, doc: _AuditDoc, fr: Fundraiser, users: dict[int, str],
-                        this_fy: FiscalYear | None = None) -> list:
+                        this_fy: FiscalYear | None = None, in_report: set[int] | None = None) -> list:
     """One fundraiser: summary, buckets, transaction list, excluded lines, then the fundraiser documents and the
     transactions' attachments rendered. The same section is used standalone and inside the Audit / Close reports
-    (this_fy = the report's Fiscal Year, marked in the per-year breakdown)."""
+    (this_fy = the report's Fiscal Year, marked in the per-year breakdown).
+
+    2.5.0 (#589): inside the Audit / Close reports (`in_report` = the ids of the transactions printed in that report)
+    the transaction list gets a Page column - the page of the transaction's detail page, where its attachments are
+    already printed - and the transactions' attachments are not reproduced again. A line whose transaction is not in
+    the report says where it is instead (another Fiscal Year's report, or an account this report leaves out). The
+    event's own documents are still printed: they appear nowhere else. The standalone report is unchanged."""
     d = fsvc.detail(db, ctx, fr)
     t = d["totals"]
     fy_name = {y["id"]: y["display_name"] for y in d["fiscal_years"]}
@@ -1004,10 +1046,21 @@ def _fundraiser_section(db: Session, ctx, settings, doc: _AuditDoc, fr: Fundrais
     # ---- transactions
     included = [x for x in d["lines"] if not x["excluded"]]
     excluded = [x for x in d["lines"] if x["excluded"]]
+    refs = in_report is not None          # 2.5.0 (#589)
+
+    def where(x) -> object:
+        if x["transaction_id"] in in_report:
+            return _PageRef(doc, x["transaction_id"])
+        fy_label = fy_name.get(x["fiscal_year_id"], "")
+        if this_fy is not None and x["fiscal_year_id"] != this_fy.id and fy_label:
+            return P(f"{fy_label} report", "cell")
+        return P("Not in this report", "cell")
+
     f += [Spacer(1, 6), PM("Transactions", "h2")]
     if included:
-        rows = [[PM(f"<b>{h}</b>", "cell") for h in ("Date", "FY", "#", "Type", "Entity / description", "Budget", "Amount",
-                                                     "Counted", "Buckets")]]
+        heads = ["Date", "FY", "#", *(["Page"] if refs else []), "Type", "Entity / description", "Budget", "Amount",
+                 "Counted", "Buckets"]
+        rows = [[PM(f"<b>{h}</b>", "cell") for h in heads]]
         for x in included:
             desc = " — ".join(v for v in (x["entity"], x["description"]) if v) or "—"
             if x["classification"]:
@@ -1017,15 +1070,25 @@ def _fundraiser_section(db: Session, ctx, settings, doc: _AuditDoc, fr: Fundrais
                            + (f" ({money(b['charge'])} less {money(b['less'])} {b['less_description'] or ''})".replace(" )", ")")
                               if b.get("less") not in (None, "0.00") else "") for b in x["buckets"])
             rows.append([P(x["transaction_date"], "cell"), P(fy_name.get(x["fiscal_year_id"], ""), "cell"),
-                         P(str(x["transaction_id"]), "cell"), P("Income" if x["kind"] == "INCOME" else "Expense", "cell"),
+                         P(str(x["transaction_id"]), "cell"), *([where(x)] if refs else []),
+                         P("Income" if x["kind"] == "INCOME" else "Expense", "cell"),
                          P(desc, "cell"), P(x["budget"], "cell"), P(money(x["amount"]), "cellr"),
                          P(money(x["counted"]), "cellr"), P(bk, "cell")])
-        rows.append([PM("<b>Income (counted)</b>", "cell"), "", "", "", "", "", "", P(money(t["income"]), "cellr"), ""])
-        rows.append([PM("<b>Expenses (counted)</b>", "cell"), "", "", "", "", "", "", P(money(t["expense"]), "cellr"), ""])
+        k = len(heads) - 2                     # the Counted column
+        blank = [""] * (len(heads) - 1)
+        for label, value in (("Income (counted)", t["income"]), ("Expenses (counted)", t["expense"])):
+            row = [PM(f"<b>{label}</b>", "cell"), *blank]
+            row[k] = P(money(value), "cellr")
+            rows.append(row)
         n = len(rows)
-        f.append(_grid(rows, [0.72 * inch, 0.5 * inch, 0.32 * inch, 0.6 * inch, 1.7 * inch, 1.1 * inch, 0.72 * inch,
-                              0.72 * inch, FRAME_W - 12 - 6.38 * inch],
-                       extra=[("SPAN", (0, n - 2), (6, n - 2)), ("SPAN", (0, n - 1), (6, n - 1))]))
+        widths = ([0.72, 0.5, 0.32, 0.55, 0.6, 1.4, 0.85, 0.72, 0.72] if refs
+                  else [0.72, 0.5, 0.32, 0.6, 1.7, 1.1, 0.72, 0.72])
+        widths = [w * inch for w in widths]
+        f.append(_grid(rows, widths + [FRAME_W - 12 - sum(widths)],
+                       extra=[("SPAN", (0, n - 2), (k - 1, n - 2)), ("SPAN", (0, n - 1), (k - 1, n - 1))]))
+        if refs:
+            f.append(P("Page = the page of this report where the transaction's details and its attachments are printed; "
+                       "the attachments are not reproduced again in this section.", "small"))
     else:
         f.append(P("No transactions.", "body"))
     if excluded:
@@ -1046,7 +1109,7 @@ def _fundraiser_section(db: Session, ctx, settings, doc: _AuditDoc, fr: Fundrais
     for i, a in enumerate(docs):
         f += _attachment_flowables(doc, settings, a, f"Fundraiser document {i + 1} of {len(docs)}", users)
     seen: set[int] = set()
-    for x in included:
+    for x in ([] if refs else included):     # 2.5.0 (#589): printed with their transactions in the Audit / Close
         for a in x["attachments"]:
             if a["id"] in seen:
                 continue
@@ -1054,7 +1117,8 @@ def _fundraiser_section(db: Session, ctx, settings, doc: _AuditDoc, fr: Fundrais
             att = db.get(Attachment, a["id"])
             f += _attachment_flowables(doc, settings, att, f"Transaction #{x['transaction_id']} ({x['transaction_date']}) attachment", users)
     if not docs and not seen:
-        f += [Spacer(1, 6), P("No fundraiser documents or transaction attachments.", "small")]
+        f += [Spacer(1, 6), P("No fundraiser documents." if refs else "No fundraiser documents or transaction attachments.",
+                              "small")]
     return f
 
 

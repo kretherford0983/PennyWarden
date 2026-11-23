@@ -48,6 +48,17 @@ could not otherwise be corrected. Scope and safeguards:
 - Audited as `TRANSACTION_VOID_DATE_CORRECTED` with before/after snapshots and the reason.
 - Tests: `backend/tests/test_cr001_void_date.py` (5 tests) and E2E "CR-001".
 
+**2.5.0 — event sections reference transaction pages (#589, decided with Kyle 2026-11-23).** In
+`build_audit_report` (audit and close layouts) each transaction page starts with `_TxAnchor`, which records its page
+in `_AuditDoc.tx_pages` while the PDF is laid out. `_fundraiser_section(..., in_report=)` (the ids of the transactions
+in the report) adds a **Page** column whose cell is `_PageRef`: it reads `tx_pages` when it is drawn. The
+transactions are laid out before the fundraisers, so the number is known by then - no second build pass. Attached
+PDF pages are merged onto reserved slots of existing pages, so the reportlab page number is the printed page number.
+A line not in the report shows "<FY> report" (a line of the event's other Fiscal Year) or "Not in this report" (an
+account the report leaves out). Transaction attachments are not reproduced in the section; the event's own documents
+(`Attachment.fundraiser_id`) still are. The standalone Fundraiser detail report passes no `in_report` and is
+unchanged. Tests `test_v250_event_page_refs.py`.
+
 **2.5.0 — Vite 8 (Kyle 2026-11-23).** Of the major upgrades Dependabot leaves out (dependabot.yml `ignore`
 semver-major), only Vite was taken in 2.5.0: Vite 6.4 is on its last support tier (security fixes only). Vite 6.4.6 →
 8.3.8 and `@vitejs/plugin-react` 4.7.0 → 6.3.0 (Oxc instead of Babel). `vite.config.ts` is unchanged; the build is
