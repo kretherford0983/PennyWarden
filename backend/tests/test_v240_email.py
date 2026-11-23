@@ -193,3 +193,24 @@ def test_506_test_email_failures_are_quick_and_in_plain_words(env, base, outbox,
         assert out["status"] == "FAILED" and words in out["error"], out
     outbox.fake.fail = None
     assert env.admin.post("/api/system/email/test", {"to": "me@example.org"}).json()["status"] == "SENT"
+
+
+def test_mail_server_reply_text_is_not_returned(caplog):
+    """2.5.0 (CodeQL py/stack-trace-exposure #16-#18): an unexpected send failure returns fixed wording chosen by the
+    kind of reply; the exception's own text goes to the server log only."""
+    import smtplib
+
+    from fmpoc.services.email import _safe_error
+    secret = "internal-host-10.0.0.5 Traceback detail"
+    cases = [
+        (smtplib.SMTPDataError(550, secret.encode()), "refused the message"),
+        (smtplib.SMTPDataError(451, secret.encode()), "temporary refusal"),
+        (smtplib.SMTPSenderRefused(553, secret.encode(), "me@example.org"), "refused the sender address"),
+        (smtplib.SMTPException(secret), "could not be sent"),
+        (ValueError(secret), "could not be sent"),
+    ]
+    with caplog.at_level("WARNING", logger="pennywarden.email"):
+        for exc, want in cases:
+            msg = _safe_error(exc)
+            assert want in msg and secret not in msg and "internal-host" not in msg, msg
+    assert secret in caplog.text                       # kept for the administrator in the server log

@@ -53,6 +53,13 @@ dependency update planned as 2.4.2 is part of this release.
   Quarterly / Annual report, the budget reports, the donation statements, the invoice reports and the audit log
   export.
 
+### Security
+- **Email errors no longer echo the mail server's reply (CodeQL code-scanning alerts #16–#18).** When sending an
+  invoice, a statement or the test email fails for an unusual reason, the message shown is now fixed wording chosen
+  by the kind of failure (refused, temporarily refused, sender refused), not the error text itself. The mail server's
+  exact reply is written to the server log for the administrator. The common failures (wrong password, unreachable
+  server, timeout and so on) read as before.
+
 ### Dependencies
 - **Python packages:** FastAPI 0.162.0 → 0.162.7 (fixes for cleaning up a request's dependencies when the request is
   cancelled) and pypdfium2 5.15.0 → 5.15.2 (closes cleanly when the application stops). `THIRD-PARTY-NOTICES.txt`
