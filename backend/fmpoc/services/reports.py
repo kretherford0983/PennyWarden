@@ -995,7 +995,13 @@ def _fundraiser_section(db: Session, ctx, settings, doc: _AuditDoc, fr: Fundrais
     for w in warn:
         f.append(P("Note: " + w, "small"))
     if this_fy is not None and len(d["fiscal_years"]) > 1:
-        f.append(P(f"This fundraiser spans two Fiscal Years and is shown complete; this report covers {this_fy.display_name}.", "small"))
+        f.append(P(f"This fundraiser spans more than one Fiscal Year and is shown complete; this report covers "
+                   f"{this_fy.display_name}.", "small"))
+    pr = d.get("proceeds") or {}                       # 2.5.0 (#588): proceeds paid later
+    if pr.get("later"):
+        f.append(PM("<b>Proceeds paid later:</b> " + escape(pr["text"] or "")
+                    + (f" — {pr['lines']} deposit line(s) linked, {escape(money(pr['received']))} received." if pr.get("lines") else "."),
+                    "body"))
 
     # ---- summary
     roi = "—" if t["roi"] is None else f"{float(t['roi']) * 100:.1f}%"

@@ -83,6 +83,36 @@ BUDGET_PROPOSAL / BUDGET_PROPOSAL_PRESENTATION). Rules (new BR for the issue):
   grouping gets it after `planning-sheet` (`report_grouping._complete`). Tests `test_v250_budget_proposal.py`, E2E in
   the 2.1.0 Budget Review test.
 
+**2.5.0 — Events with proceeds paid later (#588, decided with Kyle 2026-11-23).** Migration `0090_late_proceeds`:
+`fundraiser.proceeds_later`, `proceeds_payer_entity_id`, `proceeds_expected_month` (YYYY-MM), `proceeds_outcome`
+(RECEIVED | NONE) + reason/at/by; table `fundraiser_proceeds_line` (fundraiser, allocation, linked/retired - links are
+retired, never deleted, BR-001; in Reinitialize `WIPE` (scoped by fundraiser) and restore `DATA_TABLES`). Rules (new
+BR for the issue):
+- **Awaiting** = `proceeds_later` and no outcome (and not cancelled). `fundraiser_summary.report_status` returns
+  AWAITING_PROCEEDS ("Proceeds pending - expected <Month YYYY>, <payer>") after the event and is never final while
+  awaiting - also when every year is Closed; `set_results_final` refuses (409 AWAITING_PROCEEDS). Fiscal Year closure
+  blockers are unchanged.
+- **Linking** (`POST /api/fundraisers/{id}/proceeds-lines`, `fundraiser.lines`): an ACTIVE deposit allocation to an
+  Income budget, dated >= the event start, not another event's active proceeds (409 PROCEEDS_TAKEN); a line of a Closed
+  year needs `fundraiser.manage` (reporting only). Unlink = retire with an optional reason
+  (`.../proceeds-lines/{link}/unlink`). Audited FUNDRAISER_PROCEEDS_LINKED / _UNLINKED.
+- **Counting** (`fundraisers._lines`): the event's rows = its budget lines (filter applies) + its linked lines (kind
+  INCOME, Fiscal Year of their budget, filter does not apply; once if also in its budgets) - minus lines linked as
+  another event's proceeds. `_fys_of` / `touched_fy_ids` include the linked lines' years. The series year is still the
+  event's start year.
+- **Outcome** (`PUT .../proceeds-outcome`): RECEIVED by line managers; NONE by Budget Managers with a reason; back to
+  awaiting (null) by line managers, Budget Managers once a year of the event is Closed. Audited
+  FUNDRAISER_PROCEEDS_OUTCOME. Turning the flag off is refused while deposits are linked (409 PROCEEDS_LINKED).
+- **Asking** (`GET /api/fundraisers/awaiting-proceeds?entity_id=`, `fundraiser.view`, [] with the module off): the
+  Dashboard's Attention card and the Register's question after a new deposit whose entity is the expected payer.
+- **Reports:** FY Audit / Close include an event whose linked line falls in the year (`for_fiscal_year_report`) and
+  print a "Proceeds paid later" line; `fundraiser_series.fy_report` adds `late_proceeds` (lines received in the year for
+  events of earlier years) and `pending_proceeds` (footnote); the PDF and deck add a section/slide.
+- **Closed years:** `check_event_dates` no longer refuses an event dated in a Closed year and `eligible_fiscal_years` /
+  `_validate_budgets` accept a Closed year's budgets (events are created by Budget Managers only). A chosen Closed-year
+  budget stays frozen, line adjustments in Closed years stay read-only, and delete is still refused. Notice
+  REPORTING_ONLY. Tests `test_v250_late_proceeds.py`; `test_v160_fundraisers.py` updated (was 409).
+
 **2.5.0 — Vite 8 (Kyle 2026-11-23).** Of the major upgrades Dependabot leaves out (dependabot.yml `ignore`
 semver-major), only Vite was taken in 2.5.0: Vite 6.4 is on its last support tier (security fixes only). Vite 6.4.6 →
 8.3.8 and `@vitejs/plugin-react` 4.7.0 → 6.3.0 (Oxc instead of Babel). `vite.config.ts` is unchanged; the build is

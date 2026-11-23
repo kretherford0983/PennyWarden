@@ -198,7 +198,15 @@ export default function Register() {
           </div>
         </>
       ) : f.bank_account_id ? <Loading /> : null}
-      {modal?.kind === "txn" ? <TxnForm account={acct} txn={modal.txn} initial={modal.initial} fys={fys} onClose={() => setModal(null)} onSaved={() => { setModal(null); load(); }} /> : null}
+      {modal?.kind === "txn" ? <TxnForm account={acct} txn={modal.txn} initial={modal.initial} fys={fys} onClose={() => setModal(null)} onSaved={(saved?: any) => {
+        setModal(null); load();
+        // 2.5.0 (#588): a new deposit from the expected payer of an event awaiting proceeds - ask whether it is them
+        if (!modal.txn && saved?.transaction_type === "DEPOSIT" && saved.parent_entity_id && me.modules?.fundraisers && can("fundraiser.lines")) {
+          api.get(`/api/fundraisers/awaiting-proceeds?entity_id=${saved.parent_entity_id}`)
+            .then((events: any[]) => { if (events.length) setModal({ kind: "proceeds", txn: saved, events }); }, () => undefined);
+        }
+      }} /> : null}
+      {modal?.kind === "proceeds" ? <ProceedsQuestion txn={modal.txn} events={modal.events} onClose={() => setModal(null)} /> : null}
       {modal?.kind === "void" ? <VoidForm txn={modal.txn} onClose={() => setModal(null)} onSaved={() => { setModal(null); load(); }} /> : null}
       {modal?.kind === "transfer" ? <TransferForm accounts={accounts} fromId={acct?.id} fys={fys} onClose={() => setModal(null)} onSaved={() => { setModal(null); load(); }} /> : null}
       {modal?.kind === "legedit" ? <TransferLegForm txn={modal.txn} onClose={() => setModal(null)} onSaved={() => { setModal(null); load(); }} /> : null}
@@ -1204,6 +1212,39 @@ function DeleteTxnForm({ txn, onClose, onDeleted }: { txn: any; onClose: () => v
         <Field label="Reason (required)"><textarea required value={reason} onChange={(e) => setReason(e.target.value)} /></Field>
         <div className="actions"><button type="button" onClick={onClose}>Cancel</button><button className="primary danger" type="submit" disabled={!reason.trim()}>Delete transaction</button></div>
       </GuardedForm>
+    </Modal>
+  );
+}
+
+/** 2.5.0 (#588): after saving a deposit from the expected payer of an event awaiting proceeds: "Is this the proceeds
+ * for <event>?" Linking puts the deposit line(s) with the event; declining links nothing. */
+function ProceedsQuestion({ txn, events, onClose }: { txn: any; events: any[]; onClose: () => void }) {
+  const [err, setErr] = useState<unknown>(null);
+  const [done, setDone] = useState<string | null>(null);
+  const lines = (txn.allocations || []).filter((a: any) => !a.removed);
+  const link = async (ev: any) => {
+    setErr(null);
+    try {
+      for (const a of lines) await api.post(`/api/fundraisers/${ev.id}/proceeds-lines`, { allocation_id: a.id });
+      setDone(ev.name);
+    } catch (x) { setErr(x); }
+  };
+  return (
+    <Modal title="Proceeds of an event?" onClose={onClose}>
+      <ErrorBox error={err} />
+      {done ? (
+        <><p role="status">Linked to <b>{done}</b> as its proceeds. Mark <i>All proceeds received</i> on the event when nothing more is expected.</p>
+          <div className="actions"><button className="primary" onClick={onClose}>Done</button></div></>
+      ) : (
+        <>
+          <p>{txn.entity?.display_name || "This payer"} is expected to pay the proceeds of {events.length === 1 ? "an event" : "these events"}. Is this deposit
+            (#{txn.id}, {money(txn.total || txn.deposit)}) {events.length === 1 ? "its proceeds" : "the proceeds of one of them"}?</p>
+          <ul className="plain">{events.map((ev) => (
+            <li key={ev.id}><button className="primary small" onClick={() => link(ev)}>Yes — {ev.name}</button> <span className="muted">{ev.text}</span></li>
+          ))}</ul>
+          <div className="actions"><button onClick={onClose}>No, not event proceeds</button></div>
+        </>
+      )}
     </Modal>
   );
 }

@@ -99,6 +99,7 @@ Gathering everything spent and received for an event.
 - [About Events & Fundraisers](events/about-events.md) — What the module does and the two types.
 - [Setting up an event](events/set-up-event.md) — Budget Managers: a new fundraiser or event.
 - [Managing an event](events/manage-event.md) — Buckets, cash floats, exclusions and documents.
+- [Proceeds paid later](events/proceeds-paid-later.md) — Events paid months later by an outside organization: awaiting, linking the check, how it counts.
 - [Event reports](events/event-reports.md) — The stakeholder report, the presentation and the yearly report.
 
 ## Payments and check printing

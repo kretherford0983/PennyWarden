@@ -533,6 +533,10 @@ class FundraiserIn(In):
     copy_buckets_from_id: int | None = None    # 2.1.0 (#277): "Create next year's from this one" (create only)
     goal_amount: Amount | None = None          # 2.3.0 (#372): optional goal; blank/None = no goal (left unchanged if omitted on edit)
     event_type: Literal["FUNDRAISER", "EVENT"] | None = None   # 2.4.0 (#429): create default Fundraiser; omitted on edit = unchanged
+    # 2.5.0 (#588): proceeds paid later by an outside organization (omitted on edit = unchanged)
+    proceeds_later: bool = False
+    proceeds_payer_entity_id: int | None = None
+    proceeds_expected_month: OptStr(7) = None     # YYYY-MM
 
 
 class CatalogNameIn(In):                     # 2.4.0 (#252): a unit type or category
@@ -720,6 +724,19 @@ class InvoiceRefundIn(In):                    # 2.4.0 (#254): refund of an overp
 
 class InvoicedIncomeIn(In):                   # 2.4.0 (#250)
     invoiced_income: bool
+
+
+class FundraiserProceedsLinkIn(In):            # 2.5.0 (#588)
+    allocation_id: int
+
+
+class FundraiserProceedsOutcomeIn(In):         # 2.5.0 (#588): RECEIVED | NONE (reason required) | null = awaiting again
+    outcome: Literal["RECEIVED", "NONE"] | None = None
+    reason: OptStr(500) = None
+
+
+class OptionalReasonIn(In):
+    reason: OptStr(500) = None
 
 
 class FundraiserLinkIn(In):                    # 2.1.0 (#277)
