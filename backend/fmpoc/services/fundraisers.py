@@ -230,7 +230,10 @@ def _validate_budgets(db: Session, ctx, f: Fundraiser | None, start: dt.date, en
 EVENT_TYPES = ("FUNDRAISER", "EVENT")
 TYPE_LABEL = {"FUNDRAISER": "Fundraiser", "EVENT": "Event"}
 # the budget kinds each type needs in every Fiscal Year it uses (once any budget is chosen; a shell needs none)
-REQUIRED_KINDS = {"FUNDRAISER": ("INCOME", "EXPENSE"), "EVENT": ("EXPENSE",)}
+# 2.5.0 polish (Kyle 2026-11-23): the type follows the main direction of the money - a Fundraiser raises it (Income
+# required, Expense optional: e.g. working the county fair, run by another organization, has no expenses), an Event
+# spends it (Expense required, Income optional). 2.4.0 (#429) had required both for a Fundraiser.
+REQUIRED_KINDS = {"FUNDRAISER": ("INCOME",), "EVENT": ("EXPENSE",)}
 KIND_WORD = {"INCOME": "Income", "EXPENSE": "Expense"}
 
 
@@ -254,7 +257,7 @@ def budget_gaps(db: Session, event_type: str, chosen: list[tuple[int, str]]) -> 
 
 def gaps_message(event_type: str, gaps: list[dict]) -> str:
     parts = [f"{' and '.join(KIND_WORD[k] for k in g['missing'])} budget for {g['fiscal_year']}" for g in gaps]
-    need = "an Income and an Expense budget" if event_type == "FUNDRAISER" else "an Expense budget (Income is optional)"
+    need = "an Income budget (Expense is optional)" if event_type == "FUNDRAISER" else "an Expense budget (Income is optional)"
     return (f"A{'n' if event_type == 'EVENT' else ''} {TYPE_LABEL[event_type]} needs {need} in each Fiscal Year it "
             f"uses. Missing: {'; '.join(parts)}.")
 
@@ -655,16 +658,24 @@ def notices(db: Session, ws_id: int, f: Fundraiser) -> list[dict]:
     return out
 
 
-def list_out(db: Session, ctx, fiscal_year_id: int | None, upcoming: bool, include_archived: bool) -> list[dict]:
+def list_out(db: Session, ctx, fiscal_year_id: int | None, upcoming: bool, include_archived: bool,
+             earlier: bool = False) -> list[dict]:
+    """By Fiscal Year (every year the event touches), or the events touching none: 2.5.0 polish `earlier` = dated
+    before the first Fiscal Year starts (e.g. a pre-PennyWarden fair whose check hasn't been linked yet), `upcoming` =
+    the rest (beyond or between the years set up, or no year set up)."""
     fys = _all_fys(db, ctx.workspace_id)
+    first_start = min((fy.start_date for fy in fys), default=None)
     q = select(Fundraiser).where(Fundraiser.workspace_id == ctx.workspace_id).order_by(Fundraiser.start_date, Fundraiser.name)
     if not include_archived:
         q = q.where(Fundraiser.archived_at.is_(None))
     out = []
     for f in db.scalars(q):
         touched = touched_fy_ids(db, ctx.workspace_id, f, fys)
-        if upcoming:
+        if upcoming or earlier:
             if touched:
+                continue
+            before = first_start is not None and f.start_date < first_start
+            if before != earlier:
                 continue
         elif fiscal_year_id is not None and fiscal_year_id not in touched:
             continue

@@ -20,6 +20,13 @@ dependency update planned as 2.4.2 is part of this release.
 - **Events in closed years (#588).** A Budget Manager can now set up an event dated in a Closed Fiscal Year and choose
   that year's budgets, to load past events — reporting only; nothing financial changes.
 
+- **A Fundraiser no longer needs an Expense budget.** The type follows the main direction of the money: a
+  Fundraiser needs an **Income** budget in each Fiscal Year it uses (Expense optional — working a fair another
+  organization runs may have no expenses), an Event an **Expense** budget (Income optional). 2.4.0 required both for a
+  Fundraiser.
+- **Earlier events are easy to find.** The Events year list adds **Earlier — before the first Fiscal Year**: events
+  dated before the first Fiscal Year (such as last year's fair, before PennyWarden) until a deposit is linked to them.
+
 ### Reminders
 - **What resolved a reminder (#594).** Resolving a reminder can link the register transaction or the event that
   resolved it; the resolved reminder shows it as a link that opens it. The link can be added, changed or removed later
