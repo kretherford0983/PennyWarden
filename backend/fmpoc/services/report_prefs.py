@@ -17,7 +17,7 @@ from ..errors import validation
 from ..models import User as AppUser
 
 REPORT_IDS = ("quarterly", "fundraising-fy", "audit", "close", "fundraiser-detail", "entity", "flow",
-              "budget-review", "planning-sheet", "count-sheet",
+              "budget-review", "planning-sheet", "budget-proposal", "count-sheet",
               # 2.4.0 (#255): the Invoices group
               "inv-open", "inv-aging", "inv-statement", "inv-sales-tax", "inv-register", "inv-sales", "inv-activity",
               # 2.4.0 (#513): the formal invoice reports

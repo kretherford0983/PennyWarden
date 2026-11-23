@@ -17,7 +17,8 @@ from ..errors import validation
 from ..schemas import (ReasonIn, FundraiserBucketIn, FundraiserCategoryIn, FundraiserFinalIn, FundraiserFyNotesIn, FundraiserIn,
                        FundraiserLineIn, FundraiserLinkIn, FundraiserSeriesAddIn, FundraiserSeriesIn, FundraiserSeriesMergeIn, FundraiserSeriesResultIn, FundraiserSeriesResultCorrectIn,
                        FundraiserNotesIn, FundraiserOrderIn,
-                       FundraiserPreviewIn, ModulesIn)
+                       FundraiserPreviewIn, FundraiserProceedsLinkIn, FundraiserProceedsOutcomeIn, ModulesIn,
+                       OptionalReasonIn)
 from ..services import branding  # 2.2.0 (#280)
 from ..services import fundraiser_deck as deck  # 2.1.0 (#276); imports python-pptx at start-up
 from ..services import fundraiser_summary as fs  # 2.1.0 (#275); imports python-docx at start-up
@@ -94,8 +95,8 @@ def manager(db: Session = Depends(get_db), ctx: Ctx = Depends(require("fundraise
 
 @router.get("/fundraisers")
 def list_fundraisers(fiscal_year_id: int | None = None, upcoming: bool = False, include_archived: bool = False,
-                     db: Session = Depends(get_db), ctx: Ctx = Depends(viewer)):
-    return svc.list_out(db, ctx, fiscal_year_id, upcoming, include_archived)
+                     earlier: bool = False, db: Session = Depends(get_db), ctx: Ctx = Depends(viewer)):
+    return svc.list_out(db, ctx, fiscal_year_id, upcoming, include_archived, earlier)
 
 
 @router.get("/fundraisers/budget-options")
@@ -249,6 +250,14 @@ def merge_series(sid: int, body: FundraiserSeriesMergeIn, db: Session = Depends(
     return series.series_list(db, ctx)
 
 
+# 2.5.0 (#588): before /fundraisers/{fid}
+@router.get("/fundraisers/awaiting-proceeds")
+def awaiting_proceeds(entity_id: int | None = None, db: Session = Depends(get_db), ctx: Ctx = Depends(require("fundraiser.view"))):
+    """Events awaiting proceeds (optionally those expecting this payer). An empty list when the module is off, so the
+    Register can ask after a deposit without knowing whether the module is on."""
+    return svc.awaiting_list(db, ctx, entity_id)
+
+
 @router.get("/fundraisers/{fid}")
 def get_one(fid: int, db: Session = Depends(get_db), ctx: Ctx = Depends(viewer)):
     return svc.detail(db, ctx, svc.get(db, ctx, fid))
@@ -361,6 +370,38 @@ def set_line(fid: int, allocation_id: int, body: FundraiserLineIn, db: Session =
              ctx: Ctx = Depends(line_manager)):
     f = svc.get(db, ctx, fid)
     svc.set_line(db, ctx, f, allocation_id, body)
+    db.commit()
+    return svc.detail(db, ctx, f)
+
+
+# ------------------------------------------------------------------ 2.5.0 (#588): proceeds paid later
+@router.get("/fundraisers/{fid}/proceeds-candidates")
+def proceeds_candidates(fid: int, q: str | None = Query(None, max_length=100), db: Session = Depends(get_db),
+                        ctx: Ctx = Depends(line_manager)):
+    return svc.proceeds_candidates(db, ctx, svc.get(db, ctx, fid), q)
+
+
+@router.post("/fundraisers/{fid}/proceeds-lines", status_code=201)
+def link_proceeds(fid: int, body: FundraiserProceedsLinkIn, db: Session = Depends(get_db), ctx: Ctx = Depends(line_manager)):
+    f = svc.get(db, ctx, fid)
+    svc.link_proceeds(db, ctx, f, body.allocation_id)
+    db.commit()
+    return svc.detail(db, ctx, f)
+
+
+@router.post("/fundraisers/{fid}/proceeds-lines/{link_id}/unlink")
+def unlink_proceeds(fid: int, link_id: int, body: OptionalReasonIn, db: Session = Depends(get_db),
+                    ctx: Ctx = Depends(line_manager)):
+    f = svc.get(db, ctx, fid)
+    svc.unlink_proceeds(db, ctx, f, link_id, body.reason)
+    db.commit()
+    return svc.detail(db, ctx, f)
+
+
+@router.put("/fundraisers/{fid}/proceeds-outcome")
+def proceeds_outcome(fid: int, body: FundraiserProceedsOutcomeIn, db: Session = Depends(get_db),
+                     ctx: Ctx = Depends(line_manager)):
+    f = svc.set_proceeds_outcome(db, ctx, svc.get(db, ctx, fid), body.outcome, body.reason)
     db.commit()
     return svc.detail(db, ctx, f)
 

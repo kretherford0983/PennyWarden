@@ -38,7 +38,7 @@ from .reports import _FONT, _FONT_BOLD, FRAME_W, PM, P, S, _AuditDoc, _Mark, _st
 
 TWO_COLUMN_AFTER = 12
 STATUS_TEXT = {"INTERIM": "Interim, figures may change", "POST_EVENT": "Post-event", "FINAL": "Final",
-               "CANCELLED": "Cancelled"}
+               "CANCELLED": "Cancelled", "AWAITING_PROCEEDS": "Proceeds pending"}      # 2.5.0 (#588)
 
 
 # ------------------------------------------------------------------ figures
@@ -61,15 +61,20 @@ def report_status(db: Session, f: Fundraiser) -> dict:
     the fundraiser uses is Closed - whichever comes first), Cancelled (with the reason)."""
     fys = fsvc._fys_of(db, f)
     all_closed = bool(fys) and all(y.status == "CLOSED" for y in fys)
-    final = f.results_final_at is not None or all_closed
+    pending = fsvc.awaiting(f)                    # 2.5.0 (#588): never Final while the proceeds are awaited
+    final = (f.results_final_at is not None or all_closed) and not pending
+    text = None
     if f.cancelled_at is not None:
         code = "CANCELLED"
     elif final:
         code = "FINAL"
+    elif pending and fsvc.status_of(f) not in ("PLANNED", "IN_PROGRESS"):
+        code = "AWAITING_PROCEEDS"
+        text = fsvc.proceeds_state(db, f)["text"]
     else:
         code = "INTERIM" if fsvc.status_of(f) in ("PLANNED", "IN_PROGRESS") else "POST_EVENT"
-    return {"code": code, "text": STATUS_TEXT[code], "final": final, "marked_final": f.results_final_at is not None,
-            "final_because_closed": all_closed and f.results_final_at is None,
+    return {"code": code, "text": text or STATUS_TEXT[code], "final": final, "marked_final": f.results_final_at is not None,
+            "final_because_closed": all_closed and f.results_final_at is None and not pending,
             "marked_final_at": f.results_final_at.isoformat() + "Z" if f.results_final_at else None,
             "cancel_reason": f.cancel_reason if f.cancelled_at else None}
 

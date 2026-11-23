@@ -108,6 +108,7 @@ def snapshot(r: Reminder) -> dict:
     return {"id": r.id, "scope": r.scope, "owner_user_id": r.owner_user_id, "title": r.title, "details": r.details,
             "due_date": r.due_date.isoformat(), "notify_days_before": r.notify_days_before, "link_type": r.link_type,
             "link_id": r.link_id, "resolved": r.resolved_at is not None, "resolution_note": r.resolution_note,
+            "resolution_link_type": r.resolution_link_type, "resolution_link_id": r.resolution_link_id,   # 2.5.0 (#594)
             "repeat_every": r.repeat_every, "repeat_unit": r.repeat_unit,
             "repeat_until": r.repeat_until.isoformat() if r.repeat_until else None,
             "tasks": [tasks_svc.task_snapshot(t) for t in r.tasks]}
@@ -145,6 +146,8 @@ def out(db: Session, ctx, r: Reminder, users: dict[int, str] | None = None) -> d
             "repeat_label": repeat_label(r), "next_due": nxt.isoformat() if nxt else None,
             "overdue_days": max(0, (day - r.due_date).days) if state == "DUE" else 0,
             "owner": name(r.owner_user_id), "link": _link(db, ctx, r.link_type, r.link_id),
+            "resolution_link": resolution_link(db, ctx, r.resolution_link_type, r.resolution_link_id),   # 2.5.0 (#594)
+            "can_edit_resolution_link": r.resolved_at is not None and _can_resolve(ctx, r),
             "resolved_at": r.resolved_at.isoformat() + "Z" if r.resolved_at else None,
             "resolved_by": name(r.resolved_by_user_id) if r.resolved_by_user_id else None,
             "can_resolve": state == "DUE" and _can_resolve(ctx, r),
@@ -274,7 +277,8 @@ def _create_next(db: Session, ctx, r: Reminder) -> Reminder | None:
     return n
 
 
-def resolve(db: Session, ctx, r: Reminder, note: str | None, stop_repeating: bool = False) -> Reminder:
+def resolve(db: Session, ctx, r: Reminder, note: str | None, stop_repeating: bool = False,
+            link_type: str | None = None, link_id: int | None = None) -> Reminder:
     if not _can_resolve(ctx, r):
         raise forbidden()
     if r.resolved_at is not None:
@@ -283,8 +287,10 @@ def resolve(db: Session, ctx, r: Reminder, note: str | None, stop_repeating: boo
         raise AppError(409, "REMINDER_NOT_DUE", "This reminder is not due yet; edit or delete it instead.")
     if tasks_svc.open_steps(r) and not (note or "").strip():   # 2.4.0 (#551): open steps are kept as skipped
         raise validation("Some steps aren't completed: add a note saying why the reminder is complete anyway.", "note")
+    _check_resolution_link(db, ctx, link_type, link_id)          # 2.5.0 (#594)
     before = snapshot(r)
     r.resolved_at, r.resolved_by_user_id, r.resolution_note = utcnow(), ctx.user.id, (note or "").strip() or None
+    r.resolution_link_type, r.resolution_link_id = (link_type, link_id) if link_type else (None, None)
     tasks_svc.mark(tasks_svc.objective(r), ctx.user.id)    # 2.4.0 (#551): resolving = ticking the objective
     db.flush()
     audit.record(db, ctx, "REMINDER_RESOLVED", "reminder", r.id, before, snapshot(r))
@@ -380,3 +386,95 @@ def untick(db: Session, ctx, r: Reminder, tid: int) -> Reminder:
     audit.record(db, ctx, "REMINDER_TASK_UNTICKED", "reminder", r.id, {"reminder_id": r.id, "task": before},
                  {"reminder_id": r.id, "task": tasks_svc.task_snapshot(t)})
     return r
+
+
+# ------------------------------------------------------------------ 2.5.0 (#594): what resolved a reminder
+def _target(db: Session, ctx, link_type: str, link_id: int):
+    """The linked transaction or event, if it belongs to this workspace."""
+    from ..models import Fundraiser, RegisterTransaction
+    if link_type == "TRANSACTION":
+        t = db.get(RegisterTransaction, link_id)
+        a = db.get(BankAccount, t.bank_account_id) if t else None
+        return t if a is not None and a.workspace_id == ctx.workspace_id else None
+    if link_type == "EVENT":
+        f = db.get(Fundraiser, link_id)
+        return f if f is not None and f.workspace_id == ctx.workspace_id else None
+    return None
+
+
+def resolution_link(db: Session, ctx, link_type: str | None, link_id: int | None) -> dict | None:
+    """Label and address of what resolved the reminder. The address is left out (label only) for a user who can't
+    open it: no Register access, or the Events module off / no access."""
+    if not link_type or link_id is None:
+        return None
+    obj = _target(db, ctx, link_type, link_id)
+    if obj is None:
+        return {"type": link_type, "id": link_id, "label": "The linked item no longer exists", "url": None}
+    if link_type == "TRANSACTION":
+        from ..money import fmt
+        ent = obj.parent_entity
+        label = (f"Transaction #{obj.id} — {obj.transaction_date.isoformat()}" + (f", {ent.display_name}" if ent else "")
+                 + f", ${fmt(obj.total_cents)}" + (" (VOID)" if obj.status == "VOID" else ""))
+        url = f"/register?account={obj.bank_account_id}&txn={obj.id}" if ctx.has("register.view") else None
+        return {"type": link_type, "id": obj.id, "label": label, "url": url}
+    from . import fundraisers as fsvc
+    kind = "Event" if (obj.event_type or "FUNDRAISER") == "EVENT" else "Fundraiser"
+    url = f"/fundraisers/{obj.id}" if (fsvc.module_enabled(db, ctx.workspace_id) and ctx.has("fundraiser.view")) else None
+    return {"type": link_type, "id": obj.id, "label": f"{kind}: {obj.name}", "url": url}
+
+
+def _check_resolution_link(db: Session, ctx, link_type: str | None, link_id: int | None) -> None:
+    if (link_type is None) != (link_id is None):
+        raise validation("Choose both what resolved the reminder and the item, or neither.", "resolution_link_id")
+    if link_type and _target(db, ctx, link_type, link_id) is None:
+        raise validation("The transaction or event was not found.", "resolution_link_id")
+
+
+def set_resolution_link(db: Session, ctx, r: Reminder, link_type: str | None, link_id: int | None) -> Reminder:
+    """Add, change or remove what resolved a resolved reminder (whoever can resolve it); audited."""
+    if not _can_resolve(ctx, r):
+        raise forbidden()
+    if r.resolved_at is None:
+        raise AppError(409, "INVALID_STATE", "Resolve the reminder first; the link is chosen when resolving.")
+    _check_resolution_link(db, ctx, link_type, link_id)
+    if (r.resolution_link_type, r.resolution_link_id) == (link_type, link_id):
+        return r
+    before = snapshot(r)
+    r.resolution_link_type, r.resolution_link_id = link_type, link_id
+    db.flush()
+    audit.record(db, ctx, "REMINDER_RESOLUTION_LINK_CHANGED", "reminder", r.id, before, snapshot(r))
+    return r
+
+
+def resolution_link_options(db: Session, ctx, kind: str, q: str | None) -> list[dict]:
+    """For the picker: matching transactions (Register access; newest first, at most 30) or events (module on)."""
+    from ..models import Fundraiser, RegisterTransaction
+    term = (q or "").strip().casefold()
+    out = []
+    if kind == "TRANSACTION":
+        if not ctx.has("register.view"):
+            return []
+        rows = db.scalars(select(RegisterTransaction).join(BankAccount, BankAccount.id == RegisterTransaction.bank_account_id)
+                          .where(BankAccount.workspace_id == ctx.workspace_id, RegisterTransaction.status != "DELETED")
+                          .order_by(RegisterTransaction.transaction_date.desc(), RegisterTransaction.id.desc()).limit(2000))
+        for t in rows:
+            item = resolution_link(db, ctx, "TRANSACTION", t.id)
+            text = f"{item['label']} {' '.join(a.description or '' for a in t.live_allocations)} {t.check_number or ''}"
+            if term and term not in text.casefold():
+                continue
+            out.append(item)
+            if len(out) >= 30:
+                break
+        return out
+    from . import fundraisers as fsvc
+    if not fsvc.module_enabled(db, ctx.workspace_id) or not ctx.has("fundraiser.view"):
+        return []
+    for f in db.scalars(select(Fundraiser).where(Fundraiser.workspace_id == ctx.workspace_id)
+                        .order_by(Fundraiser.start_date.desc(), Fundraiser.id.desc())):
+        item = resolution_link(db, ctx, "EVENT", f.id)
+        if term and term not in item["label"].casefold():
+            continue
+        out.append({**item, "label": f"{item['label']} ({f.start_date.isoformat()})"})
+        if len(out) >= 30:
+            break
+    return out

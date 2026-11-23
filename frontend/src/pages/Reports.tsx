@@ -82,6 +82,7 @@ const BODIES: Record<string, (p: BodyProps) => JSX.Element> = {
   flow: (p) => <FlowReport accounts={p.accounts} initial={p.initial} onRun={p.onRun} />,
   "budget-review": (p) => <BudgetReview fys={p.fys} initial={p.initial} onRun={p.onRun} />,
   "planning-sheet": (p) => <PlanningSheetReport {...p} />,
+  "budget-proposal": (p) => <BudgetProposalReport {...p} />,     // 2.5.0 (#590)
   "count-sheet": (p) => <CountSheetReport {...p} />,
   ...Object.fromEntries(["inv-open", "inv-aging", "inv-statement", "inv-sales-tax", "inv-register", "inv-sales", "inv-activity"]
     .map((rid) => [rid, (p: BodyProps) => <InvoiceReport rid={rid} {...p} />])),     // 2.4.0 (#255)
@@ -433,9 +434,11 @@ function PeriodReport({ fys, initial, onRun, actions }: BodyProps) {
       setPeriod(wanted ? wanted.id : ok.length ? ok[ok.length - 1].id : (o.periods.find((p: any) => p.selectable)?.id || ""));
     }, setErr);
   }, [fy]);
+  const [withProposal, setWithProposal] = useState(initial.include_proposal === true);
   const sel = opts?.periods.find((p: any) => p.id === period);
+  const proposal = withProposal && period === "ANNUAL" && !!opts?.next_fiscal_year;
   const url = (format: string, download: boolean) =>
-    `/api/reports/period${qs({ fiscal_year_id: fy, period, commentary: note.trim() || null, format: format === "pdf" ? null : format, download: download || null })}`;
+    `/api/reports/period${qs({ fiscal_year_id: fy, period, commentary: note.trim() || null, format: format === "pdf" ? null : format, download: download || null, include_proposal: proposal || null })}`;
   return (
     <>
       <p>The state of the organization's finances for the board: accounts (start and end balances), cash flow by month, budgets
@@ -461,9 +464,73 @@ function PeriodReport({ fys, initial, onRun, actions }: BodyProps) {
       <Field label="Commentary (optional)" hint="Printed on the first page of the report and placed in the presentation's speaker notes.">
         <textarea rows={4} maxLength={opts?.max_commentary || 2000} value={note} onChange={(e) => setNote(e.target.value)} />
       </Field>
+      {/* 2.5.0 (#590): Budget Managers can add next year's budget proposal to the Annual report (one PDF / one deck) */}
+      {period === "ANNUAL" && opts?.next_fiscal_year ? (
+        <label className="check"><input type="checkbox" checked={withProposal} onChange={(e) => setWithProposal(e.target.checked)} data-testid="period-include-proposal" />{" "}
+          Add the {opts.next_fiscal_year.display_name} budget proposal <span className="muted">(its budgets beside this year's budget and actual,
+          after this report — {opts.next_fiscal_year.status === "DRAFT" ? "Proposed" : "Approved"})</span></label>
+      ) : null}
       {/* the commentary is free text: not remembered with the options (parameters only) */}
       {actions({ open: sel?.selectable ? url("pdf", false) : null, download: sel?.selectable ? url("pdf", true) : null, pptx: sel?.selectable ? url("pptx", true) : null,
-        onRun: () => onRun({ fiscal_year_id: fy, period }, `${fys.find((y) => String(y.id) === fy)?.display_name || ""} · ${period === "ANNUAL" ? "Annual" : period}`) })}
+        onRun: () => onRun({ fiscal_year_id: fy, period, ...(proposal ? { include_proposal: true } : {}) }, `${fys.find((y) => String(y.id) === fy)?.display_name || ""} · ${period === "ANNUAL" ? "Annual" : period}`) })}
+    </>
+  );
+}
+
+/** 2.5.0 (#590): the Budget proposal - a Draft (Proposed) or Approved Fiscal Year's budgets beside the previous year's
+ * budget and actual (projected while that year runs) and the change, as a PDF and a presentation. Budget Managers only. */
+function BudgetProposalReport({ fys, initial, onRun, actions }: BodyProps) {
+  const open = fys.filter((y) => y.status !== "CLOSED");
+  const today = todayIso();
+  const pick = open.find((y) => y.status === "DRAFT" && y.start_date > today) || open.find((y) => y.start_date > today)
+    || currentFy(open.length ? open : fys);
+  const [fy, setFy] = useState(String(initial.fiscal_year_id || (pick ? pick.id : "")));
+  const [note, setNote] = useState("");
+  const [rep, setRep] = useState<any>(null);
+  const [err, setErr] = useState<unknown>(null);
+  useEffect(() => {
+    if (!fy) return;
+    setErr(null);
+    setRep(null);
+    api.get(`/api/reports/budget-proposal?fiscal_year_id=${fy}&format=json`).then(setRep, setErr);
+  }, [fy]);
+  const url = (format: string, download: boolean) =>
+    `/api/reports/budget-proposal${qs({ fiscal_year_id: fy, commentary: note.trim() || null, format: format === "pdf" ? null : format, download: download || null })}`;
+  const ready = !!rep;
+  const py = rep?.previous_fiscal_year;
+  return (
+    <>
+      <p>Next year's budgets for the board or officers to approve: each budget with last year's budget, last year's actual (projected to
+        the year end while that year is still running, as in the Budget Review), the proposed amount and the change. Lines follow their
+        "continues from" link, else their code; new budgets show "—" for last year and last year's budgets that were dropped are listed
+        as not in the new year. A PDF report and a presentation.</p>
+      <ErrorBox error={err} />
+      {open.length === 0 ? <p className="hint">Every Fiscal Year is closed. Set up the next Fiscal Year (Draft is enough) to present its budget.</p> : (
+        <div className="report-options">
+          <Field label="Fiscal Year">
+            <select aria-label="Budget proposal Fiscal Year" value={fy} onChange={(e) => setFy(e.target.value)}>
+              {open.map((y) => <option key={y.id} value={y.id}>{y.label || y.display_name} ({y.status === "DRAFT" ? "Draft — Proposed" : "Approved"})</option>)}
+            </select>
+          </Field>
+        </div>
+      )}
+      {rep ? (
+        <div className="alert info" role="note" data-testid="proposal-summary">
+          <b>{rep.fiscal_year.display_name} {rep.state.toLowerCase()}</b>: income {money(rep.income.total.proposed)}, expense {money(rep.expense.total.proposed)},
+          net {money(rep.net.proposed)}.
+          {py ? <> {py.display_name} budget: income {money(rep.income.total.previous_budget)}, expense {money(rep.expense.total.previous_budget)}.
+            {rep.actual_word === "projected" ? <> {py.display_name} is still running, so its actual is projected (your Budget Review projection choices apply).</> : null}</>
+            : <> There is no earlier Fiscal Year: only the proposed amounts are shown.</>}
+          {(rep.income.not_in_year.length + rep.expense.not_in_year.length) ? <> {rep.income.not_in_year.length + rep.expense.not_in_year.length} budget(s) of {py?.display_name} are not in {rep.fiscal_year.display_name}.</> : null}
+        </div>
+      ) : null}
+      <Field label="Commentary (optional)" hint="Printed under the summary of the report and placed in the presentation's speaker notes.">
+        <textarea rows={4} maxLength={2000} value={note} onChange={(e) => setNote(e.target.value)} />
+      </Field>
+      <p className="hint">To show it at the end of the year's financial review, choose <b>Annual</b> in the Quarterly / Annual report and tick
+        <i> Add the budget proposal</i>: one PDF and one presentation.</p>
+      {actions({ open: ready ? url("pdf", false) : null, download: ready ? url("pdf", true) : null, pptx: ready ? url("pptx", true) : null,
+        onRun: () => onRun({ fiscal_year_id: fy }, rep ? `${rep.fiscal_year.display_name} · ${rep.state}` : "") })}
     </>
   );
 }

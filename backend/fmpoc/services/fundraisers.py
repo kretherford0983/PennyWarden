@@ -13,6 +13,19 @@ Fiscal Years). Rules agreed with the product owner (2026-10-01):
   it or within 3 months of its start or end. Budgets of a Closed Fiscal Year are frozen.
 - Filter: plain text = case-insensitive "contains"; with `filter_regex` a regular expression evaluated by RE2
   (linear time, so a pattern can never hang the server; no backreferences or look-arounds).
+
+2.5.0 (#588, decided with Kyle 2026-11-23):
+- *Proceeds paid later*: an event run with an outside organization that pays later (a county fair in August, the
+  check the next April) is flagged, with an optional expected payer and month. Until a user marks *All proceeds
+  received* (or a Budget Manager *No proceeds received*, with a reason) it is **Awaiting proceeds**: shown on the
+  Dashboard and in the reports as pending, and never Final. Cash basis is unchanged: the check is a normal deposit,
+  dated when received, against any Income budget of that year.
+- The deposit **line** is linked to the event (no budget needed; the 3-month window does not apply). A linked line
+  counts for that event only - every other event leaves it out even when its budgets and filter include it - and once
+  for its own event. Linking in an open year: event line managers (Budget Managers, Register Users); in a Closed year:
+  Budget Managers only (reporting only - nothing financial changes). Links are retired, never deleted.
+- Reporting-only setup in Closed years: Budget Managers may create an event dated in a Closed year and add that
+  year's budgets; line adjustments (buckets, exclusions, classifications) in Closed years stay read-only.
 """
 from __future__ import annotations
 
@@ -28,7 +41,7 @@ from ..errors import AppError, not_found, validation
 from ..models import (Attachment, BankAccount, Budget, FiscalYear, Fundraiser, FundraiserBucket, FundraiserBucketCategory,
                       FundraiserBucketLine,
                       FundraiserBudget, FundraiserClassification, FundraiserExclusion, FundraiserLineContributor,
-                      RegisterTransaction,
+                      FundraiserProceedsLine, RegisterTransaction, Entity,
                       TransactionAllocation, Workspace, utcnow)
 from ..money import fmt, parse_amount
 from . import bank_accounts as bank
@@ -99,7 +112,8 @@ def _all_fys(db: Session, ws_id: int) -> list[FiscalYear]:
 
 
 def eligible_fiscal_years(db: Session, ws_id: int, start: dt.date, end: dt.date) -> list[FiscalYear]:
-    return [fy for fy in _all_fys(db, ws_id) if fy.status != "CLOSED" and in_window(fy, start, end)]
+    # 2.5.0 (#588): a Closed year's budgets can be chosen too (reporting only)
+    return [fy for fy in _all_fys(db, ws_id) if in_window(fy, start, end)]
 
 
 def _adjacent(db: Session, ws_id: int, a: FiscalYear, b: FiscalYear) -> bool:
@@ -111,11 +125,7 @@ def _adjacent(db: Session, ws_id: int, a: FiscalYear, b: FiscalYear) -> bool:
 def check_event_dates(db: Session, ws_id: int, start: dt.date, end: dt.date) -> None:
     if end < start:
         raise validation("The event end date cannot be before its start date.", "end_date")
-    closed = [fy for fy in covering_fiscal_years(db, ws_id, start) if fy.status == "CLOSED"]
-    if closed:
-        raise AppError(409, "FISCAL_YEAR_CLOSED",
-                       f"The event date falls in {closed[0].display_name}, which is closed. Fundraisers can only be "
-                       "set up while the Fiscal Year of the event is open.")
+    # 2.5.0 (#588): an event dated in a Closed year is allowed (reporting only; events are created by Budget Managers)
 
 
 # ------------------------------------------------------------------ budgets
@@ -195,9 +205,8 @@ def _validate_budgets(db: Session, ctx, f: Fundraiser | None, start: dt.date, en
             kind = "income" if b.budget_type == "INCOME" else "expense"
             raise validation(f"Only one {kind} budget can be chosen for {fy.display_name}.", "budget_ids")
         seen.add(key)
-        if fy.status == "CLOSED":
-            if bid not in existing:
-                raise AppError(409, "FISCAL_YEAR_CLOSED", f"{fy.display_name} is closed; its budgets cannot be added.")
+        if fy.status == "CLOSED" and bid in existing:
+            pass                    # frozen: kept as it is
         elif not in_window(fy, start, end):
             raise validation(f"Budgets of {fy.display_name} can only be used when the event is inside that Fiscal Year "
                              f"or within {WINDOW_MONTHS} months of its start or end.", "budget_ids")
@@ -221,7 +230,10 @@ def _validate_budgets(db: Session, ctx, f: Fundraiser | None, start: dt.date, en
 EVENT_TYPES = ("FUNDRAISER", "EVENT")
 TYPE_LABEL = {"FUNDRAISER": "Fundraiser", "EVENT": "Event"}
 # the budget kinds each type needs in every Fiscal Year it uses (once any budget is chosen; a shell needs none)
-REQUIRED_KINDS = {"FUNDRAISER": ("INCOME", "EXPENSE"), "EVENT": ("EXPENSE",)}
+# 2.5.0 polish (Kyle 2026-11-23): the type follows the main direction of the money - a Fundraiser raises it (Income
+# required, Expense optional: e.g. working the county fair, run by another organization, has no expenses), an Event
+# spends it (Expense required, Income optional). 2.4.0 (#429) had required both for a Fundraiser.
+REQUIRED_KINDS = {"FUNDRAISER": ("INCOME",), "EVENT": ("EXPENSE",)}
 KIND_WORD = {"INCOME": "Income", "EXPENSE": "Expense"}
 
 
@@ -245,7 +257,7 @@ def budget_gaps(db: Session, event_type: str, chosen: list[tuple[int, str]]) -> 
 
 def gaps_message(event_type: str, gaps: list[dict]) -> str:
     parts = [f"{' and '.join(KIND_WORD[k] for k in g['missing'])} budget for {g['fiscal_year']}" for g in gaps]
-    need = "an Income and an Expense budget" if event_type == "FUNDRAISER" else "an Expense budget (Income is optional)"
+    need = "an Income budget (Expense is optional)" if event_type == "FUNDRAISER" else "an Expense budget (Income is optional)"
     return (f"A{'n' if event_type == 'EVENT' else ''} {TYPE_LABEL[event_type]} needs {need} in each Fiscal Year it "
             f"uses. Missing: {'; '.join(parts)}.")
 
@@ -270,7 +282,11 @@ def snapshot(f: Fundraiser) -> dict:
             "cancelled_at": f.cancelled_at.isoformat() + "Z" if f.cancelled_at else None,
             "summary_notes": f.summary_notes, "results_final": f.results_final_at is not None,
             "series_id": f.series_id, "continues_from_id": f.continues_from_id,
-            "goal_amount": fmt(f.goal_amount_cents), "event_type": f.event_type or "FUNDRAISER"}
+            "goal_amount": fmt(f.goal_amount_cents), "event_type": f.event_type or "FUNDRAISER",
+            # 2.5.0 (#588)
+            "proceeds_later": bool(f.proceeds_later), "proceeds_payer_entity_id": f.proceeds_payer_entity_id,
+            "proceeds_expected_month": f.proceeds_expected_month, "proceeds_outcome": f.proceeds_outcome,
+            "proceeds_outcome_reason": f.proceeds_outcome_reason}
 
 
 def goal_vs_actual(goal_cents: int | None, net_cents: int) -> dict | None:
@@ -325,6 +341,7 @@ def _apply(db: Session, ctx, f: Fundraiser, body, creating: bool) -> None:
                 raise validation(f"The new dates are too far from {fy.display_name}, whose budget is part of this "
                                  "fundraiser and can no longer change.", "start_date")
     f.goal_amount_cents = _goal_cents(body, f, creating)
+    _apply_proceeds(db, ctx, f, body, creating)                  # 2.5.0 (#588)
     f.name, f.description = body.name, body.description or None
     f.start_date, f.end_date = start, end
     f.filter_text = (body.filter_text or "").strip() or None
@@ -423,7 +440,7 @@ def get(db: Session, ctx, fid: int) -> Fundraiser:
 
 # ------------------------------------------------------------------ derived figures
 def _fys_of(db: Session, f: Fundraiser) -> list[FiscalYear]:
-    ids = sorted({fb.fiscal_year_id for fb in f.budgets})
+    ids = sorted({fb.fiscal_year_id for fb in f.budgets} | proceeds_fy_ids(db, f))     # 2.5.0 (#588)
     return sorted((db.get(FiscalYear, i) for i in ids), key=lambda y: y.start_date)
 
 
@@ -442,25 +459,32 @@ def status_of(f: Fundraiser, today: dt.date | None = None) -> str:
 
 def touched_fy_ids(db: Session, ws_id: int, f: Fundraiser, fys: list[FiscalYear] | None = None) -> set[int]:
     fys = fys if fys is not None else _all_fys(db, ws_id)
-    ids = {fb.fiscal_year_id for fb in f.budgets}
+    ids = {fb.fiscal_year_id for fb in f.budgets} | proceeds_fy_ids(db, f)             # 2.5.0 (#588)
     ids |= {fy.id for fy in fys if fy.start_date <= f.end_date and fy.end_date >= f.start_date}
     return ids
 
 
 def _lines(db: Session, f: Fundraiser) -> tuple[list[dict], int]:
-    """Included allocation lines (+ the number of lines in the budgets that the filter left out)."""
+    """Included allocation lines (+ the number of lines in the budgets that the filter left out).
+    2.5.0 (#588): plus the lines linked as the event's proceeds (whatever their budget; the filter does not apply);
+    minus the lines linked as another event's proceeds."""
     pred = compile_filter(f.filter_text, bool(f.filter_regex))
     kind_of: dict[int, tuple[str, int]] = {}
     for fb in f.budgets:
         b = db.get(Budget, fb.budget_id)
         for lid in leaf_ids(db, b):
             kind_of[lid] = (fb.kind, fb.fiscal_year_id)
-    if not kind_of:
+    links = {x.allocation_id: x for x in active_proceeds_links(db, f)}
+    elsewhere = proceeds_linked_elsewhere(db, f.workspace_id, f.id)
+    if not kind_of and not links:
         return [], 0
+    cond = TransactionAllocation.budget_id.in_(list(kind_of)) if kind_of else None
+    if links:
+        by_id = TransactionAllocation.id.in_(list(links))
+        cond = by_id if cond is None else (cond | by_id)
     q = (select(TransactionAllocation, RegisterTransaction)
          .join(RegisterTransaction, RegisterTransaction.id == TransactionAllocation.transaction_id)
-         .where(TransactionAllocation.budget_id.in_(list(kind_of)), TransactionAllocation.removed_at.is_(None),
-                RegisterTransaction.status == "ACTIVE")
+         .where(cond, TransactionAllocation.removed_at.is_(None), RegisterTransaction.status == "ACTIVE")
          .order_by(RegisterTransaction.transaction_date, RegisterTransaction.id, TransactionAllocation.id))
     excl = {x.allocation_id: x for x in db.scalars(select(FundraiserExclusion).where(FundraiserExclusion.fundraiser_id == f.id))}
     cls = {x.allocation_id: x for x in db.scalars(select(FundraiserClassification).where(FundraiserClassification.fundraiser_id == f.id))}
@@ -470,12 +494,21 @@ def _lines(db: Session, f: Fundraiser) -> tuple[list[dict], int]:
     for bl in db.scalars(select(FundraiserBucketLine).join(FundraiserBucket, FundraiserBucket.id == FundraiserBucketLine.bucket_id)
                          .where(FundraiserBucket.fundraiser_id == f.id).order_by(FundraiserBucketLine.id)):
         assigned[bl.allocation_id].append(bl)
+    budget_fy: dict[int, int] = {}
     rows, skipped = [], 0
     for a, t in db.execute(q):
-        if pred is not None and not pred(a.description or ""):
-            skipped += 1
-            continue
-        kind, fy_id = kind_of[a.budget_id]
+        link = links.get(a.id)
+        if link is None:
+            if a.id in elsewhere:          # another event's proceeds: counted there only
+                continue
+            if pred is not None and not pred(a.description or ""):
+                skipped += 1
+                continue
+            kind, fy_id = kind_of[a.budget_id]
+        else:
+            if a.budget_id not in budget_fy:
+                budget_fy[a.budget_id] = db.get(Budget, a.budget_id).fiscal_year_id
+            kind, fy_id = "INCOME", budget_fy[a.budget_id]
         ex, c = excl.get(a.id), cls.get(a.id)
         classified = 0 if (ex or c is None) else min(c.amount_cents, a.amount_cents)  # clamp if the line shrank later
         eff = 0 if ex else a.amount_cents - classified
@@ -483,13 +516,13 @@ def _lines(db: Session, f: Fundraiser) -> tuple[list[dict], int]:
         rows.append({"a": a, "t": t, "kind": kind, "fiscal_year_id": fy_id, "excluded": ex, "classification": c,
                      "classified": classified, "eff": eff, "buckets": buckets,
                      "unassigned": max(0, eff - sum(b.amount_cents for b in buckets)),
-                     "contributor_override": None if ex else shown.get(a.id)})
+                     "contributor_override": None if ex else shown.get(a.id), "proceeds_link": link})
     return rows, skipped
 
 
 def has_management_data(db: Session, f: Fundraiser) -> bool:
     for model in (FundraiserExclusion, FundraiserClassification, FundraiserBucket, FundraiserBucketCategory,
-                  FundraiserLineContributor):
+                  FundraiserLineContributor, FundraiserProceedsLine):
         if db.scalar(select(model.id).where(model.fundraiser_id == f.id).limit(1)) is not None:
             return True
     return db.scalar(select(Attachment.id).where(Attachment.fundraiser_id == f.id, Attachment.active.is_(True)).limit(1)) is not None
@@ -500,6 +533,7 @@ def _drop_orphan_adjustments(db: Session, f: Fundraiser) -> int:
     leafs: set[int] = set()
     for fb in f.budgets:
         leafs |= set(leaf_ids(db, db.get(Budget, fb.budget_id)))
+    linked = {x.allocation_id for x in active_proceeds_links(db, f)}     # 2.5.0 (#588)
     n = 0
     bucket_ids = list(db.scalars(select(FundraiserBucket.id).where(FundraiserBucket.fundraiser_id == f.id)))
     items = [*db.scalars(select(FundraiserExclusion).where(FundraiserExclusion.fundraiser_id == f.id)),
@@ -508,7 +542,7 @@ def _drop_orphan_adjustments(db: Session, f: Fundraiser) -> int:
              *(db.scalars(select(FundraiserBucketLine).where(FundraiserBucketLine.bucket_id.in_(bucket_ids))) if bucket_ids else [])]
     for x in items:
         a = db.get(TransactionAllocation, x.allocation_id)
-        if a is None or a.budget_id not in leafs:
+        if a is None or (a.budget_id not in leafs and a.id not in linked):
             db.delete(x)
             n += 1
     return n
@@ -597,6 +631,14 @@ def notices(db: Session, ws_id: int, f: Fundraiser) -> list[dict]:
         b = db.get(Budget, fb.budget_id)
         for w in budget_warnings(db, b):
             out.append({**w, "budget_id": b.id})
+    p = proceeds_state(db, f)                          # 2.5.0 (#588)
+    if p["awaiting"]:
+        out.append({"code": "AWAITING_PROCEEDS", "message": p["text"] + ". Link the deposit when it arrives, then mark "
+                    "All proceeds received. Until then the reports show the proceeds as pending and the results can't "
+                    "be final."})
+    if any(fy.status == "CLOSED" for fy in covering_fiscal_years(db, ws_id, f.start_date)):
+        out.append({"code": "REPORTING_ONLY", "message": "The event's Fiscal Year is closed: the event is reporting only. "
+                    "Its money can't change, and lines of a closed year can't be put in buckets, excluded or classified."})
     gaps = required_budget_gaps(db, f)                # 2.4.0 (#429): e.g. a record from before the upgrade
     if gaps:
         out.append({"code": "REQUIRED_BUDGET_MISSING", "gaps": gaps,
@@ -616,16 +658,24 @@ def notices(db: Session, ws_id: int, f: Fundraiser) -> list[dict]:
     return out
 
 
-def list_out(db: Session, ctx, fiscal_year_id: int | None, upcoming: bool, include_archived: bool) -> list[dict]:
+def list_out(db: Session, ctx, fiscal_year_id: int | None, upcoming: bool, include_archived: bool,
+             earlier: bool = False) -> list[dict]:
+    """By Fiscal Year (every year the event touches), or the events touching none: 2.5.0 polish `earlier` = dated
+    before the first Fiscal Year starts (e.g. a pre-PennyWarden fair whose check hasn't been linked yet), `upcoming` =
+    the rest (beyond or between the years set up, or no year set up)."""
     fys = _all_fys(db, ctx.workspace_id)
+    first_start = min((fy.start_date for fy in fys), default=None)
     q = select(Fundraiser).where(Fundraiser.workspace_id == ctx.workspace_id).order_by(Fundraiser.start_date, Fundraiser.name)
     if not include_archived:
         q = q.where(Fundraiser.archived_at.is_(None))
     out = []
     for f in db.scalars(q):
         touched = touched_fy_ids(db, ctx.workspace_id, f, fys)
-        if upcoming:
+        if upcoming or earlier:
             if touched:
+                continue
+            before = first_start is not None and f.start_date < first_start
+            if before != earlier:
                 continue
         elif fiscal_year_id is not None and fiscal_year_id not in touched:
             continue
@@ -633,6 +683,7 @@ def list_out(db: Session, ctx, fiscal_year_id: int | None, upcoming: bool, inclu
         t = _money_totals(rows)
         my_fys = [fy for fy in fys if fy.id in {fb.fiscal_year_id for fb in f.budgets}]
         out.append({**snapshot(f), "status": status_of(f), "fiscal_years": [fy_brief(y) for y in my_fys],
+                    "proceeds": proceeds_state(db, f),          # 2.5.0 (#588)
                     "income": fmt(t["income"]), "expense": fmt(t["expense"]), "net": fmt(t["net"]),
                     "has_budgets": bool(f.budgets)})
     return out
@@ -689,6 +740,7 @@ def detail(db: Session, ctx, f: Fundraiser) -> dict:
             "contributor_override": r["contributor_override"],   # 2.1.0 (#303): the part in no bucket
             "over_assigned": sum(b.amount_cents for b in r["buckets"]) > r["eff"],
             "read_only": closed_fy.get(r["fiscal_year_id"], False),
+            "proceeds_link_id": r["proceeds_link"].id if r["proceeds_link"] else None,     # 2.5.0 (#588)
         })
     # cumulative income / expense from the first included transaction to the last (by transaction date)
     by_day: dict[str, list[int]] = {}
@@ -739,6 +791,9 @@ def detail(db: Session, ctx, f: Fundraiser) -> dict:
         "per_fiscal_year": per_fy,
         "lines": lines, "filtered_out_lines": skipped,
         "cumulative": cum,
+        "proceeds": {**proceeds_state(db, f),             # 2.5.0 (#588)
+                     "received": fmt(sum(r["eff"] for r in rows if r["proceeds_link"])),
+                     "lines": sum(1 for r in rows if r["proceeds_link"])},
     }
 
 
@@ -1138,6 +1193,9 @@ def set_results_final(db: Session, ctx, f: Fundraiser, final: bool) -> Fundraise
     """Mark results final (reversible). The report reads Final when marked, or when every Fiscal Year is Closed."""
     if final == (f.results_final_at is not None):
         return f
+    if final and awaiting(f):                     # 2.5.0 (#588)
+        raise AppError(409, "AWAITING_PROCEEDS", "This event is still awaiting its proceeds. Mark All proceeds received "
+                       "(or No proceeds received) first.")
     gaps = required_budget_gaps(db, f) if final else []
     if gaps:                                      # 2.4.0 (#429)
         raise AppError(409, "REQUIRED_BUDGETS", gaps_message(f.event_type or "FUNDRAISER", gaps)
@@ -1160,5 +1218,223 @@ def for_fiscal_year_report(db: Session, ws_id: int, fy: FiscalYear) -> list[Fund
         return []
     out = [f for f in db.scalars(select(Fundraiser).where(Fundraiser.workspace_id == ws_id, Fundraiser.archived_at.is_(None))
                                  .order_by(Fundraiser.start_date, Fundraiser.name, Fundraiser.id))
-           if any(fb.fiscal_year_id == fy.id for fb in f.budgets)]
+           if any(fb.fiscal_year_id == fy.id for fb in f.budgets) or fy.id in proceeds_fy_ids(db, f)]   # 2.5.0 (#588)
+    return out
+
+
+# ------------------------------------------------------------------ 2.5.0 (#588): proceeds paid later
+MONTH_RE = re2.compile(r"^(19|20)\d\d-(0[1-9]|1[0-2])$")
+OUTCOMES = {"RECEIVED": "All proceeds received", "NONE": "No proceeds received"}
+
+
+def awaiting(f: Fundraiser) -> bool:
+    return bool(f.proceeds_later) and f.proceeds_outcome is None and f.cancelled_at is None
+
+
+def active_proceeds_links(db: Session, f: Fundraiser) -> list[FundraiserProceedsLine]:
+    if f.id is None:
+        return []
+    return list(db.scalars(select(FundraiserProceedsLine).where(FundraiserProceedsLine.fundraiser_id == f.id,
+                                                                FundraiserProceedsLine.retired_at.is_(None))
+                           .order_by(FundraiserProceedsLine.id)))
+
+
+def proceeds_linked_elsewhere(db: Session, ws_id: int, fid: int | None) -> set[int]:
+    q = (select(FundraiserProceedsLine.allocation_id).join(Fundraiser, Fundraiser.id == FundraiserProceedsLine.fundraiser_id)
+         .where(Fundraiser.workspace_id == ws_id, FundraiserProceedsLine.retired_at.is_(None)))
+    if fid is not None:
+        q = q.where(FundraiserProceedsLine.fundraiser_id != fid)
+    return set(db.scalars(q))
+
+
+def proceeds_fy_ids(db: Session, f: Fundraiser) -> set[int]:
+    """The Fiscal Years of the event's live proceeds lines (by their budget)."""
+    if f.id is None:
+        return set()
+    q = (select(Budget.fiscal_year_id)
+         .join(TransactionAllocation, TransactionAllocation.budget_id == Budget.id)
+         .join(FundraiserProceedsLine, FundraiserProceedsLine.allocation_id == TransactionAllocation.id)
+         .join(RegisterTransaction, RegisterTransaction.id == TransactionAllocation.transaction_id)
+         .where(FundraiserProceedsLine.fundraiser_id == f.id, FundraiserProceedsLine.retired_at.is_(None),
+                TransactionAllocation.removed_at.is_(None), RegisterTransaction.status == "ACTIVE"))
+    return set(db.scalars(q))
+
+
+def _month_text(m: str | None) -> str | None:
+    if not m:
+        return None
+    y, mm = m.split("-")
+    return dt.date(int(y), int(mm), 1).strftime("%B %Y")
+
+
+def proceeds_state(db: Session, f: Fundraiser) -> dict:
+    payer = db.get(Entity, f.proceeds_payer_entity_id) if f.proceeds_payer_entity_id else None
+    month = _month_text(f.proceeds_expected_month)
+    parts = [x for x in (f"expected {month}" if month else None, payer.display_name if payer else None) if x]
+    text = None
+    if f.proceeds_later:
+        if awaiting(f):
+            text = "Proceeds pending" + (f" — {', '.join(parts)}" if parts else "")
+        elif f.proceeds_outcome:
+            text = OUTCOMES[f.proceeds_outcome] + (f" ({f.proceeds_outcome_reason})" if f.proceeds_outcome_reason else "")
+    return {"later": bool(f.proceeds_later), "awaiting": awaiting(f),
+            "payer": {"id": payer.id, "name": payer.display_name} if payer else None,
+            "expected_month": f.proceeds_expected_month, "expected_month_text": month,
+            "outcome": f.proceeds_outcome, "outcome_reason": f.proceeds_outcome_reason,
+            "outcome_at": f.proceeds_outcome_at.isoformat() + "Z" if f.proceeds_outcome_at else None,
+            "text": text}
+
+
+def _apply_proceeds(db: Session, ctx, f: Fundraiser, body, creating: bool) -> None:
+    fields = getattr(body, "model_fields_set", set())
+    if "proceeds_later" not in fields and not creating:
+        return
+    later = bool(getattr(body, "proceeds_later", False))
+    if not later:
+        if f.id is not None and active_proceeds_links(db, f):
+            raise AppError(409, "PROCEEDS_LINKED", "Deposits are linked as this event's proceeds. Unlink them before "
+                           "turning off Proceeds paid later.")
+        f.proceeds_later = False
+        f.proceeds_payer_entity_id = f.proceeds_expected_month = None
+        f.proceeds_outcome = f.proceeds_outcome_reason = f.proceeds_outcome_at = f.proceeds_outcome_by_user_id = None
+        return
+    payer_id = getattr(body, "proceeds_payer_entity_id", None)
+    if payer_id is not None:
+        e = db.get(Entity, payer_id)
+        if e is None or e.workspace_id != ctx.workspace_id:
+            raise not_found("Entity")
+    month = (getattr(body, "proceeds_expected_month", None) or "").strip() or None
+    if month is not None and not MONTH_RE.match(month):
+        raise validation("Enter the expected month as YYYY-MM.", "proceeds_expected_month")
+    f.proceeds_later = True
+    f.proceeds_payer_entity_id = payer_id
+    f.proceeds_expected_month = month
+
+
+def _proceeds_year_rule(db: Session, ctx, fy: FiscalYear) -> None:
+    """Linking a line of a Closed year (or unlinking one) is reporting only - Budget Managers only."""
+    if fy.status == "CLOSED" and not ctx.has("fundraiser.manage"):
+        raise AppError(403, "FORBIDDEN", f"{fy.display_name} is closed: only a Budget Manager can link or unlink its lines.")
+
+
+def _link_snapshot(x: FundraiserProceedsLine, a: TransactionAllocation | None) -> dict:
+    return {"link_id": x.id, "allocation_id": x.allocation_id, "transaction_id": a.transaction_id if a else None,
+            "amount": fmt(a.amount_cents) if a else None, "retired": x.retired_at is not None,
+            "retire_reason": x.retire_reason}
+
+
+def proceeds_candidates(db: Session, ctx, f: Fundraiser, search: str | None = None) -> list[dict]:
+    """Deposit lines that could be the event's proceeds: ACTIVE, Income, dated on/after the event start, not already
+    another event's proceeds; the expected payer's lines first, then newest first. At most 100."""
+    taken = proceeds_linked_elsewhere(db, f.workspace_id, None)
+    q = (select(TransactionAllocation, RegisterTransaction, Budget)
+         .join(RegisterTransaction, RegisterTransaction.id == TransactionAllocation.transaction_id)
+         .join(Budget, Budget.id == TransactionAllocation.budget_id)
+         .join(BankAccount, BankAccount.id == RegisterTransaction.bank_account_id)
+         .where(BankAccount.workspace_id == f.workspace_id, RegisterTransaction.status == "ACTIVE",
+                RegisterTransaction.transaction_type == "DEPOSIT", TransactionAllocation.removed_at.is_(None),
+                Budget.budget_type == "INCOME", RegisterTransaction.transaction_date >= f.start_date)
+         .order_by(RegisterTransaction.transaction_date.desc(), TransactionAllocation.id.desc()))
+    term = (search or "").strip().casefold()
+    out = []
+    for a, t, b in db.execute(q):
+        if a.id in taken:
+            continue
+        ent = a.entity or t.parent_entity
+        fy = db.get(FiscalYear, b.fiscal_year_id)
+        row = {"allocation_id": a.id, "transaction_id": t.id, "transaction_date": t.transaction_date.isoformat(),
+               "entity_id": ent.id if ent else None, "entity": ent.display_name if ent else None,
+               "description": a.description, "amount": fmt(a.amount_cents),
+               "budget": budget_brief(db, b)["label"], "fiscal_year": fy_brief(fy),
+               "payer_match": bool(f.proceeds_payer_entity_id and ent and ent.id == f.proceeds_payer_entity_id)}
+        if term and term not in " ".join(str(v) for v in (row["entity"], row["description"], row["amount"],
+                                                             row["budget"], row["transaction_id"])).casefold():
+            continue
+        out.append(row)
+    out.sort(key=lambda r: not r["payer_match"])         # stable: newest first within each group
+    return out[:100]
+
+
+def link_proceeds(db: Session, ctx, f: Fundraiser, allocation_id: int) -> FundraiserProceedsLine:
+    if not f.proceeds_later:
+        raise AppError(409, "PROCEEDS_NOT_LATER", "Turn on Proceeds paid later for this event first.")
+    a = db.get(TransactionAllocation, allocation_id)
+    t = db.get(RegisterTransaction, a.transaction_id) if a else None
+    acct = db.get(BankAccount, t.bank_account_id) if t else None
+    if a is None or a.removed_at is not None or acct is None or acct.workspace_id != ctx.workspace_id:
+        raise not_found("Deposit line")
+    b = db.get(Budget, a.budget_id)
+    if t.status != "ACTIVE" or t.transaction_type != "DEPOSIT" or b.budget_type != "INCOME":
+        raise validation("Only an active deposit line of an Income budget can be an event's proceeds.", "allocation_id")
+    if t.transaction_date < f.start_date:
+        raise validation("The proceeds must be dated on or after the event's start date.", "allocation_id")
+    if allocation_id in proceeds_linked_elsewhere(db, f.workspace_id, None):
+        raise AppError(409, "PROCEEDS_TAKEN", "This deposit line is already linked as an event's proceeds.")
+    _proceeds_year_rule(db, ctx, db.get(FiscalYear, b.fiscal_year_id))
+    x = FundraiserProceedsLine(fundraiser_id=f.id, allocation_id=a.id, linked_by_user_id=ctx.user.id)
+    db.add(x)
+    db.flush()
+    audit.record(db, ctx, "FUNDRAISER_PROCEEDS_LINKED", "fundraiser", f.id, None, _link_snapshot(x, a))
+    return x
+
+
+def unlink_proceeds(db: Session, ctx, f: Fundraiser, link_id: int, reason: str | None) -> None:
+    x = db.get(FundraiserProceedsLine, link_id)
+    if x is None or x.fundraiser_id != f.id or x.retired_at is not None:
+        raise not_found("Proceeds link")
+    a = db.get(TransactionAllocation, x.allocation_id)
+    if a is not None:
+        _proceeds_year_rule(db, ctx, db.get(FiscalYear, db.get(Budget, a.budget_id).fiscal_year_id))
+    before = _link_snapshot(x, a)
+    x.retired_at, x.retired_by_user_id = utcnow(), ctx.user.id
+    x.retire_reason = (reason or "").strip() or None
+    db.flush()
+    audit.record(db, ctx, "FUNDRAISER_PROCEEDS_UNLINKED", "fundraiser", f.id, before, _link_snapshot(x, a))
+
+
+def set_proceeds_outcome(db: Session, ctx, f: Fundraiser, outcome: str | None, reason: str | None) -> Fundraiser:
+    """All proceeds received (event line managers), No proceeds received (Budget Managers, reason required), or back
+    to awaiting (outcome None: line managers while the event's years are open, else Budget Managers)."""
+    if not f.proceeds_later:
+        raise AppError(409, "PROCEEDS_NOT_LATER", "This event isn't marked Proceeds paid later.")
+    if outcome == f.proceeds_outcome:
+        return f
+    reason = (reason or "").strip() or None
+    if outcome == "NONE":
+        ctx.require("fundraiser.manage")
+        if not reason:
+            raise validation("Say why no proceeds were received.", "reason")
+    elif outcome is None:
+        if any(fy.status == "CLOSED" for fy in _fys_of(db, f)):
+            ctx.require("fundraiser.manage")
+    elif outcome != "RECEIVED":
+        raise validation("Choose RECEIVED or NONE.", "outcome")
+    before = snapshot(f)
+    f.proceeds_outcome = outcome
+    f.proceeds_outcome_reason = reason if outcome == "NONE" else None
+    f.proceeds_outcome_at = utcnow() if outcome else None
+    f.proceeds_outcome_by_user_id = ctx.user.id if outcome else None
+    f.updated_by_user_id = ctx.user.id
+    db.flush()
+    audit.record(db, ctx, "FUNDRAISER_PROCEEDS_OUTCOME", "fundraiser", f.id, before, snapshot(f))
+    return f
+
+
+def awaiting_list(db: Session, ctx, entity_id: int | None = None) -> list[dict]:
+    """Events awaiting proceeds (not archived), optionally only those expecting this payer - for the Dashboard and
+    the question asked when a deposit from the payer is saved."""
+    if not module_enabled(db, ctx.workspace_id):
+        return []
+    q = select(Fundraiser).where(Fundraiser.workspace_id == ctx.workspace_id, Fundraiser.archived_at.is_(None),
+                                 Fundraiser.proceeds_later.is_(True), Fundraiser.proceeds_outcome.is_(None),
+                                 Fundraiser.cancelled_at.is_(None))
+    if entity_id is not None:
+        q = q.where(Fundraiser.proceeds_payer_entity_id == entity_id)
+    out = []
+    for f in db.scalars(q.order_by(Fundraiser.start_date, Fundraiser.id)):
+        st = proceeds_state(db, f)
+        out.append({"id": f.id, "name": f.name, "start_date": f.start_date.isoformat(), "event_type": f.event_type,
+                    "payer": st["payer"], "expected_month": st["expected_month"],
+                    "expected_month_text": st["expected_month_text"], "text": st["text"],
+                    "linked_lines": len(active_proceeds_links(db, f))})
     return out

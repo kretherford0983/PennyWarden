@@ -2,7 +2,66 @@
 
 Versions are `Breaking.Major.Minor` from 1.6.0 (docs/branching.md).
 
-## 2.4.1 — unreleased
+## 2.5.0 — unreleased
+Events whose proceeds are paid later, shorter Audit / Close reports and a budget proposal presentation. The monthly
+dependency update planned as 2.4.2 is part of this release.
+
+**Upgrading:** two database migrations (`0090_late_proceeds`, `0091_reminder_resolution_link`), applied automatically.
+
+### Events & Fundraisers
+- **Proceeds paid later (#588).** An event run with an outside organization that pays months later — a county fair
+  in August whose fair board sends the check the next April — can be marked **Proceeds paid later**, with the expected
+  payer and month. Until someone marks **All proceeds received** it is **Awaiting proceeds**: listed on the Dashboard,
+  shown as *Proceeds pending* in its reports, and never *Final*, even after its Fiscal Years close. The check is entered
+  as a normal deposit in the year it arrives (any Income budget); saving it from the expected payer asks whether it is
+  the event's proceeds, or **Add received proceeds…** links it from the event. A linked deposit counts with that event
+  only, in the event's own year, and the fundraising report of the year it arrived lists it under *Proceeds received
+  this year for earlier events*. Waiting never holds up closing a year.
+- **Events in closed years (#588).** A Budget Manager can now set up an event dated in a Closed Fiscal Year and choose
+  that year's budgets, to load past events — reporting only; nothing financial changes.
+
+- **A Fundraiser no longer needs an Expense budget.** The type follows the main direction of the money: a
+  Fundraiser needs an **Income** budget in each Fiscal Year it uses (Expense optional — working a fair another
+  organization runs may have no expenses), an Event an **Expense** budget (Income optional). 2.4.0 required both for a
+  Fundraiser.
+- **Earlier events are easy to find.** The Events year list adds **Earlier — before the first Fiscal Year**: events
+  dated before the first Fiscal Year (such as last year's fair, before PennyWarden) until a deposit is linked to them.
+
+### Reminders
+- **What resolved a reminder (#594).** Resolving a reminder can link the register transaction or the event that
+  resolved it; the resolved reminder shows it as a link that opens it. The link can be added, changed or removed later
+  by whoever can resolve the reminder, and every change is audited.
+
+### Reports
+- **Shorter event sections in the FY Audit and Close reports (#589).** Each event still lists every one of its
+  transactions, now with the **page** of the report where that transaction's details and receipts are printed. The
+  receipts are no longer printed a second time under the event, so most events take a page or two instead of many. A
+  transaction from another Fiscal Year says which year's report holds it. The event's own documents (flyers, permits,
+  count sheets) are still printed, and the standalone event audit report is unchanged.
+- **Budget proposal (#590).** A new report for Budget Managers presents a Fiscal Year's budgets for approval, as a PDF
+  and a presentation: each budget with last year's budget, last year's actual (projected to the year end while that
+  year is still running), the proposed amount and the change. Renamed or renumbered budgets stay one line through
+  their *continues from* link; new budgets and budgets dropped since last year are shown as such. A Draft year is
+  titled *Proposed*, an Approved year *Approved*. In the **Annual** report, Budget Managers can add next year's
+  proposal after the year's review, so one PDF and one presentation cover the year-end meeting.
+
+### Printing
+- **Report footers are no longer cut off when printed.** The footer (report name, page number, footer text and the
+  small logo) was drawn about 0.14 in from the bottom edge, inside the strip most printers can't print, so printing
+  from Chrome on Windows cut it off. Every PDF report's footer now sits 0.4 in from the bottom and the sides, with the
+  page content ending above it. This covers the audit and close reports, the event and fundraising reports, the
+  Quarterly / Annual report, the budget reports, the donation statements, the invoice reports and the audit log
+  export.
+
+### Dependencies
+- **Python packages:** FastAPI 0.162.0 → 0.162.7 (fixes for cleaning up a request's dependencies when the request is
+  cancelled) and pypdfium2 5.15.0 → 5.15.2 (closes cleanly when the application stops). `THIRD-PARTY-NOTICES.txt`
+  is regenerated for them.
+- **Build and test tools** (not shipped in the packages): Playwright 1.65.0 → 1.65.1, and **Vite 6 → 8** with its
+  React plugin 4 → 6. Vite 6 now only receives security fixes; Vite 8 builds the screens with its new, much faster
+  bundler (Rolldown) and the React plugin no longer needs Babel. The screens themselves don't change.
+
+## 2.4.1 — 2026-11-14
 Product page and README update for 2.4.0. No database migration and no change to the application; going back to
 2.4.0 is just reinstalling it.
 - **pennywarden.org shows what is new in 2.4.** The page still highlighted 2.1. It now leads with the Invoices module,
@@ -316,6 +375,25 @@ logo for everything that prints, and the user guide built into the app.
 
 ## 2.3.0 — 2026-11-01
 PennyWarden 2.3.0 (in progress).
+
+**Upgrading:** two database migrations (`0090_late_proceeds`, `0091_reminder_resolution_link`), applied automatically.
+
+### Events & Fundraisers
+- **Proceeds paid later (#588).** An event run with an outside organization that pays months later — a county fair
+  in August whose fair board sends the check the next April — can be marked **Proceeds paid later**, with the expected
+  payer and month. Until someone marks **All proceeds received** it is **Awaiting proceeds**: listed on the Dashboard,
+  shown as *Proceeds pending* in its reports, and never *Final*, even after its Fiscal Years close. The check is entered
+  as a normal deposit in the year it arrives (any Income budget); saving it from the expected payer asks whether it is
+  the event's proceeds, or **Add received proceeds…** links it from the event. A linked deposit counts with that event
+  only, in the event's own year, and the fundraising report of the year it arrived lists it under *Proceeds received
+  this year for earlier events*. Waiting never holds up closing a year.
+- **Events in closed years (#588).** A Budget Manager can now set up an event dated in a Closed Fiscal Year and choose
+  that year's budgets, to load past events — reporting only; nothing financial changes.
+
+### Reminders
+- **What resolved a reminder (#594).** Resolving a reminder can link the register transaction or the event that
+  resolved it; the resolved reminder shows it as a link that opens it. The link can be added, changed or removed later
+  by whoever can resolve the reminder, and every change is audited.
 
 ### Reports
 - **A new Reports screen (#375).** Reports opens on a **catalog**: every report and presentation you can run, grouped

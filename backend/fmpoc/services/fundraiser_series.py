@@ -481,6 +481,8 @@ def next_year_draft(db: Session, ctx, f: Fundraiser) -> dict:
             "end_date": plus_year(f.end_date).isoformat(), "filter_text": f.filter_text, "filter_regex": bool(f.filter_regex),
             "budget_ids": budget_ids, "continues_from_id": f.id, "copy_buckets_from_id": f.id,
             "event_type": f.event_type or "FUNDRAISER",          # 2.4.0 (#429): a series holds one type
+            # 2.5.0 (#588): the same organization usually pays again (the month is left to fill in)
+            "proceeds_later": bool(f.proceeds_later), "proceeds_payer_entity_id": f.proceeds_payer_entity_id,
             "buckets": [b.name for b in fsvc.ordered_buckets(db, f)],
             "categories": [c.name for c in fsvc.ordered_categories(db, f)]}
 
@@ -716,7 +718,29 @@ def fy_report(db: Session, ctx, fy: FiscalYear, ids: list[int], *, years: int = 
         events.append({"id": f.id, "name": f.name, "start_date": f.start_date.isoformat(),
                        "end_date": f.end_date.isoformat(), "status": report_status(db, f)["text"],
                        "income": t["net_revenue"], "expenses": t["expenses"], "net": t["net_proceeds"]})
+    # 2.5.0 (#588): proceeds received in this Fiscal Year for events of earlier years (cash basis: received here, but
+    # counted in the event's own year above and in its history)
+    late, late_total = [], 0
+    for f in db.scalars(select(Fundraiser).where(Fundraiser.workspace_id == ctx.workspace_id,
+                                                 Fundraiser.archived_at.is_(None))):
+        if fundraiser_year(db, f) >= Y or fy.id not in fsvc.proceeds_fy_ids(db, f):
+            continue
+        rows_f, _sk = fsvc._lines(db, f)
+        got = [r for r in rows_f if r["proceeds_link"] and r["fiscal_year_id"] == fy.id and not r["excluded"]]
+        for r in sorted(got, key=lambda r: (r["t"].transaction_date, r["t"].id)):
+            ent = r["a"].entity or r["t"].parent_entity
+            late_total += r["eff"]
+            late.append({"event_id": f.id, "event": f.name, "event_year": fundraiser_year(db, f),
+                         "event_type": f.event_type or "FUNDRAISER", "date": r["t"].transaction_date.isoformat(),
+                         "entity": ent.display_name if ent else None, "amount": fmt(r["eff"])})
+    late.sort(key=lambda x: (x["date"], x["event"]))
+    pending = [{"name": f.name, "text": fsvc.proceeds_state(db, f)["text"]}
+               for f in sorted([*selected, *selected_events], key=lambda x: (x.start_date, x.name)) if fsvc.awaiting(f)]
+    if pending:
+        foot.append("Proceeds pending: " + "; ".join(f"{p['name']} ({p['text']})" for p in pending) + ". Their figures "
+                    "will change when the proceeds arrive.")
     return {
+        "late_proceeds": late, "late_proceeds_total": fmt(late_total), "pending_proceeds": pending,
         "events": events, "events_net": fmt(events_net),
         "fiscal_year": fy_brief(fy), "year": Y, "period": period, "years_option": years, "targeted": targeted,
         "avg_years": avg_years, "linked_history": linked_history, "fy_ended": fy_ended,

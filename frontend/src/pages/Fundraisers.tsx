@@ -13,6 +13,8 @@ const FundraiserCharts = lazy(() => import("./FundraiserCharts")); // chart libr
 
 const STATUS: Record<string, string> = { PLANNED: "Planned", IN_PROGRESS: "In progress", ENDED: "Ended", ARCHIVED: "Archived", CANCELLED: "Cancelled" };
 const UPCOMING = "upcoming";
+const EARLIER = "earlier";       // 2.5.0 polish: events before the first Fiscal Year (e.g. a pre-PennyWarden fair)
+const NO_FY = (v: string) => v === UPCOMING || v === EARLIER;
 
 export function FundraiserStatus({ status }: { status: string }) {
   return <span className={`pill pill-fr-${status.toLowerCase()}`}>{STATUS[status] || status}</span>;
@@ -42,9 +44,9 @@ export default function Fundraisers() {
   useEffect(() => {
     if (!fy) return;
     setRows(null);
-    const q = fy === UPCOMING ? "upcoming=true" : `fiscal_year_id=${fy}`;
+    const q = fy === UPCOMING ? "upcoming=true" : fy === EARLIER ? "earlier=true" : `fiscal_year_id=${fy}`;
     api.get(`/api/fundraisers?${q}${archived ? "&include_archived=true" : ""}`).then(setRows, setErr);
-    if (fy !== UPCOMING) api.get(`/api/fundraisers/fy-report/selection?fiscal_year_id=${fy}`).then((x) => setPicked(new Set(x.default_ids)), () => setPicked(new Set()));
+    if (!NO_FY(fy)) api.get(`/api/fundraisers/fy-report/selection?fiscal_year_id=${fy}`).then((x) => setPicked(new Set(x.default_ids)), () => setPicked(new Set()));
   }, [fy, archived]);
   const toggle = (id: number) => { const n = new Set(picked); if (n.has(id)) n.delete(id); else n.add(id); setPicked(n); };
   const shown = (rows || []).filter((r) => picked.has(r.id));
@@ -58,29 +60,32 @@ export default function Fundraisers() {
           <select aria-label="Fundraisers Fiscal Year" value={fy} onChange={(e) => setFy(e.target.value)}>
             {fys.map((y) => <option key={y.id} value={y.id}>{y.label}</option>)}
             <option value={UPCOMING}>Upcoming — no Fiscal Year yet</option>
+            <option value={EARLIER}>Earlier — before the first Fiscal Year</option>
           </select>
         </Field>
         <label className="check"><input type="checkbox" checked={archived} onChange={(e) => setArchived(e.target.checked)} /> Show archived</label>
         {/* 2.3.0 (#375): a shortcut to the report in Reports, with this year and the ticked fundraisers filled in */}
-        {fy !== UPCOMING && rows?.length ? <button onClick={() => navigate(`${reportPath("fundraising-fy")}${qs({ fiscal_year_id: fy, ids: shown.map((r) => r.id).join(",") })}`)} disabled={!shown.length}>Fiscal Year report…</button> : null}
+        {!NO_FY(fy) && rows?.length ? <button onClick={() => navigate(`${reportPath("fundraising-fy")}${qs({ fiscal_year_id: fy, ids: shown.map((r) => r.id).join(",") })}`)} disabled={!shown.length}>Fiscal Year report…</button> : null}
         {can("fundraiser.manage") ? <Link className="button" to="/fundraiser-series">Series</Link> : null}
         {can("fundraiser.manage") ? <button className="primary" onClick={() => setCreating(true)}>New event or fundraiser</button> : null}
       </div>
       <ErrorBox error={err} />
       {!rows ? <Loading /> : !rows.length ? (
-        <p className="muted">{fy === UPCOMING ? "No events or fundraisers beyond the Fiscal Years set up so far." : "No events or fundraisers in this Fiscal Year."}</p>
+        <p className="muted">{fy === UPCOMING ? "No events or fundraisers beyond the Fiscal Years set up so far."
+          : fy === EARLIER ? "No events or fundraisers from before the Fiscal Years set up. An event held before PennyWarden (for example last year's fair, paid later) appears here until a deposit is linked to it."
+          : "No events or fundraisers in this Fiscal Year."}</p>
       ) : (
         <table className="table" data-testid="fundraiser-list">
-          <thead><tr>{fy !== UPCOMING ? <th><span className="sr-only">In the report</span>
+          <thead><tr>{!NO_FY(fy) ? <th><span className="sr-only">In the report</span>
             <button className="small" onClick={() => setPicked(new Set(rows.map((r) => r.id)))}>All</button> <button className="small" onClick={() => setPicked(new Set())}>None</button></th> : null}<th>Name</th><th>Type</th><th>Dates</th><th>Status</th><th>Fiscal Years</th><th className="num">Income</th><th className="num">Expenses</th><th className="num">Net</th></tr></thead>
           <tbody>
             {rows.map((f) => (
               <tr key={f.id}>
-                {fy !== UPCOMING ? <td><input type="checkbox" aria-label={`Include ${f.name} in the Fiscal Year report`} checked={picked.has(f.id)} onChange={() => toggle(f.id)} /></td> : null}
+                {!NO_FY(fy) ? <td><input type="checkbox" aria-label={`Include ${f.name} in the Fiscal Year report`} checked={picked.has(f.id)} onChange={() => toggle(f.id)} /></td> : null}
                 <td><Link to={`/fundraisers/${f.id}`}>{f.name}</Link></td>
                 <td>{typeLabel(f.event_type)}</td>
                 <td>{eventDates(f)}</td>
-                <td><FundraiserStatus status={f.status} /></td>
+                <td><FundraiserStatus status={f.status} />{f.proceeds?.awaiting ? <> <span className="badge yellow" title={f.proceeds.text || ""}>Proceeds pending</span></> : null}</td>
                 <td>{f.fiscal_years.length ? f.fiscal_years.map((y: any) => y.display_name).join(" – ") : <span className="muted">No budgets yet</span>}</td>
                 <td className="num">{money(f.income)}</td>
                 <td className="num">{money(f.expense)}</td>
@@ -192,6 +197,7 @@ export function FundraiserDetail({ id }: { id: number }) {
   const [linking, setLinking] = useState(false);
   const [adding, setAdding] = useState(false);          // 2.2.0 (#302)
   const [cancelling, setCancelling] = useState(false); // v1.6.4 CR-037
+  const [addingProceeds, setAddingProceeds] = useState(false);   // 2.5.0 (#588)
   const load = () => api.get(`/api/fundraisers/${id}`).then(setF, setErr);
   useEffect(() => { load(); }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!f) return <><ErrorBox error={err} />{err ? null : <Loading />}</>;
@@ -214,7 +220,7 @@ export function FundraiserDetail({ id }: { id: number }) {
         <button onClick={() => navigate(`${reportPath("count-sheet")}${qs({ fundraiser_id: f.id })}`)}>Cash count sheet…</button>
         {manage ? (
           <div className="row">
-            {!f.read_only ? <button onClick={() => setEditing(true)}>Edit</button> : null}
+            <button onClick={() => setEditing(true)}>Edit</button>
             {f.archived
               ? <button onClick={() => act(async () => setF(await api.post(`/api/fundraisers/${id}/restore`)))}>Restore</button>
               : <button onClick={() => act(async () => setF(await api.post(`/api/fundraisers/${id}/archive`)))}>Archive</button>}
@@ -240,7 +246,7 @@ export function FundraiserDetail({ id }: { id: number }) {
       </dl>
       <ErrorBox error={err} />
       {f.cancelled ? <div className="alert error" role="note" data-testid="fr-cancelled"><b>Cancelled</b> — this fundraiser did not take place as planned. Reason: {f.cancel_reason} <span className="muted">({String(f.cancelled_at).slice(0, 10)})</span>. Its transactions are still listed and counted below.</div> : null}
-      {f.read_only ? <div className="alert info" role="note">The Fiscal Year of this fundraiser is closed; it can no longer be changed.</div> : null}
+      {f.read_only ? <div className="alert info" role="note">The Fiscal Year of this event is closed: its money and lines can no longer be changed. Its setup is reporting only.</div> : null}
       {f.notices.length ? (
         <ul className="notices" aria-label="Notices">
           {f.notices.map((n: any, i: number) => <li key={i} className={`alert ${n.code === "NO_BUDGETS" || n.code === "FUTURE_FY" || n.code === "FY_WITHOUT_BUDGET" ? "info" : "warn"}`} data-code={n.code}>{n.message}</li>)}
@@ -288,6 +294,8 @@ export function FundraiserDetail({ id }: { id: number }) {
         </p>
       ) : null}
 
+      {f.proceeds?.later ? <ProceedsCard f={f} manage={manage} canLink={can("fundraiser.lines")} onAdd={() => setAddingProceeds(true)} onChanged={setF} setErr={setErr} /> : null}
+
       <StakeholderReport f={f} manage={manage} onChanged={setF} />
 
       <section className="card" aria-labelledby="fr-buckets-h">
@@ -330,7 +338,7 @@ export function FundraiserDetail({ id }: { id: number }) {
 
       <section className="card">
         <h2>Transactions</h2>
-        <p className="hint">Every active line allocated to the selected budgets{f.filter_text ? " whose description matches the filter" : ""}, whatever its date. Transactions are entered in the Register.
+        <p className="hint">Every active line allocated to the selected budgets{f.filter_text ? " whose description matches the filter" : ""}, whatever its date{f.proceeds?.later ? ", and the deposits linked as proceeds received later" : ""}. Transactions are entered in the Register.
           {f.filtered_out_lines ? ` ${f.filtered_out_lines} line${f.filtered_out_lines === 1 ? "" : "s"} in these budgets did not match the filter.` : ""}</p>
         {f.lines.length ? (
           <div className="table-scroll">
@@ -344,6 +352,7 @@ export function FundraiserDetail({ id }: { id: number }) {
                     <td><Link to={`/register?account=${l.bank_account_id}&search=${encodeURIComponent(l.description || "")}`} title="Open in the Register">{l.bank_account}</Link></td>
                     <td>{l.entity || "—"}</td>
                     <td>{l.description || "—"}
+                      {l.proceeds_link_id ? <span className="badge green" data-testid="fr-proceeds-line">Proceeds received later</span> : null}
                       {l.excluded ? <span className="badge grey" title={l.exclusion_reason}>Excluded: {l.exclusion_reason}</span> : null}
                       {l.classification ? <span className="badge blue" title={l.classification.note || ""}>{l.classification.label} {money(l.classification.amount)}</span> : null}
                     </td>
@@ -384,6 +393,7 @@ export function FundraiserDetail({ id }: { id: number }) {
         ) : <p className="muted">No attachments.</p>}
       </section>
 
+      {addingProceeds ? <ProceedsDialog f={f} onClose={() => setAddingProceeds(false)} onSaved={(x) => { setF(x); setAddingProceeds(false); }} /> : null}
       {cancelling ? <CancelDialog f={f} onClose={() => setCancelling(false)} onSaved={(x) => { setF(x); setCancelling(false); }} /> : null}
       {lineEdit ? <LineDialog f={f} line={lineEdit} onClose={() => setLineEdit(null)} onSaved={(x) => { setF(x); setLineEdit(null); }} /> : null}
       {bucketEdit ? <BucketDialog f={f} bucket={bucketEdit} onClose={() => setBucketEdit(null)} onSaved={(x) => { setF(x); setBucketEdit(null); }} /> : null}
@@ -420,7 +430,12 @@ function FundraiserForm({ current, prefill, onClose, onSaved }: { current?: any;
     filter_text: src?.filter_text || "", filter_regex: !!src?.filter_regex,
     goal_amount: current?.goal_amount || "",   // 2.3.0 (#372); not copied into next year's
     event_type: src?.event_type || "FUNDRAISER",   // 2.4.0 (#429)
+    // 2.5.0 (#588): proceeds paid later (copied into next year's: the same organization usually pays again)
+    proceeds_later: !!src?.proceeds_later, proceeds_payer_entity_id: src?.proceeds_payer_entity_id ? String(src.proceeds_payer_entity_id) : "",
+    proceeds_expected_month: current?.proceeds_expected_month || "",
   });
+  const [entities, setEntities] = useState<any[]>([]);
+  useEffect(() => { api.get("/api/entities").then(setEntities, () => setEntities([])); }, []);
   // 2.1.0 (#277): "Continues from (previous fundraiser)"
   const [cont, setCont] = useState<string>(src?.continues_from_id ? String(src.continues_from_id) : "");
   const [contOpts, setContOpts] = useState<any[]>([]);
@@ -483,6 +498,9 @@ function FundraiserForm({ current, prefill, onClose, onSaved }: { current?: any;
     const body: any = { name: v.name, description: v.description || null, start_date: v.start_date, end_date: v.end_date || null,
                    budget_ids: ids, filter_text: v.filter_text || null, filter_regex: v.filter_regex,
                    continues_from_id: cont ? Number(cont) : null, event_type: v.event_type,
+                   proceeds_later: v.proceeds_later,
+                   proceeds_payer_entity_id: v.proceeds_later && v.proceeds_payer_entity_id ? Number(v.proceeds_payer_entity_id) : null,
+                   proceeds_expected_month: v.proceeds_later && v.proceeds_expected_month ? v.proceeds_expected_month : null,
                    ...(v.event_type === "EVENT" ? {} : { goal_amount: v.goal_amount.trim() || null }) };   // an Event keeps its stored goal
     if (!current && prefill?.copy_buckets_from_id) body.copy_buckets_from_id = prefill.copy_buckets_from_id;
     try {
@@ -499,7 +517,7 @@ function FundraiserForm({ current, prefill, onClose, onSaved }: { current?: any;
         {/* 2.4.0 (#429) */}
         <Field label="Type" hint={v.event_type === "EVENT"
           ? "An event that is not a fundraiser (e.g. a Summer Cookout): income, expenses and net, without a goal or donation receipts. Once budgets are chosen, it needs an Expense budget in each Fiscal Year it uses; Income is optional."
-          : "Raises money: goal and donation receipts available. Once budgets are chosen, it needs an Income and an Expense budget in each Fiscal Year it uses."}>
+          : "Raises money: goal and donation receipts available. Once budgets are chosen, it needs an Income budget in each Fiscal Year it uses (Expense is optional)."}>
           <select value={v.event_type} onChange={set("event_type")}>
             <option value="FUNDRAISER">Fundraiser</option>
             <option value="EVENT">Event</option>
@@ -508,6 +526,16 @@ function FundraiserForm({ current, prefill, onClose, onSaved }: { current?: any;
         {current && current.event_type !== v.event_type && current.series_link?.series ? <div className="alert warn" role="note">A series holds only one type. If other events are in this one's series, take it out of the series (Continues from: none) before changing its type.</div> : null}
         <Field label="Description"><textarea rows={2} maxLength={2000} value={v.description} onChange={set("description")} /></Field>
         {v.event_type === "EVENT" ? null : <Field label="Goal (optional)" hint="What the fundraiser aims to raise, compared with its net (income minus expenses). Informational only."><input inputMode="decimal" pattern="\d+(\.\d{1,2})?" maxLength={20} value={v.goal_amount} onChange={set("goal_amount")} placeholder="e.g. 5000" /></Field>}
+        {/* 2.5.0 (#588) */}
+        <label className="check"><input type="checkbox" checked={v.proceeds_later} onChange={(e) => setV({ ...v, proceeds_later: e.target.checked })} data-testid="fr-proceeds-later" />{" "}
+          Proceeds paid later by an outside organization <span className="muted">(e.g. a fair board that pays months after the event)</span></label>
+        {v.proceeds_later ? (
+          <div className="row fields">
+            <EntityPicker label="Expected payer (optional)" entities={entities} value={v.proceeds_payer_entity_id} onChange={(id) => setV({ ...v, proceeds_payer_entity_id: id })} />
+            <Field label="Expected month (optional)"><input type="month" value={v.proceeds_expected_month} onChange={(e) => setV({ ...v, proceeds_expected_month: e.target.value })} /></Field>
+          </div>
+        ) : null}
+        {v.proceeds_later ? <p className="hint">The event shows as <b>Awaiting proceeds</b> until someone marks <i>All proceeds received</i>. When the check comes, enter it in the Register as a normal deposit (any Income budget of that year) and link it here with <i>Add received proceeds</i>.</p> : null}
         <div className="row fields">
           <Field label="Event start date" hint="The day(s) the event takes place."><input type="date" required value={v.start_date} onChange={set("start_date")} /></Field>
           <Field label="Event end date" hint="Leave empty for a one-day event."><input type="date" min={v.start_date || undefined} value={v.end_date} onChange={set("end_date")} /></Field>
@@ -1094,5 +1122,77 @@ function Unreceipted({ fid }: { fid: number }) {
         </table>
       )}
     </section>
+  );
+}
+
+/** 2.5.0 (#588): proceeds paid later - the pending state, the linked deposits and how the wait ended. */
+function ProceedsCard({ f, manage, canLink, onAdd, onChanged, setErr }: { f: any; manage: boolean; canLink: boolean; onAdd: () => void;
+  onChanged: (f: any) => void; setErr: (e: unknown) => void }) {
+  const p = f.proceeds;
+  const linked = f.lines.filter((l: any) => l.proceeds_link_id);
+  const call = async (fn: () => Promise<any>) => { setErr(null); try { onChanged(await fn()); } catch (x) { setErr(x); } };
+  const outcome = (o: string | null, reason?: string) => call(() => api.put(`/api/fundraisers/${f.id}/proceeds-outcome`, { outcome: o, reason: reason || null }));
+  return (
+    <section className="card" aria-labelledby="fr-proceeds-h" data-testid="fr-proceeds">
+      <div className="charts-head">
+        <h2 id="fr-proceeds-h">Proceeds paid later</h2>
+        <div className="row">
+          {canLink ? <button className="small" onClick={onAdd}>Add received proceeds…</button> : null}
+          {canLink && p.awaiting ? <button className="small" onClick={() => outcome("RECEIVED")}>All proceeds received</button> : null}
+          {manage && p.awaiting ? <button className="small" onClick={() => { const r = window.prompt("Why were no proceeds received?"); if (r && r.trim()) outcome("NONE", r.trim()); }}>No proceeds received…</button> : null}
+          {canLink && p.outcome ? <button className="small" onClick={() => outcome(null)}>Awaiting again</button> : null}
+        </div>
+      </div>
+      <p className={p.awaiting ? "alert warn" : "alert info"} role="note" data-testid="fr-proceeds-state">
+        <b>{p.awaiting ? "Awaiting proceeds" : p.outcome === "NONE" ? "No proceeds received" : "Proceeds received"}</b> — {p.text}.{" "}
+        {linked.length ? <>Linked: {linked.length} deposit line{linked.length === 1 ? "" : "s"}, {money(p.received)} received.</> : "No deposit linked yet."}
+      </p>
+      <p className="hint">Cash basis: the check stays in the Fiscal Year it was received, against any Income budget. Linked here, it counts with this
+        event — in the event's own year in its reports and history — and with no other event. While the proceeds are awaited, the results can't be final.</p>
+      {linked.length ? (
+        <table className="table compact">
+          <thead><tr><th>Received</th><th>Entity</th><th>Description</th><th>Budget</th><th className="num">Amount</th>{canLink ? <th /> : null}</tr></thead>
+          <tbody>{linked.map((l: any) => (
+            <tr key={l.allocation_id}><td>{l.transaction_date}</td><td>{l.entity || "—"}</td><td>{l.description || "—"}</td><td>{l.budget}</td><td className="num">{money(l.amount)}</td>
+              {canLink ? <td className="row-actions"><button className="small" onClick={() => { const r = window.prompt("Unlink this deposit from the event? Optional reason:", ""); if (r !== null) call(() => api.post(`/api/fundraisers/${f.id}/proceeds-lines/${l.proceeds_link_id}/unlink`, { reason: r || null })); }}>Unlink</button></td> : null}</tr>
+          ))}</tbody>
+        </table>
+      ) : null}
+    </section>
+  );
+}
+
+/** 2.5.0 (#588): pick the deposit line(s) that are the event's proceeds (dated on or after the event; the expected payer's first). */
+function ProceedsDialog({ f, onClose, onSaved }: { f: any; onClose: () => void; onSaved: (f: any) => void }) {
+  const [q, setQ] = useState("");
+  const [rows, setRows] = useState<any[] | null>(null);
+  const [err, setErr] = useState<unknown>(null);
+  useEffect(() => {
+    const t = setTimeout(() => api.get(`/api/fundraisers/${f.id}/proceeds-candidates${qs({ q: q.trim() || null })}`).then(setRows, setErr), 250);
+    return () => clearTimeout(t);
+  }, [q, f.id]);
+  const link = async (aid: number) => {
+    setErr(null);
+    try { onSaved(await api.post(`/api/fundraisers/${f.id}/proceeds-lines`, { allocation_id: aid })); } catch (x) { setErr(x); }
+  };
+  return (
+    <Modal title={`Add received proceeds — ${f.name}`} onClose={onClose} wide>
+      <p className="hint">Deposit lines dated on or after the event, not already another event's proceeds{f.proceeds?.payer ? <> — <b>{f.proceeds.payer.name}</b>'s first</> : null}. Enter the check in the Register first if it isn't there yet.</p>
+      <ErrorBox error={err} />
+      <Field label="Search"><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Entity, description, amount or transaction #" /></Field>
+      {!rows ? <Loading /> : !rows.length ? <p className="muted">No matching deposit lines.</p> : (
+        <div className="table-scroll">
+          <table className="table compact" data-testid="fr-proceeds-candidates">
+            <thead><tr><th>Date</th><th>#</th><th>Entity</th><th>Description</th><th>Budget</th><th className="num">Amount</th><th /></tr></thead>
+            <tbody>{rows.map((r) => (
+              <tr key={r.allocation_id}><td>{r.transaction_date}</td><td>{r.transaction_id}</td><td>{r.entity || "—"}{r.payer_match ? <> <span className="badge green">Expected payer</span></> : null}</td>
+                <td>{r.description || "—"}</td><td>{r.fiscal_year?.display_name} / {r.budget}</td><td className="num">{money(r.amount)}</td>
+                <td><button className="small primary" onClick={() => link(r.allocation_id)}>Link</button></td></tr>
+            ))}</tbody>
+          </table>
+        </div>
+      )}
+      <div className="actions"><button onClick={onClose}>Close</button></div>
+    </Modal>
   );
 }

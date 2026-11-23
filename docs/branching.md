@@ -139,6 +139,10 @@ advisory is published, also when the fix is a major version, once *Dependabot se
    for good, add an `ignore` rule naming `update-types`). Already taken in by another pull request? Close it too —
    once the versions are on develop there is nothing left to propose. (Avoid the comment
    `@dependabot ignore this dependency`: it also stops security fixes for that dependency.)
+6. **When updates are released** (decided 2026-11-23): routine updates merged into develop ship together as a monthly
+   Minor version (e.g. 2.4.1 → 2.4.2), promoted develop → test → main for the **second Friday of the month**. An
+   update that carries a security fix does not wait: it ships as soon as possible as its own hotfix. When a Major
+   version is being prepared, the waiting updates ride along with it instead (2.5.0 took in the planned 2.4.2).
 
 ## Python dependencies (2.1.0, #226)
 - **`backend/requirements.in`** — the packages PennyWarden imports itself, pinned exactly. Edit only this file.

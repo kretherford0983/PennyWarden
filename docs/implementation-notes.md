@@ -48,6 +48,102 @@ could not otherwise be corrected. Scope and safeguards:
 - Audited as `TRANSACTION_VOID_DATE_CORRECTED` with before/after snapshots and the reason.
 - Tests: `backend/tests/test_cr001_void_date.py` (5 tests) and E2E "CR-001".
 
+**2.5.0 polish — Fundraiser rule and the Earlier list (Kyle 2026-11-23, testing the county fair).**
+- **BR-EVT-002 changed:** `fundraisers.REQUIRED_KINDS` = Fundraiser → INCOME, Event → EXPENSE (2.4.0 #429 had
+  Fundraiser → INCOME + EXPENSE). The type follows the main direction of the money. Tests `test_v240_events.py`
+  updated (Income-only Fundraiser accepted, Expense-only refused; the upgraded-record warning now drops Income).
+- **Earlier:** `GET /api/fundraisers?earlier=true` lists events touching no Fiscal Year dated before the first Fiscal
+  Year starts; `upcoming=true` lists the rest of those (beyond or between the years set up; all when no year exists). Once a proceeds
+  line is linked the event lists under that line's year (`touched_fy_ids`).
+
+**2.5.0 — event sections reference transaction pages (#589, decided with Kyle 2026-11-23).** In
+`build_audit_report` (audit and close layouts) each transaction page starts with `_TxAnchor`, which records its page
+in `_AuditDoc.tx_pages` while the PDF is laid out. `_fundraiser_section(..., in_report=)` (the ids of the transactions
+in the report) adds a **Page** column whose cell is `_PageRef`: it reads `tx_pages` when it is drawn. The
+transactions are laid out before the fundraisers, so the number is known by then - no second build pass. Attached
+PDF pages are merged onto reserved slots of existing pages, so the reportlab page number is the printed page number.
+A line not in the report shows "<FY> report" (a line of the event's other Fiscal Year) or "Not in this report" (an
+account the report leaves out). Transaction attachments are not reproduced in the section; the event's own documents
+(`Attachment.fundraiser_id`) still are. The standalone Fundraiser detail report passes no `in_report` and is
+unchanged. Tests `test_v250_event_page_refs.py`.
+
+**2.5.0 — Budget proposal (#590, decided with Kyle 2026-11-23).** `services/budget_proposal.py` builds it,
+`budget_proposal_output.py` draws it (PDF via `reports._AuditDoc`, deck via the `fundraiser_deck` helpers).
+`GET /api/reports/budget-proposal` (`budget.manage`; json | pdf | pptx; audited `REPORT_GENERATED` with `report`
+BUDGET_PROPOSAL / BUDGET_PROPOSAL_PRESENTATION). Rules (new BR for the issue):
+- **Years:** Draft → *Proposed*, Approved → *Approved*, Closed refused (422). REJECTED/DELETED budgets are left
+  out (both years).
+- **Matching:** each previous-year budget (parents and the sub-budgets the Budgets page shows) is mapped to its
+  successor with `budget_planning._successor` (#89 link, else same code/type/level), the Budget Review's rule. A
+  proposed line without a predecessor shows "—"; a previous-year line without a successor is listed in
+  `not_in_year` (a sub-budget only when its parent did continue; a zero Other never).
+- **Previous actual:** whole-year `_actual_all` once the previous year has ended. Otherwise the Budget Review
+  projection (`basis`/`project`) per choosable row, honouring the user's projection choices; a parent with
+  sub-budgets = its listed sub-budgets' projections + the year to date of the rest; under one month: the year to date
+  (*YTD actual*).
+- **Totals:** proposed = this year's parents; previous budget/actual = all previous-year parents (each equals that
+  year's own total); change = proposed − previous budget, percentage of the previous budget.
+- **Annual append:** `GET /api/reports/period?...&include_proposal=true` (Annual only, else 422; `budget.manage`, else
+  403; the next Fiscal Year must exist and not be Closed). `period/options` returns `next_fiscal_year` for Budget
+  Managers only. The PDF adds `pdf_flowables(appended=True)` after the report; the deck adds a divider + the proposal
+  slides before the closing slide.
+- Catalog: report id `budget-proposal` in `report_prefs.REPORT_IDS`, default groups next to the Planning Sheet; a saved
+  grouping gets it after `planning-sheet` (`report_grouping._complete`). Tests `test_v250_budget_proposal.py`, E2E in
+  the 2.1.0 Budget Review test.
+
+**2.5.0 — Events with proceeds paid later (#588, decided with Kyle 2026-11-23).** Migration `0090_late_proceeds`:
+`fundraiser.proceeds_later`, `proceeds_payer_entity_id`, `proceeds_expected_month` (YYYY-MM), `proceeds_outcome`
+(RECEIVED | NONE) + reason/at/by; table `fundraiser_proceeds_line` (fundraiser, allocation, linked/retired - links are
+retired, never deleted, BR-001; in Reinitialize `WIPE` (scoped by fundraiser) and restore `DATA_TABLES`). Rules (new
+BR for the issue):
+- **Awaiting** = `proceeds_later` and no outcome (and not cancelled). `fundraiser_summary.report_status` returns
+  AWAITING_PROCEEDS ("Proceeds pending - expected <Month YYYY>, <payer>") after the event and is never final while
+  awaiting - also when every year is Closed; `set_results_final` refuses (409 AWAITING_PROCEEDS). Fiscal Year closure
+  blockers are unchanged.
+- **Linking** (`POST /api/fundraisers/{id}/proceeds-lines`, `fundraiser.lines`): an ACTIVE deposit allocation to an
+  Income budget, dated >= the event start, not another event's active proceeds (409 PROCEEDS_TAKEN); a line of a Closed
+  year needs `fundraiser.manage` (reporting only). Unlink = retire with an optional reason
+  (`.../proceeds-lines/{link}/unlink`). Audited FUNDRAISER_PROCEEDS_LINKED / _UNLINKED.
+- **Counting** (`fundraisers._lines`): the event's rows = its budget lines (filter applies) + its linked lines (kind
+  INCOME, Fiscal Year of their budget, filter does not apply; once if also in its budgets) - minus lines linked as
+  another event's proceeds. `_fys_of` / `touched_fy_ids` include the linked lines' years. The series year is still the
+  event's start year.
+- **Outcome** (`PUT .../proceeds-outcome`): RECEIVED by line managers; NONE by Budget Managers with a reason; back to
+  awaiting (null) by line managers, Budget Managers once a year of the event is Closed. Audited
+  FUNDRAISER_PROCEEDS_OUTCOME. Turning the flag off is refused while deposits are linked (409 PROCEEDS_LINKED).
+- **Asking** (`GET /api/fundraisers/awaiting-proceeds?entity_id=`, `fundraiser.view`, [] with the module off): the
+  Dashboard's Attention card and the Register's question after a new deposit whose entity is the expected payer.
+- **Reports:** FY Audit / Close include an event whose linked line falls in the year (`for_fiscal_year_report`) and
+  print a "Proceeds paid later" line; `fundraiser_series.fy_report` adds `late_proceeds` (lines received in the year for
+  events of earlier years) and `pending_proceeds` (footnote); the PDF and deck add a section/slide.
+- **Closed years:** `check_event_dates` no longer refuses an event dated in a Closed year and `eligible_fiscal_years` /
+  `_validate_budgets` accept a Closed year's budgets (events are created by Budget Managers only). A chosen Closed-year
+  budget stays frozen, line adjustments in Closed years stay read-only, and delete is still refused. Notice
+  REPORTING_ONLY. Tests `test_v250_late_proceeds.py`; `test_v160_fundraisers.py` updated (was 409).
+
+**2.5.0 — what resolved a reminder (#594, decided with Kyle 2026-11-23).** Migration `0091_reminder_resolution_link`:
+`reminder.resolution_link_type` (TRANSACTION | EVENT) + `resolution_link_id` (no FK, like `link_id`, which stays the
+reminder's *subject*). Set on `POST /api/reminders/{id}/resolve` (both or neither, same workspace - else 422);
+changed or removed afterwards with `PUT /api/reminders/{id}/resolution-link` by whoever can resolve it (409 before
+resolving), audited REMINDER_RESOLUTION_LINK_CHANGED with before/after. `reminders.resolution_link()` gives the label
+and the address - `/register?account=&txn=` with `register.view`, `/fundraisers/{id}` with the module on and
+`fundraiser.view` - else the label only. Reopening keeps the link; `_create_next` doesn't copy it. Picker:
+`GET /api/reminders/resolution-link-options?kind=&q=`. Reinitialize and restore need no change (columns on
+`reminder`). Tests `test_v250_reminder_resolution_link.py`.
+
+**2.5.0 — report footers inside the printable area (Kyle 2026-11-23, a printout from Windows Chrome lost its
+footer).** `reports.FOOTER_Y` (0.4 in, baseline), `FOOTER_Y2` (+9 pt, second line) and `FOOTER_X` (0.4 in side inset)
+place the footer of every report stamped by `_stamp_and_write` (and the footer mark in `_brand_page`); before, the
+baselines were 10/19 pt and the inset 18 pt. Own footers moved too: donation statements (and their bottom margin to
+0.85 in), the invoice reports and the audit log export (0.3/0.35 in → 0.4 in, bottom margins 0.65 in). Letters,
+invoices and checks keep their layouts (their bottom text is already ≥ 0.6 in, and checks are positioned for the stock).
+
+**2.5.0 — Vite 8 (Kyle 2026-11-23).** Of the major upgrades Dependabot leaves out (dependabot.yml `ignore`
+semver-major), only Vite was taken in 2.5.0: Vite 6.4 is on its last support tier (security fixes only). Vite 6.4.6 →
+8.3.8 and `@vitejs/plugin-react` 4.7.0 → 6.3.0 (Oxc instead of Babel). `vite.config.ts` is unchanged; the build is
+the same files under `backend/fmpoc/static`. React 19, TypeScript 6 → 7 and pypdf 7 follow in a later release (own
+issue). THIRD-PARTY-NOTICES.txt is unchanged (build tools are not shipped).
+
 **2.1.0 — Budget Review (#283, Kyle 2026-10-20; built 2026-10-21 with layout A, the issue's recommendation).**
 - Renamed from Budget Prep. `budget_review()`, `budget_review_csv()` and `budget_review_pdf()` are the new names;
   `budget_prep*` stay as aliases. The routes are `/api/reports/budget-review` and `/budget-review/projection-choices`,
