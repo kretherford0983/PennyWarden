@@ -33,13 +33,13 @@ DEFAULTS: dict[str, list[dict]] = {
         {"id": "share", "name": "Share with the board and members", "short": "Share", "reports": ["quarterly", "fundraising-fy", "inv-sales-formal", "inv-overview"]},
         {"id": "audit", "name": "Audit and year-end close", "short": "Audit and close", "reports": ["audit", "close", "fundraiser-detail"]},
         {"id": "analyze", "name": "Analyze activity", "short": "Analyze", "reports": ["entity", "flow"]},
-        {"id": "plan", "name": "Plan budgets", "short": "Plan", "reports": ["budget-review", "planning-sheet"]},
+        {"id": "plan", "name": "Plan budgets", "short": "Plan", "reports": ["budget-review", "planning-sheet", "budget-proposal"]},
         {"id": "fundraisers", "name": "Events & Fundraisers", "short": "Events & Fundraisers", "reports": ["count-sheet"]},   # 2.4.0 polish (#511): the module's name since #429
         {"id": "invoices", "name": "Invoices", "short": "Invoices", "reports": ["inv-open", "inv-aging", "inv-statement", "inv-sales-tax", "inv-register", "inv-sales", "inv-activity"]},   # 2.4.0 (#255)
     ],
     "SUBJECT": [
         {"id": "fiscal-year", "name": "Fiscal Year", "reports": ["quarterly", "audit", "close"]},
-        {"id": "budgets", "name": "Budgets", "reports": ["budget-review", "planning-sheet"]},
+        {"id": "budgets", "name": "Budgets", "reports": ["budget-review", "planning-sheet", "budget-proposal"]},
         {"id": "accounts", "name": "Accounts / Register", "reports": ["flow"]},
         {"id": "entities", "name": "Entities", "reports": ["entity"]},
         {"id": "invoices", "name": "Invoices", "reports": ["inv-open", "inv-aging", "inv-statement", "inv-sales-tax", "inv-register", "inv-sales", "inv-activity", "inv-sales-formal", "inv-overview"]},   # 2.4.0 (#513)
@@ -49,7 +49,7 @@ DEFAULTS: dict[str, list[dict]] = {
     "AUDIENCE": [
         {"id": "board", "name": "Board & members", "reports": ["quarterly", "fundraising-fy", "inv-sales-formal", "inv-overview"]},
         {"id": "treasurer", "name": "Treasurer / Budget Managers",
-         "reports": ["entity", "flow", "budget-review", "planning-sheet", "count-sheet"]},
+         "reports": ["entity", "flow", "budget-review", "planning-sheet", "budget-proposal", "count-sheet"]},
         {"id": "auditors", "name": "Auditors", "reports": ["audit", "close", "fundraiser-detail"]},
         {"id": "invoices", "name": "Invoices", "reports": ["inv-open", "inv-aging", "inv-statement", "inv-sales-tax", "inv-register", "inv-sales", "inv-activity"]},
     ],
@@ -81,6 +81,12 @@ def _complete(cats: list[dict]) -> list[dict]:
             cats.append(grp)
         grp["reports"] += inv_missing
         missing = [x for x in missing if x not in inv_missing]
+    if "budget-proposal" in missing:          # 2.5.0 (#590): a saved scheme gets it next to the Planning Sheet
+        home = next((c for c in cats if "planning-sheet" in c["reports"]), None)
+        if home is not None:
+            i = home["reports"].index("planning-sheet") + 1
+            home["reports"] = home["reports"][:i] + ["budget-proposal"] + home["reports"][i:]
+            missing = [x for x in missing if x != "budget-proposal"]
     if missing:
         other = next((c for c in cats if c["name"].lower() == "other"), None)
         if other is None:

@@ -39,6 +39,7 @@ Creating, approving and closing the years your budgets cover.
 - [Approving a Fiscal Year](fiscal-years/approve-fiscal-year.md) — Budget Managers: locking the year's budgets.
 - [Closing a Fiscal Year](fiscal-years/close-fiscal-year.md) — Budget Managers: what must be done first and what closing does.
 - [Planning the next year](fiscal-years/planning-sheet.md) — The planning sheet for the budget meeting.
+- [Presenting the budget](fiscal-years/budget-proposal.md) — Budget Managers: the budget proposal report and presentation for approval.
 
 ## Budgets
 

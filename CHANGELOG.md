@@ -12,6 +12,12 @@ dependency update planned as 2.4.2 is part of this release.
   receipts are no longer printed a second time under the event, so most events take a page or two instead of many. A
   transaction from another Fiscal Year says which year's report holds it. The event's own documents (flyers, permits,
   count sheets) are still printed, and the standalone event audit report is unchanged.
+- **Budget proposal (#590).** A new report for Budget Managers presents a Fiscal Year's budgets for approval, as a PDF
+  and a presentation: each budget with last year's budget, last year's actual (projected to the year end while that
+  year is still running), the proposed amount and the change. Renamed or renumbered budgets stay one line through
+  their *continues from* link; new budgets and budgets dropped since last year are shown as such. A Draft year is
+  titled *Proposed*, an Approved year *Approved*. In the **Annual** report, Budget Managers can add next year's
+  proposal after the year's review, so one PDF and one presentation cover the year-end meeting.
 
 ### Dependencies
 - **Python packages:** FastAPI 0.162.0 → 0.162.7 (fixes for cleaning up a request's dependencies when the request is

@@ -286,6 +286,9 @@ def build_pdf(org: str, rep: dict) -> tuple[bytes, _AuditDoc]:
                 lines.append(f"Activity after {_d(rep['cutoff'])} not included.")
             f += [P(x, "body") for x in lines]
     f += [Spacer(1, 10)] + [P(x, "small") for x in notes_lines(rep)]
+    if rep.get("proposal"):                    # 2.5.0 (#590): next year's budget proposal follows the review
+        from .budget_proposal_output import pdf_flowables
+        f += pdf_flowables(org, rep["proposal"], doc, appended=True)
     doc.build(f)
     return buf.getvalue(), doc
 
@@ -426,6 +429,9 @@ def build_pptx(org: str, rep: dict) -> bytes:
             if extra:
                 deck._text(sl, Inches(0.6), Inches(6.2), Inches(12.1), Inches(1.0), extra, size=14, color=deck.C.TEXT)
             deck._notes(sl, extra or [f"Net {cm(d['net'])}."])
+    if rep.get("proposal"):                    # 2.5.0 (#590): next year's budget, before the closing slide
+        from .budget_proposal_output import add_slides
+        add_slides(prs, org, rep["proposal"], divider=True)
     # closing
     sl = prs.slides.add_slide(blank)
     deck._text(sl, Inches(0.6), Inches(3.0), Inches(12.1), Inches(1.2), "Questions?", size=48, bold=True, align=PP_ALIGN.CENTER)

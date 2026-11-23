@@ -59,6 +59,30 @@ account the report leaves out). Transaction attachments are not reproduced in th
 (`Attachment.fundraiser_id`) still are. The standalone Fundraiser detail report passes no `in_report` and is
 unchanged. Tests `test_v250_event_page_refs.py`.
 
+**2.5.0 — Budget proposal (#590, decided with Kyle 2026-11-23).** `services/budget_proposal.py` builds it,
+`budget_proposal_output.py` draws it (PDF via `reports._AuditDoc`, deck via the `fundraiser_deck` helpers).
+`GET /api/reports/budget-proposal` (`budget.manage`; json | pdf | pptx; audited `REPORT_GENERATED` with `report`
+BUDGET_PROPOSAL / BUDGET_PROPOSAL_PRESENTATION). Rules (new BR for the issue):
+- **Years:** Draft → *Proposed*, Approved → *Approved*, Closed refused (422). REJECTED/DELETED budgets are left
+  out (both years).
+- **Matching:** each previous-year budget (parents and the sub-budgets the Budgets page shows) is mapped to its
+  successor with `budget_planning._successor` (#89 link, else same code/type/level), the Budget Review's rule. A
+  proposed line without a predecessor shows "—"; a previous-year line without a successor is listed in
+  `not_in_year` (a sub-budget only when its parent did continue; a zero Other never).
+- **Previous actual:** whole-year `_actual_all` once the previous year has ended. Otherwise the Budget Review
+  projection (`basis`/`project`) per choosable row, honouring the user's projection choices; a parent with
+  sub-budgets = its listed sub-budgets' projections + the year to date of the rest; under one month: the year to date
+  (*YTD actual*).
+- **Totals:** proposed = this year's parents; previous budget/actual = all previous-year parents (each equals that
+  year's own total); change = proposed − previous budget, percentage of the previous budget.
+- **Annual append:** `GET /api/reports/period?...&include_proposal=true` (Annual only, else 422; `budget.manage`, else
+  403; the next Fiscal Year must exist and not be Closed). `period/options` returns `next_fiscal_year` for Budget
+  Managers only. The PDF adds `pdf_flowables(appended=True)` after the report; the deck adds a divider + the proposal
+  slides before the closing slide.
+- Catalog: report id `budget-proposal` in `report_prefs.REPORT_IDS`, default groups next to the Planning Sheet; a saved
+  grouping gets it after `planning-sheet` (`report_grouping._complete`). Tests `test_v250_budget_proposal.py`, E2E in
+  the 2.1.0 Budget Review test.
+
 **2.5.0 — Vite 8 (Kyle 2026-11-23).** Of the major upgrades Dependabot leaves out (dependabot.yml `ignore`
 semver-major), only Vite was taken in 2.5.0: Vite 6.4 is on its last support tier (security fixes only). Vite 6.4.6 →
 8.3.8 and `@vitejs/plugin-react` 4.7.0 → 6.3.0 (Oxc instead of Babel). `vite.config.ts` is unchanged; the build is
