@@ -2,7 +2,15 @@
 
 Versions are `Breaking.Major.Minor` from 1.6.0 (docs/branching.md).
 
-## 2.4.1 — unreleased
+## 2.4.2 — unreleased
+Monthly dependency update. No database migration and no change to how the application works; going back to 2.4.1 is
+just reinstalling it.
+- **Python packages:** FastAPI 0.162.0 → 0.162.7 (fixes for cleaning up a request's dependencies when the request is
+  cancelled) and pypdfium2 5.15.0 → 5.15.2 (closes cleanly when the application stops). `THIRD-PARTY-NOTICES.txt`
+  is regenerated for them.
+- **Build and test tools** (not shipped in the packages): Playwright 1.65.0 → 1.65.1 and Vite 6.4.5 → 6.4.6.
+
+## 2.4.1 — 2026-11-14
 Product page and README update for 2.4.0. No database migration and no change to the application; going back to
 2.4.0 is just reinstalling it.
 - **pennywarden.org shows what is new in 2.4.** The page still highlighted 2.1. It now leads with the Invoices module,
