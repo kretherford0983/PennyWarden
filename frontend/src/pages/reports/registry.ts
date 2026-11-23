@@ -60,6 +60,10 @@ export const REPORTS: ReportDef[] = [
   { id: "planning-sheet", name: "Planning Sheet", short: "Planning Sheet", group: "plan", outputs: ["PDF"],
     purpose: "The printed form for the budget planning meeting, with blank columns for the proposed amounts.",
     audience: "Budget Managers", keywords: "meeting proposed form", visible: budgets },
+  // 2.5.0 (#590)
+  { id: "budget-proposal", name: "Budget proposal", short: "Budget proposal", group: "plan", outputs: ["PDF", "PPTX"],
+    purpose: "Next year's budgets for approval, beside last year's budget and actual, with the change - a report and a presentation.",
+    audience: "Board, officers and Budget Managers", keywords: "proposed approval presentation deck next year budget", visible: budgets },
   { id: "count-sheet", name: "Cash count sheet", short: "Cash count sheet", group: "fundraisers", outputs: ["PDF"],
     purpose: "The form to count the cash and checks of an event and sign for them.",
     audience: "Event volunteers", keywords: "cash count signatures", visible: fundraisers },

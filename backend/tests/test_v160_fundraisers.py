@@ -137,9 +137,9 @@ def test_shells_and_three_month_window_across_fiscal_years(env, base, app):
                                                    "budget_ids": [base["exp"]["id"], inc28["id"], exp28["id"]]}).json()
     assert f["name"] == "Summer Fair 2027" and len(f["budgets"]) == 3
     assert [p["read_only"] for p in f["per_fiscal_year"]] == [True, False]
-    # an event in a closed Fiscal Year can no longer be set up; past events in an open FY can
+    # 2.5.0 (#588): an event in a closed Fiscal Year can be set up by a Budget Manager, reporting only (was refused)
     r = env.bm.post("/api/fundraisers", {"name": "Late", "start_date": "2027-01-10", "budget_ids": []})
-    assert r.status_code == 409 and r.json()["error"]["code"] == "FISCAL_YEAR_CLOSED"
+    assert r.status_code == 201 and any(n["code"] == "REPORTING_ONLY" for n in r.json()["notices"])
     assert env.bm.post("/api/fundraisers", {"name": "Late", "start_date": "2027-08-01", "budget_ids": []}).status_code == 201
     # deleting a fundraiser that uses a closed FY is refused (archive instead)
     assert env.bm.delete(f"/api/fundraisers/{f['id']}").status_code == 409

@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
 from ..deps import Ctx, get_db, require
-from ..schemas import ReminderIn, ReminderResolveIn, ReminderTasksIn, ReminderTickIn
+from ..schemas import ReminderIn, ReminderResolutionLinkIn, ReminderResolveIn, ReminderTasksIn, ReminderTickIn
 from ..services import reminders as svc
 
 router = APIRouter(prefix="/api/reminders", tags=["reminders"])
@@ -18,6 +18,13 @@ viewer = require("reminder.view")
 def list_reminders(view: Literal["due", "upcoming", "resolved"] = "due", db: Session = Depends(get_db),
                    ctx: Ctx = Depends(viewer)):
     return svc.listing(db, ctx, view)
+
+
+@router.get("/resolution-link-options")
+def resolution_link_options(kind: Literal["TRANSACTION", "EVENT"], q: str | None = None, db: Session = Depends(get_db),
+                            ctx: Ctx = Depends(viewer)):
+    """2.5.0 (#594): candidates for "what resolved it" (transactions need Register access, events the module)."""
+    return svc.resolution_link_options(db, ctx, kind, (q or "")[:100])
 
 
 @router.get("/count")
@@ -48,7 +55,16 @@ def delete(rid: int, db: Session = Depends(get_db), ctx: Ctx = Depends(viewer)):
 
 @router.post("/{rid}/resolve")
 def resolve(rid: int, body: ReminderResolveIn, db: Session = Depends(get_db), ctx: Ctx = Depends(viewer)):
-    r = svc.resolve(db, ctx, svc.get(db, ctx, rid), body.note, body.stop_repeating)
+    r = svc.resolve(db, ctx, svc.get(db, ctx, rid), body.note, body.stop_repeating,
+                    body.resolution_link_type, body.resolution_link_id)
+    db.commit()
+    return svc.out(db, ctx, r)
+
+
+@router.put("/{rid}/resolution-link")
+def resolution_link(rid: int, body: ReminderResolutionLinkIn, db: Session = Depends(get_db), ctx: Ctx = Depends(viewer)):
+    """2.5.0 (#594): add, change or remove what resolved a resolved reminder."""
+    r = svc.set_resolution_link(db, ctx, svc.get(db, ctx, rid), body.resolution_link_type, body.resolution_link_id)
     db.commit()
     return svc.out(db, ctx, r)
 

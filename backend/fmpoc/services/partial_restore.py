@@ -49,7 +49,7 @@ DATA_TABLES = (
     "check_number_acknowledgement", "request_key", "check_account",
     "fundraiser", "fundraiser_budget", "fundraiser_series", "fundraiser_series_result", "fundraiser_fy_report_note",
     "fundraiser_bucket_category", "fundraiser_bucket", "fundraiser_exclusion", "fundraiser_classification",
-    "fundraiser_line_contributor", "fundraiser_bucket_line",
+    "fundraiser_line_contributor", "fundraiser_bucket_line", "fundraiser_proceeds_line",       # 2.5.0 (#588)
     "donation", "donation_line", "donation_detail", "donation_receipt", "donation_statement",
     "invoice_unit_type", "invoice_product_category", "invoice_tax_rate", "invoice_tax_group",  # 2.4.0 (#252, #487)
     "invoice_product",

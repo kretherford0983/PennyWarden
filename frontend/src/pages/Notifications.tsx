@@ -43,6 +43,13 @@ export function ReminderItem({ r, onResolve, onReopen, onEdit, onDelete, onEditT
         {r.details && !shut ? <div className="pre-wrap">{r.details}</div> : null}
         <TaskList r={r} onChanged={onChanged} collapsed={shut} />{/* 2.4.0 (#551) */}
         {r.state === "RESOLVED" ? <div className="muted">Resolved {String(r.resolved_at).slice(0, 10)} by {r.resolved_by || "?"}{r.resolution_note ? ` — ${r.resolution_note}` : ""}</div> : null}
+        {/* 2.5.0 (#594): what resolved it - a link that opens it (label only without access) */}
+        {r.state === "RESOLVED" && (r.resolution_link || r.can_edit_resolution_link) ? (
+          <div data-testid="reminder-resolution-link">
+            {r.resolution_link ? <>Resolved by: {r.resolution_link.url ? <Link to={r.resolution_link.url}>{r.resolution_link.label}</Link> : <span>{r.resolution_link.label}</span>}</> : null}
+            {r.can_edit_resolution_link && onChanged && !paused ? <ResolutionLinkEditor r={r} onChanged={onChanged} /> : null}
+          </div>
+        ) : null}
       </div>
       <div className="row-actions">
         {/* #215: Edit stays visible, the other actions are in the ⋯ menu */}
@@ -109,11 +116,16 @@ export default function Notifications() {
 export function ResolveDialog({ r, onClose, onDone }: { r: any; onClose: () => void; onDone: () => void }) {
   const [note, setNote] = useState("");
   const [stop, setStop] = useState(false);
+  const [link, setLink] = useState<any>(null);       // 2.5.0 (#594): { type, id, label } or null
   const [err, setErr] = useState<unknown>(null);
   const open: any[] = (r.tasks || []).filter((t: any) => !t.done && !t.objective);   // 2.4.0 (#551): steps kept as skipped; a note is required
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    try { await api.post(`/api/reminders/${r.id}/resolve`, { note: note || null, stop_repeating: stop }); onDone(); } catch (x) { setErr(x); }
+    try {
+      await api.post(`/api/reminders/${r.id}/resolve`, { note: note || null, stop_repeating: stop,
+        resolution_link_type: link?.type ?? null, resolution_link_id: link?.id ?? null });
+      onDone();
+    } catch (x) { setErr(x); }
   };
   return (
     <Modal title="Resolve reminder" onClose={onClose}>
@@ -126,6 +138,7 @@ export function ResolveDialog({ r, onClose, onDone }: { r: any; onClose: () => v
           </div>
         ) : null}
         <Field label={open.length ? "Note" : "Note (optional)"} hint="Kept with the reminder and in the audit log."><input required={open.length > 0} maxLength={500} value={note} onChange={(e) => setNote(e.target.value)} /></Field>
+        <LinkPicker value={link} onChange={setLink} />
         {r.repeat_label ? (
           r.next_due ? (
             <>
@@ -260,5 +273,69 @@ export function DashboardNotifications() {
         onChanged={() => { load(); window.dispatchEvent(new Event(REMINDERS_CHANGED)); }} />)}</ul>
       {resolving ? <ResolveDialog r={resolving} onClose={() => setResolving(null)} onDone={() => { setResolving(null); load(); window.dispatchEvent(new Event(REMINDERS_CHANGED)); }} /> : null}
     </section>
+  );
+}
+
+/** 2.5.0 (#594): "What resolved it (optional)": a register transaction or an event, searched by number, entity,
+ * description or amount / by name. */
+export function LinkPicker({ value, onChange }: { value: any; onChange: (v: any) => void }) {
+  const { me, can } = useMe();
+  const kinds = [can("register.view") && { id: "TRANSACTION", label: "Transaction" },
+                 me.modules?.fundraisers && can("fundraiser.view") && { id: "EVENT", label: "Event" }].filter(Boolean) as { id: string; label: string }[];
+  const [kind, setKind] = useState(value?.type || "");
+  const [q, setQ] = useState("");
+  const [opts, setOpts] = useState<any[]>([]);
+  useEffect(() => {
+    if (!kind) { setOpts([]); return; }
+    const t = setTimeout(() => api.get(`/api/reminders/resolution-link-options?kind=${kind}&q=${encodeURIComponent(q.trim())}`).then(setOpts, () => setOpts([])), 250);
+    return () => clearTimeout(t);
+  }, [kind, q]);
+  if (!kinds.length) return null;
+  return (
+    <fieldset className="resolution-link-picker" data-testid="resolution-link-picker">
+      <legend>What resolved it (optional)</legend>
+      {value ? <p>Linked: <b>{value.label}</b> <button type="button" className="small" onClick={() => onChange(null)}>Remove</button></p> : null}
+      <div className="row fields">
+        <Field label="Kind">
+          <select value={kind} onChange={(e) => { setKind(e.target.value); setQ(""); }}>
+            <option value="">— none —</option>
+            {kinds.map((k) => <option key={k.id} value={k.id}>{k.label}</option>)}
+          </select>
+        </Field>
+        {kind ? <Field label="Search"><input value={q} onChange={(e) => setQ(e.target.value)} placeholder={kind === "TRANSACTION" ? "Number, entity, description or amount" : "Event name"} /></Field> : null}
+      </div>
+      {kind && opts.length ? (
+        <ul className="plain resolution-link-options">{opts.map((o) => (
+          <li key={`${o.type}-${o.id}`}><button type="button" className="small" onClick={() => onChange(o)}>Use</button> {o.label}</li>
+        ))}</ul>
+      ) : kind ? <p className="muted">Nothing found.</p> : null}
+    </fieldset>
+  );
+}
+
+/** 2.5.0 (#594): add, change or remove what resolved a resolved reminder (audited). */
+function ResolutionLinkEditor({ r, onChanged }: { r: any; onChanged: () => void }) {
+  const [open, setOpen] = useState(false);
+  const [link, setLink] = useState<any>(r.resolution_link);
+  const [err, setErr] = useState<unknown>(null);
+  const save = async () => {
+    setErr(null);
+    try {
+      await api.put(`/api/reminders/${r.id}/resolution-link`, { resolution_link_type: link?.type ?? null, resolution_link_id: link?.id ?? null });
+      setOpen(false); onChanged();
+    } catch (x) { setErr(x); }
+  };
+  return (
+    <>
+      {" "}<button type="button" className="small" onClick={() => setOpen(true)}>{r.resolution_link ? "Change link…" : "Link what resolved it…"}</button>
+      {open ? (
+        <Modal title="What resolved it" onClose={() => setOpen(false)}>
+          <p><b>{r.title}</b></p>
+          <ErrorBox error={err} />
+          <LinkPicker value={link} onChange={setLink} />
+          <div className="actions"><button type="button" onClick={() => setOpen(false)}>Cancel</button><button className="primary" onClick={save}>Save</button></div>
+        </Modal>
+      ) : null}
+    </>
   );
 }

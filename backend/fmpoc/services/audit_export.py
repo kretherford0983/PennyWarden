@@ -144,12 +144,12 @@ def to_pdf(entries: list[dict], tz: dt.tzinfo, tz_name: str, *, org: str, export
         canvas.saveState()
         canvas.setFont(_FONT, 7.5)
         canvas.setFillColor(colors.HexColor("#5b6573"))
-        canvas.drawString(MARGIN, 0.3 * inch, footer)
-        canvas.drawRightString(PAGE[0] - MARGIN, 0.3 * inch, f"Page {doc.page}")
+        canvas.drawString(MARGIN, 0.4 * inch, footer)      # 2.5.0: inside the printable area
+        canvas.drawRightString(PAGE[0] - MARGIN, 0.4 * inch, f"Page {doc.page}")
         canvas.restoreState()
 
     doc = SimpleDocTemplate(buf, pagesize=PAGE, leftMargin=MARGIN, rightMargin=MARGIN, topMargin=MARGIN,
-                            bottomMargin=0.55 * inch, title="Audit log export", author=org, subject="Audit log")
+                            bottomMargin=0.65 * inch, title="Audit log export", author=org, subject="Audit log")
     story: list = [P(org, "h2"), P("Audit log export", "title"), Spacer(1, 4)]
     meta = [("Exported by", exported_by), ("Exported", local_time(now, tz)), ("Times shown in", tz_name),
             ("Filters", "; ".join(filters) or "none (the whole log)"), ("Entries", f"{total:,}")]
