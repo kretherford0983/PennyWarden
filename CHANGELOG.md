@@ -10,7 +10,9 @@ dependency update planned as 2.4.2 is part of this release.
 - **Python packages:** FastAPI 0.162.0 → 0.162.7 (fixes for cleaning up a request's dependencies when the request is
   cancelled) and pypdfium2 5.15.0 → 5.15.2 (closes cleanly when the application stops). `THIRD-PARTY-NOTICES.txt`
   is regenerated for them.
-- **Build and test tools** (not shipped in the packages): Playwright 1.65.0 → 1.65.1 and Vite 6.4.5 → 6.4.6.
+- **Build and test tools** (not shipped in the packages): Playwright 1.65.0 → 1.65.1, and **Vite 6 → 8** with its
+  React plugin 4 → 6. Vite 6 now only receives security fixes; Vite 8 builds the screens with its new, much faster
+  bundler (Rolldown) and the React plugin no longer needs Babel. The screens themselves don't change.
 
 ## 2.4.1 — 2026-11-14
 Product page and README update for 2.4.0. No database migration and no change to the application; going back to
