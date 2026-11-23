@@ -6,6 +6,13 @@ Versions are `Breaking.Major.Minor` from 1.6.0 (docs/branching.md).
 Events whose proceeds are paid later, shorter Audit / Close reports and a budget proposal presentation. The monthly
 dependency update planned as 2.4.2 is part of this release.
 
+### Reports
+- **Shorter event sections in the FY Audit and Close reports (#589).** Each event still lists every one of its
+  transactions, now with the **page** of the report where that transaction's details and receipts are printed. The
+  receipts are no longer printed a second time under the event, so most events take a page or two instead of many. A
+  transaction from another Fiscal Year says which year's report holds it. The event's own documents (flyers, permits,
+  count sheets) are still printed, and the standalone event audit report is unchanged.
+
 ### Dependencies
 - **Python packages:** FastAPI 0.162.0 → 0.162.7 (fixes for cleaning up a request's dependencies when the request is
   cancelled) and pypdfium2 5.15.0 → 5.15.2 (closes cleanly when the application stops). `THIRD-PARTY-NOTICES.txt`

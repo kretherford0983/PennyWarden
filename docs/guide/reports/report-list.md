@@ -15,3 +15,9 @@
 In the multi-account Audit and Close reports, each account's transactions — and the fundraisers — are framed by start and
 end pages that state their page range, and every page shows *section page k of n*, so a reviewer can confirm that no
 page is missing.
+
+In the Audit and Close reports, each event lists its transactions with a **Page** column: the page of the same report
+where that transaction's details and receipts are printed. The receipts are not printed a second time under the event,
+which keeps most events to a page or two. A transaction from another Fiscal Year says which year's report holds it.
+The event's own documents (flyers, permits, count sheets) are still printed with the event. The standalone
+**Fundraiser detail (audit)** report has no transactions section, so it still prints the receipts.
