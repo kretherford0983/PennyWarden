@@ -13,6 +13,7 @@ from starlette.background import BackgroundTask
 
 from .. import audit
 from ..deps import Ctx, get_db, require
+from ..errors import validation
 from ..models import FiscalYear, Workspace
 from ..schemas import FlowReportIn, FlowReportPdfIn, ProjectionChoicesIn, SignatureTemplateIn
 from ..services import budget_planning as plan
@@ -250,35 +251,89 @@ def _today() -> dt.date:
     return dt.date.today()
 
 
+@router.get("/budget-proposal")
+def budget_proposal(fiscal_year_id: int = Query(...), commentary: str | None = Query(None, max_length=2000),
+                    format: Literal["json", "pdf", "pptx"] = "pdf", download: bool = False,
+                    db: Session = Depends(get_db), ctx: Ctx = Depends(require("budget.manage"))):
+    """2.5.0 (#590): a Draft (Proposed) or Approved Fiscal Year's budgets beside the previous year - PDF or
+    presentation, Budget Managers only. Generation is audited with its parameters."""
+    from ..services import branding
+    from ..services import budget_proposal as bp
+    from ..services import budget_proposal_output as out
+    fy = get_scoped(db, FiscalYear, fiscal_year_id, ctx, "Fiscal Year")
+    rep = bp.build(db, ctx, fy, _today(), commentary)
+    if format == "json":
+        db.rollback()
+        return bp.json_out(rep)
+    org = db.get(Workspace, ctx.workspace_id).name
+    summary = {"report": "BUDGET_PROPOSAL_PRESENTATION" if format == "pptx" else "BUDGET_PROPOSAL",
+               "fiscal_year_id": fy.id, "state": rep["state"], "commentary": bool(rep["commentary"]),
+               "format": format.upper()}
+    if format == "pptx":
+        with branding.use(db, output="presentations"):
+            data = out.build_pptx(org, rep)
+        audit.record(db, ctx, "REPORT_GENERATED", "fiscal_year", fy.id, None, summary)
+        db.commit()
+        return Response(data, media_type="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                        headers={"Content-Disposition": _disposition("attachment", out.file_stem(org, rep) + ".pptx"),
+                                 "Cache-Control": "private, no-store"})
+    with branding.use(db):
+        path, fname, pages = out.pdf_file(org, rep)
+    audit.record(db, ctx, "REPORT_GENERATED", "fiscal_year", fy.id, None, {**summary, "pages": pages})
+    db.commit()
+    return _pdf_response(path, fname, download)
+
+
 @router.get("/period/options")
 def period_options(fiscal_year_id: int = Query(...), db: Session = Depends(get_db),
                    ctx: Ctx = Depends(require("financial.view"))):
     from ..services import period_report as prep
     fy = get_scoped(db, FiscalYear, fiscal_year_id, ctx, "Fiscal Year")
     prior = prep.previous_fy(db, fy)
+    from ..services import budget_proposal as bp
+    nxt = bp.next_fy(db, fy)
     return {"periods": prep.options(fy, _today()), "prior_fiscal_year": prior.display_name if prior else None,
-            "max_commentary": prep.MAX_COMMENTARY}
+            "max_commentary": prep.MAX_COMMENTARY,
+            # 2.5.0 (#590): the year whose budget proposal can be added to the Annual report (Budget Managers)
+            "next_fiscal_year": ({"id": nxt.id, "display_name": nxt.display_name, "status": nxt.status}
+                                 if nxt is not None and nxt.status != "CLOSED" and ctx.has("budget.manage") else None)}
 
 
 @router.get("/period")
 def period_report(fiscal_year_id: int = Query(...), period: Literal["Q1", "Q2", "Q3", "Q4", "ANNUAL"] = Query(...),
                   commentary: str | None = Query(None, max_length=2000),
                   format: Literal["json", "pdf", "pptx"] = "pdf", download: bool = False,
+                  include_proposal: bool = False,
                   db: Session = Depends(get_db), ctx: Ctx = Depends(require("financial.view"))):
     """The Quarterly or Annual Fiscal Year financial report (PDF) or presentation (.pptx), as of the end of the
-    period (BR-110). Generation is audited with its parameters."""
+    period (BR-110). Generation is audited with its parameters.
+    2.5.0 (#590): `include_proposal` (Annual only, Budget Managers only) appends the next Fiscal Year's budget
+    proposal, so one report / deck covers the year's review and next year's budget."""
     from ..services import branding
+    from ..services import budget_proposal as bp
     from ..services import period_report as prep
     from ..services import period_report_output as out
     fy = get_scoped(db, FiscalYear, fiscal_year_id, ctx, "Fiscal Year")
+    proposal = None
+    if include_proposal:
+        ctx.require("budget.manage")
+        if period != "ANNUAL":
+            raise validation("Next year's budget proposal can be added to the Annual report only.", "include_proposal")
+        nxt = bp.next_fy(db, fy)
+        if nxt is None:
+            raise validation(f"There is no Fiscal Year after {fy.display_name} yet: set it up (Draft is enough) to add its "
+                             "budget proposal.", "include_proposal")
+        proposal = bp.build(db, ctx, nxt, _today())
     rep = prep.build(db, ctx, fy, period, _today(), commentary)
+    rep["proposal"] = proposal
     if format == "json":
         db.rollback()
-        return rep
+        return {**rep, "proposal": bp.json_out(proposal) if proposal else None}
     org = db.get(Workspace, ctx.workspace_id).name
     summary = {"report": "FY_PERIOD_PRESENTATION" if format == "pptx" else "FY_PERIOD_REPORT",
                "fiscal_year_id": fy.id, "period": period, "cutoff": rep["cutoff"], "preliminary": rep["preliminary"],
-               "commentary": bool(rep["commentary"]), "format": format.upper()}
+               "commentary": bool(rep["commentary"]), "format": format.upper(),
+               **({"proposal_fiscal_year_id": proposal["fiscal_year"]["id"]} if proposal else {})}
     if format == "pptx":
         with branding.use(db, output="presentations"):
             data = out.build_pptx(org, rep)

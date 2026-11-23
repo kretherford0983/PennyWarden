@@ -6,3 +6,5 @@ budgeted amounts, actual year-to-date, projections and a blank *Proposed* column
 
 After the meeting, create the next year with **Copy budgets from** ([Creating a Fiscal Year](create-fiscal-year.md))
 and adjust the amounts.
+
+To present the new year's budget for approval, use the [Budget proposal](budget-proposal.md).

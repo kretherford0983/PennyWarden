@@ -118,6 +118,11 @@
           "id": "planning-sheet",
           "title": "Planning the next year",
           "summary": "The planning sheet for the budget meeting."
+        },
+        {
+          "id": "budget-proposal",
+          "title": "Presenting the budget",
+          "summary": "Budget Managers: the budget proposal report and presentation for approval."
         }
       ]
     },
