@@ -52,8 +52,8 @@ could not otherwise be corrected. Scope and safeguards:
 - **BR-EVT-002 changed:** `fundraisers.REQUIRED_KINDS` = Fundraiser → INCOME, Event → EXPENSE (2.4.0 #429 had
   Fundraiser → INCOME + EXPENSE). The type follows the main direction of the money. Tests `test_v240_events.py`
   updated (Income-only Fundraiser accepted, Expense-only refused; the upgraded-record warning now drops Income).
-- **Earlier:** `GET /api/fundraisers?earlier=true` lists events touching no Fiscal Year dated on/before the last
-  Fiscal Year's end; `upcoming=true` now lists only those after it (all of them when no year exists). Once a proceeds
+- **Earlier:** `GET /api/fundraisers?earlier=true` lists events touching no Fiscal Year dated before the first Fiscal
+  Year starts; `upcoming=true` lists the rest of those (beyond or between the years set up; all when no year exists). Once a proceeds
   line is linked the event lists under that line's year (`touched_fy_ids`).
 
 **2.5.0 — event sections reference transaction pages (#589, decided with Kyle 2026-11-23).** In

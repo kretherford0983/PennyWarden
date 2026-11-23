@@ -11,8 +11,8 @@ The type follows the main direction of the money:
 - An **Event** (a cookout, a members' dinner) spends money and shows income, expenses and net. It needs an **Expense**
   budget; Income is optional.
 
-The year list on the Events page shows each Fiscal Year, **Upcoming** (events after the last Fiscal Year set up) and
-**Earlier** (events before it that touch no Fiscal Year yet — for example last year's fair, held before PennyWarden,
+The year list on the Events page shows each Fiscal Year, **Upcoming** (events with no Fiscal Year set up for them yet)
+and **Earlier** (events dated before the first Fiscal Year — for example last year's fair, held before PennyWarden,
 until its check is linked).
 
 Everything allocated to the chosen budgets counts. Transactions are still entered in the

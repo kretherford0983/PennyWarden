@@ -187,13 +187,15 @@ def test_no_internal_names_change(env, base, app):
 
 
 def test_events_before_the_first_fiscal_year_are_listed_as_earlier(env, base):
-    """2.5.0 polish: an event touching no Fiscal Year is Earlier (before the last year set up, e.g. a pre-PennyWarden
-    fair whose check isn't linked yet) or Upcoming (after it); once a deposit is linked it lists under that year."""
+    """2.5.0 polish: an event touching no Fiscal Year is Earlier (dated before the first Fiscal Year, e.g. a
+    pre-PennyWarden fair whose check isn't linked yet) or Upcoming (the rest - also a gap before a later year)."""
     enable(env)
     early = _create(env, "2026 Fair", "2026-03-10", [], "EVENT").json()        # base FY2027 starts 2026-07-01
     late = _create(env, "2028 Gala", "2027-09-10", []).json()                    # after FY2027
     names = lambda q: {r["name"] for r in env.bu.get(f"/api/fundraisers?{q}").json()}
     assert names("earlier=true") == {"2026 Fair"}
     assert names("upcoming=true") == {"2028 Gala"}
+    env.fy("2029", "2028-07-01", "2029-06-30", confirmations=["FY_GAP"])   # a later year leaves a gap: the Gala stays Upcoming
+    assert names("upcoming=true") == {"2028 Gala"} and names("earlier=true") == {"2026 Fair"}
     assert "2026 Fair" not in names(f"fiscal_year_id={base['fy']['id']}")
     assert early["id"] and late["id"]

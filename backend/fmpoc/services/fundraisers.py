@@ -660,11 +660,11 @@ def notices(db: Session, ws_id: int, f: Fundraiser) -> list[dict]:
 
 def list_out(db: Session, ctx, fiscal_year_id: int | None, upcoming: bool, include_archived: bool,
              earlier: bool = False) -> list[dict]:
-    """By Fiscal Year (every year the event touches), or the events touching none: `upcoming` = after the last Fiscal
-    Year set up (or none set up), 2.5.0 polish `earlier` = before it (e.g. a pre-PennyWarden fair, held before the first
-    Fiscal Year, whose check hasn't been linked yet)."""
+    """By Fiscal Year (every year the event touches), or the events touching none: 2.5.0 polish `earlier` = dated
+    before the first Fiscal Year starts (e.g. a pre-PennyWarden fair whose check hasn't been linked yet), `upcoming` =
+    the rest (beyond or between the years set up, or no year set up)."""
     fys = _all_fys(db, ctx.workspace_id)
-    last_end = max((fy.end_date for fy in fys), default=None)
+    first_start = min((fy.start_date for fy in fys), default=None)
     q = select(Fundraiser).where(Fundraiser.workspace_id == ctx.workspace_id).order_by(Fundraiser.start_date, Fundraiser.name)
     if not include_archived:
         q = q.where(Fundraiser.archived_at.is_(None))
@@ -674,7 +674,7 @@ def list_out(db: Session, ctx, fiscal_year_id: int | None, upcoming: bool, inclu
         if upcoming or earlier:
             if touched:
                 continue
-            before = last_end is not None and f.start_date <= last_end
+            before = first_start is not None and f.start_date < first_start
             if before != earlier:
                 continue
         elif fiscal_year_id is not None and fiscal_year_id not in touched:

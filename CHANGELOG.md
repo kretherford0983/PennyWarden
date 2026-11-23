@@ -25,8 +25,7 @@ dependency update planned as 2.4.2 is part of this release.
   organization runs may have no expenses), an Event an **Expense** budget (Income optional). 2.4.0 required both for a
   Fundraiser.
 - **Earlier events are easy to find.** The Events year list adds **Earlier — before the first Fiscal Year**: events
-  held before the Fiscal Years set up (such as last year's fair, before PennyWarden) until a deposit is linked to them.
-  **Upcoming** now lists only events after the last Fiscal Year.
+  dated before the first Fiscal Year (such as last year's fair, before PennyWarden) until a deposit is linked to them.
 
 ### Reminders
 - **What resolved a reminder (#594).** Resolving a reminder can link the register transaction or the event that
