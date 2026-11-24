@@ -8,19 +8,19 @@
 # pins (regenerate with: python scripts/third_party_notices.py). Dependabot updates this file and re-compiles
 # requirements.txt, so packages that must move together (pydantic + pydantic_core) are updated together.
 # Check for advisories with: pip-audit -r backend/requirements.txt
-fastapi==0.162.7
+fastapi==0.165.0
 starlette==1.10.0
-pydantic==2.14.3
+pydantic==2.14.4
 uvicorn==0.54.0
-SQLAlchemy==2.1.8
+SQLAlchemy==2.1.9
 alembic==1.20.1
 argon2-cffi==25.1.0
 cryptography==50.0.2
-python-multipart==0.0.33
+python-multipart==0.0.34
 pillow==13.0.0
 reportlab==5.1.0
 pypdf==6.21.4
-pyotp==2.10.0
+pyotp==2.12.1
 segno==1.6.6
 # v1.6.0 CR-033: linear-time regular expressions for the fundraiser filter (no catastrophic backtracking)
 google-re2==1.1.20251105
@@ -30,4 +30,4 @@ pypdfium2==5.15.2
 python-docx==1.2.0
 # 2.1.0 (#276): the fundraiser presentation (.pptx with native charts); MIT, XlsxWriter (BSD) writes the chart data
 python-pptx==1.0.2
-XlsxWriter==3.3.1
+XlsxWriter==3.3.3
