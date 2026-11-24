@@ -2,7 +2,17 @@
 
 Versions are `Breaking.Major.Minor` from 1.6.0 (docs/branching.md).
 
-## 2.5.0 — unreleased
+## 2.5.1 — unreleased
+A security hotfix for invoice and statement emails.
+
+### Security
+- **Email errors no longer echo the mail server's reply (CodeQL code-scanning alerts #16–#18).** When sending an
+  invoice, a statement or the test email fails for an unusual reason, the message shown is now fixed wording chosen
+  by the kind of failure (refused, temporarily refused, sender refused), not the error text itself. The mail server's
+  exact reply is written to the server log for the administrator. The common failures (wrong password, unreachable
+  server, timeout and so on) read as before.
+
+## 2.5.0 — 2026-11-23
 Events whose proceeds are paid later, shorter Audit / Close reports and a budget proposal presentation. The monthly
 dependency update planned as 2.4.2 is part of this release.
 

@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import re
 import smtplib
 import socket
@@ -21,6 +22,8 @@ import threading
 from types import SimpleNamespace
 from email.message import EmailMessage
 from email.utils import formataddr, make_msgid
+
+_log = logging.getLogger("pennywarden.email")
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -192,8 +195,19 @@ def _safe_error(x: Exception, s=None) -> str:
     if isinstance(x, (smtplib.SMTPConnectError, ConnectionError, OSError)) and not isinstance(x, smtplib.SMTPException):
         why = getattr(x, "strerror", None) or type(x).__name__
         return f"Could not reach the mail server ({why})." + _hint(s)
-    text = str(x).replace("\n", " ")[:200]
-    return f"The mail server refused the message: {text}"
+    # 2.5.1 (CodeQL py/stack-trace-exposure #16-#18): nothing of the exception itself goes back to the user any more -
+    # the wording is fixed, chosen by the kind of reply; the server's own words go to the server log for the admin.
+    _log.warning("Email not sent: %s: %s", type(x).__name__, x)
+    code = getattr(x, "smtp_code", None) if isinstance(x, smtplib.SMTPResponseException) else None
+    if isinstance(x, smtplib.SMTPSenderRefused):
+        return ("The mail server refused the sender address. Check that the From address is one your email account "
+                "is allowed to send as.")
+    if isinstance(code, int) and 400 <= code < 500:
+        return "The mail server could not take the message right now (a temporary refusal). Try again in a few minutes."
+    if isinstance(code, int) and 500 <= code < 600:
+        return ("The mail server refused the message. Check the addresses and the attachment size; the server log "
+                "has the mail server's exact reply.")
+    return "The email could not be sent. The server log has the details."
 
 
 def _recipients(raw: list[str] | None, field: str, required: bool) -> list[str]:
