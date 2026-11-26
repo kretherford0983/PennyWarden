@@ -10,12 +10,13 @@ person several roles.
 | **Budget User** | Looks at the financial information; changes nothing. |
 | **Register User** | Enters, edits and voids transactions; looks after Entities; pays bills and prints checks and receipts. |
 | **Register Admin** | With Register User: may delete a transaction that has not cleared. |
-| **Invoice Manager** | Creates and sends invoices from the product catalog (Invoices module). Sees the Register read-only. |
+| **Invoice Manager** | Creates and sends invoices from the product catalog, looks after customers, links deposits to invoices and asks for write-offs (Invoices module). Sees the Register read-only. |
 | **Auditor** | Sees everything — users, the Audit Log and all financial records, including inactive, rejected, deleted and voided ones — and changes nothing. |
 
 On a **server**, each account belongs to one security domain: Administration, Financial or Audit. Financial roles can
 be combined. On a **local install** (PennyWarden on your own Windows, Mac or Linux computer) one person can hold every
-role on a single account.
+role on a single account. [Roles and responsibilities](../users/roles-and-responsibilities.md) explains why, and lists
+what each role can do.
 
 Menus and buttons only show what your roles allow. PennyWarden also checks every action on the server, so a hidden
 button is never the only protection.

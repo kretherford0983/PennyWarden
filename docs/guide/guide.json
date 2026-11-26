@@ -479,6 +479,11 @@
           "id": "manage-users",
           "title": "Managing users",
           "summary": "Administrators: new users, roles and resets."
+        },
+        {
+          "id": "roles-and-responsibilities",
+          "title": "Roles and responsibilities",
+          "summary": "Security domains on a server and a local install, and what each role can do."
         }
       ]
     },

@@ -138,6 +138,13 @@ baselines were 10/19 pt and the inset 18 pt. Own footers moved too: donation sta
 0.85 in), the invoice reports and the audit log export (0.3/0.35 in → 0.4 in, bottom margins 0.65 in). Letters,
 invoices and checks keep their layouts (their bottom text is already ≥ 0.6 in, and checks are positioned for the stock).
 
+**2.6.0 — Roles and responsibilities guide page (#610, Kyle 2026-11-26).** Documentation of existing rules only
+(BR-002 with the #54 local exception, BR-003, BR-004, the separation-of-duties principle). `docs/guide/users/
+roles-and-responsibilities.md`; the *Who can do what* table is checked tick for tick against `permissions.PERMISSIONS`
+by `tests/test_v260_roles_guide.py`, which also requires a subsection per role in `ROLE_DEFS` and the server's
+domain-mixing message quoted word for word. Linked from who-does-what, manage-users and the user dialog
+(`Users.tsx`, `/help/users/roles-and-responsibilities`).
+
 **2.6.0 — module sections in the Audit and Close reports (#609, decided with Kyle 2026-11-26).**
 `services/report_modules.py` builds the Invoices and Donations sections; `reports.build_audit_report` adds them after
 the events (order: Events, Invoices, Donations, then the signature page). New rules (spec docs unchanged):
