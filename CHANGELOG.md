@@ -14,6 +14,14 @@ its own).
   exact reply is written to the server log for the administrator. The common failures (wrong password, unreachable
   server, timeout and so on) read as before.
 
+### Dependencies
+- **Python packages:** FastAPI 0.162.7 → 0.165.0 (configurable limits for request bodies and form parsing),
+  pydantic 2.14.3 → 2.14.4, SQLAlchemy 2.1.8 → 2.1.9, python-multipart 0.0.33 → 0.0.34, XlsxWriter 3.3.1 → 3.3.3 and
+  PyOTP 2.10.0 → 2.12.1. PyOTP 2.12 refuses authenticator keys shorter than 112 bits; PennyWarden still accepts a key
+  you bring along from another authenticator down to 80 bits (16 characters, as since 2.2.0), so existing two-step
+  verification keeps working. `THIRD-PARTY-NOTICES.txt` is regenerated.
+- **Web page:** Recharts 3.10.1 → 3.11.0 (the dashboard and report charts).
+
 ## 2.5.0 — 2026-11-23
 Events whose proceeds are paid later, shorter Audit / Close reports and a budget proposal presentation. The monthly
 dependency update planned as 2.4.2 is part of this release.
