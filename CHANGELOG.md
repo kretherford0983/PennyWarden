@@ -2,8 +2,10 @@
 
 Versions are `Breaking.Major.Minor` from 1.6.0 (docs/branching.md).
 
-## 2.5.1 — unreleased
-A security hotfix for invoice and statement emails.
+## 2.6.0 — unreleased
+Invoices and donations in the Audit and Close reports, a Roles and responsibilities page in the user guide, the
+monthly dependency update, and the email security fix first prepared as the 2.5.1 hotfix (2.5.1 was not released on
+its own).
 
 ### Security
 - **Email errors no longer echo the mail server's reply (CodeQL code-scanning alerts #16–#18).** When sending an

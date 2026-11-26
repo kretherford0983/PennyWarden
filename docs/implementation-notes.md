@@ -138,7 +138,7 @@ baselines were 10/19 pt and the inset 18 pt. Own footers moved too: donation sta
 0.85 in), the invoice reports and the audit log export (0.3/0.35 in → 0.4 in, bottom margins 0.65 in). Letters,
 invoices and checks keep their layouts (their bottom text is already ≥ 0.6 in, and checks are positioned for the stock).
 
-**2.5.1 hotfix — email error text (CodeQL py/stack-trace-exposure #16-#18 on main, routers/email.py:43/64/88).** The
+**2.6.0 (prepared as the 2.5.1 hotfix, PR #606, released in 2.6.0 instead) — email error text (CodeQL py/stack-trace-exposure #16-#18 on main, routers/email.py:43/64/88).** The
 taint ran from the caught exception through `services.email._safe_error`'s last fallback (`str(x)`) into
 `EmailLog.error`, returned by the test, invoice and statement endpoints. That fallback now returns fixed wording by
 kind - `SMTPSenderRefused`, a 4xx reply (temporary) or 5xx reply (refused), anything else "could not be sent" - and
