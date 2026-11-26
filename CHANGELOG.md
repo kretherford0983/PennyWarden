@@ -26,6 +26,13 @@ its own).
   module is turned off later (the report notes that it's off). The separate *Non-cash donations received* and *Open
   invoices* pages moved into the new sections; the open invoices are now in the Audit report too.
 
+### User guide
+- **Roles and responsibilities (#610):** a new page under *Users* explains why PennyWarden separates duties; the three
+  security domains; that on a **server** an account belongs to exactly one domain (an Administrator can't also be a
+  Financial user or an Auditor, and a Financial user can't also be an Auditor) while a **local install** may combine
+  them; the add-on roles; and what each role can do, with a *who can do what* table that is checked against the
+  permissions the server enforces. *Who does what*, *Managing users* and the New user / Edit user form link to it.
+
 ### Security
 - **Email errors no longer echo the mail server's reply (CodeQL code-scanning alerts #16–#18).** When sending an
   invoice, a statement or the test email fails for an unusual reason, the message shown is now fixed wording chosen

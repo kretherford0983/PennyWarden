@@ -158,6 +158,7 @@ Shared by Payments, Donations and Invoices.
 User accounts and roles.
 
 - [Managing users](users/manage-users.md) — Administrators: new users, roles and resets.
+- [Roles and responsibilities](users/roles-and-responsibilities.md) — Security domains on a server and a local install, and what each role can do.
 
 ## Audit Log
 
