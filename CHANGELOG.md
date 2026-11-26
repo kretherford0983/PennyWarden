@@ -16,11 +16,13 @@ its own).
 
 ### Dependencies
 - **Python packages:** FastAPI 0.162.7 → 0.165.0 (configurable limits for request bodies and form parsing),
-  pydantic 2.14.3 → 2.14.4, SQLAlchemy 2.1.8 → 2.1.9, python-multipart 0.0.33 → 0.0.34, XlsxWriter 3.3.1 → 3.3.3 and
+  pydantic 2.14.3 → 2.14.4, SQLAlchemy 2.1.8 → 2.1.9, python-multipart 0.0.33 → 0.0.34, ReportLab 5.1.0 → 5.1.2, XlsxWriter
+  3.3.1 → 3.3.4, a few packages they use, and
   PyOTP 2.10.0 → 2.12.1. PyOTP 2.12 refuses authenticator keys shorter than 112 bits; PennyWarden still accepts a key
   you bring along from another authenticator down to 80 bits (16 characters, as since 2.2.0), so existing two-step
   verification keeps working. `THIRD-PARTY-NOTICES.txt` is regenerated.
-- **Web page:** Recharts 3.10.1 → 3.11.0 (the dashboard and report charts).
+- **Web page:** Recharts 3.10.1 → 3.11.1 (the dashboard and report charts).
+- **Build tools** (not shipped): Vite 8.3.8 → 8.4.0.
 
 ## 2.5.0 — 2026-11-23
 Events whose proceeds are paid later, shorter Audit / Close reports and a budget proposal presentation. The monthly
