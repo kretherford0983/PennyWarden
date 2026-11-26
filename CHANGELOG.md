@@ -21,6 +21,9 @@ its own).
   PyOTP 2.10.0 → 2.12.1. PyOTP 2.12 refuses authenticator keys shorter than 112 bits; PennyWarden still accepts a key
   you bring along from another authenticator down to 80 bits (16 characters, as since 2.2.0), so existing two-step
   verification keeps working. `THIRD-PARTY-NOTICES.txt` is regenerated.
+- **pypdf 6.21 → 7.2** (a major version, from #598), which joins the report pages and the PDF attachments shown in
+  the Audit and Close reports. Nothing changes in the reports; attached PDFs, including rotated ones, are drawn as
+  before.
 - **Web page:** Recharts 3.10.1 → 3.11.1 (the dashboard and report charts).
 - **Build tools** (not shipped): Vite 8.3.8 → 8.4.0.
 

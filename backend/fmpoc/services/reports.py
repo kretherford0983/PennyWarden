@@ -452,7 +452,9 @@ def _attachment_flowables(doc: _AuditDoc, settings, a: Attachment, heading: str,
         reader = PdfReader(io.BytesIO(data))
         if reader.is_encrypted and not reader.decrypt(""):
             raise ValueError("encrypted")
-        pages = list(reader.pages)
+        # 2.6.0 (pypdf 7): a page's content can only be rewritten (transfer_rotation_to_content) once it belongs to a
+        # writer, so the attachment is opened as a copy in a writer of its own
+        pages = list(PdfWriter(clone_from=reader).pages)
         if not pages:
             raise ValueError("no pages")
         for p in pages:
