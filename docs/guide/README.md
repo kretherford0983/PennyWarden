@@ -91,6 +91,7 @@ The report catalog and what each report is for.
 
 - [Running a report](reports/reports-catalog.md) — Finding, running and re-running reports.
 - [The reports](reports/report-list.md) — What each report is for.
+- [Events, invoices and donations in the Audit and Close reports](reports/audit-close-sections.md) — When their sections appear, and how they trace the money to the register.
 
 ## Events & Fundraisers
 

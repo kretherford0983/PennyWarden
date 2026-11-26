@@ -199,7 +199,8 @@ def test_audit_report_lists_items_received(env, don):
     r = env.bu.get(f"/api/reports/audit?fiscal_year_id={base['fy']['id']}")
     assert r.status_code == 200, r.text
     t = " ".join(p.extract_text() for p in PdfReader(io.BytesIO(r.content)).pages)
-    assert "Non-cash donations received" in t and "Generator" in t and "$900.00" in t
+    # 2.6.0 (#609): items are listed in the Donations section (the separate page moved there)
+    assert "Start of donations" in t and "Item — Generator" in t and "$900.00" in t
 
 
 def test_deposit_dialog_shows_page_donations_read_only(env, don):

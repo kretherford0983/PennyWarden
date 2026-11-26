@@ -362,10 +362,13 @@ def _stamp_and_write(reader_bytes: bytes, doc: _AuditDoc, path: str, title: str)
         for pg in range(first, last + 1):
             in_section[pg] = f"{sec['label']} - section page {pg - first + 1} of {n}"
         span = f"pages {first} to {last} of {total} ({n} pages, counting this start page and the end page)"
-        # 1.7.1 (#59): the fundraisers have a section of their own, worded for what it holds
-        fr = sec.get("kind") == "fundraisers"
-        what = "The fundraisers section" if fr else "This account's section"
-        thing, whose = ("fundraisers", "") if fr else ("transactions", " for this account")
+        # 1.7.1 (#59): the fundraisers have a section of their own, worded for what it holds; 2.6.0 (#609): so do the
+        # invoices and the donations
+        kind = sec.get("kind")
+        if kind in ("fundraisers", "invoices", "donations"):
+            what, thing, whose = f"The {kind} section", kind, ""
+        else:
+            what, thing, whose = "This account's section", "transactions", " for this account"
         notes.setdefault(first, []).append((sec["start"][1], sec["start"][2], [
             f"{what}: {span}.",
             f"Its last page is page {last}, headed \"End of {thing}\"{whose}."]))
@@ -597,8 +600,7 @@ FY_DOC_LABELS = {"APPROVAL": "Approval document", "AUDIT_SIGNOFF": "Audit Signof
 
 @branding.themed
 def build_audit_report(db: Session, ctx, settings, fy: FiscalYear, account_id: int | None = None,
-                       include_void: bool = True, layout: str = "audit", signature=None,
-                       fundraisers: bool = False) -> tuple[str, str, dict]:
+                       include_void: bool = True, layout: str = "audit", signature=None) -> tuple[str, str, dict]:
     """Returns (temp file path, download filename, summary). Caller deletes the file.
 
     Layout "audit" (v1.2.1 CR-002; v1.3 Q5): page 1 title page; page 2 Fiscal Year Review introduction; pages 3-n
@@ -607,8 +609,10 @@ def build_audit_report(db: Session, ctx, settings, fy: FiscalYear, account_id: i
     Layout "close" (v1.3 CR-008, Fiscal Year Close report): identical, with the Fiscal Year documents (Approval,
     Audit Signoff, other) inserted after the Fiscal Year Review and before the budgets and transactions.
     signature (v1.4.1 CR-016, audit layout): a resolved signatures.SignaturePage appended as the last page.
-    fundraisers (v1.6.2 CR-035): the Fiscal Year's fundraisers (module on, not archived, a budget in this year) after
-    the transactions and before the signature page - each complete, even when it spans a second Fiscal Year.
+    Module sections (2.6.0 #609, BR-RPT-MOD-001): after the transactions and before the signature page, the Fiscal
+    Year's events (v1.6.2 CR-035: not archived, a budget in this year - each complete, even when it spans a second
+    Fiscal Year), invoices and donations - each exactly when the year has that module's data, whatever the module's
+    switch says now. There is no option to leave one out (the Events option was removed in 2.6.0).
     """
     close_layout = layout == "close"
     report_name = "Fiscal Year Close Report" if close_layout else "End of Year Audit Report"
@@ -631,6 +635,8 @@ def build_audit_report(db: Session, ctx, settings, fy: FiscalYear, account_id: i
     order = {"APPROVAL": 0, "AUDIT_SIGNOFF": 1}
     fy_atts.sort(key=lambda a: (order.get(a.document_type or "UNSPECIFIED", 2), a.id))
     att_cache = {t.id: _attachments_for(db, t) for t in txns}
+    from . import report_modules as _rm
+    links = _rm.allocation_links(db, [al.id for t in txns for al in t.live_allocations])   # 2.6.0 (#609)
     now = utcnow()
     scope = (accts[account_id].account_name + " - " + bank.masked(accts[account_id]) if account_id
              else "All register-enabled accounts")
@@ -664,7 +670,14 @@ def build_audit_report(db: Session, ctx, settings, fy: FiscalYear, account_id: i
         row = per_acct[t.bank_account_id]
         row[0] += 1
         row[1 if t.transaction_type == "DEPOSIT" else 2] += t.total_cents
-    frs = fsvc.for_fiscal_year_report(db, ctx.workspace_id, fy) if fundraisers else []
+    frs = fsvc.for_fiscal_year_report(db, ctx.workspace_id, fy, any_switch=True)   # 2.6.0 (#609): data decides
+    from . import report_modules as rmod
+    switches = rmod.module_switches(db, ctx.workspace_id)
+    inv_f, inv_section, n_inv = rmod.invoice_flowables(db, doc, fy, account_id, in_report, users, switches["invoices"])
+    don_f, don_section, n_don = rmod.donation_flowables(db, doc, fy, account_id, in_report, users, switches["donations"])
+    modules = [name + ("" if on else " (module currently off)") for name, has, on in (
+        ("Events & Fundraisers", bool(frs), switches["events"]), ("Invoices", bool(inv_f), switches["invoices"]),
+        ("Donations", bool(don_f), switches["donations"])) if has]
     f += [_Mark(doc, "Fiscal Year Review"), PM("Fiscal Year Review", "h1"),
           P(f"This report documents Fiscal Year {fy.display_name} ({fy.start_date} to {fy.end_date}) for {ws.name}. "
             "It is organised as follows: this review summary; "
@@ -677,11 +690,19 @@ def build_audit_report(db: Session, ctx, settings, fy: FiscalYear, account_id: i
                if len({t.bank_account_id for t in txns}) > 1 else "")
             + (" The fundraisers follow the transactions, between a \"Start of fundraisers\" page and an \"End of "
                "fundraisers\" page that state their page range. Each lists its transactions with the page where "
-               "they are printed above; their attachments are not reproduced a second time." if frs else ""), "body"),
+               "they are printed above; their attachments are not reproduced a second time." if frs else "")
+            + (" The invoices and the donations follow in sections of their own, each between a start page and an "
+               "end page, pointing at the pages of the transactions that carry their money."
+               if inv_f and don_f else " The invoices follow in a section of their own, between a start page and an "
+               "end page, pointing at the pages of the transactions that carry their money." if inv_f else
+               " The donations follow in a section of their own, between a start page and an end page, pointing at "
+               "the pages of the transactions that carry their money." if don_f else ""), "body"),
           Spacer(1, 8), PM("Activity summary", "h2"),
           _kv([("Transactions", f"{len(txns)} in this report — {len(active)} active, {len(txns) - len(active)} VOID"),
                ("Deposits (active)", money(dep)), ("Withdrawals (active)", money(wd)), ("Net", money(dep - wd)),
-               ("Attachments", f"{n_att} transaction/allocation attachment(s); {len(fy_atts)} Fiscal Year document(s)")])]
+               ("Attachments", f"{n_att} transaction/allocation attachment(s); {len(fy_atts)} Fiscal Year document(s)"),
+               ("Module sections", ", ".join(modules) if modules else "None: no optional module has records in this "
+                                                                      "Fiscal Year")])]
     if per_acct:
         data = [[PM(f"<b>{h}</b>", "cell") for h in ("Account", "Transactions", "Deposits", "Withdrawals")]]
         for aid, (n, d, w) in sorted(per_acct.items(), key=lambda kv: accts[kv[0]].account_name.lower()):
@@ -747,44 +768,8 @@ def build_audit_report(db: Session, ctx, settings, fy: FiscalYear, account_id: i
     # ---- budgets
     f += [_Mark(doc, "Budgets")] + _budget_section(tree) + [PageBreak()]
 
-    # ---- 2.2.0 (#325): items (non-cash donations) received in the year - never in the register
-    if account_id is None:
-        from . import donations as don_svc
-        items = don_svc.non_cash_received(db, ctx.workspace_id, fy.start_date, fy.end_date)
-        if items:
-            rows = [[PM("<b>Received</b>", "cell"), PM("<b>Donor</b>", "cell"), PM("<b>Item</b>", "cell"),
-                     PM("<b>Our estimate</b>", "cellr"), PM("<b>Receipt</b>", "cell")]]
-            for x in items:
-                est = money(x["value_cents"]) if x["value_cents"] else (
-                    f"none ({x['no_value_reason']})" if x["no_value_reason"] else "Value not entered")
-                rows.append([P(x["date"].strftime("%m/%d/%Y"), "cell"), P(x["donor"], "cell"), P(x["description"], "cell"),
-                             P(est, "cellr"), P(x["receipt"] or "", "cell")])
-            f += [_Mark(doc, "Non-cash donations received"), PM("Non-cash donations received", "h1"),
-                  P("Items donated to the organization and received in this Fiscal Year. They are not in the register "
-                    "(nothing was deposited); receipts list them by description only. The estimate is the "
-                    "organization's own, for its records.", "small"), Spacer(1, 4),
-                  _grid(rows, [0.8 * inch, 1.7 * inch, FRAME_W - 12 - 4.7 * inch, 1.2 * inch, 1.0 * inch]),
-                  PageBreak()]
-
-    # ---- 2.4.0 (#255): Close report only - invoices still open at the year's end, for information (they don't
-    # block the close: BR-013/014 unchanged)
-    if close_layout and account_id is None:
-        from . import invoice_reports as inv_rep
-        open_rows = sorted(inv_rep._open_rows(db, ctx.workspace_id, fy.end_date, None), key=lambda r: (r["due_date"], r["number"]))
-        if open_rows:
-            rows = [[PM("<b>Invoice</b>", "cell"), PM("<b>Customer</b>", "cell"), PM("<b>Date</b>", "cell"),
-                     PM("<b>Due</b>", "cell"), PM("<b>Total</b>", "cellr"), PM("<b>Open</b>", "cellr")]]
-            for x in open_rows:
-                rows.append([P(x["number"], "cell"), P(x["customer"], "cell"), P(x["invoice_date"].strftime("%m/%d/%Y"), "cell"),
-                             P(x["due_date"].strftime("%m/%d/%Y"), "cell"), P(money(x["total"]), "cellr"), P(money(x["open"]), "cellr")])
-            rows.append([PM("<b>Total open</b>", "cell"), P("", "cell"), P("", "cell"), P("", "cell"), P("", "cell"),
-                         PM(f"<b>{money(sum(x['open'] for x in open_rows))}</b>", "cellr")])
-            f += [_Mark(doc, "Open invoices"), PM("Open invoices at the year's end", "h1"),
-                  P(f"Invoices with a balance open on {fy.end_date.strftime('%m/%d/%Y')} (payments dated after it not "
-                    "counted). For information: open invoices don't prevent closing the Fiscal Year.", "small"),
-                  Spacer(1, 4),
-                  _grid(rows, [1.3 * inch, FRAME_W - 12 - 5.3 * inch, 0.9 * inch, 0.9 * inch, 1.1 * inch, 1.1 * inch]),
-                  PageBreak()]
+    # 2.6.0 (#609): the non-cash donations page (2.2.0 #325) and the Close report's open-invoices page (2.4.0 #255)
+    # moved into the Donations and Invoices sections after the transactions.
 
     # ---- one or more pages per transaction
     if not txns:
@@ -859,6 +844,9 @@ def build_audit_report(db: Session, ctx, settings, fy: FiscalYear, account_id: i
                 oa = accts[other.bank_account_id]
                 extra.append(("Transfer", f"{'to' if t.transaction_type == 'WITHDRAWAL' else 'from'} {oa.account_name} "
                                           f"{bank.masked(oa)} (transaction #{other.id})"))
+        linked = [x for al in live for x in links.get(al.id, [])]
+        if linked:      # 2.6.0 (#609): the invoice or donation this money belongs to (its section lists this page)
+            extra.append(("Linked to", "; ".join(dict.fromkeys(linked))))
         if t.no_attachment:
             extra.append(("Documentation", f"Marked 'no attachment will be provided': {t.no_attachment_reason or '(no reason)'}"))
         di = doc_items.get(t.id)
@@ -940,6 +928,11 @@ def build_audit_report(db: Session, ctx, settings, fy: FiscalYear, account_id: i
         f.append(PageBreak())
     if frs:
         f += fundraisers_page("end")
+    for part in (inv_f, don_f):     # 2.6.0 (#609)
+        if part:
+            if f and not isinstance(f[-1], PageBreak):
+                f.append(PageBreak())
+            f += part
 
     if signature is not None:
         if f and not isinstance(f[-1], PageBreak):
@@ -956,13 +949,17 @@ def build_audit_report(db: Session, ctx, settings, fy: FiscalYear, account_id: i
         os.unlink(path)
         raise
     fname = f"{fy.display_name}-{'fiscal-year-close' if close_layout else 'end-of-year-audit'}-report.pdf"
-    summary = {"transactions": len(txns), "pages": pages, **({"fundraisers": len(frs)} if fundraisers else {})}
+    summary = {"transactions": len(txns), "pages": pages, "fundraisers": len(frs), "invoices": n_inv, "donations": n_don,
+               "module_sections": modules}
     acct_sections = [x for x in doc.sections if "account_id" in x]
     if acct_sections:
         summary["account_sections"] = [{"bank_account_id": x["account_id"], "first_page": x["start"][0],
                                         "last_page": x["end"][0]} for x in acct_sections]
     if fr_section is not None:  # 1.7.1 (#59)
         summary["fundraiser_section"] = {"first_page": fr_section["start"][0], "last_page": fr_section["end"][0]}
+    for key, sec in (("invoice_section", inv_section), ("donation_section", don_section)):
+        if sec is not None:
+            summary[key] = {"first_page": sec["start"][0], "last_page": sec["end"][0]}
     return path, fname, summary
 
 

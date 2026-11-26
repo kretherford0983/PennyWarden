@@ -138,6 +138,36 @@ baselines were 10/19 pt and the inset 18 pt. Own footers moved too: donation sta
 0.85 in), the invoice reports and the audit log export (0.3/0.35 in → 0.4 in, bottom margins 0.65 in). Letters,
 invoices and checks keep their layouts (their bottom text is already ≥ 0.6 in, and checks are positioned for the stock).
 
+**2.6.0 — module sections in the Audit and Close reports (#609, decided with Kyle 2026-11-26).**
+`services/report_modules.py` builds the Invoices and Donations sections; `reports.build_audit_report` adds them after
+the events (order: Events, Invoices, Donations, then the signature page). New rules (spec docs unchanged):
+- **BR-RPT-MOD-001** a module's section is in both reports exactly when the Fiscal Year has that module's data,
+  whatever its switch says now; no option to leave it out. `fundraisers.for_fiscal_year_report(any_switch=True)`; the
+  `include_fundraisers` query parameter is accepted and ignored (saved report options may still hold it), the
+  `fundraisers` argument of `build_audit_report` is gone, the Reports page checkbox is removed. A module that is off
+  gets a note on its start page and "(module currently off)" on the Fiscal Year Review's *Module sections* line.
+- **BR-RPT-MOD-002** invoices in scope: dated in the year, or a live link on an ACTIVE register line dated in it
+  (payment, overpayment, refund, credit use), or a write-off decided / requested or a void in it (server-local day of
+  the stored UTC time, like the invoice reports). A payment counts in the year of its transaction's date. Open at the
+  year's end = total - PAYMENT links dated on or before the last day; 0 for a draft or one voided / written off by then.
+  Donations in scope: a received line dated in the year (money: the deposit; item: its received date), cancelled in
+  it, or a receipt printed in it.
+- **BR-RPT-MOD-003** numbers accounted for: invoices dated in the year by `seq` (voided with reason, drafts, a number
+  dated in another year, a number with no invoice); receipts printed in the year per receipt `year` (duplicates reuse
+  the number; one printed in another Fiscal Year, or none).
+- **BR-RPT-MOD-004** tie-out: ACTIVE allocations on this year's Invoiced Income budgets (deposits +, withdrawals -)
+  against the part with a live invoice link; every unlinked line is listed; linked amounts on other budgets (sales
+  tax) are summed per budget.
+- Single-account Audit report: only invoices / donations with a register line of that account in the year; the number
+  checks, tie-out, open invoices, receipts, cancellations and awaiting money are in the all-accounts report.
+- Transaction pages: a *Linked to* row (`report_modules.allocation_links`) names the invoice (with the link kind) or
+  the donation (donor, receipt in force). The 2.2.0 non-cash donations page and the 2.4.0 Close-only open-invoices page
+  moved into the sections (the open invoices are now in both reports).
+- `_stamp_and_write` words the start / end notes per section kind. The audit event's summary adds `invoices`,
+  `donations`, `module_sections`, `invoice_section` and `donation_section` (page ranges).
+- ACs **AC-RPT-MOD-001..012** in `backend/tests/test_v260_report_modules.py` (10 tests); the event, invoice-report and
+  donation tests that encoded the old option / pages were updated. Guide: `reports/audit-close-sections.md`.
+
 **2.6.0 — pypdf 7 (#598, Kyle 2026-11-26: the only major taken in 2.6.0).** pypdf 7 removes
 `PageObject.replace_contents()` for pages not assigned to a writer, which `transfer_rotation_to_content()` uses: every
 PDF attachment fell back to "could not be embedded". `reports._attachment_flowables` now opens the attachment as

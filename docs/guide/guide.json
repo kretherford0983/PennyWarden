@@ -270,6 +270,11 @@
           "id": "report-list",
           "title": "The reports",
           "summary": "What each report is for."
+        },
+        {
+          "id": "audit-close-sections",
+          "title": "Events, invoices and donations in the Audit and Close reports",
+          "summary": "When their sections appear, and how they trace the money to the register."
         }
       ]
     },
