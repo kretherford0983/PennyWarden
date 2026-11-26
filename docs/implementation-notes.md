@@ -138,6 +138,20 @@ baselines were 10/19 pt and the inset 18 pt. Own footers moved too: donation sta
 0.85 in), the invoice reports and the audit log export (0.3/0.35 in → 0.4 in, bottom margins 0.65 in). Letters,
 invoices and checks keep their layouts (their bottom text is already ≥ 0.6 in, and checks are positioned for the stock).
 
+**2.6.0 — PyOTP 2.12 and own keys (Dependabot PR #608).** PyOTP 2.12 raises `ValueError` for a secret under
+`min_secret_length_bits` (112). PennyWarden's generated keys are 160 bits, but #327 accepts a brought-along key from
+16 characters (80 bits). `services/mfa._TOTP` subclasses `pyotp.TOTP` with `min_secret_length_bits = OWN_KEY_MIN * 5`
+and is used for code checks and the provisioning URI. `test_v220_mfa_own_key.py` builds the short key's authenticator
+with it too.
+
+**2.6.0 (prepared as the 2.5.1 hotfix, PR #606, released in 2.6.0 instead) — email error text (CodeQL py/stack-trace-exposure #16-#18 on main, routers/email.py:43/64/88).** The
+taint ran from the caught exception through `services.email._safe_error`'s last fallback (`str(x)`) into
+`EmailLog.error`, returned by the test, invoice and statement endpoints. That fallback now returns fixed wording by
+kind - `SMTPSenderRefused`, a 4xx reply (temporary) or 5xx reply (refused), anything else "could not be sent" - and
+logs `type: text` to the `pennywarden.email` logger (warning). The mapped cases above it (authentication, recipients,
+timeout, DNS, refused connection, TLS, disconnect, OSError via `strerror`) are unchanged. Test in
+`test_v240_email.py`.
+
 **2.5.0 — Vite 8 (Kyle 2026-11-23).** Of the major upgrades Dependabot leaves out (dependabot.yml `ignore`
 semver-major), only Vite was taken in 2.5.0: Vite 6.4 is on its last support tier (security fixes only). Vite 6.4.6 →
 8.3.8 and `@vitejs/plugin-react` 4.7.0 → 6.3.0 (Oxc instead of Babel). `vite.config.ts` is unchanged; the build is

@@ -6,29 +6,29 @@
 #
 alembic==1.20.1
     # via -r requirements.in
-annotated-doc==0.0.5
+annotated-doc==0.0.7
     # via fastapi
 annotated-types==0.8.0
     # via pydantic
-anyio==4.15.1
+anyio==4.16.0
     # via
     #   fastapi
     #   starlette
 argon2-cffi==25.1.0
     # via -r requirements.in
-argon2-cffi-bindings==26.1.0
+argon2-cffi-bindings==26.2.0
     # via argon2-cffi
 cffi==2.1.1
     # via
     #   argon2-cffi-bindings
     #   cryptography
-charset-normalizer==3.5.2
+charset-normalizer==3.5.3
     # via reportlab
-click==8.5.0
+click==8.5.1
     # via uvicorn
 cryptography==50.0.2
     # via -r requirements.in
-fastapi==0.162.7
+fastapi==0.165.0
     # via -r requirements.in
 google-re2==1.1.20251105
     # via -r requirements.in
@@ -51,15 +51,15 @@ pillow==13.0.0
     #   -r requirements.in
     #   python-pptx
     #   reportlab
-pycparser==3.11
+pycparser==3.12
     # via cffi
-pydantic==2.14.3
+pydantic==2.14.4
     # via
     #   -r requirements.in
     #   fastapi
-pydantic-core==2.50.4
+pydantic-core==2.50.5
     # via pydantic
-pyotp==2.10.0
+pyotp==2.12.1
     # via -r requirements.in
 pypdf==6.21.4
     # via -r requirements.in
@@ -67,15 +67,15 @@ pypdfium2==5.15.2
     # via -r requirements.in
 python-docx==1.2.0
     # via -r requirements.in
-python-multipart==0.0.33
+python-multipart==0.0.34
     # via -r requirements.in
 python-pptx==1.0.2
     # via -r requirements.in
-reportlab==5.1.0
+reportlab==5.1.2
     # via -r requirements.in
 segno==1.6.6
     # via -r requirements.in
-sqlalchemy==2.1.8
+sqlalchemy==2.1.9
     # via
     #   -r requirements.in
     #   alembic
@@ -96,13 +96,13 @@ typing-extensions==4.16.0
     #   sqlalchemy
     #   starlette
     #   typing-inspection
-typing-inspection==0.4.4
+typing-inspection==0.4.5
     # via
     #   fastapi
     #   pydantic
 uvicorn==0.54.0
     # via -r requirements.in
-xlsxwriter==3.3.1
+xlsxwriter==3.3.4
     # via
     #   -r requirements.in
     #   python-pptx

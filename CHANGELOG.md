@@ -2,7 +2,29 @@
 
 Versions are `Breaking.Major.Minor` from 1.6.0 (docs/branching.md).
 
-## 2.5.0 — unreleased
+## 2.6.0 — unreleased
+Invoices and donations in the Audit and Close reports, a Roles and responsibilities page in the user guide, the
+monthly dependency update, and the email security fix first prepared as the 2.5.1 hotfix (2.5.1 was not released on
+its own).
+
+### Security
+- **Email errors no longer echo the mail server's reply (CodeQL code-scanning alerts #16–#18).** When sending an
+  invoice, a statement or the test email fails for an unusual reason, the message shown is now fixed wording chosen
+  by the kind of failure (refused, temporarily refused, sender refused), not the error text itself. The mail server's
+  exact reply is written to the server log for the administrator. The common failures (wrong password, unreachable
+  server, timeout and so on) read as before.
+
+### Dependencies
+- **Python packages:** FastAPI 0.162.7 → 0.165.0 (configurable limits for request bodies and form parsing),
+  pydantic 2.14.3 → 2.14.4, SQLAlchemy 2.1.8 → 2.1.9, python-multipart 0.0.33 → 0.0.34, ReportLab 5.1.0 → 5.1.2, XlsxWriter
+  3.3.1 → 3.3.4, a few packages they use, and
+  PyOTP 2.10.0 → 2.12.1. PyOTP 2.12 refuses authenticator keys shorter than 112 bits; PennyWarden still accepts a key
+  you bring along from another authenticator down to 80 bits (16 characters, as since 2.2.0), so existing two-step
+  verification keeps working. `THIRD-PARTY-NOTICES.txt` is regenerated.
+- **Web page:** Recharts 3.10.1 → 3.11.1 (the dashboard and report charts).
+- **Build tools** (not shipped): Vite 8.3.8 → 8.4.0.
+
+## 2.5.0 — 2026-11-23
 Events whose proceeds are paid later, shorter Audit / Close reports and a budget proposal presentation. The monthly
 dependency update planned as 2.4.2 is part of this release.
 
