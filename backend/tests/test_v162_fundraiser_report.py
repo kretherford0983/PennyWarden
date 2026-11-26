@@ -55,22 +55,25 @@ def test_standalone_fundraiser_report(env, base):
 def test_audit_and_close_reports_include_fundraisers(env, base):
     fid = _setup(env, base)
     fy = base["fy"]["id"]
-    plain = _text(env.auditor.get(f"/api/reports/audit?fiscal_year_id={fy}").content)
-    assert "Fundraiser — Harvest Gala" not in plain[1]
-    r = env.auditor.get(f"/api/reports/audit?fiscal_year_id={fy}&include_fundraisers=true&signature_page=true")
+    # 2.6.0 (#609): the year's events are always in the report (no option); the old parameter is ignored
+    plain = _text(env.auditor.get(f"/api/reports/audit?fiscal_year_id={fy}&include_fundraisers=false").content)
+    assert "Fundraiser — Harvest Gala" in plain[1]
+    r = env.auditor.get(f"/api/reports/audit?fiscal_year_id={fy}&signature_page=true")
     assert r.status_code == 200
     pages, text = _text(r.content)
     assert pages > plain[0] and "Fundraiser — Harvest Gala" in text
     # after the transaction pages, before the signature page
     assert text.index("Transaction #1") < text.index("Fundraiser — Harvest Gala") < text.rindex("undersigned")
-    # Close report: included by default, can be left out; archived fundraisers and a switched-off module are left out
+    # Close report: always included; archived fundraisers are left out. 2.6.0 (#609): a switched-off module keeps
+    # the year's events in the report (the data decides, not the switch)
     assert "Fundraiser — Harvest Gala" in _text(env.bm.get(f"/api/reports/fy-close?fiscal_year_id={fy}").content)[1]
-    assert "Fundraiser — Harvest Gala" not in _text(env.bm.get(f"/api/reports/fy-close?fiscal_year_id={fy}&include_fundraisers=false").content)[1]
+    assert "Fundraiser — Harvest Gala" in _text(env.bm.get(f"/api/reports/fy-close?fiscal_year_id={fy}&include_fundraisers=false").content)[1]
     env.bm.post(f"/api/fundraisers/{fid}/archive")
     assert "Fundraiser — Harvest Gala" not in _text(env.bm.get(f"/api/reports/fy-close?fiscal_year_id={fy}").content)[1]
     env.bm.post(f"/api/fundraisers/{fid}/restore")
     env.admin.put("/api/system/modules", {"fundraisers": False})
-    assert "Fundraiser — Harvest Gala" not in _text(env.bm.get(f"/api/reports/fy-close?fiscal_year_id={fy}").content)[1]
+    off = _text(env.bm.get(f"/api/reports/fy-close?fiscal_year_id={fy}").content)[1]
+    assert "Fundraiser — Harvest Gala" in off and "Events & Fundraisers (module currently off)" in off
 
 
 def test_two_year_fundraiser_is_shown_complete_in_each_year(env, base):

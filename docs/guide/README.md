@@ -91,6 +91,7 @@ The report catalog and what each report is for.
 
 - [Running a report](reports/reports-catalog.md) — Finding, running and re-running reports.
 - [The reports](reports/report-list.md) — What each report is for.
+- [Events, invoices and donations in the Audit and Close reports](reports/audit-close-sections.md) — When their sections appear, and how they trace the money to the register.
 
 ## Events & Fundraisers
 
@@ -157,6 +158,7 @@ Shared by Payments, Donations and Invoices.
 User accounts and roles.
 
 - [Managing users](users/manage-users.md) — Administrators: new users, roles and resets.
+- [Roles and responsibilities](users/roles-and-responsibilities.md) — Security domains on a server and a local install, and what each role can do.
 
 ## Audit Log
 

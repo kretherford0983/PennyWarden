@@ -3,6 +3,7 @@ import { api } from "../api";
 import { ErrorBox, Field, Loading, Modal, GuardedForm, RowMenu } from "../components";
 import { useMe } from "../App";
 import { PasswordChecklist } from "../PasswordChecklist";
+import { Link } from "../router";
 
 const ROLES: Record<string, [string, string][]> = {
   ADMINISTRATOR: [["ADMINISTRATOR", "Administrator"]],
@@ -206,6 +207,8 @@ function UserForm({ user, ownRolesLocked = false, isSelf = false, local = false,
         {isNew ? <Field label="Initial password"><input required type="password" autoComplete="new-password" aria-describedby="pw-req-newuser" value={f.password} onChange={(e) => setF({ ...f, password: e.target.value })} /></Field> : null}
         {isNew ? <PasswordChecklist id="pw-req-newuser" password={f.password} context={{ username: f.username }} /> : null /* 2.2.0 (#343) */}
         {/* 1.7.2 (#55): in server mode an Administrator cannot change their own roles (also refused by the server) */}
+        {/* 2.6.0 (#610) */}
+        <p className="hint"><Link to="/help/users/roles-and-responsibilities">Roles and responsibilities: what each role can do</Link></p>
         {ownRolesLocked ? <p className="hint" id="own-roles-hint">You cannot change your own security domain or roles. Another Administrator can change them for you.</p> : null}
         {local ? (
           <fieldset aria-describedby="local-roles-hint">

@@ -270,6 +270,11 @@
           "id": "report-list",
           "title": "The reports",
           "summary": "What each report is for."
+        },
+        {
+          "id": "audit-close-sections",
+          "title": "Events, invoices and donations in the Audit and Close reports",
+          "summary": "When their sections appear, and how they trace the money to the register."
         }
       ]
     },
@@ -474,6 +479,11 @@
           "id": "manage-users",
           "title": "Managing users",
           "summary": "Administrators: new users, roles and resets."
+        },
+        {
+          "id": "roles-and-responsibilities",
+          "title": "Roles and responsibilities",
+          "summary": "Security domains on a server and a local install, and what each role can do."
         }
       ]
     },

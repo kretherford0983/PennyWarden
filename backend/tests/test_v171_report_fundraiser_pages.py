@@ -76,16 +76,17 @@ def test_one_fundraiser_also_gets_both_pages_and_a_cancelled_one_is_marked(env, 
     assert "First fundraiser Harvest Gala" in pages[last - 1] and "Last fundraiser Harvest Gala" in pages[last - 1]
 
 
-def test_no_frame_without_fundraisers_or_when_they_are_left_out(env, base):
+def test_no_frame_without_fundraisers_and_no_option_to_leave_them_out(env, base):
     fy = base["fy"]["id"]
     env.txn(base["acct"]["id"], "DEPOSIT", [{"budget_id": base["inc_leaf"], "amount": "5.00"}], date="2026-09-01")
     assert env.admin.put("/api/system/modules", {"fundraisers": True}).status_code == 200
     none = " ".join(texts(env.auditor.get(f"/api/reports/audit?fiscal_year_id={fy}&include_fundraisers=true").content))
     assert "Start of fundraisers" not in none and "End of fundraisers" not in none and "section page" not in none
     _setup(env, base)
+    # 2.6.0 (#609): the year's events are always in both reports; the old option is ignored
     for url in (f"/api/reports/audit?fiscal_year_id={fy}", f"/api/reports/fy-close?fiscal_year_id={fy}&include_fundraisers=false"):
-        left_out = " ".join(texts(env.auditor.get(url).content))
-        assert "Start of fundraisers" not in left_out and "End of fundraisers" not in left_out
+        kept = " ".join(texts(env.auditor.get(url).content))
+        assert "Start of fundraisers" in kept and "End of fundraisers" in kept
 
 
 def test_account_sections_and_the_fundraisers_section_together(env, base):

@@ -102,7 +102,7 @@ def close(fy_id: int, body: FiscalYearCloseIn, request: Request, db: Session = D
     from ..services import reports as report_svc
     settings = request.app.state.settings
     # v1.6.2 CR-035: the stored Close report includes the year's fundraisers (when the module is on)
-    tmp, fname, summary = report_svc.build_audit_report(db, ctx, settings, fy, None, True, layout="close", fundraisers=True)
+    tmp, fname, summary = report_svc.build_audit_report(db, ctx, settings, fy, None, True, layout="close")
     stored = None
     try:
         with open(tmp, "rb") as fh:

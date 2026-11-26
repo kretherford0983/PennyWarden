@@ -2,7 +2,58 @@
 
 Versions are `Breaking.Major.Minor` from 1.6.0 (docs/branching.md).
 
-## 2.5.0 — unreleased
+## 2.6.0 — unreleased
+Invoices and donations in the Audit and Close reports, a Roles and responsibilities page in the user guide, the
+monthly dependency update, and the email security fix first prepared as the 2.5.1 hotfix (2.5.1 was not released on
+its own).
+
+### Reports
+- **Invoices and donations in the End of Year Audit and Fiscal Year Close reports (#609).** When the year has invoices
+  or donations, each gets a section after the transactions (and the events), between start and end pages that state
+  its page range:
+  - **Invoices:** every invoice dated in the year or with a payment, refund, credit, write-off or void in it, each
+    payment with its transaction and the page where it's printed; open at the year's end; a check that every invoice
+    number is accounted for; and an *Invoiced Income tie-out* listing any line on an Invoiced Income budget that isn't
+    linked to an invoice. A payment counts in the year of its deposit, so an invoice paid in the next year appears in
+    both reports.
+  - **Donations:** each donation with its money (transaction and page), items, purpose and goods or services given;
+    receipts printed, with a check that every receipt number is accounted for; cancelled donations; money still
+    awaiting a deposit.
+  - Each transaction's page now says what it's **linked to** (the invoice or the donation), so the trail runs both ways.
+  - A single-account Audit report shows only that account's invoices and donations.
+- **Module sections follow the records, not a switch.** Events & Fundraisers, Invoices and Donations are always in
+  these reports when the year has their records — the *Include fundraisers* option is gone — and stay in even if the
+  module is turned off later (the report notes that it's off). The separate *Non-cash donations received* and *Open
+  invoices* pages moved into the new sections; the open invoices are now in the Audit report too.
+
+### User guide
+- **Roles and responsibilities (#610):** a new page under *Users* explains why PennyWarden separates duties; the three
+  security domains; that on a **server** an account belongs to exactly one domain (an Administrator can't also be a
+  Financial user or an Auditor, and a Financial user can't also be an Auditor) while a **local install** may combine
+  them; the add-on roles; and what each role can do, with a *who can do what* table that is checked against the
+  permissions the server enforces. *Who does what*, *Managing users* and the New user / Edit user form link to it.
+
+### Security
+- **Email errors no longer echo the mail server's reply (CodeQL code-scanning alerts #16–#18).** When sending an
+  invoice, a statement or the test email fails for an unusual reason, the message shown is now fixed wording chosen
+  by the kind of failure (refused, temporarily refused, sender refused), not the error text itself. The mail server's
+  exact reply is written to the server log for the administrator. The common failures (wrong password, unreachable
+  server, timeout and so on) read as before.
+
+### Dependencies
+- **Python packages:** FastAPI 0.162.7 → 0.165.0 (configurable limits for request bodies and form parsing),
+  pydantic 2.14.3 → 2.14.4, SQLAlchemy 2.1.8 → 2.1.9, python-multipart 0.0.33 → 0.0.34, ReportLab 5.1.0 → 5.1.2, XlsxWriter
+  3.3.1 → 3.3.4, a few packages they use, and
+  PyOTP 2.10.0 → 2.12.1. PyOTP 2.12 refuses authenticator keys shorter than 112 bits; PennyWarden still accepts a key
+  you bring along from another authenticator down to 80 bits (16 characters, as since 2.2.0), so existing two-step
+  verification keeps working. `THIRD-PARTY-NOTICES.txt` is regenerated.
+- **pypdf 6.21 → 7.2** (a major version, from #598), which joins the report pages and the PDF attachments shown in
+  the Audit and Close reports. Nothing changes in the reports; attached PDFs, including rotated ones, are drawn as
+  before.
+- **Web page:** Recharts 3.10.1 → 3.11.1 (the dashboard and report charts).
+- **Build tools** (not shipped): Vite 8.3.8 → 8.4.0.
+
+## 2.5.0 — 2026-11-23
 Events whose proceeds are paid later, shorter Audit / Close reports and a budget proposal presentation. The monthly
 dependency update planned as 2.4.2 is part of this release.
 

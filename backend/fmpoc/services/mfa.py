@@ -97,12 +97,18 @@ def status(db: Session, settings, user: User) -> dict:
 
 
 # ------------------------------------------------------------------ verification
+class _TOTP(pyotp.TOTP):
+    """2.6.0: pyotp 2.12 refuses keys under 112 bits. PennyWarden's own keys are 160 bits, but a key the user brings
+    along (#327) may be as short as OWN_KEY_MIN characters (80 bits), so codes are checked with that floor."""
+    min_secret_length_bits = OWN_KEY_MIN * 5
+
+
 def _check_totp(km, r: UserMfa, code: str, secret_enc: str | None = None) -> int | None:
     """Returns the accepted time step, or None. Uses the active secret unless secret_enc is given."""
     token = secret_enc or r.secret_enc
     if not token or len(code) != 6 or not code.isdigit():
         return None
-    totp = pyotp.TOTP(crypto.decrypt(km, token, AAD))
+    totp = _TOTP(crypto.decrypt(km, token, AAD))
     now_step = int(time.time()) // 30
     for step in (now_step - 1, now_step, now_step + 1):
         if hmac.compare_digest(totp.at(step * 30), code):
@@ -193,7 +199,7 @@ def parse_own_key(value: str | None) -> tuple[str, bool]:
 def _pending_payload(db: Session, user: User, secret: str, r: UserMfa) -> dict:
     ws = db.get(Workspace, user.workspace_id)
     issuer = f"{ISSUER} ({ws.name})" if ws else ISSUER
-    uri = pyotp.TOTP(secret).provisioning_uri(name=user.username, issuer_name=issuer)
+    uri = _TOTP(secret).provisioning_uri(name=user.username, issuer_name=issuer)
     qr = segno.make(uri, error="m").svg_data_uri(scale=5, border=2, dark="#000000", light="#ffffff")
     return {"secret": " ".join(secret[i:i + 4] for i in range(0, len(secret), 4)), "otpauth_uri": uri,
             "qr_svg": qr, "issuer": issuer, "account": user.username,

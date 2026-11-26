@@ -14,7 +14,7 @@ from conftest import PASSWORD, Api
 
 from test_v141_mfa import _enroll, _init, _next, server_app  # noqa: F401 (fixture)
 
-from fmpoc.services.mfa import parse_own_key
+from fmpoc.services.mfa import _TOTP, parse_own_key
 
 OWN = "JBSWY3DPEHPK3PXPJBSWY3DPEHPK3PXP"          # 32 characters, the length of PennyWarden's own keys
 SHORT = "JBSWY3DPEHPK3PXP"                         # 16 characters (80 bits): accepted, with a note
@@ -89,7 +89,7 @@ def test_own_key_setup_at_sign_in(server_app, caplog):  # noqa: F811
     assert a.post("/api/auth/mfa/enroll/confirm", {"code": pyotp.TOTP(s["secret"].replace(" ", "")).now()}
                   ).status_code == 400
     assert a.get("/api/auth/me").json()["mfa_pending"] == "ENROLL"
-    totp = pyotp.TOTP(SHORT)
+    totp = _TOTP(SHORT)   # pyotp 2.12 needs the 80-bit floor PennyWarden uses for own keys
     r = a.post("/api/auth/mfa/enroll/confirm", {"code": totp.now()})
     assert len(r.json()["recovery_codes"]) == 10
     _finish(a, r)
