@@ -206,25 +206,27 @@ function RestoreReports() {
   );
 }
 
+// 2.6.0 (#609): no option - a module's section is in the report whenever the year has its records
+const MODULE_SECTIONS_HINT = "Events & Fundraisers, Invoices and Donations each get a section after the transactions whenever the Fiscal Year has their records — even if the module has since been turned off — pointing at the pages of the transactions that carry their money.";
+
 // v1.3 CR-008: same as the audit report, with the Fiscal Year documents before the budgets and transactions.
 function CloseReport({ fys, initial, onRun, actions }: BodyProps) {
   const cur = currentFy(fys);
   const [fy, setFy] = useState(String(initial.fiscal_year_id || (cur ? cur.id : "")));
-  const frOn = !!useMe().me.modules?.fundraisers; // v1.6.2 CR-035
-  const [fr, setFr] = useState(initial.include_fundraisers !== false);
-  const url = (download: boolean) => `/api/reports/fy-close${qs({ fiscal_year_id: fy, download: download || null, include_fundraisers: frOn && !fr ? false : null })}`;
+  // 2.6.0 (#609): the events, invoices and donations sections are always included when the year has their records
+  const url = (download: boolean) => `/api/reports/fy-close${qs({ fiscal_year_id: fy, download: download || null })}`;
   return (
     <>
       <p>The End of Year Audit report for all accounts (VOID transactions included), with the <b>Fiscal Year documents</b> — approval document, audit signoff and other documents — reproduced right after the Fiscal Year review and before the budgets and transactions. A copy is generated automatically when the Fiscal Year is closed and kept with its documents.</p>
+      <p className="hint">{MODULE_SECTIONS_HINT}</p>
       <div className="report-options">
         <Field label="Fiscal Year">
           <select aria-label="Close report Fiscal Year" value={fy} onChange={(e) => setFy(e.target.value)}>
             {fys.map((y) => <option key={y.id} value={y.id}>{y.label}</option>)}
           </select>
         </Field>
-        {frOn ? <label className="check"><input type="checkbox" checked={fr} onChange={(e) => setFr(e.target.checked)} /> Include fundraisers</label> : null}
       </div>
-      {actions({ open: url(false), download: url(true), onRun: () => onRun({ fiscal_year_id: fy, include_fundraisers: fr }, fys.find((y) => String(y.id) === fy)?.display_name || "") })}
+      {actions({ open: url(false), download: url(true), onRun: () => onRun({ fiscal_year_id: fy }, fys.find((y) => String(y.id) === fy)?.display_name || "") })}
     </>
   );
 }
@@ -234,11 +236,9 @@ function AuditReport({ fys, accounts, initial, onRun, actions }: BodyProps) {
   const [f, setF] = useState({ fiscal_year_id: String(initial.fiscal_year_id || (cur ? cur.id : "")), bank_account_id: String(initial.bank_account_id || ""),
     include_void: initial.include_void !== false });
   const [sig, setSig] = useState<SigState>(SIG_EMPTY);
-  const frOn = !!useMe().me.modules?.fundraisers; // v1.6.2 CR-035
-  const [fr, setFr] = useState(initial.include_fundraisers !== false);
   const sigErr = sig.on ? signatureProblem(sig) : null;
   const url = (download: boolean) => {
-    const p = new URLSearchParams(qs({ fiscal_year_id: f.fiscal_year_id, bank_account_id: f.bank_account_id, include_void: f.include_void, download: download || null, include_fundraisers: frOn && fr ? true : null }).slice(1));
+    const p = new URLSearchParams(qs({ fiscal_year_id: f.fiscal_year_id, bank_account_id: f.bank_account_id, include_void: f.include_void, download: download || null }).slice(1));
     if (sig.on) {
       p.set("signature_page", "true");
       if (sig.choice === "custom") p.set("signature_text", sig.custom);
@@ -258,6 +258,7 @@ function AuditReport({ fys, accounts, initial, onRun, actions }: BodyProps) {
   return (
     <>
       <p>A printable PDF containing the selected Fiscal Year's budget followed by every transaction in the register for that year with all details, descriptions and notes. Each transaction is <b>immediately followed by its attachments</b> (images and PDF pages), so the printed report keeps every transaction together with its documentation. Fiscal Year documents (approval, audit signoff) are in the Fiscal Year Close report.</p>
+      <p className="hint">{MODULE_SECTIONS_HINT}</p>
       <div className="report-options">
         <Field label="Fiscal Year">
           <select aria-label="Audit report Fiscal Year" value={f.fiscal_year_id} onChange={(e) => setF({ ...f, fiscal_year_id: e.target.value })}>
@@ -271,12 +272,11 @@ function AuditReport({ fys, accounts, initial, onRun, actions }: BodyProps) {
           </select>
         </Field>
         <label className="check"><input type="checkbox" checked={f.include_void} onChange={(e) => setF({ ...f, include_void: e.target.checked })} /> Include VOID transactions</label>
-        {frOn ? <label className="check" title="The Fiscal Year's fundraisers (not archived), after the transactions and before the signature page"><input type="checkbox" checked={fr} onChange={(e) => setFr(e.target.checked)} /> Include fundraisers</label> : null}
       </div>
       <SignatureOptions sig={sig} setSig={setSig} preview={sig.on && !sigErr ? previewUrl() : null} />
       {sigErr ? <div className="alert warn" role="alert">{sigErr}</div> : null}
       {actions({ open: sigErr ? null : url(false), download: sigErr ? null : url(true),
-        onRun: () => onRun({ fiscal_year_id: f.fiscal_year_id, bank_account_id: f.bank_account_id, include_void: f.include_void, include_fundraisers: fr },
+        onRun: () => onRun({ fiscal_year_id: f.fiscal_year_id, bank_account_id: f.bank_account_id, include_void: f.include_void },
           `${fys.find((y) => String(y.id) === f.fiscal_year_id)?.display_name || ""} · ${accounts.find((x) => String(x.id) === f.bank_account_id)?.label || "all accounts"}`) })}
       <p className="hint">Large years with many attachments can take a little while to generate. Generating a report is recorded in the audit log.</p>
     </>

@@ -1,6 +1,6 @@
 | Report | What it is for |
 |---|---|
-| **End of Year Audit** | The whole year for an auditor: review summary, budgets, every transaction with its attachments, optionally fundraisers and an **audit review signature page** (wording with `{FY}`, `{ORG}`, `{FYE}`; up to five signers; **Preview signature page**). |
+| **End of Year Audit** | The whole year for an auditor: review summary, budgets, every transaction with its attachments, the year's events, invoices and donations (see [Events, invoices and donations in the Audit and Close reports](audit-close-sections.md)) and an optional **audit review signature page** (wording with `{FY}`, `{ORG}`, `{FYE}`; up to five signers; **Preview signature page**). |
 | **Fiscal Year Close** | The audit report with the Fiscal Year documents; a copy is kept automatically when the year closes. |
 | **Quarterly / Annual** | The board report for a quarter or the year, as a PDF or a presentation. Budget Managers can add next year's budget proposal to the Annual report. |
 | **Financial Flow** | Income and expenses for a period, line by line: untick a line to leave it out (with a reason), add notes, optionally with bank balances and a compare date. |
@@ -13,7 +13,7 @@
 | **Invoice reports** | See [Invoice reports](../invoices/invoice-reports.md). |
 | **Restore re-entry reports** | After a restore: what was entered after the backup, to enter again. |
 
-In the multi-account Audit and Close reports, each account's transactions — and the fundraisers — are framed by start and
+In the multi-account Audit and Close reports, each account's transactions — and the events, invoices and donations — are framed by start and
 end pages that state their page range, and every page shows *section page k of n*, so a reviewer can confirm that no
 page is missing.
 

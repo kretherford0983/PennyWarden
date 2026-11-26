@@ -7,6 +7,25 @@ Invoices and donations in the Audit and Close reports, a Roles and responsibilit
 monthly dependency update, and the email security fix first prepared as the 2.5.1 hotfix (2.5.1 was not released on
 its own).
 
+### Reports
+- **Invoices and donations in the End of Year Audit and Fiscal Year Close reports (#609).** When the year has invoices
+  or donations, each gets a section after the transactions (and the events), between start and end pages that state
+  its page range:
+  - **Invoices:** every invoice dated in the year or with a payment, refund, credit, write-off or void in it, each
+    payment with its transaction and the page where it's printed; open at the year's end; a check that every invoice
+    number is accounted for; and an *Invoiced Income tie-out* listing any line on an Invoiced Income budget that isn't
+    linked to an invoice. A payment counts in the year of its deposit, so an invoice paid in the next year appears in
+    both reports.
+  - **Donations:** each donation with its money (transaction and page), items, purpose and goods or services given;
+    receipts printed, with a check that every receipt number is accounted for; cancelled donations; money still
+    awaiting a deposit.
+  - Each transaction's page now says what it's **linked to** (the invoice or the donation), so the trail runs both ways.
+  - A single-account Audit report shows only that account's invoices and donations.
+- **Module sections follow the records, not a switch.** Events & Fundraisers, Invoices and Donations are always in
+  these reports when the year has their records — the *Include fundraisers* option is gone — and stay in even if the
+  module is turned off later (the report notes that it's off). The separate *Non-cash donations received* and *Open
+  invoices* pages moved into the new sections; the open invoices are now in the Audit report too.
+
 ### Security
 - **Email errors no longer echo the mail server's reply (CodeQL code-scanning alerts #16–#18).** When sending an
   invoice, a statement or the test email fails for an unusual reason, the message shown is now fixed wording chosen

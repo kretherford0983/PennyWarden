@@ -255,4 +255,5 @@ def test_close_report_lists_open_invoices_without_blocking(env, rb, settings):
     text = "".join(pg.extract_text() for pg in PdfReader(io.BytesIO(r.content)).pages)
     assert "Open invoices at the year's end" in text and "Bravo Group" in text
     audit = env.bm.get("/api/reports/audit", params={"fiscal_year_id": rb["fy"]["id"]})
-    assert "Open invoices at the year" not in "".join(pg.extract_text() for pg in PdfReader(io.BytesIO(audit.content)).pages)
+    # 2.6.0 (#609): the open invoices are part of the Invoices section, in both reports
+    assert "Open invoices at the year" in "".join(pg.extract_text() for pg in PdfReader(io.BytesIO(audit.content)).pages)

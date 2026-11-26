@@ -2604,17 +2604,13 @@ test("CR-035: fundraiser report PDF; Audit and Close reports can include fundrai
   const det = await page.getByRole("link", { name: "Open", exact: true }).getAttribute("href");
   expect(det).toMatch(/\/api\/fundraisers\/\d+\/report$/);
   expect((await page.request.get(det!)).status()).toBe(200);
+  // 2.6.0 (#609): no Include fundraisers option - the year's events are always in the report
   await openReport(page, "End of Year Audit");
-  await expect(page.getByLabel("Include fundraisers")).toBeChecked();
+  await expect(page.getByLabel("Include fundraisers")).toHaveCount(0);
+  await expect(page.getByText(/Events & Fundraisers, Invoices and Donations each get a section/)).toBeVisible();
   const audit = await page.getByRole("link", { name: "Open", exact: true }).getAttribute("href");
-  expect(audit).toContain("include_fundraisers=true");
-  const withFr = await page.request.get(audit!);
-  expect(withFr.status()).toBe(200);
-  await page.getByLabel("Include fundraisers").uncheck();
-  const without = await page.getByRole("link", { name: "Open", exact: true }).getAttribute("href");
-  expect(without).not.toContain("include_fundraisers");
-  const plain = await page.request.get(without!);
-  expect((await withFr.body()).length).toBeGreaterThan((await plain.body()).length);
+  expect(audit).not.toContain("include_fundraisers");
+  expect((await page.request.get(audit!)).status()).toBe(200);
   await logout(page);
 });
 

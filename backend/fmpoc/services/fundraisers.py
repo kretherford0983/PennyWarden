@@ -1212,9 +1212,11 @@ def set_results_final(db: Session, ctx, f: Fundraiser, final: bool) -> Fundraise
 
 
 # ------------------------------------------------------------------ v1.6.2 CR-035: report selection
-def for_fiscal_year_report(db: Session, ws_id: int, fy: FiscalYear) -> list[Fundraiser]:
-    """Fundraisers shown in a Fiscal Year's Audit / Close report: not archived, with a budget in that year."""
-    if not module_enabled(db, ws_id):
+def for_fiscal_year_report(db: Session, ws_id: int, fy: FiscalYear, any_switch: bool = False) -> list[Fundraiser]:
+    """Fundraisers shown in a Fiscal Year's Audit / Close report: not archived, with a budget in that year.
+    any_switch (2.6.0 #609, BR-RPT-MOD-001): the year's events whatever the module switch says now - the Audit / Close
+    reports follow the data, so turning the module off doesn't remove a year's events from its report."""
+    if not any_switch and not module_enabled(db, ws_id):
         return []
     out = [f for f in db.scalars(select(Fundraiser).where(Fundraiser.workspace_id == ws_id, Fundraiser.archived_at.is_(None))
                                  .order_by(Fundraiser.start_date, Fundraiser.name, Fundraiser.id))
