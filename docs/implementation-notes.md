@@ -138,6 +138,14 @@ baselines were 10/19 pt and the inset 18 pt. Own footers moved too: donation sta
 0.85 in), the invoice reports and the audit log export (0.3/0.35 in → 0.4 in, bottom margins 0.65 in). Letters,
 invoices and checks keep their layouts (their bottom text is already ≥ 0.6 in, and checks are positioned for the stock).
 
+**2.6.0 — pypdf 7 (#598, Kyle 2026-11-26: the only major taken in 2.6.0).** pypdf 7 removes
+`PageObject.replace_contents()` for pages not assigned to a writer, which `transfer_rotation_to_content()` uses: every
+PDF attachment fell back to "could not be embedded". `reports._attachment_flowables` now opens the attachment as
+`PdfWriter(clone_from=reader)` and takes its pages from there; `_stamp_and_write` merges them as before. Text
+extraction also changed: a VOID transaction's heading is now one line ("Transaction #n — VOID"), so
+`test_v12_reports.py` matches headings with `has_heading`/`heading_page`. All 64 test files that use pypdf pass.
+React 19 and TypeScript 6 → 7 stay in #598.
+
 **2.6.0 — PyOTP 2.12 and own keys (Dependabot PR #608).** PyOTP 2.12 raises `ValueError` for a secret under
 `min_secret_length_bits` (112). PennyWarden's generated keys are 160 bits, but #327 accepts a brought-along key from
 16 characters (80 bits). `services/mfa._TOTP` subclasses `pyotp.TOTP` with `min_secret_length_bits = OWN_KEY_MIN * 5`

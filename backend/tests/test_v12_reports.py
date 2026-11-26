@@ -1,6 +1,7 @@
 """v1.2 CR-002 reports: End of Year Audit PDF and Entity activity report."""
 import csv
 import io
+import re
 
 from conftest import png_bytes
 from pypdf import PdfReader
@@ -31,6 +32,15 @@ def page_texts(pdf_bytes: bytes) -> list[str]:
 
 def first_page(texts, needle):
     return next(i for i, t in enumerate(texts) if needle in t)
+
+
+def heading_page(texts, txn_id):
+    """The page whose heading is "Transaction #n" (with " — VOID" on the same line since pypdf 7's text extraction)."""
+    return next(i for i, t in enumerate(texts) if has_heading(t, txn_id))
+
+
+def has_heading(text, txn_id):
+    return re.search(rf"Transaction #{txn_id}(?: — VOID)?\n", text) is not None
 
 
 def test_cr002_audit_report_structure_and_attachment_order(env, base):
@@ -66,7 +76,7 @@ def test_cr002_audit_report_structure_and_attachment_order(env, base):
     assert "Fiscal Year Review" in texts[1] and "Documentation review" in texts[1] and "Closure readiness" in texts[1]
     assert "Fiscal Year Budgets" in texts[2] and "1000 Operations" in texts[2] and "4000 Donations" in texts[2]
     # every transaction (incl. VOID and the cross-FY one) starts its own page, in date order within the account
-    order = [first_page(texts, f"Transaction #{t['id']}\n") for t in (outside, t1, t2, t3, v)]
+    order = [heading_page(texts, t["id"]) for t in (outside, t1, t2, t3, v)]
     assert order == sorted(order) and len(set(order)) == 5 and order[0] > 2
     for i in order:
         head = texts[i].split("\n")[0]
@@ -104,7 +114,7 @@ def test_cr002_audit_report_account_filter_void_toggle_and_empty(env, base):
     t = env.txn(other["id"], "WITHDRAWAL", [{"budget_id": base["exp_leaf"], "amount": "4.00"}])
     env.ru.post(f"/api/transactions/{t['id']}/void", {"reason": "x", "confirm_irreversible": True})
     j = "\n".join(page_texts(env.bu.get(f"/api/reports/audit?fiscal_year_id={fy}&bank_account_id={other['id']}").content))
-    assert f"Transaction #{t['id']}\n" in j and "Transaction #1\n" not in j
+    assert has_heading(j, t["id"]) and not has_heading(j, 1)
     j = "\n".join(page_texts(env.bu.get(f"/api/reports/audit?fiscal_year_id={fy}&bank_account_id={other['id']}"
                                         f"&include_void=false").content))
     assert "No transactions for this Fiscal Year." in " ".join(j.split())
@@ -204,7 +214,7 @@ def test_cr002_attachments_rendered_within_letter_page_width(env, base):
     assert all((round(float(p.mediabox.width)), round(float(p.mediabox.height))) == (round(letter[0]), round(letter[1]))
                for p in reader.pages)
     texts = [p.extract_text() or "" for p in reader.pages]
-    p_t = first_page(texts, f"Transaction #{t['id']}\n")
+    p_t = heading_page(texts, t["id"])
     # the landscape PDF is drawn on the transaction's own page, under the details
     assert "LANDSCAPEDOC page 1" in texts[p_t] and "Wide docs" in texts[p_t]
     assert any("Attachment 2 of 2 (transaction)" in x for x in texts[p_t:])
